@@ -1,0 +1,33 @@
+# Runs on the AWS server in /opt/twin. Secrets come from /opt/twin/.env, which
+# deploy.sh writes from SSM Parameter Store on every deploy.
+services:
+  app:
+    build: { context: ./src, dockerfile: deploy/Dockerfile }
+    image: twin-receptionist:latest
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      HOST: 0.0.0.0
+      API_PORT: "8791"
+    volumes:
+      - app-data:/app/data
+      - ./rds-ca.pem:/etc/ssl/rds-ca.pem:ro
+    logging: { driver: json-file, options: { max-size: 20m, max-file: "5" } }
+
+  caddy:
+    image: caddy:2.8.4
+    restart: unless-stopped
+    ports: ["80:80", "443:443", "443:443/udp"]
+    environment:
+      SITE_HOSTS: ${SITE_HOSTS}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on: [app]
+    logging: { driver: json-file, options: { max-size: 20m, max-file: "5" } }
+
+volumes:
+  app-data:
+  caddy-data:
+  caddy-config:

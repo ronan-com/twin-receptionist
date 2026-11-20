@@ -1,0 +1,33 @@
+{
+  "name": "twin-receptionist",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "concurrently -k -n api,web -c red,white \"bun --env-file=../.env --watch server/index.ts\" \"vite\"",
+    "api": "bun --env-file=../.env server/index.ts",
+    "build": "vite build",
+    "typecheck": "tsc --noEmit",
+    "tunnel": "bun scripts/tunnel.ts"
+  },
+  "dependencies": {
+    "@telnyx/ai-agent-widget": "^0.37.0",
+    "imapflow": "^2.12.1",
+    "mailparser": "^3.14.5",
+    "nodemailer": "^10.6.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "react-router-dom": "^6.28.0"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.1.14",
+    "@types/mailparser": "^3.9.0",
+    "@types/nodemailer": "^8.0.2",
+    "@types/react": "^18.3.12",
+    "@types/react-dom": "^18.3.1",
+    "@vitejs/plugin-react": "^4.3.4",
+    "concurrently": "^9.1.0",
+    "typescript": "^5.6.3",
+    "vite": "^5.4.11"
+  }
+}

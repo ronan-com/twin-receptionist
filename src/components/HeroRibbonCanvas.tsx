@@ -211,22 +211,39 @@ export default function HeroRibbonCanvas() {
 
       strands(0.78 + tilt, t);
 
-      raf = requestAnimationFrame(draw);
+      raf = !reduced && visible && !document.hidden ? requestAnimationFrame(draw) : 0;
     };
 
-
+    // Only animate while the hero is on screen and the tab is visible; with
+    // reduced motion, draw a single still frame (redrawn on resize).
+    let visible = true;
+    const kick = () => {
+      if (!raf) raf = requestAnimationFrame(draw);
+    };
     const onResize = () => {
       resize();
+      if (reduced) kick();
+    };
+    const io = new IntersectionObserver(([entry]) => {
+      visible = entry.isIntersecting;
+      if (visible && !reduced) kick();
+    });
+    const onVisibility = () => {
+      if (!document.hidden && visible && !reduced) kick();
     };
 
     resize();
     start = performance.now();
     raf = requestAnimationFrame(draw);
+    io.observe(canvas);
     window.addEventListener("resize", onResize);
+    document.addEventListener("visibilitychange", onVisibility);
 
     return () => {
       cancelAnimationFrame(raf);
+      io.disconnect();
       window.removeEventListener("resize", onResize);
+      document.removeEventListener("visibilitychange", onVisibility);
     };
   }, []);
 

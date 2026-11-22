@@ -738,7 +738,7 @@ function Integrations() {
                   <motion.circle cx="200" cy="152" r="50" fill="none" stroke="var(--indigo)" strokeOpacity="0.16" strokeWidth="1" strokeDasharray="4 7" animate={pulsesRun ? { rotate: 360 } : { rotate: 0 }} transition={{ duration: 18, repeat: pulsesRun ? Infinity : 0, ease: "linear" }} style={{ transformOrigin: "200px 152px" }} />
                   <circle cx="200" cy="152" r="40" fill="var(--card)" stroke="var(--indigo)" strokeOpacity="0.28" filter="url(#hub-glow)" />
                   <text x="200" y="149" textAnchor="middle" fill="var(--slate-deep)" fontSize="15" fontWeight="700">Answered</text>
-                  {[7, 13, 19, 11, 16, 8].map((height, index) => <motion.rect key={height} x={181 + index * 7} width="3" rx="1.5" fill="var(--indigo)" fillOpacity={index % 2 === 0 ? 1 : 0.55} animate={activeNode && pulsesRun ? { height: [height, Math.max(6, height + (index % 2 === 0 ? 6 : -3)), height], y: [164 - height / 2, 164 - Math.max(6, height + (index % 2 === 0 ? 6 : -3)) / 2, 164 - height / 2] } : { height, y: 164 - height / 2 }} transition={activeNode && pulsesRun ? { duration: 0.7, delay: index * 0.04, repeat: Infinity } : { duration: 0.2 }} />)}
+                  {[7, 13, 19, 11, 16, 8].map((height, index) => <motion.rect key={height} x={181 + index * 7} y={164 - height / 2} width="3" height={height} rx="1.5" initial={false} fill="var(--indigo)" fillOpacity={index % 2 === 0 ? 1 : 0.55} animate={activeNode && pulsesRun ? { height: [height, Math.max(6, height + (index % 2 === 0 ? 6 : -3)), height], y: [164 - height / 2, 164 - Math.max(6, height + (index % 2 === 0 ? 6 : -3)) / 2, 164 - height / 2] } : { height, y: 164 - height / 2 }} transition={activeNode && pulsesRun ? { duration: 0.7, delay: index * 0.04, repeat: Infinity } : { duration: 0.2 }} />)}
                 </svg>
               </div>
             </div>
@@ -798,7 +798,7 @@ const INDUSTRY_GROUPS = [
     benefits: [
       "Qualifies buyer, tenant and owner enquiries as they come in",
       "Books inspections and maintenance visits without phone tag",
-      "Captures every new lead and routes it to the right person",
+      "Captures every new lead and passes it to your team",
     ],
   },
   {
@@ -822,7 +822,7 @@ const INDUSTRY_GROUPS = [
     benefits: [
       "Gives every new enquiry a professional first response",
       "Schedules consultations and client appointments",
-      "Collects details and follows up during your busiest periods",
+      "Collects details for your team to follow up during your busiest periods",
     ],
   },
 ];

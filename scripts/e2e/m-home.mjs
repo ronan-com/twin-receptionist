@@ -1,5 +1,5 @@
 // Area M: browser test of the marketing homepage at desktop (1440) and phone (390) widths.
-// Needs the server running (scripts/e2e/m-setup.sh). Run: node scripts/e2e/m-home.mjs
+// Needs the server: E2E_PORT=8904 E2E_DB=e2e_m bash scripts/e2e/setup.sh, then: node scripts/e2e/m-home.mjs
 //   BASE (default http://localhost:8904)   SHOTS (default $HOME/aibiz/answered-port-notes/shots)
 import puppeteer from "puppeteer-core";
 import { mkdirSync } from "node:fs";
@@ -129,6 +129,8 @@ async function run(label, viewport) {
   await page.waitForFunction(() => document.querySelector("audio")?.readyState >= 1, { timeout: 10000 }).catch(() => {});
   const audio = await page.$eval("audio", (a) => ({ src: a.currentSrc, ready: a.readyState, dur: a.duration, err: a.error?.code ?? null }));
   check(`${label}: audio metadata loads`, audio.ready >= 1 && Math.abs(audio.dur - 81) < 2 && !audio.err, JSON.stringify(audio));
+  await page.$eval('button[aria-label="Play example call"]', (e) => e.scrollIntoView({ block: "center" }));
+  await sleep(1200); // let scroll-linked layout settle before clicking
   await page.click('button[aria-label="Play example call"]');
   await sleep(1500);
   const playing = await page.$eval("audio", (a) => ({ t: a.currentTime, paused: a.paused }));
@@ -138,7 +140,7 @@ async function run(label, viewport) {
   await sleep(300);
   const skipped = await page.$eval("audio", (a) => a.currentTime);
   check(`${label}: skip forward`, skipped > 10, `t=${skipped.toFixed(1)}`);
-  await page.click('button[aria-label="Pause example call"]');
+  if (await page.$('button[aria-label="Pause example call"]')) await page.click('button[aria-label="Pause example call"]');
 
   // Industry tabs swap the photo and copy.
   const tabs = await page.$$('[role="tab"]');
@@ -153,7 +155,9 @@ async function run(label, viewport) {
           const imgs = [...document.querySelectorAll("#industry-panel img")];
           const panel = document.getElementById("industry-panel");
           const img = imgs[imgs.length - 1];
-          return panel?.getAttribute("aria-labelledby") === `industry-tab-${tabId}` && imgs.length === 1 && img.complete && img.naturalWidth > 0 ? img.currentSrc : false;
+          // The outgoing photo lingers while it fades, so match the new photo by its alt (= panel heading).
+          const heading = panel?.querySelector("h3")?.textContent;
+          return panel?.getAttribute("aria-labelledby") === `industry-tab-${tabId}` && imgs.length === 1 && img.alt === heading && img.complete && img.naturalWidth > 0 ? img.currentSrc : false;
         },
         { timeout: 5000 },
         id,
@@ -180,6 +184,8 @@ async function run(label, viewport) {
   check(`${label}: no external, tel: or demo-dashboard links`, bad.length === 0, JSON.stringify(bad));
   const ctas = links.filter((l) => /Get started|Create an account|Sign up as an agency/.test(l.text));
   check(`${label}: sign-up CTAs go to /signup`, ctas.length >= 3 && ctas.every((l) => l.href.startsWith("/signup")), JSON.stringify(ctas.map((c) => c.href)));
+  const agency = links.filter((l) => l.text === "Sign up as an agency");
+  check(`${label}: agency CTA goes to /signup?as=agency`, agency.length === 1 && agency[0].href === "/signup?as=agency", JSON.stringify(agency));
   const signins = links.filter((l) => l.text === "Sign in");
   check(`${label}: Sign in goes to /login`, signins.length >= 1 && signins.every((l) => l.href === "/login"), `${signins.length} links`);
   const internal = [...new Set(links.map((l) => l.href).filter((h) => h.startsWith("/")))];
@@ -201,12 +207,10 @@ async function run(label, viewport) {
     await sleep(450);
     const menu = await page.$$eval("#mobile-menu a", (as) => as.filter((a) => a.getBoundingClientRect().height > 0).map((a) => a.textContent.trim()));
     check(`${label}: mobile menu opens`, menu.includes("Sign in") && menu.includes("Get started"), menu.join(", "));
-    await page.screenshot({ path: join(SHOTS, `m-home-${viewport.width}-menu.png`) });
     await page.click('button[aria-label="Close menu"]');
     await sleep(400);
   }
   await page.screenshot({ path: join(SHOTS, `m-home-${viewport.width}-full.png`), fullPage: true });
-  await page.screenshot({ path: join(SHOTS, `m-home-${viewport.width}-hero.png`) });
 
   const ext = [...external].filter((h) => !/^fonts\.(googleapis|gstatic)\.com$/.test(h));
   check(`${label}: no third-party requests (besides Google Fonts)`, ext.length === 0, ext.join(", "));

@@ -309,6 +309,8 @@ const indexed = (rows: ClientRow[]) => new Map(rows.map((c) => [c.id, c]));
 
 async function overview(ctx: Ctx) {
   const scope = scopeOf(ctx);
+  await ensureCompanies(scope);
+  const [co] = await sql`select count(*)::int as n from companies where (${scope}::uuid is null or org_id = ${scope}::uuid)`;
   const [c] = await sql`
     select count(*)::int as businesses,
       (count(*) filter (where c.paused_at is null and o.suspended_at is null))::int as active,
@@ -331,7 +333,8 @@ async function overview(ctx: Ctx) {
     providerErrors = p.n;
   }
   return {
-    businesses: c.businesses,
+    // Clients are companies; each can have several receptionists.
+    businesses: co.n,
     activeBusinesses: c.active,
     agents: c.businesses,
     numbers: c.numbers,
@@ -1111,6 +1114,8 @@ async function attachReceptionist(ctx: Ctx, id: string, input: any) {
   const old = c.company_id;
   await sql.begin(async (tx) => {
     await tx`update clients set company_id = ${m.id} where id = ${c.id}`;
+    // Set up by the agency (the console wizard): no client onboarding to wait for.
+    await tx`update clients set data = jsonb_set(data, '{onboarding}', '"done"') where id = ${c.id} and data->>'onboarding' is null`;
     await tx`
       insert into client_access (user_id, client_id, role)
       select distinct on (a.user_id) a.user_id, ${c.id}::uuid, a.role from client_access a join clients s on s.id = a.client_id
@@ -1215,8 +1220,8 @@ async function companyBrand(ctx: Ctx, id: string, req: Request, method: string, 
 
 export type ConsoleDeps = { createClient: (orgId: string, input: unknown, opts?: { quick?: boolean }) => Promise<Receptionist> };
 
-/** Still waiting for the client: flagged pending and not saved since it was made. */
-export const onboardingPending = (c: Receptionist) => c.onboarding === "pending" && c.createdAt === c.updatedAt;
+/** Still waiting for the client (clients.data.onboarding, shared with the workspace's /app/onboarding wizard). */
+export const onboardingPending = (c: Receptionist) => c.onboarding === "pending";
 
 async function quickReceptionist(ctx: Ctx, deps: ConsoleDeps, m: CompanyRow): Promise<string> {
   const key = (INDUSTRIES.some((i) => i.key === m.industry) ? m.industry : "other") as IndustryKey;

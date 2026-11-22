@@ -334,7 +334,7 @@ export const companyApi = {
   upload: (id: string, kind: "logo" | "background", file: File) => uploadBrand(`/api/console/companies/${id}/brand/${kind}`, file),
 };
 
-export type BrandChange = { bgColor?: string; primary?: string; accent?: string; sidebar?: string; removeLogo?: boolean; removeBackground?: boolean };
+export type BrandChange = { bgColor?: string; primaryColor?: string; accentColor?: string; sidebarColor?: string; removeLogo?: boolean; removeBackground?: boolean };
 
 async function uploadBrand(path: string, file: File): Promise<Brand> {
   const res = await fetch(path, { method: "POST", credentials: "same-origin", body: file });

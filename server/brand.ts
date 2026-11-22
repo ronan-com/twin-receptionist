@@ -10,7 +10,8 @@ import { ValidationError } from "./prompt";
 const LIMITS = { logo: 400_000, background: 1_500_000 } as const;
 type Kind = keyof typeof LIMITS;
 export type Scope = { orgId: string; clientId: string | null; companyId?: string | null };
-const COLOURS = ["bgColor", "primary", "accent", "sidebar"] as const;
+// Colour keys shared with the workspace (server/routes/manage.ts): primaryColor, accentColor.
+const COLOURS = ["bgColor", "primaryColor", "accentColor", "sidebarColor"] as const;
 
 // Only PNG, JPEG and WebP. Never SVG (it can carry scripts), and the type comes from
 // the file's own first bytes, not from what the browser claims.
@@ -35,9 +36,9 @@ const asBrand = (b: Record<string, string>): Brand => ({
   logo: url(b.logo),
   bgColor: b.bgColor ?? "",
   bgImage: url(b.bgImage),
-  primary: b.primary ?? "",
-  accent: b.accent ?? "",
-  sidebar: b.sidebar ?? "",
+  primaryColor: b.primaryColor ?? "",
+  accentColor: b.accentColor ?? "",
+  sidebarColor: b.sidebarColor ?? "",
 });
 
 // What is set at exactly this level (no inheritance), for the editor.

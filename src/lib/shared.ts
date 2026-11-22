@@ -426,9 +426,9 @@ export type Brand = {
   bgColor: string;
   bgImage: string;
   /** Brand colours (#rrggbb, "" = the default). */
-  primary?: string;
-  accent?: string;
-  sidebar?: string;
+  primaryColor?: string;
+  accentColor?: string;
+  sidebarColor?: string;
 };
 
 export type Viewing = { org: string; client: string | null; business: string };

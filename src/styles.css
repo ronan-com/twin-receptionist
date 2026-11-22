@@ -1801,3 +1801,41 @@ textarea:focus {
     font-size: 26px;
   }
 }
+
+.segmented.segmented-4 {
+  grid-template-columns: repeat(4, 1fr);
+}
+.portal-range {
+  min-width: 300px;
+}
+.portal-by {
+  margin: -14px 0 18px;
+}
+.portal-tools {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  margin-bottom: 14px;
+}
+.portal-search {
+  flex: 1;
+  min-width: 0;
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  color: var(--text);
+  padding: 10px 12px;
+  font-size: 15px;
+}
+@media (max-width: 560px) {
+  .portal-range {
+    min-width: 0;
+    width: 100%;
+  }
+  .portal-by {
+    margin-top: 0;
+  }
+  .portal-tools {
+    flex-wrap: wrap;
+  }
+}

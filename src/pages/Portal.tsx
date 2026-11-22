@@ -13,7 +13,33 @@ const when = (iso: string) => {
   const d = new Date(iso);
   return Number.isNaN(d.getTime()) ? "" : d.toLocaleString("en-AU", { weekday: "short", day: "numeric", month: "short", hour: "numeric", minute: "2-digit" });
 };
-const weekAgo = () => Date.now() - 7 * 86_400_000;
+const RANGES = [
+  ["Today", 1],
+  ["7 days", 7],
+  ["30 days", 30],
+  ["90 days", 90],
+] as const;
+// "Today" means since midnight; the others are rolling windows.
+const since = (days: number) => (days === 1 ? new Date().setHours(0, 0, 0, 0) : Date.now() - days * 86_400_000);
+const digits = (s: string) => s.replace(/\D/g, "");
+// "+61498765432" and "0498 765 432" are the same number.
+const national = (s: string) => {
+  const d = digits(s);
+  return d.startsWith("61") ? `0${d.slice(2)}` : d;
+};
+
+function download(name: string, rows: string[][]) {
+  const csv = rows.map((r) => r.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(",")).join("\n");
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([csv], { type: "text/csv" }));
+  a.download = name;
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
+function Search({ value, onChange, placeholder }: { value: string; onChange: (v: string) => void; placeholder: string }) {
+  return <input type="search" className="portal-search" aria-label={placeholder} placeholder={placeholder} value={value} onChange={(e) => onChange(e.target.value)} />;
+}
 
 type Loaded = { calls: CallSummary[]; upcoming: CalendarEvent[]; requests: BookingRequest[] };
 
@@ -75,6 +101,8 @@ export default function Portal({ account }: { account: Account }) {
   const [receptionist, setReceptionist] = useState("");
   const [error, setError] = useState("");
   const [tab, setTab] = useState<Tab>("Calls");
+  const [range, setRange] = useState<number>(30);
+  const [q, setQ] = useState("");
 
   useEffect(() => {
     portalApi
@@ -106,10 +134,18 @@ export default function Portal({ account }: { account: Account }) {
   }
 
   const current = clients?.find((c) => c.id === clientId);
-  const bookings = (data?.requests ?? []).filter((r) => r.kind === "booking" && r.status === "booked");
-  const followUps = (data?.requests ?? []).filter((r) => r.kind === "callback");
-  const callsThisWeek = (data?.calls ?? []).filter((c) => new Date(c.startedAt).getTime() > weekAgo()).length;
-  const upcomingCount = (data?.upcoming ?? []).length || bookings.filter((b) => new Date(b.start).getTime() > Date.now()).length;
+  const from = since(range);
+  const needle = q.trim().toLowerCase();
+  const hit = (...parts: string[]) => !needle || parts.some((p) => p.toLowerCase().includes(needle) || (digits(needle).length > 2 && national(p).includes(national(needle))));
+  const inRange = (iso: string) => new Date(iso).getTime() >= from;
+
+  const calls = (data?.calls ?? []).filter((c) => inRange(c.startedAt) && hit(c.from, c.channel === "sms_chat" ? "text" : "call"));
+  const allBookings = (data?.requests ?? []).filter((r) => r.kind === "booking" && r.status === "booked");
+  const bookings = allBookings.filter((b) => inRange(b.at) && hit(b.name, b.phone, b.service));
+  const followUps = (data?.requests ?? []).filter((r) => r.kind === "callback" && inRange(r.at) && hit(r.name, r.phone, r.service, r.note));
+  const upcoming = (data?.upcoming ?? []).filter((e) => hit(e.title, e.details));
+  const upcomingCount = (data?.upcoming ?? []).length || allBookings.filter((b) => new Date(b.start).getTime() > Date.now()).length;
+  const rangeLabel = RANGES.find((r) => r[1] === range)?.[0].toLowerCase() ?? "";
 
   return (
     <div className="app">
@@ -138,8 +174,15 @@ export default function Portal({ account }: { account: Account }) {
             <p className="eyebrow">{current?.businessName ?? account.org?.name}</p>
             <h1>Your calls</h1>
           </div>
-          {receptionist && <p className="muted">Answered by {receptionist}</p>}
+          <div className="portal-range segmented segmented-4" role="radiogroup" aria-label="Time range">
+            {RANGES.map(([label, days]) => (
+              <button key={days} type="button" role="radio" aria-checked={range === days} className={range === days ? "is-on" : ""} onClick={() => setRange(days)}>
+                {label}
+              </button>
+            ))}
+          </div>
         </div>
+        {receptionist && <p className="muted portal-by">Answered by {receptionist}</p>}
 
         {error && (
           <div className="notice notice-error" role="alert">
@@ -158,22 +201,22 @@ export default function Portal({ account }: { account: Account }) {
           <>
             <div className="stat-row">
               <div className="stat">
-                <span className="stat-n">{data ? callsThisWeek : "–"}</span>
-                <span className="stat-l">calls and texts this week</span>
+                <span className="stat-n">{data ? (data.calls ?? []).filter((c) => inRange(c.startedAt)).length : "–"}</span>
+                <span className="stat-l">calls and texts, {rangeLabel === "today" ? "today" : `last ${rangeLabel}`}</span>
               </div>
               <div className="stat">
                 <span className="stat-n">{data ? upcomingCount : "–"}</span>
                 <span className="stat-l">upcoming bookings</span>
               </div>
               <div className="stat">
-                <span className="stat-n">{data ? followUps.length : "–"}</span>
-                <span className="stat-l">follow-ups</span>
+                <span className="stat-n">{data ? (data.requests ?? []).filter((r) => r.kind === "callback" && inRange(r.at)).length : "–"}</span>
+                <span className="stat-l">follow-ups, {rangeLabel === "today" ? "today" : `last ${rangeLabel}`}</span>
               </div>
             </div>
 
             <div className="segmented segmented-3 portal-tabs" role="tablist" aria-label="Sections">
               {TABS.map((t) => (
-                <button key={t} type="button" role="tab" aria-selected={tab === t} className={tab === t ? "is-on" : ""} onClick={() => setTab(t)}>
+                <button key={t} type="button" role="tab" aria-selected={tab === t} className={tab === t ? "is-on" : ""} onClick={() => { setTab(t); setQ(""); }}>
                   {t}
                 </button>
               ))}
@@ -182,12 +225,39 @@ export default function Portal({ account }: { account: Account }) {
             <section className="card">
               {!data && !error && <p className="muted">Loading…</p>}
 
+              {data && (
+                <div className="portal-tools">
+                  <Search
+                    value={q}
+                    onChange={setQ}
+                    placeholder={tab === "Calls" ? "Search by phone number" : "Search name, phone or service"}
+                  />
+                  {tab !== "Bookings" && (
+                    <button
+                      type="button"
+                      className="btn btn-secondary btn-sm"
+                      onClick={() =>
+                        tab === "Calls"
+                          ? download("calls.csv", [["When", "Type", "Number"], ...calls.map((c) => [c.startedAt, c.channel === "sms_chat" ? "Text" : "Call", c.from])])
+                          : download("follow-ups.csv", [["Received", "Name", "Phone", "Reason", "Best time", "Note"], ...followUps.map((f) => [f.at, f.name, f.phone, f.service, f.start, f.note])])
+                      }
+                    >
+                      Export CSV
+                    </button>
+                  )}
+                </div>
+              )}
+
               {data && tab === "Calls" &&
-                (data.calls.length === 0 ? (
-                  <p className="muted">No calls yet. When someone rings your number, it appears here with a summary and transcript.</p>
+                (calls.length === 0 ? (
+                  <p className="muted">
+                    {data.calls.length === 0
+                      ? "No calls yet. When someone rings your number, it appears here with a summary and transcript."
+                      : "Nothing matches. Try a wider time range or clear the search."}
+                  </p>
                 ) : (
                   <ul className="calls">
-                    {data.calls.map((c) => (
+                    {calls.map((c) => (
                       <CallRow key={c.id} clientId={current.id} call={c} />
                     ))}
                   </ul>
@@ -195,14 +265,18 @@ export default function Portal({ account }: { account: Account }) {
 
               {data && tab === "Bookings" && (
                 <>
-                  {data.upcoming.length === 0 && bookings.length === 0 && (
-                    <p className="muted">No bookings yet. Appointments the receptionist makes will show here.</p>
+                  {upcoming.length === 0 && bookings.length === 0 && (
+                    <p className="muted">
+                      {data.upcoming.length === 0 && allBookings.length === 0
+                        ? "No bookings yet. Appointments the receptionist makes will show here."
+                        : "Nothing matches. Try a wider time range or clear the search."}
+                    </p>
                   )}
-                  {data.upcoming.length > 0 && (
+                  {upcoming.length > 0 && (
                     <>
                       <h2>Upcoming</h2>
                       <ul className="portal-list">
-                        {data.upcoming.map((e) => (
+                        {upcoming.map((e) => (
                           <li key={e.id}>
                             <strong>{e.title}</strong>
                             <span className="muted">{when(e.start)}</span>
@@ -239,7 +313,11 @@ export default function Portal({ account }: { account: Account }) {
 
               {data && tab === "Follow-ups" &&
                 (followUps.length === 0 ? (
-                  <p className="muted">Nothing to follow up. People who ask for a call back appear here.</p>
+                  <p className="muted">
+                    {(data.requests ?? []).some((r) => r.kind === "callback")
+                      ? "Nothing matches. Try a wider time range or clear the search."
+                      : "Nothing to follow up. People who ask for a call back appear here."}
+                  </p>
                 ) : (
                   <ul className="portal-list">
                     {followUps.map((f) => (

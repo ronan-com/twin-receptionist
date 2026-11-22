@@ -575,7 +575,7 @@ async function route(req: Request): Promise<Response> {
     if (!client) return json({ error: "Not found" }, 404);
     if (portal[2] === "calls") {
       // Test calls and the text simulator are the agency's, not the customer's.
-      const calls = (await listCalls(client.assistantId, 50)).filter((c) => !c.simulated && c.channel !== "web");
+      const calls = (await listCalls(client.assistantId, 100)).filter((c) => !c.simulated && c.channel !== "web");
       return json({ calls, receptionist: client.settings.receptionistName || "" });
     }
     if (portal[3]) return json(await callDetail(client, portal[3]));

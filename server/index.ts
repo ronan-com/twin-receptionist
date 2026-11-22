@@ -43,6 +43,8 @@ import { audit } from "./audit";
 import { consoleRoutes, isClientPaused } from "./routes/console";
 import { manageRoutes, setManageDeps } from "./routes/manage";
 import { signupRoutes } from "./routes/signup";
+import { automationHooks, automationRoutes } from "./routes/automations";
+import { bookingBlocked, startAutomations, withAutomations } from "./automations";
 import { workspaceRoutes } from "./routes/workspace";
 import type { ClientAccess, RouteArgs } from "./routes/http";
 import { changeBrand, ownBrand, serveAsset, uploadAsset } from "./brand";
@@ -160,7 +162,7 @@ async function syncAssistant(client: Business): Promise<Business> {
   }
   const instructions = await instructionsFor(client);
   const tools = bookingLive(client) ? [HANGUP, ...bookingTools(client, publicUrl())] : [HANGUP];
-  await telnyx("POST", `/ai/assistants/${client.assistantId}`, { instructions, tools });
+  await telnyx("POST", `/ai/assistants/${client.assistantId}`, await withAutomations(client, { instructions, tools }));
   const next = { ...client, instructions, updatedAt: new Date().toISOString() };
   await saveClient(next);
   return next;
@@ -260,6 +262,8 @@ async function hook(req: Request, clientId: string, action: string): Promise<Res
   if (await isClientPaused(clientId)) return json({ error: "This service is paused. Take a message instead." });
   enterOrg(orgId);
   if (!client.booking!.enabled) return json({ error: "Booking is switched off. Offer to take a message instead." });
+  const closed = action === "callback" ? null : await bookingBlocked(client);
+  if (closed) return json({ error: closed });
   const text = await req.text();
   if (text.length > 8000) return json({ error: "Too large." }, 413);
   let body: any = {};
@@ -354,7 +358,7 @@ async function updateClient(existing: Business, input: unknown): Promise<Busines
   const settings = normaliseSettings(input, await voiceNames());
   const instructions = await instructionsFor(existing, settings);
   // Telnyx updates an assistant with POST, not PATCH. (The demo receptionist has none.)
-  if (!isDemo(existing.assistantId)) await telnyx("POST", `/ai/assistants/${existing.assistantId}`, assistantFields(settings, instructions));
+  if (!isDemo(existing.assistantId)) await telnyx("POST", `/ai/assistants/${existing.assistantId}`, await withAutomations({ ...existing, settings }, assistantFields(settings, instructions)));
   const client: Business = { ...existing, settings, instructions, updatedAt: new Date().toISOString() };
   await saveClient(client);
   return client;
@@ -449,6 +453,7 @@ async function route(req: Request, server?: { requestIP(r: Request): { address: 
 
   const hookMatch = path.match(/^\/hooks\/([a-f0-9-]{36})\/(availability|book|callback)$/);
   if (hookMatch && method === "POST") return hook(req, hookMatch[1], hookMatch[2]);
+  if (path.startsWith("/hooks/automations/")) return (await automationHooks(req, path)) ?? json({ error: "Not found" }, 404);
 
   // Logos and backgrounds: public by random id.
   const brandAsset = path.match(/^\/brand\/([a-f0-9-]{36})$/);
@@ -642,6 +647,7 @@ async function route(req: Request, server?: { requestIP(r: Request): { address: 
   enterOrg(orgId);
 
   // ---- The Answered UI's route modules (server/routes/*), wired once here ----
+  if (path.startsWith("/api/automations/")) return (await automationRoutes({ req, url, path, method, ctx, orgId, appUrl: appUrl(req) }, { clientAccessFor, syncAssistant })) ?? json({ error: "Not found" }, 404);
   const area = path.match(/^\/api\/(workspace|manage|console)(\/.*)?$/);
   if (area) {
     const base: RouteArgs = { req, url, path, method, ctx, orgId, appUrl: appUrl(req) };
@@ -984,6 +990,8 @@ Bun.serve({
 
 // Keep call_log filled from the phone provider (server/callsync.ts).
 startCallSync();
+// Text-back after calls (server/automations.ts).
+startAutomations();
 
 // Check every connected mailbox once a minute. One at a time, so a slow mail
 // server can't pile up connections.

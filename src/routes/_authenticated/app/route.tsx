@@ -3,6 +3,7 @@ import { createFileRoute, Outlet, redirect } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { AppShell } from "@/components/app/AppShell";
 import { WorkspaceSwitcher } from "@/components/app/WorkspaceSwitcher";
+import { BrandLogo, BusinessBrand } from "@/components/app/BusinessBrand";
 import { DateRangeSelect } from "@/components/app/DateRangeSelect";
 import { Notice, ErrorState } from "@/components/app/primitives";
 import { Button } from "@/components/ui/button";
@@ -10,6 +11,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { CLIENT_NAV } from "@/lib/app/constants";
 import { integrationsQuery, phoneNumbersQuery, unansweredQuery } from "@/lib/app/queries";
 import { useWorkspace } from "@/lib/app/workspace";
+import type { Brand } from "@/lib/shared";
 
 // The business workspace. Business users (managers and viewers) live here; the
 // platform team gets here only while viewing as a business. Agency staff and the
@@ -86,7 +88,7 @@ function ClientAppLayout() {
         <div className="border-b border-[#dcdaff] bg-[#f4f3ff] px-4 py-2 text-[12.5px] text-[#4338ca]">
           <div className="mx-auto flex max-w-[1400px] flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
             <span>
-              <span className="font-semibold">Staff view.</span> You're viewing <span className="font-medium">{ws.business.name}</span> as the platform team. This is read only.
+              <span className="font-semibold">Staff view.</span> You're viewing <span className="font-medium">{ws.business.name}</span> as {ws.isPlatformAdmin ? "the platform team" : "their agency"}. This is read only.
             </span>
             <button type="button" onClick={() => void ws.exitView()} className="self-start font-medium underline-offset-2 hover:underline sm:self-auto">
               Exit view
@@ -114,12 +116,21 @@ function ClientAppLayout() {
     return null;
   })();
 
+  // The company's branding (set by its agency in the console).
+  const brand = (ws.business as { brand?: Brand } | null)?.brand;
   return (
+    <div data-brand-shell>
+    <BusinessBrand brand={brand} />
     <AppShell
       nav={CLIENT_NAV}
       variant="client"
       brandTo="/app"
-      sidebarHeader={<WorkspaceSwitcher />}
+      sidebarHeader={
+        <>
+          <BrandLogo brand={brand} name={ws.business?.name} />
+          <WorkspaceSwitcher />
+        </>
+      }
       topbarRight={<DateRangeSelect value={ws.rangePreset} onChange={ws.setRangePreset} />}
       banner={banner}
       notifications={notifications}
@@ -134,5 +145,6 @@ function ClientAppLayout() {
         </div>
       )}
     </AppShell>
+    </div>
   );
 }

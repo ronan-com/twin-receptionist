@@ -1,6 +1,7 @@
 import type { Business as Receptionist, CallMessage } from "../../src/lib/shared";
 import { formatNumber } from "../../src/lib/shared";
 import { AuthError, createInvite, emailOf, requireRole, type Ctx } from "../accounts";
+import { changeBrand, ownBrand, uploadAsset } from "../brand";
 import { answeredBusiness } from "../answered";
 import { audit } from "../audit";
 import { iso, sql } from "../db";
@@ -57,15 +58,34 @@ type ClientRow = {
   suspended_at: Date | null;
   paused_at: Date | null;
   created_at: Date;
+  company_id: string | null;
+  company_name: string | null;
 };
 
-async function clientsInScope(scope: string | null, id: string | null = null): Promise<ClientRow[]> {
+async function clientsInScope(scope: string | null, id: string | null = null, companyId: string | null = null): Promise<ClientRow[]> {
   return (await sql`
-    select c.id, c.data, c.org_id, c.paused_at, c.created_at, o.name as org_name, o.sandbox, o.direct, o.suspended_at
-    from clients c join orgs o on o.id = c.org_id
+    select c.id, c.data, c.org_id, c.paused_at, c.created_at, c.company_id, m.name as company_name,
+      o.name as org_name, o.sandbox, o.direct, o.suspended_at
+    from clients c join orgs o on o.id = c.org_id left join companies m on m.id = c.company_id
     where (${scope}::uuid is null or c.org_id = ${scope}::uuid)
       and (${id}::uuid is null or c.id = ${id}::uuid)
+      and (${companyId}::uuid is null or c.company_id = ${companyId}::uuid)
     order by c.created_at desc`) as ClientRow[];
+}
+
+// Receptionists made outside the console (business sign-up, the API) get a company of
+// their own the first time the console looks: same id as the receptionist.
+async function ensureCompanies(scope: string | null): Promise<void> {
+  const loose = await sql`select 1 from clients where company_id is null and (${scope}::uuid is null or org_id = ${scope}::uuid) limit 1`;
+  if (!loose.length) return;
+  await sql`
+    insert into companies (id, org_id, name, industry, created_at)
+    select c.id, c.org_id, coalesce(nullif(c.data->'settings'->>'businessName', ''), 'Client'), coalesce(c.data->'settings'->>'industry', ''), c.created_at
+    from clients c where c.company_id is null and (${scope}::uuid is null or c.org_id = ${scope}::uuid)
+    on conflict (id) do nothing`;
+  await sql`
+    update clients c set company_id = c.id where c.company_id is null and (${scope}::uuid is null or c.org_id = ${scope}::uuid)
+      and exists (select 1 from companies m where m.id = c.id and m.org_id = c.org_id)`;
 }
 
 async function oneClient(ctx: Ctx, id: string): Promise<ClientRow> {
@@ -85,6 +105,8 @@ const bizRef = (c: ClientRow) => ({
   timezone: c.data.settings?.timezone ?? "Australia/Brisbane",
   org_id: c.org_id,
   org_name: c.org_name,
+  company_id: c.company_id,
+  company_name: c.company_name,
 });
 
 function businessRow(c: ClientRow) {
@@ -95,6 +117,8 @@ function businessRow(c: ClientRow) {
     paused_at: c.paused_at ? iso(c.paused_at) : null,
     agency_paused: Boolean(c.suspended_at),
     org_direct: Boolean(c.direct),
+    company_id: c.company_id,
+    company_name: c.company_name,
   };
 }
 
@@ -828,9 +852,397 @@ async function revokePlatformAdmin(ctx: Ctx, userId: string) {
   if (u) await audit(ctx, "platform_admin.revoked", { email: u.email, summary: `Removed platform admin access from ${u.email}` });
 }
 
+// ---------------------------------------------------------------- companies
+// An agency's client is a company. Its receptionists are clients rows (company_id),
+// and each receptionist carries the company's other automations (texts, email
+// replies, bookings, CRM webhook).
+
+// A Postgres array literal of ids (all UUIDs, checked).
+const pgArr = (ids: string[]) => `{${ids.filter((i) => UUID.test(i)).join(",")}}`;
+
+type CompanyRow = { id: string; org_id: string; name: string; industry: string; brand: Record<string, string>; created_at: Date; org_name: string; sandbox: boolean };
+
+async function companiesInScope(scope: string | null, id: string | null = null): Promise<CompanyRow[]> {
+  return (await sql`
+    select m.*, o.name as org_name, o.sandbox from companies m join orgs o on o.id = m.org_id
+    where (${scope}::uuid is null or m.org_id = ${scope}::uuid) and (${id}::uuid is null or m.id = ${id}::uuid)
+    order by lower(m.name)`) as CompanyRow[];
+}
+
+async function oneCompany(ctx: Ctx, id: string): Promise<CompanyRow> {
+  if (!UUID.test(id)) throw new ValidationError("Unknown client.");
+  const scope = scopeOf(ctx);
+  await ensureCompanies(scope);
+  let [m] = await companiesInScope(scope, id);
+  if (!m) {
+    // Old links name a receptionist: open its company.
+    const [c] = await clientsInScope(scope, id);
+    if (c?.company_id) [m] = await companiesInScope(scope, c.company_id);
+  }
+  if (!m) throw new AuthError("That client isn't in your console.", 404);
+  return m;
+}
+
+type Automation = { key: "voice" | "sms" | "email" | "booking" | "crm"; label: string; status: "live" | "off" | "paused" | "attention"; detail: string };
+
+async function automationsFor(rows: ClientRow[]): Promise<Map<string, Automation[]>> {
+  const ids = rows.map((c) => c.id);
+  const boxes = ids.length ? await sql`select client_id, data->>'address' as address, data->>'mode' as mode, data->>'lastError' as error from mailboxes where client_id = any(${pgArr(ids)}::uuid[])` : [];
+  const cals = ids.length ? await sql`select client_id, provider, account, last_error from calendar_links where client_id = any(${pgArr(ids)}::uuid[])` : [];
+  const box = new Map(boxes.map((b: any) => [b.client_id, b]));
+  const cal = new Map(cals.map((l: any) => [l.client_id, l]));
+  const out = new Map<string, Automation[]>();
+  for (const c of rows) {
+    const paused = statusOf(c) === "paused";
+    const nums = c.data.phoneNumbers ?? [];
+    const mobile = nums.find((n) => n.startsWith("+614"));
+    const b = c.data.booking;
+    const m: any = box.get(c.id);
+    const l: any = cal.get(c.id);
+    const st = (on: boolean, bad = false): Automation["status"] => (!on ? "off" : paused ? "paused" : bad ? "attention" : "live");
+    let host = "";
+    try {
+      host = b?.leadWebhook ? new URL(b.leadWebhook).host : "";
+    } catch {
+      host = "set";
+    }
+    out.set(c.id, [
+      { key: "voice", label: "Voice receptionist", status: paused ? "paused" : "live", detail: nums.length ? nums.map(formatNumber).join(", ") : "No number yet (test calls from the browser)" },
+      { key: "sms", label: "SMS texting", status: st(Boolean(mobile)), detail: mobile ? `Replies to texts on ${formatNumber(mobile)}` : "Needs a mobile number" },
+      { key: "email", label: "Email replies", status: st(Boolean(m), Boolean(m?.error)), detail: m ? `${m.address}${m.mode === "draft" ? " · drafts only" : ""}${m.error ? ` · ${m.error}` : ""}` : "Not connected" },
+      {
+        key: "booking",
+        label: "Bookings and calendar",
+        status: st(Boolean(b?.enabled), Boolean(l?.last_error)),
+        detail: b ? `${l ? `${l.provider === "google" ? "Google" : "Outlook"} calendar (${l.account})` : b.provider === "builtin" || !b.provider ? "Built-in calendar" : `${b.provider} calendar`}${b.enabled ? "" : " · switched off"}${l?.last_error ? ` · ${l.last_error}` : ""}` : "Takes messages only",
+      },
+      { key: "crm", label: "CRM webhook", status: st(Boolean(b?.leadWebhook)), detail: host ? `Leads sent to ${host}` : "Not set up" },
+    ]);
+  }
+  return out;
+}
+
+function companyRef(m: CompanyRow) {
+  return { id: m.id, name: m.name, industry: m.industry, org_id: m.org_id, org_name: m.org_name, is_demo: Boolean(m.sandbox), created_at: iso(m.created_at) };
+}
+
+async function companies(ctx: Ctx) {
+  const scope = scopeOf(ctx);
+  await ensureCompanies(scope);
+  const list = await companiesInScope(scope);
+  const rows = await clientsInScope(scope);
+  const autos = await automationsFor(rows);
+  const access = await sql`
+    select distinct a.user_id, c.company_id from client_access a join clients c on c.id = a.client_id
+    where (${scope}::uuid is null or c.org_id = ${scope}::uuid)`;
+  const invites = await sql`
+    select coalesce(i.company_id, c.company_id) as company_id, count(*)::int as n from invites i left join clients c on c.id = i.client_id
+    where i.role = 'customer' and i.expires_at > now() and (${scope}::uuid is null or i.org_id = ${scope}::uuid) group by 1`;
+  const calls = await sql`
+    select c.company_id, count(*)::int as n, max(l.started_at) as last_at from call_log l join clients c on c.id = l.client_id
+    where l.channel <> 'web' and l.started_at > now() - interval '30 days' and (${scope}::uuid is null or l.org_id = ${scope}::uuid)
+    group by 1`;
+  const inv = new Map(invites.map((r: any) => [r.company_id, r.n]));
+  const cl = new Map(calls.map((r: any) => [r.company_id, r]));
+  return list.map((m) => {
+    const mine = rows.filter((c) => c.company_id === m.id);
+    const all = mine.flatMap((c) => autos.get(c.id) ?? []);
+    const summary = (["voice", "sms", "email", "booking", "crm"] as const).map((key) => {
+      const of = all.filter((a) => a.key === key);
+      const status = of.some((a) => a.status === "attention") ? "attention" : of.some((a) => a.status === "live") ? "live" : of.some((a) => a.status === "paused") ? "paused" : "off";
+      return { key, label: of[0]?.label ?? key, status };
+    });
+    const k: any = cl.get(m.id);
+    return {
+      ...companyRef(m),
+      status: mine.length && mine.every((c) => statusOf(c) === "paused") ? "paused" : "active",
+      receptionists: mine.map((c) => ({ id: c.id, name: c.data.settings?.receptionistName || "Receptionist", business_name: c.data.settings?.businessName ?? "", status: statusOf(c), numbers: c.data.phoneNumbers ?? [], onboarding_pending: onboardingPending(c.data) })),
+      onboarding_pending: mine.some((c) => onboardingPending(c.data)),
+      automations: summary,
+      numbers: mine.reduce((n, c) => n + (c.data.phoneNumbers ?? []).length, 0),
+      customers: new Set(access.filter((a: any) => a.company_id === m.id).map((a: any) => a.user_id)).size,
+      pending_invites: inv.get(m.id) ?? 0,
+      calls_30d: k?.n ?? 0,
+      last_call_at: k?.last_at ? iso(k.last_at) : null,
+      branded: Object.keys(m.brand ?? {}).length > 0,
+    };
+  });
+}
+
+async function companyPeople(m: CompanyRow, rows: ClientRow[]) {
+  const ids = rows.map((c) => c.id);
+  const members = ids.length
+    ? await sql`
+        select u.id, u.email, u.name, min(a.created_at) as created_at, array_agg(a.client_id) as clients,
+          bool_or(a.role = 'manager') as manager
+        from client_access a join users u on u.id = a.user_id where a.client_id = any(${pgArr(ids)}::uuid[])
+        group by u.id, u.email, u.name order by min(a.created_at)`
+    : [];
+  const invites = await sql`
+    select i.token_hash, i.email, i.access_role, i.expires_at, i.created_at from invites i left join clients c on c.id = i.client_id
+    where i.role = 'customer' and i.expires_at > now() and i.org_id = ${m.org_id} and (i.company_id = ${m.id} or c.company_id = ${m.id})
+    order by i.created_at desc`;
+  return {
+    members: members.map((u: any) => ({
+      id: `${u.id}:${m.id}`,
+      user_id: u.id,
+      role: u.manager ? "admin" : "read_only",
+      access_role: u.manager ? "manager" : "viewer",
+      receptionists: u.clients as string[],
+      created_at: iso(u.created_at),
+      profile: { id: u.id, email: u.email, full_name: u.name || null },
+    })),
+    invitations: invites.map((i: any) => ({
+      id: i.token_hash.slice(0, 16),
+      email: i.email,
+      access_role: i.access_role ?? "viewer",
+      expires_at: iso(i.expires_at),
+      created_at: iso(i.created_at),
+    })),
+  };
+}
+
+async function companyDetail(ctx: Ctx, id: string) {
+  const m = await oneCompany(ctx, id);
+  const rows = await clientsInScope(m.org_id, null, m.id);
+  const ids = rows.map((c) => c.id);
+  const byId = indexed(rows);
+  const autos = await automationsFor(rows);
+  const none = ids.length === 0;
+  const calls = none ? [] : await sql`select * from call_log where client_id = any(${pgArr(ids)}::uuid[]) and channel <> 'web' order by started_at desc limit 25`;
+  const requests = none ? [] : await sql`select id, client_id, data, created_at from booking_requests where client_id = any(${pgArr(ids)}::uuid[]) order by id desc limit 25`;
+  const incidents = none ? [] : await sql`select * from incidents where client_id = any(${pgArr(ids)}::uuid[]) order by created_at desc limit 20`;
+  const numberRequests = none
+    ? []
+    : await sql`
+        select r.*, u.email as by_email from number_requests r left join users u on u.id = r.requested_by
+        where r.client_id = any(${pgArr(ids)}::uuid[]) order by r.created_at desc limit 20`;
+  const [counts] = none
+    ? [{ knowledge: 0, appointments: 0, leads: 0, calls: 0 }]
+    : await sql`
+        select
+          (select count(*)::int from knowledge_items where client_id = any(${pgArr(ids)}::uuid[])) as knowledge,
+          (select count(*)::int from booking_requests where client_id = any(${pgArr(ids)}::uuid[]) and data->>'kind' = 'booking') as appointments,
+          (select count(*)::int from booking_requests where client_id = any(${pgArr(ids)}::uuid[]) and data->>'kind' = 'callback') as leads,
+          (select count(*)::int from call_log where client_id = any(${pgArr(ids)}::uuid[]) and channel <> 'web') as calls`;
+  const { appointments, leads } = requestRows(requests, byId);
+  const audit = await sql`
+    select a.*, u.email as actor_email, o.name as org_name from audit_log a
+    left join users u on u.id = a.actor join orgs o on o.id = a.org_id
+    where a.org_id = ${m.org_id} and (a.client_id = any(${pgArr(ids.length ? ids : [m.id])}::uuid[]) or a.detail->>'companyId' = ${m.id})
+    order by a.created_at desc limit 20`;
+  return {
+    company: {
+      ...companyRef(m),
+      status: rows.length && rows.every((c) => statusOf(c) === "paused") ? "paused" : "active",
+      agency_paused: rows.some((c) => c.suspended_at),
+      onboarding_pending: rows.some((c) => onboardingPending(c.data)),
+    },
+    receptionists: rows.map((c) => {
+      const s = c.data.settings ?? ({} as Receptionist["settings"]);
+      return {
+        ...agentRow(c),
+        business_name: s.businessName ?? "",
+        paused_at: c.paused_at ? iso(c.paused_at) : null,
+        onboarding_pending: onboardingPending(c.data),
+        numbers: numberRows(c),
+        automations: autos.get(c.id) ?? [],
+        number_requests: numberRequests
+          .filter((r: any) => r.client_id === c.id)
+          .map((r: any) => ({ id: r.id, type: r.kind, note: r.note, status: r.status, phone_number: r.phone_number ?? "", reason: r.reason, requested_by: r.by_email ?? "", created_at: iso(r.created_at) })),
+        settings: {
+          industry: s.industry,
+          suburb: s.suburb,
+          timezone: s.timezone,
+          hours: s.hours,
+          services: s.services ?? [],
+          greeting: s.greeting ?? "",
+          tone: s.tone,
+          voice: s.voiceName ?? "",
+        },
+      };
+    }),
+    ...(await companyPeople(m, rows)),
+    counts,
+    calls: calls.map((r: any) => callRow(r, byId.get(r.client_id))),
+    appointments,
+    leads,
+    incidents: incidents.map((r: any) => incidentRow(r, byId.get(r.client_id), m.org_name)),
+    audit: audit.map((r: any) => auditRow(r, r.client_id ? byId.get(r.client_id) : undefined)),
+    brand: await ownBrand({ orgId: m.org_id, clientId: null, companyId: m.id }),
+  };
+}
+
+const nameOf = (v: unknown, what: string) => {
+  const s = String(v ?? "").trim().slice(0, 120);
+  if (!s) throw new ValidationError(`Give the ${what} a name.`);
+  return s;
+};
+
+async function createCompany(ctx: Ctx, input: any) {
+  // The platform admin may file a company under any agency; staff use their own.
+  let orgId = ctx.org!.id;
+  if (isPlatformScope(ctx) && input?.orgId) {
+    if (!UUID.test(String(input.orgId))) throw new ValidationError("Unknown agency.");
+    const [o] = await sql`select id from orgs where id = ${input.orgId}`;
+    if (!o) throw new ValidationError("Unknown agency.");
+    orgId = o.id;
+  }
+  const id = crypto.randomUUID();
+  const name = nameOf(input?.name, "client");
+  await sql`insert into companies (id, org_id, name, industry) values (${id}, ${orgId}, ${name}, ${String(input?.industry ?? "").slice(0, 40)})`;
+  await audit(ctx, "company.created", { companyId: id, summary: `Added client ${name}` }, { orgId });
+  return id;
+}
+
+async function updateCompany(ctx: Ctx, id: string, input: any) {
+  const m = await oneCompany(ctx, id);
+  const name = input?.name !== undefined ? nameOf(input.name, "client") : m.name;
+  const industry = input?.industry !== undefined ? String(input.industry).slice(0, 40) : m.industry;
+  await sql`update companies set name = ${name}, industry = ${industry} where id = ${id}`;
+  await audit(ctx, "company.updated", { companyId: id, summary: `Updated client ${name}` }, { orgId: m.org_id });
+}
+
+// Puts a receptionist into a company. Customers of the company get access to it too.
+async function attachReceptionist(ctx: Ctx, id: string, input: any) {
+  const m = await oneCompany(ctx, id);
+  const c = await oneClient(ctx, String(input?.clientId ?? ""));
+  if (c.org_id !== m.org_id) throw new ValidationError("That receptionist belongs to another agency.");
+  const old = c.company_id;
+  await sql.begin(async (tx) => {
+    await tx`update clients set company_id = ${m.id} where id = ${c.id}`;
+    await tx`
+      insert into client_access (user_id, client_id, role)
+      select distinct on (a.user_id) a.user_id, ${c.id}::uuid, a.role from client_access a join clients s on s.id = a.client_id
+      where s.company_id = ${m.id} and s.id <> ${c.id} order by a.user_id, (a.role = 'manager') desc
+      on conflict do nothing`;
+    // The company made for it automatically (empty now) goes.
+    if (old && old !== m.id) await tx`delete from companies where id = ${old} and not exists (select 1 from clients where company_id = ${old})`;
+  });
+  await audit(ctx, "company.receptionist_added", { companyId: m.id, summary: `Added ${c.data.settings?.receptionistName || "a receptionist"} to ${m.name}` }, { orgId: m.org_id, clientId: c.id });
+}
+
+async function setCompanyPaused(ctx: Ctx, id: string, input: any) {
+  canManage(ctx);
+  const m = await oneCompany(ctx, id);
+  const status = input?.status;
+  if (status !== "paused" && status !== "active") throw new ValidationError("Choose active or paused.");
+  await sql`update clients set paused_at = ${status === "paused" ? new Date() : null} where company_id = ${id}`;
+  await audit(ctx, status === "paused" ? "company.paused" : "company.resumed", { companyId: id, summary: `${status === "paused" ? "Paused" : "Resumed"} ${m.name}` }, { orgId: m.org_id });
+}
+
+// Invite a customer to a company: access to every receptionist it has (now and later).
+async function shareCompany(ctx: Ctx, id: string, input: any, base: string) {
+  canManage(ctx);
+  const m = await oneCompany(ctx, id);
+  const rows = await clientsInScope(m.org_id, null, m.id);
+  if (!rows.length) throw new ValidationError("Add a receptionist to this client first.");
+  const email = emailOf(input?.email);
+  const accessRole = input?.role === "viewer" || input?.role === "read_only" ? "viewer" : "manager";
+  const [existing] = await sql`
+    select m.role, u.id from memberships m join users u on u.id = m.user_id where m.org_id = ${m.org_id} and u.email = ${email}`;
+  let result: { url: string; emailed: boolean; added: boolean };
+  if (existing) {
+    if (existing.role !== "customer") throw new ValidationError(`${email} is on the agency's team already. Customers are separate people.`);
+    for (const c of rows) {
+      await sql`
+        insert into client_access (user_id, client_id, role) values (${existing.id}, ${c.id}, ${accessRole})
+        on conflict (user_id, client_id) do update set role = excluded.role`;
+    }
+    result = { url: "", emailed: false, added: true };
+  } else {
+    const invite = await createInvite(m.org_id, m.org_name, email, "customer", ctx.user, base, rows[0].id, m.name);
+    await sql`update invites set access_role = ${accessRole}, company_id = ${m.id} where org_id = ${m.org_id} and email = ${email} and role = 'customer'`;
+    result = { ...invite, added: false };
+  }
+  await audit(ctx, "company.shared", { companyId: m.id, email, role: accessRole, summary: `Invited ${email} to ${m.name} (${accessRole})` }, { orgId: m.org_id });
+  return { ...result, ...(await companyPeople(m, rows)) };
+}
+
+async function unshareCompany(ctx: Ctx, id: string, userId: string) {
+  canManage(ctx);
+  const m = await oneCompany(ctx, id);
+  if (!UUID.test(userId)) throw new ValidationError("Unknown person.");
+  await sql.begin(async (tx) => {
+    await tx`delete from client_access a using clients c where c.id = a.client_id and c.company_id = ${m.id} and a.user_id = ${userId}`;
+    const [left] = await tx`
+      select 1 from client_access a join clients c on c.id = a.client_id where a.user_id = ${userId} and c.org_id = ${m.org_id} limit 1`;
+    if (!left) {
+      await tx`delete from memberships where org_id = ${m.org_id} and user_id = ${userId} and role = 'customer'`;
+      await tx`delete from sessions where user_id = ${userId} and org_id = ${m.org_id}`;
+    }
+  });
+  await audit(ctx, "company.unshared", { companyId: m.id, userId, summary: `Removed a customer from ${m.name}` }, { orgId: m.org_id });
+  return companyPeople(m, await clientsInScope(m.org_id, null, m.id));
+}
+
+async function revokeCompanyInvite(ctx: Ctx, id: string, prefix: string) {
+  canManage(ctx);
+  const m = await oneCompany(ctx, id);
+  if (!/^[a-f0-9]{16}$/.test(prefix)) throw new ValidationError("Unknown invite.");
+  await sql`
+    delete from invites i where i.org_id = ${m.org_id} and i.role = 'customer' and left(i.token_hash, 16) = ${prefix}
+      and (i.company_id = ${m.id} or i.client_id in (select id from clients where company_id = ${m.id}))`;
+  await audit(ctx, "company.invite_revoked", { companyId: m.id, summary: `Revoked an invite to ${m.name}` }, { orgId: m.org_id });
+  return companyPeople(m, await clientsInScope(m.org_id, null, m.id));
+}
+
+async function companyBrand(ctx: Ctx, id: string, req: Request, method: string, kind: string | undefined) {
+  const m = await oneCompany(ctx, id);
+  const scope = { orgId: m.org_id, clientId: null, companyId: m.id };
+  if (!kind && method === "GET") return ownBrand(scope);
+  canManage(ctx);
+  if (!kind && method === "PUT") {
+    // Agency owners/admins (requireRole in brand.ts); the platform admin is an owner of their own org.
+    await changeBrand({ ...ctx, role: ctx.user.platformAdmin ? "owner" : ctx.role }, scope, await readBody(req));
+  } else if (kind && method === "POST") {
+    const len = Number(req.headers.get("content-length") ?? 0);
+    if (len > 2_000_000) throw new ValidationError("That image is too big.");
+    const bytes = new Uint8Array(await req.arrayBuffer());
+    await uploadAsset({ ...ctx, role: ctx.user.platformAdmin ? "owner" : ctx.role }, scope, kind as "logo" | "background", bytes);
+  } else return null;
+  await audit(ctx, "company.branded", { companyId: m.id, summary: `Changed the branding of ${m.name}` }, { orgId: m.org_id });
+  return ownBrand(scope);
+}
+
+
+// ---------------------------------------------------------------- onboarding links
+// "Send the client an onboarding link": the company and a receptionist with sensible
+// defaults are made now, and the client's own person is invited as a manager to finish
+// setting it up in their workspace. The receptionist carries data.onboarding:
+// "pending" until the client finishes ("done", set by the workspace), and the console
+// shows "Waiting for client to finish setup" meanwhile.
+
+export type ConsoleDeps = { createClient: (orgId: string, input: unknown, opts?: { quick?: boolean }) => Promise<Receptionist> };
+
+/** Still waiting for the client: flagged pending and not saved since it was made. */
+export const onboardingPending = (c: Receptionist) => c.onboarding === "pending" && c.createdAt === c.updatedAt;
+
+async function quickReceptionist(ctx: Ctx, deps: ConsoleDeps, m: CompanyRow): Promise<string> {
+  const created = await deps.createClient(m.org_id, { businessName: m.name, industry: m.industry || "other", defaultVoice: true }, { quick: true });
+  await sql`
+    update clients set company_id = ${m.id}, data = jsonb_set(data, '{onboarding}', '"pending"')
+    where id = ${created.id} and org_id = ${m.org_id}`;
+  await audit(ctx, "receptionist.create", { business: m.name, companyId: m.id, summary: `Made a receptionist for ${m.name} (client to finish setup)` }, { orgId: m.org_id, clientId: created.id });
+  return created.id;
+}
+
+async function sendOnboarding(ctx: Ctx, deps: ConsoleDeps, companyId: string | null, input: any, base: string) {
+  canManage(ctx);
+  const email = emailOf(input?.email);
+  let id = companyId;
+  if (!id) id = await createCompany(ctx, input);
+  const m = await oneCompany(ctx, id);
+  const rows = await clientsInScope(m.org_id, null, m.id);
+  if (!rows.length) await quickReceptionist(ctx, deps, m);
+  const shared = await shareCompany(ctx, m.id, { email, role: "manager" }, base);
+  await audit(ctx, "company.onboarding_sent", { companyId: m.id, email, summary: `Sent ${email} an onboarding link for ${m.name}` }, { orgId: m.org_id });
+  return { id: m.id, url: shared.url, emailed: shared.emailed, added: shared.added };
+}
+
 // ---------------------------------------------------------------- dispatch
 
-export async function consoleRoutes({ req, url, path, method, ctx, appUrl }: RouteArgs): Promise<Response | null> {
+export async function consoleRoutes({ req, url, path, method, ctx, appUrl }: RouteArgs, deps: ConsoleDeps): Promise<Response | null> {
   const rest = path.slice("/api/console".length) || "/";
   const get = method === "GET" || method === "HEAD";
 
@@ -843,6 +1255,11 @@ export async function consoleRoutes({ req, url, path, method, ctx, appUrl }: Rou
     if (rest === "/activity") return json(await activity(ctx));
     if (rest === "/system") return json(await system(ctx));
     if (rest === "/businesses") return json({ businesses: await businesses(ctx) });
+    if (rest === "/companies") return json({ companies: await companies(ctx) });
+    const co = rest.match(/^\/companies\/([^/]+)$/);
+    if (co) return json(await companyDetail(ctx, co[1]));
+    const coBrand = rest.match(/^\/companies\/([^/]+)\/brand$/);
+    if (coBrand) return json(await companyBrand(ctx, coBrand[1], req, method, undefined));
     const biz = rest.match(/^\/businesses\/([^/]+)$/);
     if (biz) return json(await businessDetail(ctx, biz[1]));
     if (rest === "/receptionists") return json({ agents: (await clientsInScope(scopeOf(ctx))).map(agentRow) });
@@ -861,6 +1278,39 @@ export async function consoleRoutes({ req, url, path, method, ctx, appUrl }: Rou
     return null;
   }
 
+  if (rest === "/onboarding" && method === "POST") return json(await sendOnboarding(ctx, deps, null, await readBody(req), appUrl), 201);
+  if (rest === "/companies" && method === "POST") {
+    const id = await createCompany(ctx, await readBody(req));
+    return json({ id }, 201);
+  }
+  const company = rest.match(/^\/companies\/([^/]+)(\/.*)?$/);
+  if (company) {
+    const [, id, sub = ""] = company;
+    if (sub === "" && method === "PUT") {
+      await updateCompany(ctx, id, await readBody(req));
+      return json(await companyDetail(ctx, id));
+    }
+    if (sub === "/status" && method === "PUT") {
+      await setCompanyPaused(ctx, id, await readBody(req));
+      return json(await companyDetail(ctx, id));
+    }
+    if (sub === "/receptionists" && method === "POST") {
+      await attachReceptionist(ctx, id, await readBody(req));
+      return json(await companyDetail(ctx, id));
+    }
+    if (sub === "/members" && method === "POST") return json(await shareCompany(ctx, id, await readBody(req), appUrl), 201);
+    if (sub === "/onboarding" && method === "POST") return json(await sendOnboarding(ctx, deps, id, await readBody(req), appUrl), 201);
+    const member = sub.match(/^\/members\/([^/]+)$/);
+    if (member && method === "DELETE") return json(await unshareCompany(ctx, id, member[1]));
+    const invite = sub.match(/^\/invites\/([^/]+)$/);
+    if (invite && method === "DELETE") return json(await revokeCompanyInvite(ctx, id, invite[1]));
+    const brand = sub.match(/^\/brand(?:\/(logo|background))?$/);
+    if (brand) {
+      const out = await companyBrand(ctx, id, req, method, brand[1]);
+      return out ? json(out, brand[1] ? 201 : 200) : null;
+    }
+    return null;
+  }
   const biz = rest.match(/^\/businesses\/([^/]+)(\/.*)?$/);
   if (biz) {
     const [, id, sub = ""] = biz;

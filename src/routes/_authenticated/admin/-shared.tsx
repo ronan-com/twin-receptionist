@@ -138,3 +138,21 @@ export function CallSheet({ callId, onClose }: { callId: string | null; onClose:
 
 /** Copy for the honest stubs. */
 export const NOT_BILLED = "Usage is counted from the calls we log. Billing isn't connected yet, so nothing here is charged.";
+
+const AUTOMATION_TONE = { live: "success", attention: "danger", paused: "warning", off: "muted" } as const;
+const AUTOMATION_SHORT: Record<string, string> = { voice: "Voice", sms: "SMS", email: "Email", booking: "Bookings", crm: "CRM" };
+
+/** A company's automations as small status chips (live / needs attention / paused / off). */
+export function AutomationChips({ items, compact }: { items: { key: string; label: string; status: "live" | "off" | "paused" | "attention" }[]; compact?: boolean }) {
+  return (
+    <div className="flex flex-wrap gap-1" data-automations>
+      {items.map((a) => (
+        <StatusBadge key={a.key} tone={AUTOMATION_TONE[a.status]} dot={a.status !== "off"}>
+          <span title={`${a.label}: ${a.status === "live" ? "on" : a.status === "attention" ? "needs attention" : a.status}`} data-automation={a.key} data-status={a.status}>
+            {compact ? AUTOMATION_SHORT[a.key] ?? a.label : a.label}
+          </span>
+        </StatusBadge>
+      ))}
+    </div>
+  );
+}

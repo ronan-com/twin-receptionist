@@ -136,6 +136,24 @@ export async function sessionFrom(req: Request): Promise<Ctx | null> {
       };
     }
   }
+  // Agency owners/admins viewing one of their own clients' workspaces, read-only.
+  if (!s.platform_admin && s.view_client_id) {
+    const [c] = await sql`
+      select c.id, c.data->'settings'->>'businessName' as business, o.id as org_id, o.name
+      from clients c join orgs o on o.id = c.org_id
+      join memberships m on m.org_id = o.id and m.user_id = ${user.id} and m.role in ('owner', 'admin')
+      where c.id = ${s.view_client_id} and o.id = ${s.view_org_id}`;
+    if (c) {
+      return {
+        tokenHash,
+        user,
+        org: { id: c.org_id, name: c.name },
+        role: "customer",
+        viewing: { org: c.name, client: c.id, business: c.business ?? "" },
+      };
+    }
+    await sql`update sessions set view_org_id = null, view_client_id = null where token_hash = ${tokenHash}`;
+  }
   // The org this session is working in, or their first one if they've left it.
   const [m] = await sql`
     select m.role, o.id, o.name from memberships m join orgs o on o.id = m.org_id
@@ -402,7 +420,7 @@ export async function removeMember(ctx: Ctx, userId: string): Promise<void> {
 
 async function inviteFor(token: string) {
   const [i] = await sql`
-    select i.token_hash, i.org_id, i.email, i.role, i.client_id, o.name as org_name, u.id as user_id,
+    select i.token_hash, i.org_id, i.email, i.role, i.client_id, i.access_role, i.company_id, o.name as org_name, u.id as user_id,
       (select c.data->'settings'->>'businessName' from clients c where c.id = i.client_id) as business
     from invites i join orgs o on o.id = i.org_id left join users u on u.email = i.email
     where i.token_hash = ${hashToken(token)} and i.expires_at > now()`;
@@ -431,7 +449,15 @@ export async function acceptInvite(token: string, input: any): Promise<string> {
   }
   await sql.begin(async (tx) => {
     await tx`insert into memberships (org_id, user_id, role) values (${i.org_id}, ${userId}, ${i.role}) on conflict do nothing`;
-    if (i.client_id) await tx`insert into client_access (user_id, client_id) values (${userId}, ${i.client_id}) on conflict do nothing`;
+    const role = i.access_role === "manager" ? "manager" : "viewer";
+    if (i.client_id) await tx`insert into client_access (user_id, client_id, role) values (${userId}, ${i.client_id}, ${role}) on conflict do nothing`;
+    // An invite from a company (console): every receptionist of that company.
+    if (i.company_id) {
+      await tx`
+        insert into client_access (user_id, client_id, role)
+        select ${userId}, c.id, ${role} from clients c where c.company_id = ${i.company_id} and c.org_id = ${i.org_id}
+        on conflict do nothing`;
+    }
     await tx`delete from invites where token_hash = ${i.token_hash}`;
   });
   return startSession(userId, i.org_id);

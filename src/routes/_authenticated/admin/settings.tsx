@@ -1,8 +1,8 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { ImageUp, ShieldCheck, Trash2, UserPlus, X } from "lucide-react";
+import { ShieldCheck, Trash2, UserPlus, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -13,6 +13,7 @@ import { Field } from "@/components/app/forms";
 import { fmtDate } from "@/lib/app/format";
 import { brandApi, getInternalAdmins, grantPlatformAdmin, revokePlatformAdmin, teamApi } from "@/lib/api/console";
 import type { Brand } from "@/lib/shared";
+import { BrandEditor } from "./-brand";
 import { LinkBox, READ_ONLY_HINT, useConsole } from "./-shared";
 
 const TABS = ["team", "branding", "account", "platform"] as const;
@@ -198,87 +199,26 @@ function TeamSection() {
 // ---- Branding: logo and background for the agency's own screens and its clients' ----
 
 function BrandingSection() {
-  const { ws, canManage, readOnly } = useConsole();
+  const { ws, canManage, readOnly, orgName } = useConsole();
   const qc = useQueryClient();
   const q = useQuery({ queryKey: ["console", "brand"], queryFn: brandApi.get });
-  const [color, setColor] = useState("#f6f8fa");
-  const logoInput = useRef<HTMLInputElement>(null);
-  const bgInput = useRef<HTMLInputElement>(null);
-  useEffect(() => {
-    if (q.data?.bgColor) setColor(q.data.bgColor);
-  }, [q.data?.bgColor]);
-
-  const saved = async (b: Brand, message: string) => {
-    qc.setQueryData(["console", "brand"], b);
-    toast.success(message);
-    await ws.refresh();
-  };
-  const upload = useMutation({
-    mutationFn: ({ kind, file }: { kind: "logo" | "background"; file: File }) => brandApi.upload(kind, file),
-    onSuccess: (b, v) => saved(b, v.kind === "logo" ? "Logo saved" : "Background saved"),
-    onError: (e: Error) => toast.error("Couldn't upload", { description: e.message }),
-  });
-  const change = useMutation({
-    mutationFn: (c: { body: Parameters<typeof brandApi.set>[0]; message: string }) => brandApi.set(c.body),
-    onSuccess: (b, v) => saved(b, v.message),
-    onError: (e: Error) => toast.error(e.message),
-  });
-  const busy = upload.isPending || change.isPending;
-  const b = q.data;
-
   if (q.error) return <ErrorState message={(q.error as Error).message} onRetry={() => void q.refetch()} />;
   return (
     <div className="space-y-4" data-section="branding">
       {readOnly ? <Notice tone="info">{READ_ONLY_HINT}</Notice> : !canManage ? <Notice tone="info">Only owners and admins can change the branding.</Notice> : null}
-      <Panel title="Logo" description="Shown on your console and on your clients' dashboards. PNG, JPEG or WebP, up to 400 KB.">
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
-          <div className="flex h-20 w-full items-center justify-center rounded-[6px] border border-hairline bg-canvas-2 sm:w-56" data-brand-logo={b?.logo ? "set" : "none"}>
-            {b?.logo ? <img src={b.logo} alt="Your logo" className="max-h-16 max-w-[90%] object-contain" /> : <span className="text-[12px] text-ink-muted">No logo</span>}
-          </div>
-          {canManage ? (
-            <div className="flex flex-wrap gap-2">
-              <input ref={logoInput} type="file" accept="image/png,image/jpeg,image/webp" hidden data-upload="logo" onChange={(e) => e.target.files?.[0] && upload.mutate({ kind: "logo", file: e.target.files[0] })} />
-              <Button size="sm" variant="outline" disabled={busy} onClick={() => logoInput.current?.click()}>
-                <ImageUp className="mr-1.5 h-3.5 w-3.5" /> {b?.logo ? "Replace logo" : "Upload logo"}
-              </Button>
-              {b?.logo ? (
-                <Button size="sm" variant="ghost" disabled={busy} onClick={() => change.mutate({ body: { removeLogo: true }, message: "Logo removed" })}>
-                  Remove
-                </Button>
-              ) : null}
-            </div>
-          ) : null}
-        </div>
+      <Panel title="Default branding" description="Used on your clients' workspaces unless a client has its own (set it on the client's page).">
+        <BrandEditor
+          brand={q.data}
+          canManage={canManage}
+          previewName={orgName || "Your client"}
+          upload={brandApi.upload}
+          save={brandApi.set}
+          onSaved={async (b: Brand) => {
+            qc.setQueryData(["console", "brand"], b);
+            await ws.refresh();
+          }}
+        />
       </Panel>
-      <Panel title="Background" description="The page behind the cards. Pick a colour, or upload an image (PNG, JPEG or WebP, up to 1.5 MB).">
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
-          <div
-            className="flex h-20 w-full items-center justify-center rounded-[6px] border border-hairline sm:w-56"
-            style={{ background: b?.bgImage ? `center/cover url(${b.bgImage})` : b?.bgColor || "var(--color-canvas-2, #f6f8fa)" }}
-            data-brand-background={b?.bgImage ? "image" : b?.bgColor ? "color" : "none"}
-          >
-            {!b?.bgImage && !b?.bgColor ? <span className="text-[12px] text-ink-muted">Default</span> : null}
-          </div>
-          {canManage ? (
-            <div className="flex flex-wrap items-center gap-2">
-              <input type="color" aria-label="Background colour" value={color} onChange={(e) => setColor(e.target.value)} className="h-8 w-10 cursor-pointer rounded border border-hairline bg-white p-0.5" />
-              <Button size="sm" variant="outline" disabled={busy} onClick={() => change.mutate({ body: { bgColor: color }, message: "Background colour saved" })} data-action="use-colour">
-                Use colour
-              </Button>
-              <input ref={bgInput} type="file" accept="image/png,image/jpeg,image/webp" hidden data-upload="background" onChange={(e) => e.target.files?.[0] && upload.mutate({ kind: "background", file: e.target.files[0] })} />
-              <Button size="sm" variant="outline" disabled={busy} onClick={() => bgInput.current?.click()}>
-                <ImageUp className="mr-1.5 h-3.5 w-3.5" /> Upload image
-              </Button>
-              {b?.bgColor || b?.bgImage ? (
-                <Button size="sm" variant="ghost" disabled={busy} onClick={() => change.mutate({ body: { bgColor: "", removeBackground: true }, message: "Background reset" })}>
-                  Reset
-                </Button>
-              ) : null}
-            </div>
-          ) : null}
-        </div>
-      </Panel>
-      <p className="text-[11.5px] text-ink-muted">A business can have its own logo and background too; anything it leaves blank uses yours.</p>
     </div>
   );
 }

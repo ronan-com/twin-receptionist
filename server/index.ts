@@ -661,7 +661,7 @@ async function route(req: Request, server?: { requestIP(r: Request): { address: 
     if (area[1] === "console") {
       // Agency staff and the platform team only.
       if (ctx.role === "customer" && !ctx.user.platformAdmin) return json({ error: "Not allowed." }, 403);
-      return (await consoleRoutes(base)) ?? json({ error: "Not found" }, 404);
+      return (await consoleRoutes(base, { createClient })) ?? json({ error: "Not found" }, 404);
     }
     let rest = area[2] ?? "";
     let client: Business | null = null;
@@ -902,7 +902,7 @@ async function route(req: Request, server?: { requestIP(r: Request): { address: 
         try {
           return Response.redirect(await dashboardSignInStart(provider, orgId, client), 302);
         } catch (err) {
-          return redirectTo(`/clients/${client.id}?error=${encodeURIComponent((err as Error).message)}`);
+          return redirectTo(`/admin/clients/${client.id}?error=${encodeURIComponent((err as Error).message)}`);
         }
       }
     } else if (match[2] === "/booking/test") {

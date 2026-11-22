@@ -11,7 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { PageHeader, Panel, Notice, ErrorState } from "@/components/app/primitives";
 import { Field } from "@/components/app/forms";
 import { cn } from "@/lib/utils";
-import { createReceptionist, getVoices } from "@/lib/api/console";
+import { companyApi, createReceptionist, getVoices } from "@/lib/api/console";
 import {
   DAYS,
   INDUSTRIES,
@@ -30,11 +30,13 @@ import { READ_ONLY_HINT, useConsole } from "./-shared";
 // The receptionist setup wizard (ported from the old Twin Setup page): four short
 // steps, then the existing POST /api/clients creates the phone assistant.
 export const Route = createFileRoute("/_authenticated/admin/clients/new")({
+  validateSearch: (s: Record<string, unknown>): { company?: string } => (typeof s.company === "string" && /^[a-f0-9-]{36}$/.test(s.company) ? { company: s.company } : {}),
   head: () => ({ meta: [{ title: "New receptionist — Answered admin" }] }),
   component: NewReceptionistPage,
 });
 
-const STEPS = ["The business", "Hours and services", "Voice", "Review"];
+const STEPS = ["Client and business", "Hours and services", "Voice", "Review"];
+const NEW = "new";
 
 function problem(step: number, s: Settings): string {
   if (step === 0 && s.businessName.trim().length < 2) return "Enter the business name.";
@@ -48,13 +50,33 @@ function problem(step: number, s: Settings): string {
 }
 
 function NewReceptionistPage() {
-  const { readOnly, orgName, platform } = useConsole();
+  const { ws, readOnly, orgName, platform } = useConsole();
   const navigate = useNavigate();
   const qc = useQueryClient();
   const [step, setStep] = useState(0);
   const [settings, setSettings] = useState<Settings>(blankSettings);
   const [error, setError] = useState("");
   const [creating, setCreating] = useState(false);
+  const search = Route.useSearch();
+  const companiesQ = useQuery({ queryKey: ["console", "companies"], queryFn: companyApi.list });
+  const [companyId, setCompanyId] = useState<string>(search.company ?? NEW);
+  // Receptionists are made in the org you work in, so only its clients can take them.
+  const own = (companiesQ.data ?? []).filter((c) => c.org_id === ws.org?.id);
+  const chosen = own.find((c) => c.id === companyId);
+  // Coming from a client's page: start with its name and industry.
+  useEffect(() => {
+    if (!chosen) return;
+    setSettings((s) =>
+      s.businessName
+        ? s
+        : {
+            ...s,
+            businessName: chosen.name,
+            ...(chosen.industry ? { industry: chosen.industry as IndustryKey, services: [...industry(chosen.industry as IndustryKey).services], hours: defaultHours(chosen.industry as IndustryKey) } : {}),
+          },
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [chosen?.id]);
   const voicesQ = useQuery({ queryKey: ["console", "voices-raw"], queryFn: getVoices, staleTime: 5 * 60_000 });
   const voices = voicesQ.data ?? [];
 
@@ -80,12 +102,15 @@ function NewReceptionistPage() {
     setCreating(true);
     setError("");
     try {
+      // The client (company) first, then its receptionist inside it.
+      const target = companyId === NEW ? await companyApi.create({ name: settings.businessName.trim(), industry: settings.industry }) : companyId;
       const created = await createReceptionist(settings);
+      await companyApi.attach(target, created.id);
       await qc.invalidateQueries({ queryKey: ["admin"] });
       await qc.invalidateQueries({ queryKey: ["console"] });
       await qc.invalidateQueries({ queryKey: ["businesses"] });
       toast.success(`${settings.businessName.trim()} is ready`, { description: "Share it with the business, or request a phone number." });
-      void navigate({ to: "/admin/clients/$businessId", params: { businessId: created.id } });
+      void navigate({ to: "/admin/clients/$businessId", params: { businessId: target } });
     } catch (err) {
       setError((err as Error).message);
       setCreating(false);
@@ -125,13 +150,31 @@ function NewReceptionistPage() {
 
       <Panel>
         <div className="space-y-5" data-step={step}>
-          {step === 0 ? <BusinessStep value={settings} onChange={patch} /> : null}
+          {step === 0 ? (
+            <>
+              <Field label="Client" htmlFor="w-company" hint="The company this receptionist works for. A client can have several receptionists.">
+                <Select value={companyId} onValueChange={setCompanyId}>
+                  <SelectTrigger id="w-company" data-select="company"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value={NEW}>New client (named after the business)</SelectItem>
+                    {own.map((c) => (
+                      <SelectItem key={c.id} value={c.id}>
+                        {c.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </Field>
+              <BusinessStep value={settings} onChange={patch} />
+            </>
+          ) : null}
           {step === 1 ? <HoursStep value={settings} onChange={patch} /> : null}
           {step === 2 ? (
             voicesQ.error ? <ErrorState message={(voicesQ.error as Error).message} onRetry={() => void voicesQ.refetch()} /> : <VoiceStep value={settings} onChange={patch} voices={voices} loading={voicesQ.isPending} />
           ) : null}
           {step === 3 ? (
             <dl className="divide-y divide-hairline text-[13px]" data-review>
+              <ReviewRow label="Client">{chosen ? chosen.name : `${settings.businessName} (new)`}</ReviewRow>
               <ReviewRow label="Business">
                 {settings.businessName}
                 <span className="text-ink-muted"> · {industry(settings.industry).label}{settings.suburb ? ` · ${settings.suburb}` : ""}</span>

@@ -265,6 +265,84 @@ export const getAdminProviderConfigs = async () => [] as never[];
 export const getAdminIntegrations = async () => ({ integrations: [] as never[], events: [] as never[] });
 export const getAdminBilling = async () => ({ plans: [] as never[], subscriptions: [] as never[], invoices: [] as never[], usage: [] as never[] });
 
+// ---- Companies (an agency's clients) ----
+
+export type AutomationKey = "voice" | "sms" | "email" | "booking" | "crm";
+export type AutomationStatus = "live" | "off" | "paused" | "attention";
+export type Automation = { key: AutomationKey; label: string; status: AutomationStatus; detail: string };
+
+export type CompanyRef = { id: string; name: string; industry: string; org_id: string; org_name: string; is_demo: boolean; created_at: string };
+
+export type CompanyRow = CompanyRef & {
+  status: "active" | "paused";
+  receptionists: { id: string; name: string; business_name: string; status: "active" | "paused"; numbers: string[]; onboarding_pending: boolean }[];
+  /** Made with an onboarding link and the client hasn't finished setting up yet. */
+  onboarding_pending: boolean;
+  automations: { key: AutomationKey; label: string; status: AutomationStatus }[];
+  numbers: number;
+  customers: number;
+  pending_invites: number;
+  calls_30d: number;
+  last_call_at: string | null;
+  branded: boolean;
+};
+
+export type CompanyReceptionist = AdminAgentRow & {
+  business_name: string;
+  paused_at: string | null;
+  onboarding_pending: boolean;
+  numbers: AdminNumberRow[];
+  automations: Automation[];
+  number_requests: ConsoleNumberRequest[];
+  settings: { industry: string; suburb: string; timezone: string; hours: Settings["hours"]; services: string[]; greeting: string; tone: string; voice: string };
+};
+
+export type CompanyPerson = ConsolePerson & { receptionists: string[] };
+
+export type CompanyDetail = {
+  company: CompanyRef & { status: "active" | "paused"; agency_paused: boolean; onboarding_pending: boolean };
+  receptionists: CompanyReceptionist[];
+  members: CompanyPerson[];
+  invitations: ConsoleInvite[];
+  counts: { knowledge: number; appointments: number; leads: number; calls: number };
+  calls: ConsoleCall[];
+  appointments: ConsoleAppointment[];
+  leads: ConsoleLead[];
+  incidents: ConsoleIncident[];
+  audit: ConsoleAudit[];
+  brand: Brand;
+};
+
+type People = { members: CompanyPerson[]; invitations: ConsoleInvite[] };
+
+export const companyApi = {
+  list: async () => (await api.get<{ companies: CompanyRow[] }>("/api/console/companies")).companies,
+  get: (id: string) => api.get<CompanyDetail>(`/api/console/companies/${id}`),
+  create: async (input: { name: string; industry?: string; orgId?: string }) => (await api.post<{ id: string }>("/api/console/companies", input)).id,
+  update: (id: string, input: { name?: string; industry?: string }) => api.put<CompanyDetail>(`/api/console/companies/${id}`, input),
+  setStatus: (id: string, status: "active" | "paused") => api.put<CompanyDetail>(`/api/console/companies/${id}/status`, { status }),
+  attach: (id: string, clientId: string) => api.post<CompanyDetail>(`/api/console/companies/${id}/receptionists`, { clientId }),
+  share: (id: string, email: string, role: "manager" | "viewer") =>
+    api.post<{ url: string; emailed: boolean; added: boolean } & People>(`/api/console/companies/${id}/members`, { email, role }),
+  unshare: (id: string, userId: string) => api.del<People>(`/api/console/companies/${id}/members/${userId}`),
+  revokeInvite: (id: string, inviteId: string) => api.del<People>(`/api/console/companies/${id}/invites/${inviteId}`),
+  /** "Send the client an onboarding link": a new company (name, industry) or an existing one (id). */
+  sendOnboarding: (input: { id?: string; name?: string; industry?: string; email: string }) =>
+    api.post<{ id: string; url: string; emailed: boolean; added: boolean }>(input.id ? `/api/console/companies/${input.id}/onboarding` : "/api/console/onboarding", input),
+  brand: (id: string) => api.get<Brand>(`/api/console/companies/${id}/brand`),
+  setBrand: (id: string, change: BrandChange) => api.put<Brand>(`/api/console/companies/${id}/brand`, change),
+  upload: (id: string, kind: "logo" | "background", file: File) => uploadBrand(`/api/console/companies/${id}/brand/${kind}`, file),
+};
+
+export type BrandChange = { bgColor?: string; primary?: string; accent?: string; sidebar?: string; removeLogo?: boolean; removeBackground?: boolean };
+
+async function uploadBrand(path: string, file: File): Promise<Brand> {
+  const res = await fetch(path, { method: "POST", credentials: "same-origin", body: file });
+  const data = await res.json().catch(() => null);
+  if (!res.ok) throw new Error((data && data.error) || `Upload failed (${res.status}).`);
+  return data as Brand;
+}
+
 // ---- Console writes (each is audited on the server) ----
 
 export const setBusinessStatus = (id: string, status: "active" | "paused") => api.put<AdminBusinessDetail>(`/api/console/businesses/${id}`, { status });
@@ -317,13 +395,8 @@ export const teamApi = {
 
 export const brandApi = {
   get: () => api.get<Brand>("/api/org/brand"),
-  set: (change: { bgColor?: string; removeLogo?: boolean; removeBackground?: boolean }) => api.put<Brand>("/api/org/brand", change),
-  async upload(kind: "logo" | "background", file: File): Promise<Brand> {
-    const res = await fetch(`/api/org/brand/${kind}`, { method: "POST", credentials: "same-origin", body: file });
-    const data = await res.json().catch(() => null);
-    if (!res.ok) throw new Error((data && data.error) || `Upload failed (${res.status}).`);
-    return data as Brand;
-  },
+  set: (change: BrandChange) => api.put<Brand>("/api/org/brand", change),
+  upload: (kind: "logo" | "background", file: File) => uploadBrand(`/api/org/brand/${kind}`, file),
 };
 
 /** Answered's pages wrote audit rows from the browser; our server writes them itself. */

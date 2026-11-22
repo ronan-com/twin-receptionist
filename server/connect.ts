@@ -115,7 +115,7 @@ export async function signInFinish(provider: OAuthProvider, params: URLSearchPar
   if (!pending) {
     return `/connect/expired?error=${encodeURIComponent("That sign-in took too long or was already used. Please try again.")}`;
   }
-  const where = pending.linkToken ? `/connect/${pending.linkToken}` : `/clients/${pending.clientId}`;
+  const where = pending.linkToken ? `/connect/${pending.linkToken}` : `/admin/clients/${pending.clientId}`;
   try {
     if (params.get("error")) throw new ValidationError("Sign-in was cancelled.");
     const result = await finishSignIn(pending, params.get("code") ?? "");

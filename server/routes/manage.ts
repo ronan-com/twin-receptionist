@@ -92,9 +92,24 @@ async function voicesSafe(): Promise<Voice[]> {
   }
 }
 
+// ---- Pause (area R) ----
+// One pause state: clients.paused_at (area C, migration 013). paused_by (015) says who:
+// 'business' = paused from the Receptionist page, which keeps taking messages and can be
+// resumed there; null = paused from the console (or the whole agency is suspended), which
+// only the agency or platform can lift. settings.paused holds what callers hear meanwhile.
+type PauseState = { by: "agency" | "business" | null; at: string | null };
+
+export async function pauseStateOf(c: Business, orgSuspended: boolean): Promise<PauseState> {
+  const [r] = await sql`select paused_at, paused_by from clients where id = ${c.id}`;
+  if (orgSuspended || (r?.paused_at && r.paused_by !== "business")) return { by: "agency", at: r?.paused_at ? iso(r.paused_at) : null };
+  if (c.settings.paused || r?.paused_by === "business") return { by: "business", at: c.settings.paused?.at ?? (r?.paused_at ? iso(r.paused_at) : null) };
+  return { by: null, at: null };
+}
+
 // A2: one receptionist is one Answered agent.
-async function answeredAgent(c: Business, paused: boolean, voices?: Voice[]) {
+async function answeredAgent(c: Business, orgSuspended: boolean, voices?: Voice[]) {
   const s = c.settings;
+  const pause = await pauseStateOf(c, orgSuspended);
   const list = voices ?? (await voicesSafe());
   const v = list.find((x) => x.id === s.voiceId);
   const live = bookingLive(c);
@@ -103,11 +118,10 @@ async function answeredAgent(c: Business, paused: boolean, voices?: Voice[]) {
     id: c.id,
     business_id: c.id,
     name: s.receptionistName || "Receptionist",
-    status: paused || s.paused ? "paused" : "active",
-    // Ours (area R): who paused it. "agency" = the agency or platform paused the whole
-    // account (only they can resume); "business" = paused from this page.
-    paused_by: paused ? "agency" : s.paused ? "business" : null,
-    paused_at: s.paused?.at ?? null,
+    status: pause.by ? "paused" : "active",
+    // Ours (area R): who paused it ("agency" covers the agency and the platform team).
+    paused_by: pause.by,
+    paused_at: pause.at,
     paused_message: s.paused?.message ?? "",
     greeting: s.greeting,
     tone: s.tone,
@@ -540,7 +554,7 @@ export async function manageRoutes(args: ClientRouteArgs): Promise<Response | nu
       const body = await readBody(req);
       const current = await answeredAgent(client, paused);
       if (body.status !== undefined && body.status !== current.status) {
-        throw new ValidationError("Pausing a receptionist is done by your agency or the platform team.");
+        throw new ValidationError("Use Pause receptionist (POST /receptionist/pause) to pause or resume it.");
       }
       let s: Settings = { ...client.settings };
       if (body.name !== undefined) s.receptionistName = str(body.name, 30);
@@ -596,27 +610,32 @@ export async function manageRoutes(args: ClientRouteArgs): Promise<Response | nu
     }
   }
   // Area R: the business pauses or resumes its own receptionist. While paused, callers
-  // hear the pause message, a message is taken and nothing is booked (server/prompt.ts,
-  // syncAssistant and the booking hooks). Saved and pushed to the phone provider first;
-  // only then does it count. A pause by the agency or platform is theirs to lift.
+  // hear the pause message, a message is taken and nothing is booked or transferred
+  // (server/prompt.ts, syncAssistant, withAutomations and the booking hooks). It is saved
+  // and pushed to the phone provider first; only then is clients.paused_at set. A pause
+  // from the console is the agency's or platform's to lift.
   if (rest === "/receptionist/pause" && method === "POST") {
     const body = await readBody(req);
     const pause = body?.paused !== false;
-    if (!pause && paused) throw new ValidationError("Your agency or the platform team has paused this account. Contact them to resume it.");
-    if (!pause && !client.settings.paused) return json({ agent: await answeredAgent(client, paused), applied: false, demo: isDemo(client.assistantId) });
+    const state = await pauseStateOf(client, paused);
+    if (state.by === "agency") throw new ValidationError("Your agency or the platform team has paused this receptionist. Contact them to resume it.");
+    if (!pause && state.by === null) return json({ agent: await answeredAgent(client, paused), applied: false, demo: isDemo(client.assistantId) });
     const s: Settings = {
       ...client.settings,
       paused: pause ? { at: client.settings.paused?.at ?? new Date().toISOString(), message: str(body?.message, 300) || DEFAULT_PAUSE_MESSAGE } : null,
     };
+    // Throws (and changes nothing) if the phone provider refuses the new greeting and script.
     let next = await d.updateClient({ ...client, onboarding: onboardingOf(client) } as Business, s);
     let warning: string | undefined;
     try {
-      // The tools: booking off while paused, back on when resumed.
+      // The tools: only take-a-message while paused, booking back on when resumed.
       next = await d.syncAssistant(next);
     } catch (err) {
       warning = "The greeting and script were updated, but the booking tools couldn't be changed just now. Bookings are refused while paused either way.";
       await recordIncident({ kind: "receptionist_pause", orgId: clientOrgId, clientId: client.id, message: `Couldn't update the tools: ${(err as Error).message}`.slice(0, 300) }).catch(() => {});
     }
+    if (pause) await sql`update clients set paused_at = coalesce(paused_at, ${new Date(s.paused!.at)}), paused_by = 'business' where id = ${client.id}`;
+    else await sql`update clients set paused_at = null, paused_by = null where id = ${client.id} and paused_by = 'business'`;
     await audit(ctx, pause ? "receptionist.paused" : "receptionist.resumed", { summary: pause ? "Receptionist paused" : "Receptionist resumed" }, where);
     return json({ agent: await answeredAgent(next, paused), applied: !isDemo(next.assistantId), demo: isDemo(next.assistantId), warning });
   }

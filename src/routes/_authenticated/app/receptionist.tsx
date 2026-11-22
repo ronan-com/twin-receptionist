@@ -124,10 +124,10 @@ function statusOf(agent: ReceptionistRow, numbers: PhoneNumberRow[]): Status {
   const on = live.map((n) => n.friendly_name ?? formatNumber(n.e164)).join(", ");
   if (agent.paused_by === "agency") {
     return {
-      label: "Paused by your agency",
+      label: "Paused",
       tone: "warning",
       title: "Paused by your agency",
-      detail: "Your agency or the platform team has paused this account. Settings are kept; contact them to resume it.",
+      detail: "Your agency or the platform team has paused this receptionist, so it won't book or change anything. Your settings are kept; contact them to resume it.",
     };
   }
   if (agent.paused_by === "business") {
@@ -140,9 +140,9 @@ function statusOf(agent: ReceptionistRow, numbers: PhoneNumberRow[]): Status {
   }
   if (agent.demo) {
     return {
-      label: "Test receptionist",
+      label: "Demo",
       tone: "info",
-      title: "Test receptionist",
+      title: "Demo receptionist",
       detail: "This receptionist isn't on a phone line. Everything you save is stored and goes into its script, but the phone provider never sees it and no real calls reach it.",
     };
   }

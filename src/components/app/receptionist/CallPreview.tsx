@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Languages, MoonStar, PhoneCall, PhoneForwarded, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
@@ -144,11 +144,14 @@ export function PreviewPanel({ f, auto }: { f: PreviewSettings; auto: Automation
 }
 
 /**
- * "Hear a sample": the preview script read aloud by the browser's own speech voice.
- * Nothing is dialled, recorded or saved, and it isn't the receptionist's real voice
- * (that needs the phone provider, which charges per use), so the dialog says how to
- * hear the real one: call the number.
+ * "Hear a sample": a real recorded example call, and the preview script of the settings
+ * on screen read aloud by the browser's own speech voice. Nothing is dialled, recorded
+ * or saved. Neither is the receptionist's own voice (a voice preview needs the phone
+ * provider, which charges per use), so the dialog says how to hear it: call the number.
  */
+/** The recorded example call also used on the home page (src/components/RealCallDemo.tsx). */
+const SAMPLE_RECORDING = "/audio/answered-real-booking.mp3";
+
 export function SampleCallDialog({ f, auto, numbers, demo }: { f: PreviewSettings; auto: AutomationSettings | null; numbers: string[]; demo: boolean }) {
   const [open, setOpen] = useState(false);
   const [playing, setPlaying] = useState(false);
@@ -168,8 +171,10 @@ export function SampleCallDialog({ f, auto, numbers, demo }: { f: PreviewSetting
     if (!open) stop();
   }, [open, stop]);
 
+  const recording = useRef<HTMLAudioElement>(null);
   const play = () => {
     if (!supported) return;
+    recording.current?.pause();
     window.speechSynthesis.cancel();
     setSpeechError(false);
     setPlaying(true);
@@ -201,10 +206,16 @@ export function SampleCallDialog({ f, auto, numbers, demo }: { f: PreviewSetting
         <DialogHeader>
           <DialogTitle className="text-[16px]">Sample call</DialogTitle>
           <DialogDescription className="text-[12.5px]">
-            Read aloud by your browser's voice from the settings on this page (including unsaved changes). It's not a live call or the receptionist's real voice. Nothing is dialled, booked or saved.
+            Hear how a call sounds, then your own settings (including unsaved changes) read aloud by your browser. Neither is a live call or your receptionist's own voice. Nothing is dialled, booked or saved.
           </DialogDescription>
         </DialogHeader>
-        <div className="max-h-[46vh] space-y-2 overflow-y-auto pr-1 text-[12.5px]" data-sample-script>
+        <div className="space-y-1.5 rounded-[6px] border border-hairline px-3 py-2.5" data-sample-recording>
+          <p className="text-[12.5px] font-medium text-ink">A real recorded call</p>
+          <p className="text-[12px] text-ink-muted">An AI receptionist booking a check-up for an example dental practice. It shows how calls sound; it isn't your voice or your settings.</p>
+          <audio ref={recording} controls preload="none" src={SAMPLE_RECORDING} className="h-9 w-full" onPlay={stop} />
+        </div>
+        <p className="text-[12.5px] font-medium text-ink">Your settings, read aloud</p>
+        <div className="max-h-[38vh] space-y-2 overflow-y-auto pr-1 text-[12.5px]" data-sample-script>
           {lines.map((line, i) => (
             <div key={i} className={cn("rounded-[8px]", i === spoken ? "ring-1 ring-indigo" : "")}>
               <Bubble who={line.who === "agent" ? who : "Alex Sample (sample caller)"} accent={line.who === "agent"}>

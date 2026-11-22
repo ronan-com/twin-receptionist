@@ -3,7 +3,7 @@
 // Covers: every tab renders; persona, conversation, booking/leads, transfers and hours
 // edits save and persist after a reload; the new fields reach the generated
 // instructions; the preview updates live; Discard reverts; pause and resume (script,
-// greeting and status); a viewer is read-only (UI and API); a refused provider update
+// greeting and status, one pause state with the console's); a viewer is read-only (UI and API); a refused provider update
 // on a live receptionist is an error, not a success; no horizontal overflow at 390px;
 // no page errors.
 import { execFileSync } from "node:child_process";
@@ -173,7 +173,7 @@ try {
     assert(r.status === 201 || r.status === 200, `sign-up answered ${r.status}`);
     bid = (await apiFetch(bz, "GET", "/api/session/businesses")).body.businesses[0].id;
     await openPage(bz);
-    assert((await statusText(bz)) === "Test receptionist", `status ${await statusText(bz)}`);
+    assert((await statusText(bz)) === "Demo", `status ${await statusText(bz)}`);
     await waitText(bz, "isn't on a phone line");
     for (const b of ["Hear a sample", "Edit knowledge", "Pause receptionist"]) await waitText(bz, b);
     const tabs = [
@@ -215,10 +215,16 @@ try {
     assert((await value(bz, "#c-closing")) === "", "closing not reverted");
   });
 
-  await step("Hear a sample reads the current script (browser voice) and says how to hear the real voice", async () => {
+  await step("Hear a sample: a real recording plus the current script (browser voice), and how to hear the real voice", async () => {
     await clickText(bz, "button", "Hear a sample");
     await bz.waitForSelector("[data-sample-script]");
-    await waitText(bz, "not a live call or the receptionist's real voice");
+    await waitText(bz, "Neither is a live call or your receptionist's own voice");
+    const src = await bz.$eval("[data-sample-recording] audio", (e) => e.getAttribute("src"));
+    const audio = await bz.evaluate(async (u) => {
+      const r = await fetch(u);
+      return { status: r.status, type: r.headers.get("content-type"), size: (await r.arrayBuffer()).byteLength };
+    }, src);
+    assert(audio.status === 200 && /audio|mpeg/.test(audio.type ?? "") && audio.size > 100000, `recording ${JSON.stringify(audio)}`);
     await waitText(bz, "test receptionist with no phone line");
     await clickText(bz, '[role="dialog"] button', "Play sample");
     await bz.waitForFunction(() => window.__spoken.length >= 3, { timeout: 5000 }).catch(() => {});
@@ -332,6 +338,14 @@ try {
     assert((await previewText(bz)).includes(`Back on Monday ${stamp}.`), "preview doesn't show the pause message");
     const a = (await apiFetch(bz, "GET", `/api/manage/${bid}/receptionist`)).body.agents[0];
     assert(a.status === "paused" && a.paused_by === "business", `agent ${a.status} ${a.paused_by}`);
+    // One pause state with the console's (clients.paused_at, area C), marked as the business's own.
+    assert(sqlOne(`select (paused_at is not null)::text || ',' || coalesce(paused_by, '') from clients where id = '${bid}'`) === "true,business", "clients.paused_at not set");
+    const adminP = await fresh();
+    await adminP.goto(`${B}/login`, { waitUntil: "networkidle0" });
+    await apiFetch(adminP, "POST", "/api/login", { email: "ronan@test.dev", password: "correct-horse-battery" });
+    const lift = await apiFetch(adminP, "PUT", `/api/console/businesses/${bid}`, { status: "active" });
+    assert(lift.status === 400 && /Receptionist page/.test(lift.body?.error ?? ""), `console resume of the business's own pause answered ${lift.status}`);
+    await adminP.browserContext().close();
     const ins = instructionsOf(bid);
     assert(ins.includes("paused its receptionist") && ins.includes(`Back on Monday ${stamp}.`) && !ins.includes("check_availability"), "paused script not in the instructions");
     // Settings can still be changed while paused, and stay paused.
@@ -342,13 +356,36 @@ try {
     assert((await statusText(bz)) === "Paused", "unpaused by a save");
     // Resume.
     await press(bz, '[data-action="resume"]');
-    await bz.waitForFunction(() => document.querySelector("[data-receptionist-status]")?.textContent === "Test receptionist", { timeout: 15000 });
+    await bz.waitForFunction(() => document.querySelector("[data-receptionist-status]")?.textContent === "Demo", { timeout: 15000 });
+    assert(sqlOne(`select (paused_at is null)::text || ',' || coalesce(paused_by, '') from clients where id = '${bid}'`) === "true,", "clients.paused_at not cleared");
     const back = instructionsOf(bid);
     assert(!back.includes("paused its receptionist") && back.includes(`Bye from Rhea ${stamp}!`) && back.includes("British English"), "resume didn't restore the script");
     const after = (await apiFetch(bz, "GET", `/api/manage/${bid}/receptionist`)).body.agents[0];
     assert(after.status === "active" && after.greeting.includes(stamp), `after resume ${after.status}`);
     const old = await apiFetch(bz, "PUT", `/api/manage/${bid}/receptionist`, { status: "paused" });
     assert(old.status === 400, `status via PUT answered ${old.status}`);
+  });
+
+  await step("paused from the console: the business sees it, can't resume it or save; lifting it restores", async () => {
+    const adm = await fresh();
+    await adm.goto(`${B}/login`, { waitUntil: "networkidle0" });
+    const li = await apiFetch(adm, "POST", "/api/login", { email: "ronan@test.dev", password: "correct-horse-battery" });
+    assert(li.status === 200, `admin login ${li.status}`);
+    const p = await apiFetch(adm, "PUT", `/api/console/businesses/${bid}`, { status: "paused" });
+    assert(p.status === 200, `console pause answered ${p.status}`);
+    await openPage(bz, "persona");
+    assert((await statusText(bz)) === "Paused", `status ${await statusText(bz)}`);
+    await waitText(bz, "Paused by your agency");
+    assert(!(await bz.$('[data-action="pause"]')) && !(await bz.$('[data-action="resume"]')), "pause/resume offered during an agency pause");
+    const put = await apiFetch(bz, "PUT", `/api/manage/${bid}/receptionist`, { personality: "x" });
+    assert(put.status === 403, `manager save while agency-paused answered ${put.status}`);
+    const res = await apiFetch(bz, "POST", `/api/manage/${bid}/receptionist/pause`, { paused: false });
+    assert(res.status === 403 || res.status === 400, `manager resume of the agency's pause answered ${res.status}`);
+    const r = await apiFetch(adm, "PUT", `/api/console/businesses/${bid}`, { status: "active" });
+    assert(r.status === 200, `console resume answered ${r.status}`);
+    await openPage(bz, "persona");
+    assert((await statusText(bz)) === "Demo", `status after console resume ${await statusText(bz)}`);
+    await adm.browserContext().close();
   });
 
   await step("phone width: every tab has no horizontal overflow at 390px", async () => {

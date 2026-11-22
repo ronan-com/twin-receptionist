@@ -41,9 +41,13 @@ function canManage(ctx: Ctx): void {
   requireRole(ctx, "admin");
 }
 
-/** Whether a business is paused on its own (server/index.ts hook() checks this). */
+/**
+ * Whether a business is paused from the console (server/index.ts hook() checks this).
+ * A pause the business made itself (paused_by 'business', migration 015) doesn't count:
+ * it can still take messages and change its settings (server/routes/manage.ts).
+ */
 export async function isClientPaused(clientId: string): Promise<boolean> {
-  const [r] = await sql`select paused_at from clients where id = ${clientId}`;
+  const [r] = await sql`select paused_at from clients where id = ${clientId} and paused_by is null`;
   return Boolean(r?.paused_at);
 }
 
@@ -739,12 +743,21 @@ async function platformAdmins() {
 
 // ---------------------------------------------------------------- writes
 
+// Lifting a console pause: a receptionist its business had also paused itself (area R,
+// settings.paused) goes back to that pause, which the business lifts from its own page.
+const OWN_PAUSE = "coalesce(data->'settings'->'paused', 'null'::jsonb) <> 'null'::jsonb";
+const RESUME = `paused_at = case when ${OWN_PAUSE} then coalesce(paused_at, now()) end, paused_by = case when ${OWN_PAUSE} then 'business' end`;
+
 async function setPaused(ctx: Ctx, id: string, input: any) {
   canManage(ctx);
   const c = await oneClient(ctx, id);
   const status = input?.status;
   if (status !== "paused" && status !== "active") throw new ValidationError("Choose active or paused.");
-  await sql`update clients set paused_at = ${status === "paused" ? new Date() : null} where id = ${id}`;
+  // Paused by the business itself (area R): it resumes from its own Receptionist page.
+  const [own] = await sql`select paused_by from clients where id = ${id}`;
+  if (status === "active" && own?.paused_by === "business") throw new ValidationError("The business paused this receptionist itself. Resume it from its Receptionist page.");
+  if (status === "paused") await sql`update clients set paused_at = ${new Date()}, paused_by = null where id = ${id}`;
+  else await sql.unsafe(`update clients set ${RESUME} where id = $1`, [id]);
   const name = c.data.settings?.businessName ?? "";
   await audit(ctx, status === "paused" ? "business.paused" : "business.resumed", { business: name, summary: `${status === "paused" ? "Paused" : "Resumed"} ${name}` }, { orgId: c.org_id, clientId: id });
 }
@@ -1155,7 +1168,8 @@ async function setCompanyPaused(ctx: Ctx, id: string, input: any) {
   const m = await oneCompany(ctx, id);
   const status = input?.status;
   if (status !== "paused" && status !== "active") throw new ValidationError("Choose active or paused.");
-  await sql`update clients set paused_at = ${status === "paused" ? new Date() : null} where company_id = ${id}`;
+  if (status === "paused") await sql`update clients set paused_at = ${new Date()}, paused_by = null where company_id = ${id}`;
+  else await sql.unsafe(`update clients set ${RESUME} where company_id = $1`, [id]);
   await audit(ctx, status === "paused" ? "company.paused" : "company.resumed", { companyId: id, summary: `${status === "paused" ? "Paused" : "Resumed"} ${m.name}` }, { orgId: m.org_id });
 }
 

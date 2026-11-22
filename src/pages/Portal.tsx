@@ -1,4 +1,6 @@
 import { useEffect, useState } from "react";
+import ViewBanner from "../components/ViewBanner";
+import { brandStyle } from "../lib/brand";
 import Wordmark from "../components/Wordmark";
 import { accountApi, auth, portalApi } from "../lib/api";
 import { formatNumber, type Account, type BookingRequest, type CalendarEvent, type CallMessage, type CallSummary, type PortalClient } from "../lib/shared";
@@ -204,9 +206,10 @@ export default function Portal({ account }: { account: Account }) {
   })();
 
   return (
-    <div className="app">
+    <div className="app" style={brandStyle(current?.brand ?? account.brand)}>
+      {account.viewing && <ViewBanner viewing={account.viewing} />}
       <header className="app-top">
-        <Wordmark to="/" />
+        <Wordmark to="/" brand={current?.brand ?? account.brand} />
         <div className="app-top-right">
           {clients && clients.length > 1 ? (
             <select className="org-switch" aria-label="Business" value={clientId} onChange={(e) => setClientId(e.target.value)}>

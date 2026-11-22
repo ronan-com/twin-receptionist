@@ -2,6 +2,7 @@ import { createElement, useCallback, useEffect, useRef, useState, type ReactNode
 import { Link } from "react-router-dom";
 import { BusinessFields, HoursFields, NotesField, ServicesFields, VoiceFields } from "../components/fields";
 import BookingCard from "../components/BookingCard";
+import BrandingEditor from "../components/BrandingEditor";
 import CustomerAccessCard from "../components/CustomerAccess";
 import EmailCard from "../components/EmailCard";
 import PhoneNumberCard from "../components/PhoneNumberCard";
@@ -349,6 +350,9 @@ function SetupList({ business, onChange }: { business: Business; onChange: (b: B
       >
         <CustomerAccessCard clientId={business.id} businessName={business.settings.businessName} onChanged={setShared} />
       </Fold>
+      <Fold title="Branding for this business" on={false} status="Logo and background" onClose={refresh}>
+        <BrandingEditor clientId={business.id} businessName={business.settings.businessName} />
+      </Fold>
     </section>
   );
 }
@@ -419,7 +423,13 @@ export default function Dashboard({ business, onChange, onDeleted }: Props) {
           <TestLab
             clientId={business.id}
             name={s.receptionistName || "the receptionist"}
-            call={<TestCall key={business.updatedAt} assistantId={business.assistantId} onEnded={callEnded} />}
+            call={
+              business.assistantId.startsWith("demo-") ? (
+                <p className="muted">This is a demo receptionist from the test lab, so live test calls are switched off. Everything else works: sample calls, bookings, branding, sharing and number requests.</p>
+              ) : (
+                <TestCall key={business.updatedAt} assistantId={business.assistantId} onEnded={callEnded} />
+              )
+            }
             onTexted={callEnded}
           />
 

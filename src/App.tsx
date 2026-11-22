@@ -1,6 +1,9 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link, Navigate, Outlet, Route, Routes, useNavigate, useParams } from "react-router-dom";
+import ViewBanner from "./components/ViewBanner";
 import Wordmark from "./components/Wordmark";
+import { AccountContext } from "./lib/account";
+import { brandStyle } from "./lib/brand";
 import { accountApi, adminApi, api, auth } from "./lib/api";
 import type { Account, Business, Session } from "./lib/shared";
 import { AcceptInvite, NoTeam, ResetPassword, SignIn } from "./pages/Auth";
@@ -24,9 +27,10 @@ function Shell({ account, onAccount }: { account: Account; onAccount: (a: Accoun
     window.location.replace("/");
   }
   return (
-    <div className="app">
+    <div className="app" style={brandStyle(account.brand)}>
+      {account.viewing && <ViewBanner viewing={account.viewing} />}
       <header className="app-top">
-        <Wordmark to="/" />
+        <Wordmark to="/" brand={account.brand} />
         <div className="app-top-right">
           {account.orgs.length > 1 ? (
             <select
@@ -156,6 +160,7 @@ function Operator() {
   };
 
   return (
+    <AccountContext.Provider value={account}>
     <Routes>
       <Route element={<Shell account={account} onAccount={onAccount} />}>
         <Route path="/" element={<Clients />} />
@@ -168,5 +173,6 @@ function Operator() {
       <Route path="/site" element={<Landing />} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
+    </AccountContext.Provider>
   );
 }

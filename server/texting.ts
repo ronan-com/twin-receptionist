@@ -63,6 +63,7 @@ async function numbersOnProfile(profileId: string): Promise<string[]> {
 }
 
 export async function textingState(client: Business): Promise<TextingState> {
+  if (client.assistantId.startsWith("demo-")) return { enabled: false, numbers: [], waiting: client.phoneNumbers ?? [] };
   const profileId = await profileFor(client.assistantId);
   if (!profileId) return { enabled: false, numbers: [], waiting: client.phoneNumbers ?? [] };
   const numbers = await numbersOnProfile(profileId);

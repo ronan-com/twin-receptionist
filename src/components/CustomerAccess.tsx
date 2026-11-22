@@ -1,5 +1,6 @@
 import { useEffect, useState, type FormEvent } from "react";
-import { customerApi } from "../lib/api";
+import { adminApi, customerApi } from "../lib/api";
+import { useAccount } from "../lib/account";
 import type { CustomerAccess } from "../lib/shared";
 
 // Share this receptionist's calls with the business it answers for. They get their
@@ -13,6 +14,7 @@ export default function CustomerAccessCard({
   businessName: string;
   onChanged: (a: CustomerAccess) => void;
 }) {
+  const account = useAccount();
   const [access, setAccess] = useState<CustomerAccess | null>(null);
   const [email, setEmail] = useState("");
   const [busy, setBusy] = useState("");
@@ -124,6 +126,24 @@ export default function CustomerAccessCard({
             </li>
           ))}
         </ul>
+      )}
+
+      {account?.user.platformAdmin && account.org && (
+        <div>
+          <button
+            type="button"
+            className="btn btn-secondary btn-sm"
+            disabled={busy !== ""}
+            onClick={() =>
+              run("preview", async () => {
+                await adminApi.viewAs(account.org!.id, clientId);
+                window.location.replace("/");
+              })
+            }
+          >
+            See what {businessName} sees
+          </button>
+        </div>
       )}
 
       <form onSubmit={invite} className="link-box">

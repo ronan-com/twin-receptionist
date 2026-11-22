@@ -1,6 +1,7 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { Link } from "react-router-dom";
 import { adminApi } from "../lib/api";
+import SandboxCard from "../components/SandboxCard";
 import { api } from "../lib/api";
 import { formatNumber, type AdminNumberRequest, type Agency, type AvailableNumber } from "../lib/shared";
 
@@ -95,6 +96,8 @@ export default function Agencies() {
           {error}
         </div>
       )}
+
+      <SandboxCard />
 
       <section className="card stack">
         <h2>Number requests</h2>
@@ -220,7 +223,7 @@ export default function Agencies() {
               <li key={a.id}>
                 <span className="member-who">
                   <strong>
-                    {a.name} {a.suspended && <span className="pill">Paused</span>}
+                    {a.name} {a.suspended && <span className="pill">Paused</span>} {a.sandbox && <span className="pill">Sandbox</span>}
                   </strong>
                   <span className="muted">
                     {a.clients} {a.clients === 1 ? "client" : "clients"} · {a.members} {a.members === 1 ? "person" : "people"} ·{" "}
@@ -230,8 +233,35 @@ export default function Agencies() {
                     {a.owners.length ? `Owner: ${a.owners.join(", ")}` : "No owner yet"}
                     {a.pendingInvites.length ? ` · Invited: ${a.pendingInvites.join(", ")}` : ""}
                   </span>
+                  <span className="flow" aria-label="Onboarding progress">
+                    {[
+                      ["Invited", true],
+                      ["Signed up", a.owners.length > 0],
+                      [`${a.clients} receptionist${a.clients === 1 ? "" : "s"}`, a.clients > 0],
+                      [`${a.withNumbers} with a number`, a.withNumbers > 0],
+                      [`${a.customers} customer${a.customers === 1 ? "" : "s"} shared`, a.customers > 0],
+                    ].map(([label, done]) => (
+                      <span key={String(label)} className={`pill ${done ? "pill-on" : ""}`}>
+                        {done ? "✓ " : ""}
+                        {label}
+                      </span>
+                    ))}
+                  </span>
                 </span>
                 <span className="row-actions">
+                  <button
+                    type="button"
+                    className="btn btn-secondary btn-sm"
+                    disabled={busy !== ""}
+                    onClick={() =>
+                      run(`view-${a.id}`, async () => {
+                        await adminApi.viewAs(a.id);
+                        window.location.replace("/");
+                      })
+                    }
+                  >
+                    View as
+                  </button>
                   <button
                     type="button"
                     className="btn btn-ghost btn-sm"

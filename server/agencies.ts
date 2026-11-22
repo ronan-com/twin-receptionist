@@ -35,13 +35,15 @@ function onlyPlatform(ctx: Ctx): void {
 export async function listAgencies(ctx: Ctx): Promise<Agency[]> {
   onlyPlatform(ctx);
   const orgs = await sql`
-    select o.id, o.name, o.created_at, o.platform_telnyx, o.suspended_at, o.telnyx_key is not null as own,
+    select o.id, o.name, o.created_at, o.platform_telnyx, o.suspended_at, o.sandbox, o.telnyx_key is not null as own,
       (select count(*)::int from memberships m where m.org_id = o.id and m.role <> 'customer') as members,
       (select count(*)::int from clients c where c.org_id = o.id) as clients,
       coalesce((select array_agg(u.email order by u.email) from memberships m join users u on u.id = m.user_id
                 where m.org_id = o.id and m.role = 'owner'), '{}') as owners,
       coalesce((select array_agg(i.email order by i.email) from invites i
-                where i.org_id = o.id and i.expires_at > now()), '{}') as pending
+                where i.org_id = o.id and i.expires_at > now() and i.role <> 'customer'), '{}') as pending,
+      (select count(distinct a.user_id)::int from client_access a join clients c on c.id = a.client_id where c.org_id = o.id) as customers,
+      (select count(*)::int from clients c where c.org_id = o.id and jsonb_array_length(coalesce(c.data->'phoneNumbers', '[]'::jsonb)) > 0) as with_numbers
     from orgs o order by o.created_at desc`;
   return orgs.map((o: any) => ({
     id: o.id,
@@ -54,7 +56,29 @@ export async function listAgencies(ctx: Ctx): Promise<Agency[]> {
     telnyx: o.own ? "own" : o.platform_telnyx ? "platform" : "none",
     platformTelnyx: o.platform_telnyx,
     suspended: Boolean(o.suspended_at),
+    customers: o.customers,
+    withNumbers: o.with_numbers,
+    sandbox: Boolean(o.sandbox),
   }));
+}
+
+// Step into an agency (or one business's customer view) from the master admin. Read-only.
+export async function viewAs(ctx: Ctx, input: any): Promise<void> {
+  onlyPlatform(ctx);
+  const orgId = String(input?.orgId ?? "");
+  const clientId = input?.clientId ? String(input.clientId) : null;
+  if (!/^[a-f0-9-]{36}$/.test(orgId) || (clientId && !/^[a-f0-9-]{36}$/.test(clientId))) throw new ValidationError("Unknown agency.");
+  const [o] = await sql`select 1 from orgs where id = ${orgId}`;
+  if (!o) throw new ValidationError("Unknown agency.");
+  if (clientId) {
+    const [c] = await sql`select 1 from clients where id = ${clientId} and org_id = ${orgId}`;
+    if (!c) throw new ValidationError("Unknown receptionist.");
+  }
+  await sql`update sessions set view_org_id = ${orgId}, view_client_id = ${clientId} where token_hash = ${ctx.tokenHash}`;
+}
+
+export async function exitView(ctx: Ctx): Promise<void> {
+  await sql`update sessions set view_org_id = null, view_client_id = null where token_hash = ${ctx.tokenHash}`;
 }
 
 // A new agency, and an invite for its first owner.

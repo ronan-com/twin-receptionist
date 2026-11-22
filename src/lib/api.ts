@@ -1,6 +1,7 @@
 import type {
   Account,
   Agency,
+  TestLogin,
   BookingRequest,
   CalendarEvent,
   CustomerAccess,
@@ -112,6 +113,12 @@ export const portalApi = {
 };
 
 export const adminApi = {
+  sandbox: () => request<{ orgId: string | null }>("GET", "/api/admin/sandbox").then((r) => r.orgId),
+  createSandbox: () => request<{ orgId: string }>("POST", "/api/admin/sandbox").then((r) => r.orgId),
+  resetSandbox: () => request<{ orgId: null }>("DELETE", "/api/admin/sandbox"),
+  testLogins: () => request<{ logins: TestLogin[] }>("POST", "/api/admin/sandbox/logins").then((r) => r.logins),
+  viewAs: (orgId: string, clientId?: string) => request<Account>("POST", "/api/admin/view-as", { orgId, clientId }),
+  exitView: () => request<{ ok: true }>("DELETE", "/api/admin/view-as"),
   agencies: () => request<{ agencies: Agency[] }>("GET", "/api/admin/agencies").then((r) => r.agencies),
   create: (details: { name: string; ownerEmail: string }) =>
     request<{ url: string; emailed: boolean }>("POST", "/api/admin/agencies", details),

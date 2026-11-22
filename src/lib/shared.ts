@@ -418,6 +418,10 @@ export function blankSettings(): Settings {
 // "customer" is the end business: read-only, sees only their own receptionist.
 export type OrgRole = "owner" | "admin" | "member" | "customer";
 
+export type Brand = { logo: string; bgColor: string; bgImage: string };
+
+export type Viewing = { org: string; client: string | null; business: string };
+
 export type Account = {
   user: { id: string; email: string; name: string; platformAdmin: boolean };
   org: { id: string; name: string } | null;
@@ -426,6 +430,10 @@ export type Account = {
   // Whose Telnyx account this team's receptionists run on: its own key, the
   // platform's (if the platform allowed it), or none yet (it must add one).
   telnyx: "own" | "platform" | "none";
+  // Set while the platform team is looking at an agency or a customer's view (read-only).
+  viewing?: Viewing;
+  // Logo and background for this team's screens (a business's own, in its customer view).
+  brand?: Brand;
 };
 
 export type TelnyxSettings = {
@@ -445,7 +453,13 @@ export type Agency = {
   telnyx: "own" | "platform" | "none";
   platformTelnyx: boolean;
   suspended: boolean;
+  // Onboarding progress, for the platform team's flow view.
+  customers: number;
+  withNumbers: number;
+  sandbox: boolean;
 };
+
+export type TestLogin = { email: string; password: string; role: string };
 
 export type Session =
   | ({ signedIn: true } & Account)
@@ -463,6 +477,6 @@ export type CustomerAccess = {
   invites: { id: string; email: string; expiresAt: string }[];
 };
 
-export type PortalClient = { id: string; businessName: string; receptionistName: string };
+export type PortalClient = { id: string; businessName: string; receptionistName: string; brand: Brand };
 
 export type InviteInfo = { orgName: string; email: string; role: OrgRole; hasAccount: boolean; businessName?: string };

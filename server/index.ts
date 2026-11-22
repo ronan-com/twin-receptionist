@@ -35,9 +35,11 @@ import { availableNumbers, buyNumber, callSummary, connectedNumbers, openOrders,
 import { ValidationError, buildInstructions, normaliseSettings } from "./prompt";
 import { clientsWithBooking, getClient, getOrgClient, insertClient, listClients, orgOfClient, removeClient, saveClient } from "./store";
 import { TelnyxError, enterOrg, hasKey, runAsOrg, telnyx } from "./telnyx";
+import { createTestLogins, demoCallDetail, demoCalls, ensureSandbox, isDemo, resetSandbox, sandboxOrgId } from "./sandbox";
+import { changeBrand, ownBrand, serveAsset, uploadAsset } from "./brand";
 import { accessibleClients, customerClientId, setFollowUpStage, customersFor, inviteCustomer, removeCustomer, revokeCustomerInvite } from "./customers";
 import { createRequest, declineRequest, listRequests, markDone, pendingCount, pendingRequest, requestsForClient } from "./numberRequests";
-import { createAgency, inviteAgencyOwner, isSuspended, listAgencies, telnyxSettings, updateAgency } from "./agencies";
+import { createAgency, exitView, inviteAgencyOwner, viewAs, isSuspended, listAgencies, telnyxSettings, updateAgency } from "./agencies";
 import { previewEmail, sendSimText, startTextSim } from "./simulator";
 import {
   connectFromLink,
@@ -136,6 +138,7 @@ function instructionsFor(client: Business, settings = client.settings): string {
 
 // Pushes the script and tools that match the client's booking setup to Telnyx.
 async function syncAssistant(client: Business): Promise<Business> {
+  if (isDemo(client.assistantId)) return client;
   const instructions = instructionsFor(client);
   const tools = bookingLive(client) ? [HANGUP, ...bookingTools(client, publicUrl())] : [HANGUP];
   await telnyx("POST", `/ai/assistants/${client.assistantId}`, { instructions, tools });
@@ -310,14 +313,15 @@ async function createClient(orgId: string, input: unknown): Promise<Business> {
 async function updateClient(existing: Business, input: unknown): Promise<Business> {
   const settings = normaliseSettings(input, await voiceNames());
   const instructions = instructionsFor(existing, settings);
-  // Telnyx updates an assistant with POST, not PATCH.
-  await telnyx("POST", `/ai/assistants/${existing.assistantId}`, assistantFields(settings, instructions));
+  // Telnyx updates an assistant with POST, not PATCH. (The demo receptionist has none.)
+  if (!isDemo(existing.assistantId)) await telnyx("POST", `/ai/assistants/${existing.assistantId}`, assistantFields(settings, instructions));
   const client: Business = { ...existing, settings, instructions, updatedAt: new Date().toISOString() };
   await saveClient(client);
   return client;
 }
 
 async function listCalls(assistantId: string, limit = 20): Promise<CallSummary[]> {
+  if (isDemo(assistantId)) return demoCalls().slice(0, limit);
   const query = `metadata-%3Eassistant_id=eq.${encodeURIComponent(assistantId)}&order=created_at.desc&limit=${limit}`;
   const res = await telnyx<{ data?: any[] }>("GET", `/ai/conversations?${query}`);
   return (res.data ?? []).map((c) => {
@@ -340,6 +344,7 @@ async function callDetail(
   conversationId: string,
 ): Promise<{ summary: string; messages: CallMessage[] }> {
   if (!/^[A-Za-z0-9-]{8,80}$/.test(conversationId)) throw new ValidationError("Unknown call.");
+  if (isDemo(business.assistantId)) return demoCallDetail(conversationId);
   // Only return transcripts for calls that belong to this client's receptionist.
   const convo = await telnyx<{ data?: any }>("GET", `/ai/conversations/${conversationId}`);
   if ((convo.data?.metadata ?? {}).assistant_id !== business.assistantId) throw new ValidationError("Unknown call.");
@@ -357,6 +362,10 @@ async function callDetail(
 }
 
 async function numberState(ctx: Ctx, client: Business): Promise<NumberState> {
+  // The demo receptionist never asks the carrier.
+  if (isDemo(client.assistantId)) {
+    return { numbers: [], pending: [], balance: null, canBuy: false, requests: await requestsForClient(client.id) };
+  }
   const voiceApp = await voiceAppFor(client.assistantId);
   const [numbers, pending, balance] = await Promise.all([
     connectedNumbers(voiceApp),
@@ -414,6 +423,10 @@ async function route(req: Request): Promise<Response> {
 
   const hookMatch = path.match(/^\/hooks\/([a-f0-9-]{36})\/(availability|book|callback)$/);
   if (hookMatch && method === "POST") return hook(req, hookMatch[1], hookMatch[2]);
+
+  // Logos and backgrounds: public by random id.
+  const brandAsset = path.match(/^\/brand\/([a-f0-9-]{36})$/);
+  if (brandAsset && (method === "GET" || method === "HEAD")) return serveAsset(brandAsset[1]);
 
   if (!path.startsWith("/api/")) {
     if (method !== "GET" && method !== "HEAD") return json({ error: "Not found" }, 404);
@@ -529,6 +542,13 @@ async function route(req: Request): Promise<Response> {
         }
         const client = await getClient(r.client_id);
         if (!client) throw new ValidationError("That receptionist no longer exists.");
+        // The test lab's demo receptionist: nothing is bought, the number is only recorded.
+        if (isDemo(client.assistantId)) {
+          const fake = String(input.phoneNumber);
+          await markDone(r.id, fake);
+          await saveClient({ ...client, phoneNumbers: [fake], updatedAt: new Date().toISOString() });
+          return json({ requests: await listRequests(ctx), pending: await pendingCount() });
+        }
         // Bought on our account; each agency's receptionist still lives under its own team.
         const order = await buyNumber(await voiceAppFor(client.assistantId), client.id, input);
         await markDone(r.id, order.phoneNumbers[0] ?? String(input.phoneNumber));
@@ -543,6 +563,25 @@ async function route(req: Request): Promise<Response> {
       }
       return json({ requests: await listRequests(ctx), pending: await pendingCount() });
     }
+    if (path === "/api/admin/sandbox") {
+      if (method === "GET") return json({ orgId: await sandboxOrgId() });
+      if (method === "POST") return json({ orgId: await ensureSandbox(ctx) }, 201);
+      if (method === "DELETE") {
+        await resetSandbox(ctx);
+        return json({ orgId: null });
+      }
+    }
+    if (path === "/api/admin/sandbox/logins" && method === "POST") return json({ logins: await createTestLogins(ctx) }, 201);
+    if (path === "/api/admin/view-as") {
+      if (method === "POST") {
+        await viewAs(ctx, await body(req));
+        return json(await account((await sessionFrom(req))!));
+      }
+      if (method === "DELETE") {
+        await exitView(ctx);
+        return json({ ok: true });
+      }
+    }
     if (path === "/api/admin/agencies") {
       if (method === "GET") return json({ agencies: await listAgencies(ctx) });
       if (method === "POST") return json(await createAgency(ctx, await body(req), appUrl(req)), 201);
@@ -554,6 +593,11 @@ async function route(req: Request): Promise<Response> {
       return json({ agencies: await listAgencies(ctx) });
     }
     return json({ error: "Not found" }, 404);
+  }
+
+  // Viewing as an agency or customer is look-only.
+  if (ctx.viewing && method !== "GET" && method !== "HEAD") {
+    return json({ error: `You're viewing ${ctx.viewing.org} (read-only). Exit the view to make changes.` }, 403);
   }
 
   if (!ctx.org) return json({ error: "You're not in a team yet. Ask the platform team for an invite." }, 403);
@@ -589,6 +633,41 @@ async function route(req: Request): Promise<Response> {
     return json({ upcoming: await upcomingEvents(client.id), requests: await requestsFor(client.id) });
   }
   if (ctx.role === "customer") return json({ error: "Not allowed." }, 403);
+
+  // Logo and background: for this team's own screens...
+  const upload = async () => {
+    if (Number(req.headers.get("content-length") ?? 0) > 2_000_000) throw new ValidationError("That image is too big.");
+    return new Uint8Array(await req.arrayBuffer());
+  };
+  if (path === "/api/org/brand") {
+    if (method === "GET") return json(await ownBrand({ orgId, clientId: null }));
+    if (method === "PUT") {
+      await changeBrand(ctx, { orgId, clientId: null }, await body(req));
+      return json(await ownBrand({ orgId, clientId: null }));
+    }
+  }
+  const orgBrandUp = path.match(/^\/api\/org\/brand\/(logo|background)$/);
+  if (orgBrandUp && method === "POST") {
+    await uploadAsset(ctx, { orgId, clientId: null }, orgBrandUp[1] as "logo" | "background", await upload());
+    return json(await ownBrand({ orgId, clientId: null }), 201);
+  }
+  // ...and per business, for that business's customer dashboard.
+  const clientBrand = path.match(/^\/api\/clients\/([a-f0-9-]{36})\/brand(?:\/(logo|background))?$/);
+  if (clientBrand) {
+    const owned = await getOrgClient(orgId, clientBrand[1]);
+    if (!owned) return json({ error: "That receptionist no longer exists." }, 404);
+    const scope = { orgId, clientId: owned.id };
+    if (!clientBrand[2] && method === "GET") return json(await ownBrand(scope));
+    if (!clientBrand[2] && method === "PUT") {
+      await changeBrand(ctx, scope, await body(req));
+      return json(await ownBrand(scope));
+    }
+    if (clientBrand[2] && method === "POST") {
+      await uploadAsset(ctx, scope, clientBrand[2] as "logo" | "background", await upload());
+      return json(await ownBrand(scope), 201);
+    }
+    return json({ error: "Not found" }, 404);
+  }
 
   if (path === "/api/org" && method === "PUT") {
     await renameOrg(ctx, await body(req));
@@ -662,8 +741,9 @@ async function route(req: Request): Promise<Response> {
       if (method === "PUT") return json({ client: await updateClient(client, await req.json()) });
       if (method === "DELETE") {
         requireRole(ctx, "admin");
-        const profileId = await textingProfileId(client.assistantId).catch(() => null);
-        await telnyx("DELETE", `/ai/assistants/${client.assistantId}`).catch((err) => {
+        const demo = isDemo(client.assistantId);
+        const profileId = demo ? null : await textingProfileId(client.assistantId).catch(() => null);
+        if (!demo) await telnyx("DELETE", `/ai/assistants/${client.assistantId}`).catch((err) => {
           // Already gone on Telnyx's side is fine; anything else should surface.
           if (!(err instanceof TelnyxError && err.status === 404)) throw err;
         });

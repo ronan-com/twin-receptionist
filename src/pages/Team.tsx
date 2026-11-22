@@ -1,5 +1,6 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { Link } from "react-router-dom";
+import BrandingEditor from "../components/BrandingEditor";
 import { accountApi } from "../lib/api";
 import type { Account, OrgRole, TeamState } from "../lib/shared";
 
@@ -94,6 +95,8 @@ export default function Team({ account, onAccount }: { account: Account; onAccou
           {saved}
         </div>
       )}
+
+      {isAdmin && <BrandingEditor />}
 
       <section className="card stack">
         <h2>People</h2>

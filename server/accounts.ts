@@ -1,5 +1,6 @@
 import { createHash, randomBytes } from "node:crypto";
 import type { Account, OrgRole, TeamState } from "../src/lib/shared";
+import { resolveBrand } from "./brand";
 import { iso, sql } from "./db";
 import { importLegacyData } from "./legacy";
 import { mailerReady, sendAccountEmail } from "./mailer";
@@ -13,6 +14,8 @@ import { ValidationError } from "./prompt";
 // Sessions, invites and reset links are random tokens; only their hashes are stored.
 
 export type Ctx = {
+  // Set while the platform team is viewing as an agency or a customer (read-only).
+  viewing?: { org: string; client: string | null; business: string };
   tokenHash: string;
   user: { id: string; email: string; name: string; platformAdmin: boolean };
   org: { id: string; name: string } | null;
@@ -103,11 +106,33 @@ export async function sessionFrom(req: Request): Promise<Ctx | null> {
   if (!token || token.length > 100) return null;
   const tokenHash = hashToken(token);
   const [s] = await sql`
-    select s.org_id, u.id, u.email, u.name, u.platform_admin
+    select s.org_id, s.view_org_id, s.view_client_id, u.id, u.email, u.name, u.platform_admin
     from sessions s join users u on u.id = s.user_id
     where s.token_hash = ${tokenHash} and s.expires_at > now()`;
   if (!s) return null;
   const user = { id: s.id, email: s.email, name: s.name, platformAdmin: s.platform_admin };
+  // The platform team stepping into an agency (or a business's customer view), read-only.
+  if (s.platform_admin && s.view_org_id) {
+    const [o] = await sql`select id, name from orgs where id = ${s.view_org_id}`;
+    if (o) {
+      let business = "";
+      let client: string | null = null;
+      if (s.view_client_id) {
+        const [c] = await sql`select id, data->'settings'->>'businessName' as business from clients where id = ${s.view_client_id} and org_id = ${o.id}`;
+        if (c) {
+          client = c.id;
+          business = c.business ?? "";
+        }
+      }
+      return {
+        tokenHash,
+        user,
+        org: { id: o.id, name: o.name },
+        role: client ? "customer" : "admin",
+        viewing: { org: o.name, client, business },
+      };
+    }
+  }
   // The org this session is working in, or their first one if they've left it.
   const [m] = await sql`
     select m.role, o.id, o.name from memberships m join orgs o on o.id = m.org_id
@@ -122,6 +147,14 @@ export function requireRole(ctx: Ctx, needed: OrgRole): void {
   if (!ctx.role || RANK[ctx.role] < RANK[needed]) {
     throw new AuthError(needed === "owner" ? "Only an owner can do that." : "Only an owner or admin can do that.", 403);
   }
+}
+
+// A customer sees their own business's branding on top of their agency's.
+async function brandClient(ctx: Ctx): Promise<string | null> {
+  if (ctx.role !== "customer") return null;
+  if (ctx.viewing?.client) return ctx.viewing.client;
+  const [c] = await sql`select a.client_id from client_access a join clients c on c.id = a.client_id where a.user_id = ${ctx.user.id} and c.org_id = ${ctx.org!.id} limit 1`;
+  return c?.client_id ?? null;
 }
 
 export async function account(ctx: Ctx): Promise<Account> {
@@ -139,6 +172,8 @@ export async function account(ctx: Ctx): Promise<Account> {
     role: ctx.role,
     orgs: orgs.map((o: any) => ({ id: o.id, name: o.name, role: o.role })),
     telnyx,
+    ...(ctx.viewing ? { viewing: ctx.viewing } : {}),
+    brand: ctx.org ? await resolveBrand(ctx.org.id, await brandClient(ctx)) : undefined,
   };
 }
 

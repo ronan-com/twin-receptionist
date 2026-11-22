@@ -1929,10 +1929,113 @@ textarea:focus {
   margin-top: 4px;
 }
 @media (max-width: 560px) {
+  .portal-tabs button {
+    font-size: 12.5px;
+    white-space: nowrap;
+    padding: 0 2px;
+  }
   .report-tiles {
     grid-template-columns: 1fr 1fr;
   }
   .week-day {
     grid-template-columns: 70px 1fr;
   }
+}
+
+/* Platform team viewing as an agency or customer */
+.view-banner {
+  position: sticky;
+  top: 0;
+  z-index: 30;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 20px;
+  background: #3a2a05;
+  border-bottom: 1px solid rgba(240, 180, 41, 0.5);
+  color: #f5d17a;
+  font-size: 14px;
+}
+.view-banner + .app-top {
+  top: 45px;
+}
+.flow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 6px;
+}
+.flow .pill {
+  padding: 2px 10px;
+  font-size: 12px;
+}
+@media (max-width: 560px) {
+  .view-banner {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+  .view-banner + .app-top {
+    top: 0;
+    position: static;
+  }
+}
+
+/* Branding */
+.brand-logo {
+  display: block;
+  max-height: 34px;
+  max-width: 180px;
+  object-fit: contain;
+}
+.brand-row {
+  display: grid;
+  grid-template-columns: 140px 1fr;
+  gap: 16px;
+  align-items: center;
+}
+.brand-preview {
+  height: 84px;
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  background: var(--surface);
+}
+.brand-preview img {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+}
+.brand-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+.brand-color {
+  width: 40px;
+  height: 32px;
+  padding: 0;
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  background: none;
+}
+.app {
+  min-height: 100vh;
+}
+@media (max-width: 560px) {
+  .brand-row {
+    grid-template-columns: 1fr;
+  }
+}
+
+.flow-list {
+  margin: 0;
+  padding-left: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
 }

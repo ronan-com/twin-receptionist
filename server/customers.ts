@@ -1,4 +1,5 @@
 import { createInvite, emailOf, requireRole, type Ctx } from "./accounts";
+import { resolveBrand } from "./brand";
 import { iso, sql } from "./db";
 import { ValidationError } from "./prompt";
 
@@ -78,16 +79,25 @@ export async function setFollowUpStage(clientId: string, requestId: string, stag
 }
 
 // What a signed-in customer may look at.
-export async function accessibleClients(ctx: Ctx): Promise<{ id: string; businessName: string; receptionistName: string }[]> {
+export async function accessibleClients(ctx: Ctx): Promise<{ id: string; businessName: string; receptionistName: string; brand: import("../src/lib/shared").Brand }[]> {
+  // The platform team viewing as a business sees that business.
+  if (ctx.viewing?.client) {
+    const [c] = await sql`select id, data->'settings'->>'businessName' as business, data->'settings'->>'receptionistName' as name from clients where id = ${ctx.viewing.client}`;
+    return c ? [{ id: c.id, businessName: c.business ?? "", receptionistName: c.name ?? "", brand: await resolveBrand(ctx.org!.id, c.id) }] : [];
+  }
   const rows = await sql`
     select c.id, c.data->'settings'->>'businessName' as business, c.data->'settings'->>'receptionistName' as name
     from client_access a join clients c on c.id = a.client_id
     where a.user_id = ${ctx.user.id} and c.org_id = ${ctx.org!.id} order by business`;
-  return rows.map((r: any) => ({ id: r.id, businessName: r.business ?? "", receptionistName: r.name ?? "" }));
+  return Promise.all(rows.map(async (r: any) => ({ id: r.id, businessName: r.business ?? "", receptionistName: r.name ?? "", brand: await resolveBrand(ctx.org!.id, r.id) })));
 }
 
 // The receptionist a customer asks for, if they were given it.
 export async function customerClientId(ctx: Ctx, clientId: string): Promise<string> {
+  if (ctx.viewing?.client) {
+    if (ctx.viewing.client !== clientId) throw new ValidationError("That receptionist isn't shared with you.");
+    return clientId;
+  }
   const [r] = await sql`
     select c.id from client_access a join clients c on c.id = a.client_id
     where a.user_id = ${ctx.user.id} and a.client_id = ${clientId} and c.org_id = ${ctx.org!.id}`;

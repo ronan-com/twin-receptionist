@@ -214,7 +214,7 @@ export function ResetPassword({ token }: { token: string }) {
   );
 }
 
-const ROLE_WORDS = { owner: "an owner", admin: "an admin", member: "a member" } as const;
+const ROLE_WORDS = { owner: "an owner", admin: "an admin", member: "a member", customer: "a customer" } as const;
 
 export function AcceptInvite({ token }: { token: string }) {
   const [info, setInfo] = useState<InviteInfo | null>(null);
@@ -249,8 +249,12 @@ export function AcceptInvite({ token }: { token: string }) {
 
   return (
     <AuthFrame
-      title={`Join ${info.orgName}`}
-      intro={`You've been invited as ${ROLE_WORDS[info.role]}, as ${info.email}.`}
+      title={info.role === "customer" ? `Your calls${info.businessName ? ` for ${info.businessName}` : ""}` : `Join ${info.orgName}`}
+      intro={
+        info.role === "customer"
+          ? `${info.orgName} has set up your receptionist. Create your login to see every call, booking and follow-up (${info.email}).`
+          : `You've been invited as ${ROLE_WORDS[info.role]}, as ${info.email}.`
+      }
     >
       <form onSubmit={submit} className="stack">
         {!info.hasAccount && (

@@ -35,6 +35,7 @@ import { availableNumbers, buyNumber, callSummary, connectedNumbers, openOrders,
 import { ValidationError, buildInstructions, normaliseSettings } from "./prompt";
 import { clientsWithBooking, getClient, getOrgClient, insertClient, listClients, orgOfClient, removeClient, saveClient } from "./store";
 import { TelnyxError, enterOrg, hasKey, runAsOrg, telnyx } from "./telnyx";
+import { accessibleClients, customerClientId, customersFor, inviteCustomer, removeCustomer, revokeCustomerInvite } from "./customers";
 import { createRequest, declineRequest, listRequests, markDone, pendingCount, pendingRequest, requestsForClient } from "./numberRequests";
 import { createAgency, inviteAgencyOwner, isSuspended, listAgencies, telnyxSettings, updateAgency } from "./agencies";
 import { previewEmail, sendSimText, startTextSim } from "./simulator";
@@ -316,8 +317,8 @@ async function updateClient(existing: Business, input: unknown): Promise<Busines
   return client;
 }
 
-async function listCalls(assistantId: string): Promise<CallSummary[]> {
-  const query = `metadata-%3Eassistant_id=eq.${encodeURIComponent(assistantId)}&order=created_at.desc&limit=20`;
+async function listCalls(assistantId: string, limit = 20): Promise<CallSummary[]> {
+  const query = `metadata-%3Eassistant_id=eq.${encodeURIComponent(assistantId)}&order=created_at.desc&limit=${limit}`;
   const res = await telnyx<{ data?: any[] }>("GET", `/ai/conversations?${query}`);
   return (res.data ?? []).map((c) => {
     const meta = c.metadata ?? {};
@@ -563,6 +564,25 @@ async function route(req: Request): Promise<Response> {
   // Everything below that talks to Telnyx uses this team's own account.
   enterOrg(orgId);
 
+  // End customers see their own receptionist's calls and nothing else.
+  if (path.startsWith("/api/portal/")) {
+    if (method !== "GET") return json({ error: "Not found" }, 404);
+    if (path === "/api/portal/clients") return json({ clients: await accessibleClients(ctx) });
+    const portal = path.match(/^\/api\/portal\/([a-f0-9-]{36})\/(calls|bookings|calls\/([A-Za-z0-9-]{8,80}))$/);
+    if (!portal) return json({ error: "Not found" }, 404);
+    const mine = await customerClientId(ctx, portal[1]);
+    const client = await getOrgClient(orgId, mine);
+    if (!client) return json({ error: "Not found" }, 404);
+    if (portal[2] === "calls") {
+      // Test calls and the text simulator are the agency's, not the customer's.
+      const calls = (await listCalls(client.assistantId, 50)).filter((c) => !c.simulated && c.channel !== "web");
+      return json({ calls, receptionist: client.settings.receptionistName || "" });
+    }
+    if (portal[3]) return json(await callDetail(client, portal[3]));
+    return json({ upcoming: await upcomingEvents(client.id), requests: await requestsFor(client.id) });
+  }
+  if (ctx.role === "customer") return json({ error: "Not allowed." }, 403);
+
   if (path === "/api/org" && method === "PUT") {
     await renameOrg(ctx, await body(req));
     return json(await account((await sessionFrom(req))!));
@@ -600,6 +620,26 @@ async function route(req: Request): Promise<Response> {
   if (path === "/api/clients") {
     if (method === "GET") return json({ clients: await listClients(orgId) });
     if (method === "POST") return json({ client: await createClient(orgId, await req.json()) }, 201);
+  }
+
+  const cust = path.match(/^\/api\/clients\/([a-f0-9-]{36})\/(customers(?:\/([a-f0-9-]{36}))?|customer-invites\/([a-f0-9]{16}))$/);
+  if (cust) {
+    const owned = await getOrgClient(orgId, cust[1]);
+    if (!owned) return json({ error: "That receptionist no longer exists." }, 404);
+    if (cust[2] === "customers" && method === "GET") return json(await customersFor(owned.id));
+    if (cust[2] === "customers" && method === "POST") {
+      const result = await inviteCustomer(ctx, owned.id, owned.settings.businessName, await body(req), appUrl(req));
+      return json({ ...result, access: await customersFor(owned.id) }, 201);
+    }
+    if (cust[3] && method === "DELETE") {
+      await removeCustomer(ctx, owned.id, cust[3]);
+      return json(await customersFor(owned.id));
+    }
+    if (cust[4] && method === "DELETE") {
+      await revokeCustomerInvite(ctx, owned.id, cust[4]);
+      return json(await customersFor(owned.id));
+    }
+    return json({ error: "Not found" }, 404);
   }
 
   const match = path.match(

@@ -1,6 +1,10 @@
 import type {
   Account,
   Agency,
+  BookingRequest,
+  CalendarEvent,
+  CustomerAccess,
+  PortalClient,
   AdminNumberRequest,
   InviteInfo,
   OrgRole,
@@ -84,6 +88,25 @@ export const accountApi = {
   revokeInvite: (id: string) => request<TeamState>("DELETE", `/api/team/invites/${id}`),
   changeRole: (userId: string, role: OrgRole) => request<TeamState>("PUT", `/api/team/members/${userId}`, { role }),
   removeMember: (userId: string) => request<TeamState>("DELETE", `/api/team/members/${userId}`),
+};
+
+const mine = (id: string) => `/api/clients/${encodeURIComponent(id)}`;
+
+export const customerApi = {
+  get: (id: string) => request<CustomerAccess>("GET", `${mine(id)}/customers`),
+  invite: (id: string, email: string) =>
+    request<{ url: string; emailed: boolean; added: boolean; access: CustomerAccess }>("POST", `${mine(id)}/customers`, { email }),
+  remove: (id: string, userId: string) => request<CustomerAccess>("DELETE", `${mine(id)}/customers/${userId}`),
+  cancelInvite: (id: string, inviteId: string) => request<CustomerAccess>("DELETE", `${mine(id)}/customer-invites/${inviteId}`),
+};
+
+export const portalApi = {
+  clients: () => request<{ clients: PortalClient[] }>("GET", "/api/portal/clients").then((r) => r.clients),
+  calls: (id: string) => request<{ calls: CallSummary[]; receptionist: string }>("GET", `/api/portal/${id}/calls`),
+  call: (id: string, callId: string) =>
+    request<{ summary: string; messages: CallMessage[] }>("GET", `/api/portal/${id}/calls/${encodeURIComponent(callId)}`),
+  bookings: (id: string) =>
+    request<{ upcoming: CalendarEvent[]; requests: BookingRequest[] }>("GET", `/api/portal/${id}/bookings`),
 };
 
 export const adminApi = {

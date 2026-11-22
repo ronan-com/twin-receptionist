@@ -26,7 +26,7 @@ const RESET_MINUTES = 60;
 
 const hashToken = (token: string) => createHash("sha256").update(token).digest("hex");
 const newToken = () => randomBytes(32).toString("base64url");
-const RANK: Record<OrgRole, number> = { member: 1, admin: 2, owner: 3 };
+const RANK: Record<OrgRole, number> = { customer: 0, member: 1, admin: 2, owner: 3 };
 
 export class AuthError extends Error {
   constructor(
@@ -256,10 +256,10 @@ export async function team(ctx: Ctx): Promise<TeamState> {
   const orgId = ctx.org!.id;
   const members = await sql`
     select u.id, u.email, u.name, m.role, m.created_at from memberships m join users u on u.id = m.user_id
-    where m.org_id = ${orgId} order by m.created_at`;
+    where m.org_id = ${orgId} and m.role <> 'customer' order by m.created_at`;
   const invites = await sql`
     select token_hash, email, role, expires_at from invites
-    where org_id = ${orgId} and expires_at > now() order by created_at desc`;
+    where org_id = ${orgId} and role <> 'customer' and expires_at > now() order by created_at desc`;
   return {
     members: members.map((m: any) => ({ id: m.id, email: m.email, name: m.name, role: m.role, joinedAt: iso(m.created_at) })),
     invites: invites.map((i: any) => ({ id: i.token_hash.slice(0, 16), email: i.email, role: i.role, expiresAt: iso(i.expires_at) })),
@@ -281,6 +281,8 @@ export async function createInvite(
   role: OrgRole,
   by: { id: string; name: string; email: string },
   base: string,
+  clientId: string | null = null,
+  businessName = "",
 ): Promise<{ url: string; emailed: boolean }> {
   const [already] = await sql`
     select 1 from memberships m join users u on u.id = m.user_id where m.org_id = ${orgId} and u.email = ${email}`;
@@ -291,14 +293,16 @@ export async function createInvite(
   const token = newToken();
   await sql`delete from invites where org_id = ${orgId} and email = ${email}`;
   await sql`
-    insert into invites (token_hash, org_id, email, role, invited_by, expires_at)
-    values (${hashToken(token)}, ${orgId}, ${email}, ${role}, ${by.id}, ${new Date(Date.now() + INVITE_DAYS * 86_400_000)})`;
+    insert into invites (token_hash, org_id, email, role, invited_by, expires_at, client_id)
+    values (${hashToken(token)}, ${orgId}, ${email}, ${role}, ${by.id}, ${new Date(Date.now() + INVITE_DAYS * 86_400_000)}, ${clientId})`;
   const url = `${base}/invite/${token}`;
   const who = by.name || by.email;
   const emailed = await sendAccountEmail(
     email,
-    `${who} invited you to ${orgName}`,
-    `${who} has invited you to ${role === "owner" ? "set up and run" : "join"} ${orgName} on Twin Receptionist.\n\nAccept the invite:\n${url}\n\nThe link works for ${INVITE_DAYS} days.`,
+    role === "customer" ? `${who} gave you access to your calls` : `${who} invited you to ${orgName}`,
+    role === "customer"
+      ? `${who} (${orgName}) has set up your receptionist${businessName ? ` for ${businessName}` : ""}. Sign in to see every call, booking and follow-up.\n\nSet up your login:\n${url}\n\nThe link works for ${INVITE_DAYS} days.`
+      : `${who} has invited you to ${role === "owner" ? "set up and run" : "join"} ${orgName} on Twin Receptionist.\n\nAccept the invite:\n${url}\n\nThe link works for ${INVITE_DAYS} days.`,
   ).catch((err) => {
     console.error("[mail] invite", err.message);
     return false;
@@ -350,7 +354,8 @@ export async function removeMember(ctx: Ctx, userId: string): Promise<void> {
 
 async function inviteFor(token: string) {
   const [i] = await sql`
-    select i.token_hash, i.org_id, i.email, i.role, o.name as org_name, u.id as user_id
+    select i.token_hash, i.org_id, i.email, i.role, i.client_id, o.name as org_name, u.id as user_id,
+      (select c.data->'settings'->>'businessName' from clients c where c.id = i.client_id) as business
     from invites i join orgs o on o.id = i.org_id left join users u on u.email = i.email
     where i.token_hash = ${hashToken(token)} and i.expires_at > now()`;
   if (!i) throw new ValidationError("This invite has expired or was already used. Ask for a new one.");
@@ -359,7 +364,7 @@ async function inviteFor(token: string) {
 
 export async function inviteInfo(token: string) {
   const i = await inviteFor(token);
-  return { orgName: i.org_name, email: i.email, role: i.role, hasAccount: Boolean(i.user_id) };
+  return { orgName: i.org_name, email: i.email, role: i.role, hasAccount: Boolean(i.user_id), businessName: i.business ?? undefined };
 }
 
 // New people choose a name and password; people with an account confirm theirs.
@@ -378,6 +383,7 @@ export async function acceptInvite(token: string, input: any): Promise<string> {
   }
   await sql.begin(async (tx) => {
     await tx`insert into memberships (org_id, user_id, role) values (${i.org_id}, ${userId}, ${i.role}) on conflict do nothing`;
+    if (i.client_id) await tx`insert into client_access (user_id, client_id) values (${userId}, ${i.client_id}) on conflict do nothing`;
     await tx`delete from invites where token_hash = ${i.token_hash}`;
   });
   return startSession(userId, i.org_id);

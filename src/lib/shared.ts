@@ -413,7 +413,8 @@ export function blankSettings(): Settings {
 
 // ---- Accounts ----
 
-export type OrgRole = "owner" | "admin" | "member";
+// "customer" is the end business: read-only, sees only their own receptionist.
+export type OrgRole = "owner" | "admin" | "member" | "customer";
 
 export type Account = {
   user: { id: string; email: string; name: string; platformAdmin: boolean };
@@ -455,4 +456,11 @@ export type TeamState = {
   emailsSent: boolean;
 };
 
-export type InviteInfo = { orgName: string; email: string; role: OrgRole; hasAccount: boolean };
+export type CustomerAccess = {
+  people: { id: string; email: string; name: string; since: string }[];
+  invites: { id: string; email: string; expiresAt: string }[];
+};
+
+export type PortalClient = { id: string; businessName: string; receptionistName: string };
+
+export type InviteInfo = { orgName: string; email: string; role: OrgRole; hasAccount: boolean; businessName?: string };

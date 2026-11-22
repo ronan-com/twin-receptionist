@@ -2,6 +2,7 @@ import { createElement, useCallback, useEffect, useRef, useState, type ReactNode
 import { Link } from "react-router-dom";
 import { BusinessFields, HoursFields, NotesField, ServicesFields, VoiceFields } from "../components/fields";
 import BookingCard from "../components/BookingCard";
+import CustomerAccessCard from "../components/CustomerAccess";
 import EmailCard from "../components/EmailCard";
 import PhoneNumberCard from "../components/PhoneNumberCard";
 import TestLab from "../components/TestLab";
@@ -15,6 +16,7 @@ import {
   type Business,
   type CallMessage,
   type CallSummary,
+  type CustomerAccess,
   type EmailStatus,
   type Settings,
   type Voice,
@@ -300,6 +302,7 @@ function Fold({ title, status, on, children, onClose }: { title: string; status:
 function SetupList({ business, onChange }: { business: Business; onChange: (b: Business) => void }) {
   const [email, setEmail] = useState<EmailStatus | null>(null);
   const [booking, setBooking] = useState<BookingState | null>(null);
+  const [shared, setShared] = useState<CustomerAccess | null>(null);
   const [tick, setTick] = useState(0);
   const refresh = () => setTick((t) => t + 1);
 
@@ -337,6 +340,14 @@ function SetupList({ business, onChange }: { business: Business; onChange: (b: B
       </Fold>
       <Fold title="Text messages" on={Boolean(mobile)} status={mobile ? "On" : "Needs a mobile number"} onClose={refresh}>
         <TextingCard clientId={business.id} businessName={business.settings.businessName} />
+      </Fold>
+      <Fold
+        title="Customer dashboard"
+        on={Boolean(shared && shared.people.length > 0)}
+        status={shared ? (shared.people.length ? `Shared with ${shared.people.length}` : shared.invites.length ? "Invite sent" : "Not shared") : "…"}
+        onClose={refresh}
+      >
+        <CustomerAccessCard clientId={business.id} businessName={business.settings.businessName} onChanged={setShared} />
       </Fold>
     </section>
   );

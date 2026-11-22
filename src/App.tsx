@@ -9,6 +9,7 @@ import Clients from "./pages/Clients";
 import Connect from "./pages/Connect";
 import Dashboard from "./pages/Dashboard";
 import Landing from "./pages/Landing";
+import Portal from "./pages/Portal";
 import Setup from "./pages/Setup";
 import Team from "./pages/Team";
 
@@ -146,6 +147,8 @@ function Operator() {
   if (!session.org) return <NoTeam onDone={load} />;
 
   const account: Account = session;
+  // The end customer's own, read-only view.
+  if (account.role === "customer") return <Portal account={account} />;
   // Switching team changes everything on screen, so start from a clean slate.
   const onAccount = (next: Account) => {
     if (next.org?.id !== account.org?.id) window.location.replace("/");

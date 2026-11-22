@@ -43,6 +43,7 @@ Other `twin-*` servers in this AWS account belong to other projects. Don't chang
 - The platform team (Ronan, Jesse) signs in and uses **Agencies** to invite agencies.
 - Each agency gets its own dashboard and brings its own clients and team. Agencies only ever see their own data.
 - Every receptionist, call and phone number runs on **our** Telnyx account (the key in `/twinrecep/env/TELNYX_API_KEY`). Telnyx calls back into this server at `PUBLIC_URL/hooks/...` for booking tools.
+- Three levels of dashboard: the platform team (Agencies page), each agency (its own receptionists and team), and the **end customer**. An agency shares a receptionist with a business from its page (Set up, then Customer dashboard). The customer gets their own login and sees, read-only, only their own calls with summaries and transcripts, bookings and follow-ups. Customers can't reach anything else; the server rejects every other request from them.
 - Agencies never see Telnyx, prices or balances, and can't buy numbers. They press **Request a number** on a receptionist. The request appears under **Number requests** on the Agencies page (with a count in the top bar, and an email to the platform team once `SMTP_URL` is set). Staff pick a number, **Buy and connect**, and it is bought on our account and attached to that receptionist, or **Decline** with a reason.
 
 ## Settings (SSM Parameter Store)

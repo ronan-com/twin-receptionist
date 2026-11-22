@@ -36,7 +36,7 @@ export async function listAgencies(ctx: Ctx): Promise<Agency[]> {
   onlyPlatform(ctx);
   const orgs = await sql`
     select o.id, o.name, o.created_at, o.platform_telnyx, o.suspended_at, o.telnyx_key is not null as own,
-      (select count(*)::int from memberships m where m.org_id = o.id) as members,
+      (select count(*)::int from memberships m where m.org_id = o.id and m.role <> 'customer') as members,
       (select count(*)::int from clients c where c.org_id = o.id) as clients,
       coalesce((select array_agg(u.email order by u.email) from memberships m join users u on u.id = m.user_id
                 where m.org_id = o.id and m.role = 'owner'), '{}') as owners,

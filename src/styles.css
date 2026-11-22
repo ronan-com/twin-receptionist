@@ -1100,11 +1100,23 @@ textarea:focus {
   .hours-times input {
     width: 112px;
   }
+  /* Keep the caller visible on phones: number on top, time underneath. */
   .call-row {
     grid-template-columns: 1fr 20px;
+    grid-template-areas: "from chev" "when chev";
+    row-gap: 2px;
+    padding: 10px 4px;
   }
   .call-from {
-    display: none;
+    grid-area: from;
+    font-weight: 600;
+  }
+  .call-when {
+    grid-area: when;
+    font-size: 13px;
+  }
+  .call-chevron {
+    grid-area: chev;
   }
   .add-row {
     flex-direction: column;
@@ -1726,5 +1738,66 @@ textarea:focus {
   }
   .fold-chev {
     margin-left: auto;
+  }
+}
+
+/* Customer dashboard */
+.stat-row {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+  margin-bottom: 20px;
+}
+.stat {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 16px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.stat-n {
+  font-family: "Inter Tight", Inter, sans-serif;
+  font-size: 32px;
+  font-weight: 600;
+  line-height: 1;
+}
+.stat-l {
+  color: var(--muted);
+  font-size: 13px;
+}
+.portal-tabs {
+  margin-bottom: 16px;
+  max-width: 420px;
+}
+.portal-list {
+  list-style: none;
+  margin: 8px 0 20px;
+  padding: 0;
+}
+.portal-list li {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 14px 0;
+  border-top: 1px solid var(--border);
+}
+.portal-list li:first-child {
+  border-top: 0;
+}
+.portal-phone {
+  color: var(--text);
+  font-weight: 600;
+}
+@media (max-width: 560px) {
+  .stat-row {
+    gap: 8px;
+  }
+  .stat {
+    padding: 12px;
+  }
+  .stat-n {
+    font-size: 26px;
   }
 }

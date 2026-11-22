@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link, Navigate, Outlet, Route, Routes, useNavigate, useParams } from "react-router-dom";
 import Wordmark from "./components/Wordmark";
-import { accountApi, api, auth } from "./lib/api";
+import { accountApi, adminApi, api, auth } from "./lib/api";
 import type { Account, Business, Session } from "./lib/shared";
 import { AcceptInvite, NoTeam, ResetPassword, SignIn } from "./pages/Auth";
 import Agencies from "./pages/Agencies";
@@ -14,6 +14,10 @@ import Team from "./pages/Team";
 
 function Shell({ account, onAccount }: { account: Account; onAccount: (a: Account) => void }) {
   const navigate = useNavigate();
+  const [waiting, setWaiting] = useState(0);
+  useEffect(() => {
+    if (account.user.platformAdmin) adminApi.numberRequests().then((r) => setWaiting(r.pending)).catch(() => {});
+  }, [account.user.platformAdmin]);
   async function signOut() {
     await auth.signOut().catch(() => {});
     window.location.replace("/");
@@ -44,7 +48,7 @@ function Shell({ account, onAccount }: { account: Account; onAccount: (a: Accoun
           )}
           {account.user.platformAdmin && (
             <Link to="/agencies" className="btn btn-ghost btn-sm">
-              Agencies
+              Agencies{waiting > 0 ? ` (${waiting})` : ""}
             </Link>
           )}
           <Link to="/team" className="btn btn-ghost btn-sm">

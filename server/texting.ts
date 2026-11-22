@@ -31,7 +31,7 @@ export async function enableTexting(assistantId: string): Promise<string> {
     messaging_settings: { conversation_inactivity_minutes: NEW_CONVERSATION_AFTER_MINUTES },
   });
   const profileId = await profileFor(assistantId);
-  if (!profileId) throw new TelnyxError(502, "Telnyx didn't set up texting for this receptionist. Try again.");
+  if (!profileId) throw new TelnyxError(502, "Texting couldn't be set up for this receptionist. Try again.");
 
   // New profiles only allow texts to the US and Canada.
   await telnyx("PATCH", `/messaging_profiles/${profileId}`, {
@@ -95,7 +95,7 @@ export async function connectNumberForTexts(client: Business, input: unknown): P
   } catch (err) {
     if (err instanceof TelnyxError && err.status < 500) {
       throw new ValidationError(
-        `Telnyx won't send texts from this number. Landline-style numbers can't text, so buy a mobile number for texts. (${err.message})`,
+        `Texts can't be sent from this number. Landline-style numbers can't text, so buy a mobile number for texts. (${err.message})`,
       );
     }
     throw err;

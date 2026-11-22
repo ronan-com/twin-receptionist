@@ -194,9 +194,24 @@ export type TextingState = { enabled: boolean; numbers: string[]; waiting: strin
 export type NumberState = {
   numbers: ConnectedNumber[];
   pending: NumberOrder[];
-  // The platform's Telnyx balance; only shown to the platform team.
+  // The platform's balance; only shown to the platform team.
   balance: { amount: number; currency: string } | null;
+  // Only the platform team buys numbers. Everyone else asks for one.
+  canBuy: boolean;
+  requests: NumberRequest[];
 };
+
+export type NumberRequest = {
+  id: string;
+  type: NumberType;
+  note: string;
+  status: "pending" | "done" | "declined";
+  phoneNumber: string;
+  reason: string;
+  createdAt: string;
+};
+
+export type AdminNumberRequest = NumberRequest & { agency: string; business: string; requestedBy: string; clientId: string };
 
 // "+61731234567" -> "(07) 3123 4567", "+61412345678" -> "0412 345 678"
 export function formatNumber(e164: string): string {

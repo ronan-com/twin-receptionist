@@ -43,6 +43,7 @@ Other `twin-*` servers in this AWS account belong to other projects. Don't chang
 - The platform team (Ronan, Jesse) signs in and uses **Agencies** to invite agencies.
 - Each agency gets its own dashboard and brings its own clients and team. Agencies only ever see their own data.
 - Every receptionist, call and phone number runs on **our** Telnyx account (the key in `/twinrecep/env/TELNYX_API_KEY`). Telnyx calls back into this server at `PUBLIC_URL/hooks/...` for booking tools.
+- Agencies never see Telnyx, prices or balances, and can't buy numbers. They press **Request a number** on a receptionist. The request appears under **Number requests** on the Agencies page (with a count in the top bar, and an email to the platform team once `SMTP_URL` is set). Staff pick a number, **Buy and connect**, and it is bought on our account and attached to that receptionist, or **Decline** with a reason.
 
 ## Settings (SSM Parameter Store)
 
@@ -115,5 +116,5 @@ Do the DNS step first: https certificates can't be issued until the name points 
 ## Costs and cautions
 
 - Rough running cost: the t4g.small server, db.t4g.micro database, storage and one Elastic IP. Telnyx usage (calls, numbers, texts) is billed separately to our Telnyx account.
-- There are no per-agency spend limits yet, so any agency admin can buy phone numbers on our Telnyx account.
+- Only platform staff can buy phone numbers. Agencies can still run test calls and take real calls and texts, which are billed to our Telnyx account, and there are no per-agency usage limits yet.
 - Deleting `twinrecep-db` is blocked by deletion protection on purpose.

@@ -35,7 +35,8 @@ import { availableNumbers, buyNumber, callSummary, connectedNumbers, openOrders,
 import { ValidationError, buildInstructions, normaliseSettings } from "./prompt";
 import { clientsWithBooking, getClient, getOrgClient, insertClient, listClients, orgOfClient, removeClient, saveClient } from "./store";
 import { TelnyxError, enterOrg, hasKey, runAsOrg, telnyx } from "./telnyx";
-import { createAgency, inviteAgencyOwner, isSuspended, listAgencies, removeTelnyxKey, saveTelnyxKey, telnyxSettings, updateAgency } from "./agencies";
+import { createRequest, declineRequest, listRequests, markDone, pendingCount, pendingRequest, requestsForClient } from "./numberRequests";
+import { createAgency, inviteAgencyOwner, isSuspended, listAgencies, telnyxSettings, updateAgency } from "./agencies";
 import { previewEmail, sendSimText, startTextSim } from "./simulator";
 import {
   connectFromLink,
@@ -287,7 +288,7 @@ async function createClient(orgId: string, input: unknown): Promise<Business> {
     tags: ["twin-receptionist"],
   });
   const assistantId = created.data?.id ?? created.id;
-  if (!assistantId) throw new TelnyxError(502, "Telnyx did not return an assistant ID.");
+  if (!assistantId) throw new TelnyxError(502, "The phone service did not return an assistant ID.");
 
   const now = new Date().toISOString();
   const client: Business = {
@@ -368,7 +369,7 @@ async function numberState(ctx: Ctx, client: Business): Promise<NumberState> {
   if (JSON.stringify(current) !== JSON.stringify(client.phoneNumbers ?? [])) {
     await saveClient({ ...client, phoneNumbers: current });
   }
-  return { numbers, pending, balance };
+  return { numbers, pending, balance, canBuy: ctx.user.platformAdmin, requests: await requestsForClient(client.id) };
 }
 
 // A redirect to a path on this server (Response.redirect needs an absolute URL).
@@ -511,6 +512,36 @@ async function route(req: Request): Promise<Response> {
 
   // The platform team's view of every agency. Not scoped to a team.
   if (path.startsWith("/api/admin/")) {
+    if (path === "/api/admin/number-requests" && method === "GET") {
+      return json({ requests: await listRequests(ctx), pending: await pendingCount() });
+    }
+    const nr = path.match(/^\/api\/admin\/number-requests\/([a-f0-9-]{36})\/(fulfil|decline)$/);
+    if (nr && method === "POST") {
+      if (nr[2] === "decline") {
+        await declineRequest(ctx, nr[1], await body(req));
+      } else {
+        const r = await pendingRequest(ctx, nr[1]);
+        const input = (await body(req)) as { phoneNumber?: string; confirm?: boolean };
+        const wantMobile = r.kind === "mobile";
+        if (wantMobile !== String(input.phoneNumber ?? "").startsWith("+614")) {
+          throw new ValidationError(`Pick a ${wantMobile ? "mobile" : "local"} number to match the request.`);
+        }
+        const client = await getClient(r.client_id);
+        if (!client) throw new ValidationError("That receptionist no longer exists.");
+        // Bought on our account; each agency's receptionist still lives under its own team.
+        const order = await buyNumber(await voiceAppFor(client.assistantId), client.id, input);
+        await markDone(r.id, order.phoneNumbers[0] ?? String(input.phoneNumber));
+        if (order.status === "success") {
+          const fresh = (await getClient(client.id)) ?? client;
+          for (const n of order.phoneNumbers.filter((p) => p.startsWith("+614"))) {
+            await connectNumberForTexts(fresh, { phoneNumber: n }).catch((err) =>
+              console.error(`[texting ${client.id}] ${n}`, err.message),
+            );
+          }
+        }
+      }
+      return json({ requests: await listRequests(ctx), pending: await pendingCount() });
+    }
     if (path === "/api/admin/agencies") {
       if (method === "GET") return json({ agencies: await listAgencies(ctx) });
       if (method === "POST") return json(await createAgency(ctx, await body(req), appUrl(req)), 201);
@@ -536,11 +567,6 @@ async function route(req: Request): Promise<Response> {
     await renameOrg(ctx, await body(req));
     return json(await account((await sessionFrom(req))!));
   }
-  if (path === "/api/org/telnyx") {
-    if (method === "GET") return json(await telnyxSettings(ctx));
-    if (method === "PUT") return json(await saveTelnyxKey(ctx, await body(req)));
-    if (method === "DELETE") return json(await removeTelnyxKey(ctx));
-  }
   if (path === "/api/team" && method === "GET") return json(await team(ctx));
   if (path === "/api/team/invites" && method === "POST") return json(await invite(ctx, await body(req), appUrl(req)), 201);
   const teamInvite = path.match(/^\/api\/team\/invites\/([a-f0-9]{16})$/);
@@ -565,6 +591,8 @@ async function route(req: Request): Promise<Response> {
   if (path === "/api/public-url" && method === "GET") return json({ url: publicUrl() });
 
   if (path === "/api/numbers/available" && method === "GET") {
+    // Searching shows our prices: only the platform team buys numbers.
+    if (!ctx.user.platformAdmin) throw new AuthError("Request a number and we'll set it up.", 403);
     const type = url.searchParams.get("type") === "mobile" ? "mobile" : "local";
     return json({ numbers: await availableNumbers(type) });
   }
@@ -575,7 +603,7 @@ async function route(req: Request): Promise<Response> {
   }
 
   const match = path.match(
-    /^\/api\/clients\/([a-f0-9-]{36})(\/calls(?:\/([^/]+)\/messages)?|\/numbers|\/email|\/email\/check|\/texting|\/texting\/numbers|\/texting\/test|\/simulator\/texts|\/simulator\/texts\/send|\/simulator\/email|\/booking|\/booking\/test|\/booking\/events\/[a-f0-9-]{36}|\/calendar|\/calendar\/signin\/(?:google|microsoft)|\/connect-link)?$/,
+    /^\/api\/clients\/([a-f0-9-]{36})(\/calls(?:\/([^/]+)\/messages)?|\/numbers|\/number-requests|\/email|\/email\/check|\/texting|\/texting\/numbers|\/texting\/test|\/simulator\/texts|\/simulator\/texts\/send|\/simulator\/email|\/booking|\/booking\/test|\/booking\/events\/[a-f0-9-]{36}|\/calendar|\/calendar\/signin\/(?:google|microsoft)|\/connect-link)?$/,
   );
   if (match) {
     // Another organisation's receptionist looks exactly like one that doesn't exist.
@@ -668,11 +696,17 @@ async function route(req: Request): Promise<Response> {
       if (method === "POST") return json(await previewEmail(client, await req.json()));
     } else if (match[2] === "/texting/test") {
       if (method === "POST") return json(await sendTestText(client, await req.json()));
+    } else if (match[2] === "/number-requests") {
+      if (method === "POST") {
+        await createRequest(ctx, client.id, client.settings.businessName, await body(req), appUrl(req));
+        // Doesn't ask the carrier: the request is saved either way.
+        return json({ requests: await requestsForClient(client.id) }, 201);
+      }
     } else if (match[2] === "/numbers") {
       if (method === "GET") return json(await numberState(ctx, client));
       if (method === "POST") {
-        // Numbers cost money every month.
-        requireRole(ctx, "admin");
+        // Numbers cost us money every month: agencies ask (number-requests), the platform team buys.
+        if (!ctx.user.platformAdmin) throw new AuthError("Request a number and we'll set it up.", 403);
         const order = await buyNumber(await voiceAppFor(client.assistantId), client.id, await req.json());
         const state = await numberState(ctx, client);
         // A mobile that's live straight away also takes texts. Others can be added from the texts card.

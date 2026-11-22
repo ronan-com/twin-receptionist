@@ -45,7 +45,7 @@ export default function TextingCard({ clientId, businessName }: { clientId: stri
     <section className="card">
       <h2>Text messages</h2>
 
-      {state === null && !error && <p className="muted">Checking Telnyx…</p>}
+      {state === null && !error && <p className="muted">Loading…</p>}
 
       {state && !state.enabled && (
         <>
@@ -102,7 +102,7 @@ export default function TextingCard({ clientId, businessName }: { clientId: stri
           <label className="field">
             <span>Send a test text to</span>
             <input type="tel" inputMode="tel" required placeholder="0412 345 678" value={to} onChange={(e) => setTo(e.target.value)} />
-            <span className="hint">Your own mobile, or the client's when you demo it. Each text costs a few cents on Telnyx.</span>
+            <span className="hint">Your own mobile, or the client's when you demo it. Each text costs a few cents.</span>
           </label>
           <div>
             <button type="submit" className="btn btn-secondary btn-sm" disabled={busy !== ""}>

@@ -1,7 +1,7 @@
 import type {
   Account,
   Agency,
-  TelnyxSettings,
+  AdminNumberRequest,
   InviteInfo,
   OrgRole,
   Session,
@@ -17,6 +17,7 @@ import type {
   EmailMode,
   EmailStatus,
   NumberOrder,
+  NumberRequest,
   NumberState,
   NumberType,
   Settings,
@@ -85,23 +86,28 @@ export const accountApi = {
   removeMember: (userId: string) => request<TeamState>("DELETE", `/api/team/members/${userId}`),
 };
 
-export const telnyxApi = {
-  get: () => request<TelnyxSettings>("GET", "/api/org/telnyx"),
-  save: (apiKey: string) => request<TelnyxSettings>("PUT", "/api/org/telnyx", { apiKey }),
-  remove: () => request<TelnyxSettings>("DELETE", "/api/org/telnyx"),
-};
-
 export const adminApi = {
   agencies: () => request<{ agencies: Agency[] }>("GET", "/api/admin/agencies").then((r) => r.agencies),
   create: (details: { name: string; ownerEmail: string }) =>
     request<{ url: string; emailed: boolean }>("POST", "/api/admin/agencies", details),
   inviteOwner: (id: string, email: string) =>
     request<{ url: string; emailed: boolean }>("POST", `/api/admin/agencies/${id}/invites`, { email }),
+  numberRequests: () =>
+    request<{ requests: AdminNumberRequest[]; pending: number }>("GET", "/api/admin/number-requests"),
+  fulfilRequest: (id: string, phoneNumber: string) =>
+    request<{ requests: AdminNumberRequest[]; pending: number }>("POST", `/api/admin/number-requests/${id}/fulfil`, {
+      phoneNumber,
+      confirm: true,
+    }),
+  declineRequest: (id: string, reason: string) =>
+    request<{ requests: AdminNumberRequest[]; pending: number }>("POST", `/api/admin/number-requests/${id}/decline`, { reason }),
   update: (id: string, change: { name?: string; suspended?: boolean; platformTelnyx?: boolean }) =>
     request<{ agencies: Agency[] }>("PUT", `/api/admin/agencies/${id}`, change).then((r) => r.agencies),
 };
 
 export const api = {
+  requestNumber: (id: string, type: NumberType, note: string) =>
+    request<{ requests: NumberRequest[] }>("POST", `${one(id)}/number-requests`, { type, note }).then((r) => r.requests),
   voices: () => request<{ voices: Voice[] }>("GET", "/api/voices").then((r) => r.voices),
   clients: () => request<{ clients: Business[] }>("GET", "/api/clients").then((r) => r.clients),
   client: (id: string) => request<{ client: Business }>("GET", one(id)).then((r) => r.client),

@@ -2,8 +2,7 @@ import type { Agency, TelnyxSettings } from "../src/lib/shared";
 import { AuthError, createInvite, emailOf, requireRole, textOf, type Ctx } from "./accounts";
 import { iso, sql } from "./db";
 import { ValidationError } from "./prompt";
-import { seal } from "./secrets";
-import { TelnyxError, forgetKey, telnyx } from "./telnyx";
+import { forgetKey, telnyx } from "./telnyx";
 
 // Agencies are orgs the platform team sets up. An agency brings its own Telnyx
 // account (its API key, kept sealed), its own clients and its own people.
@@ -20,31 +19,6 @@ export async function telnyxSettings(ctx: Ctx): Promise<TelnyxSettings> {
     if (res) balance = { amount: Number(res.data?.available_credit ?? res.data?.balance ?? 0), currency: res.data?.currency ?? "USD" };
   }
   return { mode, last4: o?.telnyx_key_last4 ?? "", balance };
-}
-
-export async function saveTelnyxKey(ctx: Ctx, input: any): Promise<TelnyxSettings> {
-  requireRole(ctx, "owner");
-  const key = String(input?.apiKey ?? "").trim();
-  if (key.length < 20 || key.length > 300 || /\s/.test(key)) throw new ValidationError("That doesn't look like a Telnyx API key. Copy it from portal.telnyx.com, API Keys.");
-  // Check it works before keeping it.
-  try {
-    await telnyx("GET", "/balance", undefined, key);
-  } catch (err) {
-    if (err instanceof TelnyxError && (err.status === 401 || err.status === 403)) {
-      throw new ValidationError("Telnyx didn't accept that key. Check you copied the whole thing.");
-    }
-    throw err;
-  }
-  await sql`update orgs set telnyx_key = ${seal(key)}, telnyx_key_last4 = ${key.slice(-4)} where id = ${ctx.org!.id}`;
-  forgetKey(ctx.org!.id);
-  return telnyxSettings(ctx);
-}
-
-export async function removeTelnyxKey(ctx: Ctx): Promise<TelnyxSettings> {
-  requireRole(ctx, "owner");
-  await sql`update orgs set telnyx_key = null, telnyx_key_last4 = null where id = ${ctx.org!.id}`;
-  forgetKey(ctx.org!.id);
-  return telnyxSettings(ctx);
 }
 
 export async function isSuspended(orgId: string): Promise<boolean> {

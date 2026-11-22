@@ -1,7 +1,8 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { Link } from "react-router-dom";
 import { adminApi } from "../lib/api";
-import type { Agency } from "../lib/shared";
+import { api } from "../lib/api";
+import { formatNumber, type AdminNumberRequest, type Agency, type AvailableNumber } from "../lib/shared";
 
 const day = (iso: string) => new Date(iso).toLocaleDateString("en-AU", { day: "numeric", month: "short", year: "numeric" });
 
@@ -13,6 +14,27 @@ export default function Agencies() {
   const [ownerEmail, setOwnerEmail] = useState("");
   const [link, setLink] = useState<{ who: string; url: string; emailed: boolean } | null>(null);
   const [copied, setCopied] = useState(false);
+
+  const [requests, setRequests] = useState<AdminNumberRequest[] | null>(null);
+  const [picking, setPicking] = useState<{ id: string; options: AvailableNumber[] | null } | null>(null);
+
+  useEffect(() => {
+    adminApi
+      .numberRequests()
+      .then((r) => setRequests(r.requests))
+      .catch((err: Error) => setError(err.message));
+  }, []);
+
+  function findNumbers(r: AdminNumberRequest) {
+    setPicking({ id: r.id, options: null });
+    api
+      .availableNumbers(r.type)
+      .then((options) => setPicking({ id: r.id, options }))
+      .catch((err: Error) => {
+        setPicking(null);
+        setError(err.message);
+      });
+  }
 
   useEffect(() => {
     adminApi
@@ -73,6 +95,81 @@ export default function Agencies() {
           {error}
         </div>
       )}
+
+      <section className="card stack">
+        <h2>Number requests</h2>
+        {!requests && !error && <p className="muted">Loading…</p>}
+        {requests && requests.filter((r) => r.status === "pending").length === 0 && (
+          <p className="muted">Nothing waiting. Agencies ask for numbers from a receptionist's page.</p>
+        )}
+        <ul className="members">
+          {requests
+            ?.filter((r) => r.status === "pending")
+            .map((r) => (
+              <li key={r.id} style={{ flexWrap: "wrap" }}>
+                <span className="member-who">
+                  <strong>
+                    {r.business} <span className="muted">({r.agency})</span>
+                  </strong>
+                  <span className="muted">
+                    {r.type === "mobile" ? "Mobile (calls and texts)" : "Local (calls only)"} · {day(r.createdAt)}
+                    {r.requestedBy ? ` · ${r.requestedBy}` : ""}
+                  </span>
+                  {r.note && <span className="muted">"{r.note}"</span>}
+                </span>
+                <span className="row-actions">
+                  <button type="button" className="btn btn-secondary btn-sm" disabled={busy !== ""} onClick={() => findNumbers(r)}>
+                    Find numbers
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn-ghost btn-sm"
+                    disabled={busy !== ""}
+                    onClick={() => {
+                      const reason = window.prompt("Tell them why (optional):", "");
+                      if (reason === null) return;
+                      run(`decl-${r.id}`, async () => setRequests((await adminApi.declineRequest(r.id, reason)).requests));
+                    }}
+                  >
+                    Decline
+                  </button>
+                </span>
+                {picking?.id === r.id && (
+                  <div style={{ flexBasis: "100%" }}>
+                    {picking.options === null && <p className="muted">Searching…</p>}
+                    {picking.options?.length === 0 && <p className="muted">No numbers available right now.</p>}
+                    <ul className="number-options">
+                      {picking.options?.map((n) => (
+                        <li key={n.phoneNumber}>
+                          <span>
+                            <span className="number">{formatNumber(n.phoneNumber)}</span>
+                            <span className="number-price">
+                              US${(n.upfront + n.monthly).toFixed(2)} now, then US${n.monthly.toFixed(2)}/month
+                            </span>
+                          </span>
+                          <button
+                            type="button"
+                            className="btn btn-secondary btn-sm"
+                            disabled={busy !== ""}
+                            onClick={() => {
+                              if (!window.confirm(`Buy ${formatNumber(n.phoneNumber)} for ${r.business}? It's charged to our balance.`)) return;
+                              run(`buy-${r.id}`, async () => {
+                                setRequests((await adminApi.fulfilRequest(r.id, n.phoneNumber)).requests);
+                                setPicking(null);
+                              });
+                            }}
+                          >
+                            Buy and connect
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+              </li>
+            ))}
+        </ul>
+      </section>
 
       <section className="card stack">
         <h2>Invite an agency</h2>

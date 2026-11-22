@@ -290,7 +290,7 @@ export default function Dashboard({ business, onChange, onDeleted }: Props) {
 
   async function remove() {
     const ok = window.confirm(
-      `Delete the receptionist for ${s.businessName}? This removes it from Telnyx and from your list, and can't be undone here.`,
+      `Delete the receptionist for ${s.businessName}? This removes it and its call history, and can't be undone here.`,
     );
     if (!ok) return;
     setDeleting(true);
@@ -412,7 +412,7 @@ export default function Dashboard({ business, onChange, onDeleted }: Props) {
 
           <section className="card card-quiet">
             <h2>Delete this receptionist</h2>
-            <p className="muted">Removes it from Telnyx and from your list.</p>
+            <p className="muted">Removes it and its call history.</p>
             <button type="button" className="btn btn-danger btn-sm" onClick={remove} disabled={deleting}>
               {deleting ? "Deleting…" : "Delete receptionist"}
             </button>

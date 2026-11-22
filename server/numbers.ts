@@ -7,7 +7,7 @@ import { TelnyxError, telnyx } from "./telnyx";
 export async function voiceAppFor(assistantId: string): Promise<string> {
   const res = await telnyx<any>("GET", `/ai/assistants/${assistantId}`);
   const id = (res.data ?? res)?.telephony_settings?.default_texml_app_id;
-  if (!id) throw new TelnyxError(502, "This receptionist has no voice app on Telnyx yet.");
+  if (!id) throw new TelnyxError(502, "This receptionist isn't set up for calls yet.");
   return String(id);
 }
 

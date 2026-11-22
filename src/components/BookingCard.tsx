@@ -241,7 +241,7 @@ export default function BookingCard({ clientId, onChanged }: { clientId: string;
           )}
           {!state.publicUrl && (
             <div className="notice notice-wait" role="status">
-              Telnyx can't reach this server yet, so the receptionist won't book on calls. On a laptop, run{" "}
+              The phone service can't reach this server yet, so the receptionist won't book on calls. On a laptop, run{" "}
               <code>bun run tunnel</code> in the twin-receptionist folder; in the cloud, set <code>PUBLIC_URL</code>.
             </div>
           )}

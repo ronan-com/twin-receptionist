@@ -26,7 +26,7 @@ export async function startTextSim(client: Business): Promise<{ conversationId: 
     },
   });
   const conversationId = res.data?.id ?? res.id;
-  if (!conversationId) throw new ValidationError("Telnyx didn't start a test conversation. Try again.");
+  if (!conversationId) throw new ValidationError("The test conversation didn't start. Try again.");
   return { conversationId };
 }
 

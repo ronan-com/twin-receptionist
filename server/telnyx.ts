@@ -27,7 +27,7 @@ async function keyFor(orgId: string | null): Promise<string> {
   const [o] = await sql`select telnyx_key, platform_telnyx from orgs where id = ${orgId}`;
   const key = o?.telnyx_key ? unseal(o.telnyx_key) : o?.platform_telnyx ? platform : "";
   if (!key) {
-    throw new TelnyxError(400, "Connect your Telnyx account first: open Settings and add your Telnyx API key.");
+    throw new TelnyxError(400, "This account isn't set up for calls yet. Contact the platform team.");
   }
   keyCache.set(orgId, { key, at: Date.now() });
   return key;
@@ -62,7 +62,7 @@ export async function telnyx<T = any>(method: string, path: string, body?: unkno
       signal: AbortSignal.timeout(30_000),
     });
   } catch (err) {
-    throw new TelnyxError(502, `Could not reach Telnyx: ${(err as Error).message}`);
+    throw new TelnyxError(502, `Could not reach the phone service: ${(err as Error).message}`);
   }
 
   const text = await res.text();
@@ -76,7 +76,7 @@ export async function telnyx<T = any>(method: string, path: string, body?: unkno
   if (!res.ok) {
     const first = json?.errors?.[0];
     const detail = first?.detail || first?.title || text.slice(0, 200) || res.statusText;
-    throw new TelnyxError(res.status, `Telnyx said: ${detail}`);
+    throw new TelnyxError(res.status, `The phone service said: ${detail}`);
   }
   return json as T;
 }

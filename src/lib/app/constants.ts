@@ -87,19 +87,18 @@ export const ADMIN_NAV: NavItem[] = [
   { to: "/admin", label: "Overview", icon: LayoutDashboard, exact: true },
   { to: "/admin/agencies", label: "Agencies", icon: Briefcase, platformOnly: true },
   { to: "/admin/clients", label: "Clients", icon: Building2 },
-  { to: "/admin/calls", label: "Live / Calls", icon: Activity },
+  { to: "/admin/calls", label: "Calls", icon: Activity },
   { to: "/admin/receptionists", label: "AI Receptionists", icon: Bot },
-  { to: "/admin/voices", label: "Voices", icon: AudioLines, platformOnly: true },
+  { to: "/admin/voices", label: "Voices", icon: AudioLines },
   { to: "/admin/phone-numbers", label: "Phone Numbers", icon: Phone },
-  { to: "/admin/number-requests", label: "Number Requests", icon: PhoneIncoming, platformOnly: true },
-  { to: "/admin/integrations", label: "Integrations", icon: Plug },
-  { to: "/admin/billing", label: "Usage & Billing", icon: CreditCard, platformOnly: true },
+  { to: "/admin/number-requests", label: "Number Requests", icon: PhoneIncoming },
+  { to: "/admin/usage", label: "Usage", icon: CreditCard },
   { to: "/admin/test-lab", label: "Test Lab", icon: FlaskConical, platformOnly: true },
-  { to: "/admin/system", label: "System / QA", icon: ClipboardCheck, platformOnly: true },
+  { to: "/admin/system", label: "System / QA", icon: ClipboardCheck },
   { to: "/admin/audit", label: "Audit Log", icon: ScrollText },
-  { to: "/admin/branding", label: "Branding", icon: Palette },
-  { to: "/admin/settings", label: "Admin Settings", icon: ShieldCheck },
+  { to: "/admin/settings", label: "Settings", icon: ShieldCheck, match: ["/admin/branding"] },
 ];
+// (Integrations and Billing have no Twin backing yet: no console pages. Branding is a tab of Settings.)
 
 /** Console paths agency staff may not open. */
 export const PLATFORM_ONLY_PATHS = ADMIN_NAV.filter((n) => n.platformOnly).map((n) => n.to);

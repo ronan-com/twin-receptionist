@@ -40,7 +40,7 @@ import { listCalls } from "./calls";
 import { startCallSync } from "./callsync";
 import { workspaceBusinesses } from "./answered";
 import { audit } from "./audit";
-import { consoleRoutes } from "./routes/console";
+import { consoleRoutes, isClientPaused } from "./routes/console";
 import { manageRoutes } from "./routes/manage";
 import { signupRoutes } from "./routes/signup";
 import { workspaceRoutes } from "./routes/workspace";
@@ -250,6 +250,8 @@ async function hook(req: Request, clientId: string, action: string): Promise<Res
   if (!client || !tokenMatches(client.booking, req.headers.get("x-twin-key"))) return json({ error: "Not found" }, 404);
   const orgId = await orgOfClient(clientId);
   if (orgId && (await isSuspended(orgId))) return json({ error: "This service is paused. Take a message instead." });
+  // One business paused from the console (clients.paused_at).
+  if (await isClientPaused(clientId)) return json({ error: "This service is paused. Take a message instead." });
   enterOrg(orgId);
   if (!client.booking!.enabled) return json({ error: "Booking is switched off. Offer to take a message instead." });
   const text = await req.text();
@@ -666,6 +668,10 @@ async function route(req: Request, server?: { requestIP(r: Request): { address: 
       ({ client, orgId: clientOrgId, access } = found);
       if (access === "viewer" && method !== "GET" && method !== "HEAD") {
         return json({ error: "Your access to this business is view-only. Ask a manager to change it." }, 403);
+      }
+      // Paused from the console: the business can look but not change anything.
+      if (access === "manager" && method !== "GET" && method !== "HEAD" && (await isClientPaused(client!.id))) {
+        return json({ error: "This business is paused. Contact your agency to resume it." }, 403);
       }
       if (clientOrgId !== orgId) enterOrg(clientOrgId);
       rest = one[2] ?? "";

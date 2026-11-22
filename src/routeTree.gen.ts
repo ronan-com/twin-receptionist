@@ -36,6 +36,7 @@ import { Route as AuthenticatedAdminTestLabRouteImport } from './routes/_authent
 import { Route as AuthenticatedAdminVoicesRouteImport } from './routes/_authenticated/admin/voices'
 import { Route as AuthenticatedAppIndexRouteImport } from './routes/_authenticated/app/index'
 import { Route as AuthenticatedAppAnalyticsRouteImport } from './routes/_authenticated/app/analytics'
+import { Route as AuthenticatedAppAutomationsRouteImport } from './routes/_authenticated/app/automations'
 import { Route as AuthenticatedAppBookingsRouteImport } from './routes/_authenticated/app/bookings'
 import { Route as AuthenticatedAppCallsRouteImport } from './routes/_authenticated/app/calls'
 import { Route as AuthenticatedAppIntegrationsRouteImport } from './routes/_authenticated/app/integrations'
@@ -194,6 +195,12 @@ const AuthenticatedAppAnalyticsRoute =
     path: '/analytics',
     getParentRoute: () => AuthenticatedAppRouteRoute,
   } as any)
+const AuthenticatedAppAutomationsRoute =
+  AuthenticatedAppAutomationsRouteImport.update({
+    id: '/automations',
+    path: '/automations',
+    getParentRoute: () => AuthenticatedAppRouteRoute,
+  } as any)
 const AuthenticatedAppBookingsRoute =
   AuthenticatedAppBookingsRouteImport.update({
     id: '/bookings',
@@ -283,6 +290,7 @@ export interface FileRoutesByFullPath {
   '/admin/test-lab': typeof AuthenticatedAdminTestLabRoute
   '/admin/voices': typeof AuthenticatedAdminVoicesRoute
   '/app/analytics': typeof AuthenticatedAppAnalyticsRoute
+  '/app/automations': typeof AuthenticatedAppAutomationsRoute
   '/app/bookings': typeof AuthenticatedAppBookingsRoute
   '/app/calls': typeof AuthenticatedAppCallsRoute
   '/app/integrations': typeof AuthenticatedAppIntegrationsRoute
@@ -320,6 +328,7 @@ export interface FileRoutesByTo {
   '/admin/test-lab': typeof AuthenticatedAdminTestLabRoute
   '/admin/voices': typeof AuthenticatedAdminVoicesRoute
   '/app/analytics': typeof AuthenticatedAppAnalyticsRoute
+  '/app/automations': typeof AuthenticatedAppAutomationsRoute
   '/app/bookings': typeof AuthenticatedAppBookingsRoute
   '/app/calls': typeof AuthenticatedAppCallsRoute
   '/app/integrations': typeof AuthenticatedAppIntegrationsRoute
@@ -361,6 +370,7 @@ export interface FileRoutesById {
   '/_authenticated/admin/test-lab': typeof AuthenticatedAdminTestLabRoute
   '/_authenticated/admin/voices': typeof AuthenticatedAdminVoicesRoute
   '/_authenticated/app/analytics': typeof AuthenticatedAppAnalyticsRoute
+  '/_authenticated/app/automations': typeof AuthenticatedAppAutomationsRoute
   '/_authenticated/app/bookings': typeof AuthenticatedAppBookingsRoute
   '/_authenticated/app/calls': typeof AuthenticatedAppCallsRoute
   '/_authenticated/app/integrations': typeof AuthenticatedAppIntegrationsRoute
@@ -402,6 +412,7 @@ export interface FileRouteTypes {
     | '/admin/test-lab'
     | '/admin/voices'
     | '/app/analytics'
+    | '/app/automations'
     | '/app/bookings'
     | '/app/calls'
     | '/app/integrations'
@@ -439,6 +450,7 @@ export interface FileRouteTypes {
     | '/admin/test-lab'
     | '/admin/voices'
     | '/app/analytics'
+    | '/app/automations'
     | '/app/bookings'
     | '/app/calls'
     | '/app/integrations'
@@ -479,6 +491,7 @@ export interface FileRouteTypes {
     | '/_authenticated/admin/test-lab'
     | '/_authenticated/admin/voices'
     | '/_authenticated/app/analytics'
+    | '/_authenticated/app/automations'
     | '/_authenticated/app/bookings'
     | '/_authenticated/app/calls'
     | '/_authenticated/app/integrations'
@@ -696,6 +709,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedAppAnalyticsRouteImport
       parentRoute: typeof AuthenticatedAppRouteRoute
     }
+    '/_authenticated/app/automations': {
+      id: '/_authenticated/app/automations'
+      path: '/automations'
+      fullPath: '/app/automations'
+      preLoaderRoute: typeof AuthenticatedAppAutomationsRouteImport
+      parentRoute: typeof AuthenticatedAppRouteRoute
+    }
     '/_authenticated/app/bookings': {
       id: '/_authenticated/app/bookings'
       path: '/bookings'
@@ -824,6 +844,7 @@ const AuthenticatedAdminRouteRouteWithChildren =
 
 interface AuthenticatedAppRouteRouteChildren {
   AuthenticatedAppAnalyticsRoute: typeof AuthenticatedAppAnalyticsRoute
+  AuthenticatedAppAutomationsRoute: typeof AuthenticatedAppAutomationsRoute
   AuthenticatedAppBookingsRoute: typeof AuthenticatedAppBookingsRoute
   AuthenticatedAppCallsRoute: typeof AuthenticatedAppCallsRoute
   AuthenticatedAppIntegrationsRoute: typeof AuthenticatedAppIntegrationsRoute
@@ -838,6 +859,7 @@ interface AuthenticatedAppRouteRouteChildren {
 
 const AuthenticatedAppRouteRouteChildren: AuthenticatedAppRouteRouteChildren = {
   AuthenticatedAppAnalyticsRoute: AuthenticatedAppAnalyticsRoute,
+  AuthenticatedAppAutomationsRoute: AuthenticatedAppAutomationsRoute,
   AuthenticatedAppBookingsRoute: AuthenticatedAppBookingsRoute,
   AuthenticatedAppCallsRoute: AuthenticatedAppCallsRoute,
   AuthenticatedAppIntegrationsRoute: AuthenticatedAppIntegrationsRoute,

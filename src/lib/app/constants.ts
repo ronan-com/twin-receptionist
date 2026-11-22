@@ -55,7 +55,7 @@ export const CLIENT_NAV: NavItem[] = [
   { to: "/app/calls", label: "Calls", icon: PhoneCall },
   { to: "/app/bookings", label: "Bookings", icon: CalendarDays },
   { to: "/app/leads", label: "Follow-ups", icon: UserRound },
-  { to: "/app/receptionist", label: "Receptionist", icon: Bot, match: ["/app/knowledge", "/app/phone-numbers"] },
+  { to: "/app/receptionist", label: "Receptionist", icon: Bot, match: ["/app/knowledge", "/app/phone-numbers", "/app/automations"] },
   { to: "/app/analytics", label: "Reports", icon: BarChart3 },
   { to: "/app/settings", label: "Settings", icon: Settings, match: ["/app/team", "/app/integrations"] },
 ];
@@ -68,6 +68,7 @@ export const CLIENT_SUBNAV: { group: string; items: { to: string; label: string 
       { to: "/app/receptionist", label: "Receptionist" },
       { to: "/app/knowledge", label: "Business knowledge" },
       { to: "/app/phone-numbers", label: "Call handling" },
+      { to: "/app/automations", label: "Automations" },
     ],
   },
   {

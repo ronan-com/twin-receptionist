@@ -20,6 +20,7 @@ import {
 } from "@/lib/api/automations";
 import { fmtRelative } from "@/lib/app/format";
 import { cn } from "@/lib/utils";
+import type { Hue } from "./hues";
 
 // The receptionist's automations as a list of cards: each with a switch, its
 // settings and an honest status from the server. Used by /app/automations and
@@ -31,6 +32,16 @@ const STATUS_TONE: Record<AutomationStatus["state"], Tone> = {
   needs_setup: "warning",
   unsupported: "neutral",
   error: "danger",
+};
+
+// Each automation keeps its own colour on every page.
+const AUTOMATION_HUE: Record<AutomationKey, Hue> = {
+  transfer: "coral",
+  textBack: "magenta",
+  recording: "violet",
+  language: "cyan",
+  callLimits: "amber",
+  hoursMode: "indigo",
 };
 
 const selectClass =
@@ -77,10 +88,10 @@ function Card({
   children?: ReactNode;
 }) {
   return (
-    <section className="panel" data-automation={id}>
+    <section className={cn("panel transition-shadow", on && toggleable && "shadow-[inset_3px_0_0_var(--hue)]")} data-automation={id} data-hue={AUTOMATION_HUE[id]}>
       <header className="flex items-start gap-3 p-4">
-        <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-[6px] bg-[#f4f3ff] text-indigo">
-          <Icon className="h-4 w-4" strokeWidth={1.75} />
+        <span className="hue-icon mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-[8px]" aria-hidden>
+          <Icon className="h-[18px] w-[18px]" strokeWidth={1.75} />
         </span>
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">

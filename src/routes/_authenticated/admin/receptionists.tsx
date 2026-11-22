@@ -51,7 +51,7 @@ function AdminAgentsPage() {
       header: "Receptionist",
       cell: (a) => <BizCell biz={{ name: a.name, is_demo: a.business.is_demo, org_name: a.business.org_name }} sub={platform ? `${a.business.name} · ${a.business.org_name}` : a.business.name} />,
     },
-    { key: "status", header: "Status", cell: (a) => <StatusBadge tone={a.status === "active" ? "success" : "warning"} dot>{humanize(a.status)}</StatusBadge> },
+    { key: "status", header: "Status", cell: (a) => <StatusBadge tone={a.status === "active" ? "success" : "muted"} dot>{humanize(a.status)}</StatusBadge> },
     { key: "voice", header: "Voice", hideBelow: "md", cell: (a) => <span className="text-ink-muted">{a.voice?.display_name.split(" - ")[0] ?? "Default"}</span> },
     { key: "booking", header: "Bookings", hideBelow: "lg", cell: (a) => <span className="text-ink-muted">{a.booking ? `${humanize(a.booking.provider)}${a.booking.enabled ? "" : " (off)"}` : "Messages only"}</span> },
     { key: "model", header: "Model", hideBelow: "xl", cell: (a) => <span className="font-mono text-[11.5px] text-ink-muted">{a.demo_assistant ? "demo" : a.llm_model}</span> },

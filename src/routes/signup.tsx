@@ -206,10 +206,11 @@ function ChoiceCard({ icon: Icon, title, body, onClick, testId }: { icon: typeof
       aria-checked={false}
       onClick={onClick}
       data-choice={testId}
-      className={cn("panel flex w-full items-start gap-3 p-4 text-left transition-colors hover:border-indigo/50 hover:bg-[#f7f6ff] focus-visible:ring-2 focus-visible:ring-indigo")}
+      data-hue={testId === "signup-agency" ? "magenta" : "indigo"}
+      className={cn("panel hue-tile flex w-full items-start gap-3 p-4 text-left transition-colors hover:border-[var(--hue)] focus-visible:ring-2 focus-visible:ring-indigo")}
     >
-      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[6px] border border-hairline bg-canvas-2">
-        <Icon className="h-4 w-4 text-indigo" strokeWidth={1.8} />
+      <span className="hue-icon flex h-10 w-10 shrink-0 items-center justify-center rounded-[9px]" aria-hidden>
+        <Icon className="h-[18px] w-[18px]" strokeWidth={1.8} />
       </span>
       <span className="min-w-0">
         <span className="block text-[14px] font-semibold text-ink">{title}</span>

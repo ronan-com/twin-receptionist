@@ -1,11 +1,12 @@
 import { useState, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Check, Copy } from "lucide-react";
+import { CalendarCheck, Check, Copy, Mail, MessageSquareText, Mic, Webhook, type LucideIcon } from "lucide-react";
+import type { Hue } from "@/components/app/hues";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { ErrorState, KeyValue } from "@/components/app/primitives";
-import { CallStatusBadge, DemoBadge, OutcomeBadge, StatusBadge } from "@/components/app/StatusBadge";
+import { ErrorState, InitialsAvatar, KeyValue } from "@/components/app/primitives";
+import { CallStatusBadge, DemoBadge, OutcomeBadge, STATE_TONE, StatusBadge } from "@/components/app/StatusBadge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { getConsoleCallDetail, type BizRef } from "@/lib/api/console";
 import { fmtDateTime, fmtDuration, fmtPhone } from "@/lib/app/format";
@@ -30,21 +31,24 @@ export const READ_ONLY_HINT = "You're viewing as someone else, so this is read o
 /** The business name plus (for the platform) its agency. */
 export function BizCell({ biz, showAgency, sub }: { biz: Pick<BizRef, "name" | "is_demo" | "org_name"> | null | undefined; showAgency?: boolean; sub?: ReactNode }) {
   return (
-    <div className="min-w-0">
-      <div className="flex min-w-0 items-center gap-1.5">
-        <span className="truncate font-medium text-ink">{biz?.name || "—"}</span>
-        {biz?.is_demo ? <DemoBadge /> : null}
-      </div>
-      {showAgency || sub ? (
-        <div className="truncate text-[11.5px] text-ink-muted">
-          {[showAgency ? biz?.org_name : null, sub].filter(Boolean).map((x, i) => (
-            <span key={i}>
-              {i > 0 ? " · " : ""}
-              {x}
-            </span>
-          ))}
+    <div className="flex min-w-0 items-center gap-2.5">
+      {biz?.name ? <InitialsAvatar name={biz.name} size={26} /> : null}
+      <div className="min-w-0">
+        <div className="flex min-w-0 items-center gap-1.5">
+          <span className="truncate font-medium text-ink">{biz?.name || "—"}</span>
+          {biz?.is_demo ? <DemoBadge /> : null}
         </div>
-      ) : null}
+        {showAgency || sub ? (
+          <div className="truncate text-[11.5px] text-ink-muted">
+            {[showAgency ? biz?.org_name : null, sub].filter(Boolean).map((x, i) => (
+              <span key={i}>
+                {i > 0 ? " · " : ""}
+                {x}
+              </span>
+            ))}
+          </div>
+        ) : null}
+      </div>
     </div>
   );
 }
@@ -139,8 +143,26 @@ export function CallSheet({ callId, onClose }: { callId: string | null; onClose:
 /** Copy for the honest stubs. */
 export const NOT_BILLED = "Usage is counted from the calls we log. Billing isn't connected yet, so nothing here is charged.";
 
-const AUTOMATION_TONE = { live: "success", attention: "danger", paused: "warning", off: "muted" } as const;
+const AUTOMATION_TONE = { live: STATE_TONE.live, attention: STATE_TONE.failed, paused: STATE_TONE.paused, off: STATE_TONE.off } as const;
 const AUTOMATION_SHORT: Record<string, string> = { voice: "Voice", sms: "SMS", email: "Email", booking: "Bookings", crm: "CRM" };
+
+// Each automation keeps its own icon and colour.
+const AUTOMATION_LOOK: Record<string, { icon: LucideIcon; hue: Hue }> = {
+  voice: { icon: Mic, hue: "indigo" },
+  sms: { icon: MessageSquareText, hue: "magenta" },
+  email: { icon: Mail, hue: "sky" },
+  booking: { icon: CalendarCheck, hue: "cyan" },
+  crm: { icon: Webhook, hue: "violet" },
+};
+
+export function AutomationIcon({ automation }: { automation: string }) {
+  const look = AUTOMATION_LOOK[automation] ?? { icon: Webhook, hue: "slate" as Hue };
+  return (
+    <span data-hue={look.hue} className="hue-icon flex h-7 w-7 shrink-0 items-center justify-center rounded-[7px]" aria-hidden>
+      <look.icon className="h-3.5 w-3.5" />
+    </span>
+  );
+}
 
 /** A company's automations as small status chips (live / needs attention / paused / off). */
 export function AutomationChips({ items, compact }: { items: { key: string; label: string; status: "live" | "off" | "paused" | "attention" }[]; compact?: boolean }) {

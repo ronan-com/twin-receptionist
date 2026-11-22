@@ -80,7 +80,11 @@ function AdminLayout() {
       variant="admin"
       brandTo="/admin"
       sidebarHeader={
-        <div className="mx-2 rounded-[5px] border border-hairline bg-canvas-2 px-2.5 py-1.5 text-[12px] text-ink-muted" data-console={variant}>
+        <div
+          className="mx-2 rounded-[6px] border border-[var(--hue-line)] bg-[linear-gradient(135deg,var(--hue-soft),#fff_80%)] px-2.5 py-1.5 text-[12px] text-ink-muted"
+          data-hue={variant === "platform" ? "indigo" : "sky"}
+          data-console={variant}
+        >
           <span className="font-medium text-ink">{label.title}</span> · {label.sub}
         </div>
       }

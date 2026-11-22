@@ -3,7 +3,7 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { Activity, AlertTriangle, Bot, Briefcase, Building2, CalendarCheck, Hash, PhoneCall, PhoneIncoming, Plus, ServerCrash, Sparkles, UserRound } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { PageHeader, MetricCard, MetricGrid, Panel, ErrorState, Notice, EmptyState } from "@/components/app/primitives";
+import { PageHeader, MetricCard, MetricGrid, Panel, ErrorState, Notice, EmptyState, InitialsAvatar } from "@/components/app/primitives";
 import { ChartCard, CallVolumeChart, OutcomeDonut, RankedBars } from "@/components/app/Charts";
 import { DataTable, type Column } from "@/components/app/DataTable";
 import { AppointmentBadge, CallStatusBadge, LeadStageBadge, OutcomeBadge, StatusBadge } from "@/components/app/StatusBadge";
@@ -13,6 +13,7 @@ import { buildDailySeries, buildOutcomeBreakdown, compareKpis, computeKpis, isIn
 import { adminOverviewCountsQuery, rangeKey } from "@/lib/app/queries";
 import { platformApi, getAdminAppointmentsLeads, getAdminRecentActivity, getConsoleCalls, type AdminRecentActivity, type ConsoleCall } from "@/lib/api/console";
 import type { AppointmentStatus, LeadStage } from "@/lib/app/types";
+import { HUE_HEX, dailyCounts, hueFor, type Hue } from "@/components/app/hues";
 import { BizCell, CallSheet, useConsole } from "./-shared";
 
 export const Route = createFileRoute("/_authenticated/admin/")({
@@ -43,6 +44,8 @@ function AdminOverview() {
   const daily = useMemo(() => buildDailySeries(current, range.from, range.to, tz), [current, range, tz]);
   const outcomes = useMemo(() => buildOutcomeBreakdown(current), [current]);
   const failed = current.filter((c) => c.status === "failed");
+  const bookingSpark = useMemo(() => dailyCounts((alQ.data?.appointments ?? []).filter((a) => a.status !== "cancelled").map((a) => a.created_at), range.from, range.to), [alQ.data, range]);
+  const leadSpark = useMemo(() => dailyCounts((alQ.data?.leads ?? []).map((l) => l.created_at), range.from, range.to), [alQ.data, range]);
 
   const byBusiness = useMemo<BreakdownPoint[]>(() => {
     const map = new Map<string, { label: string; count: number }>();
@@ -138,9 +141,9 @@ function AdminOverview() {
         {platform ? <MetricCard label="Agencies" value={fmtNumber(c?.agencies ?? 0)} icon={Briefcase} loading={countsQ.isPending} /> : null}
         <MetricCard label="Clients" value={fmtNumber(c?.businesses ?? 0)} hint={`${fmtNumber(c?.activeBusinesses ?? 0)} active`} icon={Building2} loading={countsQ.isPending} />
         <MetricCard label="Receptionists" value={fmtNumber(c?.agents ?? 0)} hint={`${fmtNumber(c?.numbers ?? 0)} numbers attached`} icon={Bot} loading={countsQ.isPending} />
-        <MetricCard label="Calls" value={fmtNumber(k.total)} delta={d.total} icon={PhoneCall} loading={callsQ.isPending} />
+        <MetricCard label="Calls" value={fmtNumber(k.total)} delta={d.total} icon={PhoneCall} loading={callsQ.isPending} spark={daily.map((p) => p.total)} />
         <MetricCard label="AI resolution" value={fmtPercent(k.aiResolutionRate)} delta={d.aiResolutionRate} icon={Sparkles} loading={callsQ.isPending} />
-        <MetricCard label="Failed calls" value={fmtNumber(failed.length)} icon={ServerCrash} loading={callsQ.isPending} />
+        <MetricCard label="Failed calls" value={fmtNumber(failed.length)} icon={ServerCrash} loading={callsQ.isPending} spark={daily.map((p) => p.failed)} />
       </MetricGrid>
 
       {platform ? <AgenciesGlance /> : null}
@@ -155,14 +158,14 @@ function AdminOverview() {
       </Panel>
 
       <MetricGrid cols={4}>
-        <MetricCard label="Bookings" value={fmtNumber(k.bookings)} delta={d.bookings} icon={CalendarCheck} loading={alQ.isPending} />
-        <MetricCard label="Follow-ups" value={fmtNumber(k.leads)} delta={d.leads} icon={UserRound} loading={alQ.isPending} />
+        <MetricCard label="Bookings" value={fmtNumber(k.bookings)} delta={d.bookings} icon={CalendarCheck} loading={alQ.isPending} spark={bookingSpark} />
+        <MetricCard label="Follow-ups" value={fmtNumber(k.leads)} delta={d.leads} icon={UserRound} loading={alQ.isPending} spark={leadSpark} />
         <MetricCard label="Avg length" value={fmtDuration(k.avgDurationSeconds)} icon={Activity} loading={callsQ.isPending} />
         <MetricCard label="Calls, last 30 days" value={fmtNumber(c?.calls30d ?? 0)} icon={PhoneCall} loading={countsQ.isPending} />
       </MetricGrid>
 
       <div className="grid gap-4 xl:grid-cols-3">
-        <ChartCard title="Call volume" description={`By day in ${tz}`} className="xl:col-span-2" empty={!callsQ.isPending && current.length === 0} legend={[{ label: "Answered", color: CHART_COLORS.indigo }, { label: "Missed", color: CHART_COLORS.coral }]}>
+        <ChartCard title="Call volume" description={`By day in ${tz}`} className="xl:col-span-2" empty={!callsQ.isPending && current.length === 0} legend={[{ label: "Calls", color: CHART_COLORS.indigo }, { label: "Answered", color: HUE_HEX.cyan }]}>
           <CallVolumeChart data={daily} />
         </ChartCard>
         <ChartCard title="Outcomes" description="What each call ended in" empty={!callsQ.isPending && outcomes.length === 0}>
@@ -172,11 +175,11 @@ function AdminOverview() {
 
       <div className={platform ? "grid gap-4 xl:grid-cols-2" : "grid gap-4"}>
         <Panel title="Busiest clients" description="Calls in period">
-          {byBusiness.length ? <RankedBars data={byBusiness} /> : <p className="text-[12.5px] text-ink-muted">No calls in this period.</p>}
+          {byBusiness.length ? <RankedBars data={byBusiness} /> : <EmptyState compact icon={Building2} title="No calls in this period" description="Your busiest clients show here once calls come in." hue="sky" />}
         </Panel>
         {platform ? (
           <Panel title="Busiest agencies" description="Calls in period">
-            {byAgency.length ? <RankedBars data={byAgency} /> : <p className="text-[12.5px] text-ink-muted">No calls in this period.</p>}
+            {byAgency.length ? <RankedBars data={byAgency} /> : <EmptyState compact icon={Briefcase} title="No calls in this period" description="Agencies are ranked here by their clients' calls." hue="violet" />}
           </Panel>
         ) : null}
       </div>
@@ -202,16 +205,16 @@ function AdminOverview() {
             loading={callsQ.isPending}
             pageSize={10}
             dense
-            empty={{ title: "No calls in this period", description: "Change the date range, or make a test call." }}
+            empty={{ title: "No calls in this period", description: "Change the date range, or make a test call.", icon: PhoneCall }}
           />
         </Panel>
         <Panel title="Recent activity" description="Bookings, follow-ups, changes and incidents" padded={false}>
           <ul className="divide-y divide-hairline" data-list="activity">
             {activityQ.isPending ? <li className="p-4 text-[13px] text-ink-muted">Loading…</li> : null}
             {mergeActivity(activityQ.data).map((a) => (
-              <li key={a.key} className="flex items-start gap-2.5 px-4 py-2.5 text-[12.5px]">
-                <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-canvas-2">
-                  <a.icon className="h-3 w-3 text-ink-muted" />
+              <li key={a.key} className="row-hover flex items-start gap-2.5 px-4 py-2.5 text-[12.5px]">
+                <span data-hue={a.hue} className="hue-icon mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full" aria-hidden>
+                  <a.icon className="h-3 w-3" />
                 </span>
                 <div className="min-w-0 flex-1">
                   <div className="truncate text-ink">{a.text}</div>
@@ -222,7 +225,7 @@ function AdminOverview() {
                 {a.badge}
               </li>
             ))}
-            {!activityQ.isPending && mergeActivity(activityQ.data).length === 0 ? <li className="p-6 text-center text-[13px] text-ink-muted">Nothing yet.</li> : null}
+            {!activityQ.isPending && mergeActivity(activityQ.data).length === 0 ? <li><EmptyState compact icon={Activity} title="Nothing yet" description="Bookings, follow-ups and changes will appear here as they happen." hue="slate" /></li> : null}
           </ul>
         </Panel>
       </div>
@@ -235,9 +238,12 @@ function AdminOverview() {
 function AttentionRow({ icon: Icon, label, value, to, tone }: { icon: React.ComponentType<{ className?: string }>; label: string; value: number; to: "/admin/system" | "/admin/calls" | "/admin/number-requests"; tone: "warning" | "danger" | "info" | "muted" }) {
   return (
     <li>
-      <Link to={to} className="flex items-center justify-between gap-2 rounded-[5px] px-2 py-1.5 hover:bg-canvas-2">
-        <span className="flex min-w-0 items-center gap-2 text-ink">
-          <Icon className="h-3.5 w-3.5 shrink-0 text-ink-muted" /> <span className="truncate">{label}</span>
+      <Link to={to} className="row-hover flex items-center justify-between gap-2 rounded-[6px] px-2 py-1.5">
+        <span className="flex min-w-0 items-center gap-2.5 text-ink">
+          <span data-hue={hueFor(label)} className="hue-icon flex h-7 w-7 shrink-0 items-center justify-center rounded-[7px]" aria-hidden>
+            <Icon className="h-3.5 w-3.5" />
+          </span>
+          <span className="truncate">{label}</span>
         </span>
         <StatusBadge tone={tone}>{fmtNumber(value)}</StatusBadge>
       </Link>
@@ -247,18 +253,18 @@ function AttentionRow({ icon: Icon, label, value, to, tone }: { icon: React.Comp
 
 function mergeActivity(data: AdminRecentActivity | undefined) {
   if (!data) return [];
-  const items: { key: string; at: string; text: string; business: string; icon: React.ComponentType<{ className?: string }>; badge?: React.ReactNode }[] = [];
+  const items: { key: string; at: string; text: string; business: string; icon: React.ComponentType<{ className?: string }>; hue: Hue; badge?: React.ReactNode }[] = [];
   for (const a of data.appointments) {
-    items.push({ key: `a-${a.id}`, at: a.created_at, text: `${a.customer_name ?? "Someone"} booked ${a.service ?? "an appointment"}`, business: a.business?.name ?? "—", icon: CalendarCheck, badge: <AppointmentBadge status={a.status as AppointmentStatus} /> });
+    items.push({ key: `a-${a.id}`, at: a.created_at, text: `${a.customer_name ?? "Someone"} booked ${a.service ?? "an appointment"}`, business: a.business?.name ?? "—", icon: CalendarCheck, hue: "cyan", badge: <AppointmentBadge status={a.status as AppointmentStatus} /> });
   }
   for (const l of data.leads) {
-    items.push({ key: `l-${l.id}`, at: l.created_at, text: `${l.name ?? "A caller"} · ${humanize(l.intent) || "callback"}`, business: l.business?.name ?? "—", icon: UserRound, badge: <LeadStageBadge stage={l.stage as LeadStage} /> });
+    items.push({ key: `l-${l.id}`, at: l.created_at, text: `${l.name ?? "A caller"} · ${humanize(l.intent) || "callback"}`, business: l.business?.name ?? "—", icon: UserRound, hue: "magenta", badge: <LeadStageBadge stage={l.stage as LeadStage} /> });
   }
   for (const au of data.audit) {
-    items.push({ key: `au-${au.id}`, at: au.created_at, text: au.summary ?? humanize(au.action), business: au.business?.name ?? au.org_name ?? "Platform", icon: Activity });
+    items.push({ key: `au-${au.id}`, at: au.created_at, text: au.summary ?? humanize(au.action), business: au.business?.name ?? au.org_name ?? "Platform", icon: Activity, hue: "slate" });
   }
   for (const i of data.incidents ?? []) {
-    items.push({ key: `i-${i.id}`, at: i.started_at, text: i.title, business: i.business?.name ?? "Platform", icon: AlertTriangle, badge: <StatusBadge tone={i.status === "open" ? "danger" : "success"}>{humanize(i.status)}</StatusBadge> });
+    items.push({ key: `i-${i.id}`, at: i.started_at, text: i.title, business: i.business?.name ?? "Platform", icon: AlertTriangle, hue: i.status === "open" ? "coral" : "green", badge: <StatusBadge tone={i.status === "open" ? "danger" : "success"}>{humanize(i.status)}</StatusBadge> });
   }
   return items.sort((a, b) => new Date(b.at).getTime() - new Date(a.at).getTime()).slice(0, 14);
 }
@@ -279,15 +285,18 @@ function AgenciesGlance() {
     >
       <ul className="divide-y divide-hairline" data-list="agencies">
         {rows.map((a) => (
-          <li key={a.id} className="flex items-center justify-between gap-2 px-4 py-2 text-[13px]">
-            <span className="min-w-0 truncate font-medium text-ink">{a.name}</span>
+          <li key={a.id} className="row-hover flex items-center justify-between gap-2 px-4 py-2 text-[13px]">
+            <span className="flex min-w-0 items-center gap-2.5">
+              <InitialsAvatar name={a.name} size={24} />
+              <span className="min-w-0 truncate font-medium text-ink">{a.name}</span>
+            </span>
             <span className="shrink-0 text-[12px] text-ink-muted">
               {a.clients} receptionist{a.clients === 1 ? "" : "s"}
               {a.suspended ? " · paused" : ""}
             </span>
           </li>
         ))}
-        {!q.isPending && rows.length === 0 ? <li className="px-4 py-4 text-center text-[12.5px] text-ink-muted">No agencies yet.</li> : null}
+        {!q.isPending && rows.length === 0 ? <li><EmptyState compact icon={Briefcase} title="No agencies yet" description="Invite an agency from Agencies and it will show up here." hue="sky" /></li> : null}
       </ul>
     </Panel>
   );

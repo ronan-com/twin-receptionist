@@ -8,7 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
-import { PageHeader, Panel, MetricCard, MetricGrid, ErrorState, KeyValue, Notice, PageSkeleton, EmptyState } from "@/components/app/primitives";
+import { PageHeader, Panel, MetricCard, MetricGrid, ErrorState, KeyValue, Notice, PageSkeleton, EmptyState, InitialsAvatar } from "@/components/app/primitives";
 import { DataTable, type Column } from "@/components/app/DataTable";
 import { AppointmentBadge, CallStatusBadge, DemoBadge, LeadStageBadge, OutcomeBadge, StatusBadge } from "@/components/app/StatusBadge";
 import { Field } from "@/components/app/forms";
@@ -16,7 +16,7 @@ import { fmtDate, fmtDuration, fmtNumber, fmtPhone, fmtRelative, fmtSmartDate, h
 import { brandApi, companyApi, platformApi, requestNumberFor, resolveIncident, setBusinessStatus, type CompanyDetail, type CompanyReceptionist, type ConsoleCall } from "@/lib/api/console";
 import { describeHours, INDUSTRIES, industry as industryPreset, type IndustryKey } from "@/lib/shared";
 import type { AppointmentStatus, LeadStage } from "@/lib/app/types";
-import { AutomationChips, CallSheet, LinkBox, READ_ONLY_HINT, useConsole } from "./-shared";
+import { AutomationChips, AutomationIcon, CallSheet, LinkBox, READ_ONLY_HINT, useConsole } from "./-shared";
 import { BrandEditor } from "./-brand";
 
 // A client: one company the agency looks after, with everything under it (its
@@ -143,9 +143,10 @@ function ClientDetailPage() {
         }
         title={
           <span className="flex flex-wrap items-center gap-2">
+            <InitialsAvatar name={co.name} size={32} className="mr-0.5" />
             <span className="min-w-0 break-words" data-company-name>{co.name}</span>
             {d.receptionists.length ? (
-              <StatusBadge tone={paused ? "warning" : "success"} dot>
+              <StatusBadge tone={paused ? "muted" : "success"} dot>
                 {paused ? (co.agency_paused ? "Agency paused" : "Paused") : "Active"}
               </StatusBadge>
             ) : (
@@ -296,7 +297,7 @@ function ClientDetailPage() {
                 <div className="truncate text-[12px] text-ink-muted">Invited · link works until {fmtDate(i.expires_at)}</div>
               </div>
               <div className="flex items-center gap-2">
-                <StatusBadge tone="info">{i.access_role === "manager" ? "Manager" : "Viewer"} · pending</StatusBadge>
+                <StatusBadge tone="warning">{i.access_role === "manager" ? "Manager" : "Viewer"} · pending</StatusBadge>
                 {canManage ? (
                   <Button variant="ghost" size="sm" className="h-7 px-2 text-[12px] text-ink-muted" onClick={() => revoke.mutate(i.id)} disabled={revoke.isPending}>
                     <X className="mr-1 h-3.5 w-3.5" /> Revoke
@@ -591,8 +592,8 @@ function ReceptionistCard({
       title={
         <span className="flex flex-wrap items-center gap-2">
           <span>{r.name}</span>
-          <StatusBadge tone={paused ? "warning" : "success"} dot>{paused ? "Paused" : "Active"}</StatusBadge>
-          {r.onboarding_pending ? <StatusBadge tone="info">Waiting for client</StatusBadge> : null}
+          <StatusBadge tone={paused ? "muted" : "success"} dot>{paused ? "Paused" : "Active"}</StatusBadge>
+          {r.onboarding_pending ? <StatusBadge tone="warning">Waiting for client</StatusBadge> : null}
           {r.demo_assistant ? <DemoBadge /> : null}
         </span>
       }
@@ -627,10 +628,13 @@ function ReceptionistCard({
         <div className="min-w-0 space-y-3">
           <ul className="divide-y divide-hairline rounded-[6px] border border-hairline" data-list="automations">
             {r.automations.map((a) => (
-              <li key={a.key} className="flex flex-col gap-1 px-3 py-2 text-[12.5px] sm:flex-row sm:items-center sm:justify-between" data-automation-row={a.key}>
-                <div className="min-w-0">
-                  <div className="font-medium text-ink">{a.label}</div>
-                  <div className="break-words text-[11.5px] text-ink-muted">{a.detail}</div>
+              <li key={a.key} className="row-hover flex flex-col gap-1 px-3 py-2 text-[12.5px] sm:flex-row sm:items-center sm:justify-between" data-automation-row={a.key}>
+                <div className="flex min-w-0 items-center gap-2.5">
+                  <AutomationIcon automation={a.key} />
+                  <div className="min-w-0">
+                    <div className="font-medium text-ink">{a.label}</div>
+                    <div className="break-words text-[11.5px] text-ink-muted">{a.detail}</div>
+                  </div>
                 </div>
                 <AutomationChips items={[{ ...a, label: a.status === "live" ? "On" : a.status === "attention" ? "Needs attention" : a.status === "paused" ? "Paused" : "Off" }]} />
               </li>
@@ -671,7 +675,7 @@ function ReceptionistCard({
                     {n.status === "declined" && n.reason ? ` · ${n.reason}` : ""}
                     {n.status === "done" && n.phone_number ? ` · ${fmtPhone(n.phone_number)}` : ""}
                   </span>
-                  <StatusBadge tone={n.status === "pending" ? "info" : n.status === "done" ? "success" : "muted"}>{humanize(n.status)}</StatusBadge>
+                  <StatusBadge tone={n.status === "pending" ? "warning" : n.status === "done" ? "success" : "muted"}>{humanize(n.status)}</StatusBadge>
                 </li>
               ))}
             </ul>

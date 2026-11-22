@@ -361,3 +361,142 @@
     scroll-behavior: auto;
   }
 }
+
+/* ---------- Dashboard colour system ----------
+   One hue per meaning, used by KPI tiles, icon badges, avatars, automation cards
+   and chart legends. "indigo" follows the workspace's brand primary (WorkspaceBrand
+   sets --indigo, --primary-ink and --ribbon-*), so a client's colours still apply. */
+
+:root {
+  --primary-ink: #4b44d6; /* indigo, darkened for text on light tints (AA) */
+  --ribbon-2: var(--magenta);
+  --ribbon-3: var(--coral);
+  --amber: #f5a623;
+  --green: #1ea672;
+  --violet: #9b6cff;
+  --sky: #3b8bff;
+  --slate-hue: #8898aa;
+}
+
+@layer components {
+  [data-hue] {
+    --hue-soft: color-mix(in srgb, var(--hue) 13%, #fff);
+    --hue-faint: color-mix(in srgb, var(--hue) 6%, #fff);
+    --hue-line: color-mix(in srgb, var(--hue) 24%, var(--hairline));
+  }
+  [data-hue="indigo"] { --hue: var(--indigo); --hue-ink: var(--primary-ink); }
+  [data-hue="cyan"] { --hue: var(--cyan); --hue-ink: #0a6680; }
+  [data-hue="magenta"] { --hue: var(--magenta); --hue-ink: #b0135f; }
+  [data-hue="coral"] { --hue: var(--coral); --hue-ink: #b03a17; }
+  [data-hue="amber"] { --hue: var(--amber); --hue-ink: #855000; }
+  [data-hue="green"] { --hue: var(--green); --hue-ink: #0b6142; }
+  [data-hue="violet"] { --hue: var(--violet); --hue-ink: #6233d1; }
+  [data-hue="sky"] { --hue: var(--sky); --hue-ink: #1b5fc4; }
+  [data-hue="slate"] { --hue: var(--slate-hue); --hue-ink: #3c4f63; }
+
+  /* coloured icon square */
+  .hue-icon {
+    background: var(--hue-soft);
+    color: var(--hue-ink);
+  }
+  /* solid chip (avatars): white text on the deep hue */
+  .hue-solid {
+    /* deep end of the hue only, so white initials stay above 6:1 */
+    background: linear-gradient(135deg, var(--hue-ink), color-mix(in srgb, var(--hue-ink) 82%, #061b31));
+    color: #fff;
+  }
+  /* KPI tile: a faint wash of its hue and a hue-coloured top rule */
+  .hue-tile {
+    position: relative;
+    background: linear-gradient(150deg, var(--hue-faint) 0%, #fff 58%);
+    border-color: var(--hue-line);
+    transition: box-shadow 0.18s ease;
+  }
+  .hue-tile::before {
+    content: "";
+    position: absolute;
+    inset: 0 0 auto 0;
+    height: 2px;
+    background: linear-gradient(90deg, var(--hue), color-mix(in srgb, var(--hue) 30%, transparent));
+  }
+  .hue-tile:hover {
+    box-shadow: 0 8px 22px -14px color-mix(in srgb, var(--hue) 80%, transparent);
+  }
+
+  /* Answered ribbon: brand primary into the accents */
+  .ribbon-gradient {
+    background: linear-gradient(90deg, var(--indigo), var(--ribbon-2) 55%, var(--ribbon-3));
+  }
+
+  /* active sidebar item: a tint of the brand colour and an accent bar */
+  .nav-active {
+    background: color-mix(in srgb, var(--indigo) 11%, transparent);
+    color: var(--ink);
+  }
+  .nav-active::before {
+    content: "";
+    position: absolute;
+    left: -8px;
+    top: 7px;
+    bottom: 7px;
+    width: 3px;
+    border-radius: 0 3px 3px 0;
+    background: var(--indigo);
+  }
+
+  /* row hover in lists and tables: a breath of the brand colour */
+  .row-hover {
+    transition: background-color 0.15s ease;
+  }
+  .row-hover:hover {
+    background-color: color-mix(in srgb, var(--indigo) 5%, #fff);
+  }
+
+  /* sign-in / sign-up side panel: Answered's ribbon sweep */
+  .auth-ribbon {
+    position: absolute;
+    inset: 0;
+    overflow: hidden;
+    pointer-events: none;
+  }
+  .auth-ribbon__band {
+    position: absolute;
+    left: -25%;
+    width: 160%;
+    transform: rotate(-13deg);
+  }
+  .auth-ribbon__band--a {
+    top: -16%;
+    height: 44%;
+    background: linear-gradient(100deg, #635bff 0%, #a78bfa 20%, #ff5caa 44%, #ff7a59 66%, #ffb03d 82%, #00d4ff 100%);
+  }
+  .auth-ribbon__band--b {
+    top: 26%;
+    height: 7%;
+    background: linear-gradient(100deg, rgba(0, 212, 255, 0.6), rgba(99, 91, 255, 0.4) 55%, rgba(255, 92, 170, 0));
+  }
+  .auth-ribbon__fibers {
+    position: absolute;
+    inset: -10%;
+    background: repeating-linear-gradient(
+      76deg,
+      rgba(255, 255, 255, 0.2) 0px,
+      rgba(255, 255, 255, 0) 1px,
+      rgba(255, 255, 255, 0) 4px,
+      rgba(255, 255, 255, 0.1) 5px
+    );
+    mix-blend-mode: overlay;
+    animation: silkFibers 30s linear infinite;
+  }
+  .auth-ribbon__fade {
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(180deg, rgba(246, 249, 252, 0) 30%, rgba(246, 249, 252, 0.9) 50%, #f6f9fc 60%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .auth-ribbon__fibers {
+    animation: none !important;
+  }
+}

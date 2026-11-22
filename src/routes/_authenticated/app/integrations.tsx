@@ -26,6 +26,7 @@ import {
 import type { Integration } from "@/lib/app/types";
 import { useWorkspace } from "@/lib/app/workspace";
 import { cn } from "@/lib/utils";
+import type { Hue } from "@/components/app/hues";
 
 export const Route = createFileRoute("/_authenticated/app/integrations")({
   head: () => ({ meta: [{ title: "Integrations — Answered" }] }),
@@ -66,6 +67,14 @@ const CATEGORY_ICON: Record<Category, typeof Calendar> = {
   "Field service": Plug,
   Accounting: Plug,
   Automation: Webhook,
+};
+const CATEGORY_HUE: Record<Category, Hue> = {
+  Calendar: "cyan",
+  Email: "magenta",
+  CRM: "violet",
+  "Field service": "amber",
+  Accounting: "green",
+  Automation: "coral",
 };
 const CALENDARS = ["builtin_calendar", "google_calendar", "microsoft_calendar"];
 const CAL_PROVIDER: Record<string, "builtin" | "google" | "microsoft"> = { builtin_calendar: "builtin", google_calendar: "google", microsoft_calendar: "microsoft" };
@@ -130,10 +139,10 @@ function IntegrationsPage() {
               const status = existing?.status ?? (soon ? "coming_soon" : "available");
               const otherCalendar = CALENDARS.includes(def.provider) && calendar && calendar.provider !== def.provider;
               return (
-                <div key={def.provider} data-provider={def.provider} className={cn("card-surface flex flex-col gap-3 p-4", existing?.status === "error" && "border-[#f2c9c9]", soon && "opacity-70")}>
+                <div key={def.provider} data-provider={def.provider} className={cn("card-surface flex flex-col gap-3 p-4 transition-shadow hover:shadow-[0_8px_22px_-16px_rgba(6,27,49,0.45)]", existing?.status === "connected" && "border-[#c3ecd9] shadow-[inset_0_2px_0_#1ea672]", existing?.status === "error" && "border-[#f2c9c9]", soon && "opacity-70")}>
                   <div className="flex items-start justify-between gap-3">
                     <div className="flex min-w-0 items-center gap-2.5">
-                      <span className="grid h-9 w-9 shrink-0 place-items-center rounded-[6px] border border-hairline bg-canvas-2 text-ink">
+                      <span data-hue={CATEGORY_HUE[def.category] ?? "slate"} className="hue-icon grid h-9 w-9 shrink-0 place-items-center rounded-[8px]" aria-hidden>
                         <Icon className="h-4 w-4" />
                       </span>
                       <div className="min-w-0">

@@ -55,13 +55,30 @@ function SubNav({ pathname }: { pathname: string }) {
   );
 }
 
-function NavList({ nav, onNavigate }: { nav: NavItem[]; onNavigate?: () => void }) {
+type Notification = NonNullable<AppShellProps["notifications"]>[number];
+
+/** Notifications that point into this nav item, for its count dot. */
+function itemAlerts(item: NavItem, notifications: Notification[]) {
+  const mine = notifications.filter((n) => n.to && isNavActive(item, n.to.split("?")[0]));
+  if (!mine.length) return null;
+  const tone: keyof typeof COUNT_DOT = mine.some((n) => n.tone === "danger") ? "danger" : mine.some((n) => n.tone === "warning") ? "warning" : "info";
+  return { count: mine.length, tone };
+}
+
+const COUNT_DOT = {
+  danger: "bg-[#ffe5e3] text-[#a3231b] ring-[#ffcfcb]",
+  warning: "bg-[#fff3dc] text-[#7f4a00] ring-[#ffdfa6]",
+  info: "bg-[color-mix(in_srgb,var(--indigo)_12%,#fff)] text-[var(--primary-ink)] ring-[color-mix(in_srgb,var(--indigo)_25%,#fff)]",
+} as const;
+
+function NavList({ nav, notifications = [], onNavigate }: { nav: NavItem[]; notifications?: Notification[]; onNavigate?: () => void }) {
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   return (
     <nav aria-label="Primary" className="flex flex-col gap-px px-2">
       {nav.map((item) => {
         const active = isNavActive(item, pathname);
         const Icon = item.icon;
+        const alerts = itemAlerts(item, notifications);
         return (
           <Link
             key={item.to}
@@ -69,12 +86,25 @@ function NavList({ nav, onNavigate }: { nav: NavItem[]; onNavigate?: () => void 
             onClick={onNavigate}
             aria-current={active ? "page" : undefined}
             className={cn(
-              "group flex h-[34px] items-center gap-2.5 rounded-[5px] px-2.5 text-[13px] font-medium outline-none transition-colors",
-              active ? "bg-[#efeeff] text-indigo" : "text-ink-muted hover:bg-canvas-2 hover:text-ink focus-visible:bg-canvas-2",
+              "group relative flex h-[34px] items-center gap-2.5 rounded-[6px] px-2.5 text-[13px] font-medium outline-none transition-colors",
+              active ? "nav-active font-semibold" : "text-ink-muted hover:bg-[color-mix(in_srgb,var(--ink)_5%,transparent)] hover:text-ink focus-visible:bg-[color-mix(in_srgb,var(--ink)_5%,transparent)]",
             )}
           >
-            <Icon className={cn("h-[15px] w-[15px] shrink-0", active ? "text-indigo" : "text-ink-muted/80 group-hover:text-ink")} strokeWidth={1.8} />
+            <Icon className={cn("h-[15px] w-[15px] shrink-0", active ? "text-indigo" : "text-ink-muted/80 group-hover:text-ink")} strokeWidth={active ? 2 : 1.8} />
             <span className="truncate">{item.label}</span>
+            {alerts ? (
+              // The count is drawn by CSS so the link's name stays just its label;
+              // the bell in the top bar lists what needs attention.
+              <span
+                data-nav-count={alerts.count}
+                data-tone={alerts.tone}
+                className={cn(
+                  "ml-auto inline-flex h-[18px] min-w-[18px] shrink-0 items-center justify-center rounded-full px-1 text-[10.5px] font-semibold tabular-nums ring-1 before:content-[attr(data-nav-count)]",
+                  COUNT_DOT[alerts.tone],
+                )}
+                aria-hidden
+              />
+            ) : null}
           </Link>
         );
       })}
@@ -82,7 +112,7 @@ function NavList({ nav, onNavigate }: { nav: NavItem[]; onNavigate?: () => void 
   );
 }
 
-function SidebarBody({ nav, variant, brandTo, sidebarHeader, onNavigate }: Pick<AppShellProps, "nav" | "variant" | "brandTo" | "sidebarHeader"> & { onNavigate?: () => void }) {
+function SidebarBody({ nav, variant, brandTo, sidebarHeader, notifications, onNavigate }: Pick<AppShellProps, "nav" | "variant" | "brandTo" | "sidebarHeader" | "notifications"> & { onNavigate?: () => void }) {
   return (
     <div className="flex h-full flex-col">
       <div className="flex h-14 items-center px-4">
@@ -90,7 +120,7 @@ function SidebarBody({ nav, variant, brandTo, sidebarHeader, onNavigate }: Pick<
       </div>
       {sidebarHeader ? <div className="px-2 pb-2">{sidebarHeader}</div> : null}
       <div className="flex-1 overflow-y-auto py-1">
-        <NavList nav={nav} onNavigate={onNavigate} />
+        <NavList nav={nav} notifications={notifications} onNavigate={onNavigate} />
       </div>
       <div className="border-t border-hairline p-2">
         <UserMenu />
@@ -109,19 +139,20 @@ export function AppShell({ nav, variant, brandTo, sidebarHeader, topbarRight, ba
     <div data-app-shell className="min-h-screen bg-canvas-2 text-ink">
       {/* Desktop sidebar */}
       <aside className="fixed inset-y-0 left-0 z-30 hidden w-[232px] border-r border-hairline bg-white lg:block">
-        <SidebarBody nav={nav} variant={variant} brandTo={brandTo} sidebarHeader={sidebarHeader} />
+        <SidebarBody nav={nav} variant={variant} brandTo={brandTo} sidebarHeader={sidebarHeader} notifications={notifications} />
       </aside>
 
       {/* Mobile sheet */}
       <Sheet open={open} onOpenChange={setOpen}>
         <SheetContent side="left" className="w-[280px] p-0 [&>button]:top-4">
           <SheetTitle className="sr-only">Navigation</SheetTitle>
-          <SidebarBody nav={nav} variant={variant} brandTo={brandTo} sidebarHeader={sidebarHeader} onNavigate={() => setOpen(false)} />
+          <SidebarBody nav={nav} variant={variant} brandTo={brandTo} sidebarHeader={sidebarHeader} notifications={notifications} onNavigate={() => setOpen(false)} />
         </SheetContent>
       </Sheet>
 
       <div className="flex min-h-screen flex-col lg:pl-[232px]">
         <header className="sticky top-0 z-20 flex h-14 items-center gap-2 border-b border-hairline bg-white/95 px-3 backdrop-blur sm:px-5">
+          <span className="ribbon-gradient pointer-events-none absolute inset-x-0 top-0 h-[2px] opacity-90" aria-hidden />
           <button
             type="button"
             onClick={() => setOpen(true)}

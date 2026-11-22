@@ -1,8 +1,33 @@
-import { type ReactNode } from "react";
+import { useId, type ReactNode } from "react";
 import { ArrowDownRight, ArrowUpRight, Inbox, type LucideIcon, Minus } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { fmtPercent } from "@/lib/app/format";
 import { Skeleton } from "@/components/ui/skeleton";
+import { HUE_HEX, hueFor, hueFromString, type Hue } from "./hues";
+
+/* ---------------- Mini sparkline (plain SVG, no chart library) ---------------- */
+
+export function MiniSpark({ data, color = HUE_HEX.indigo, className }: { data: number[]; color?: string; className?: string }) {
+  const id = useId().replace(/:/g, "");
+  const w = 100;
+  const h = 28;
+  const max = Math.max(1, ...data);
+  const step = data.length > 1 ? w / (data.length - 1) : w;
+  const pts = data.map((v, i) => [i * step, h - 2 - (v / max) * (h - 4)] as const);
+  const line = pts.map(([x, y], i) => `${i ? "L" : "M"}${x.toFixed(1)} ${y.toFixed(1)}`).join(" ");
+  return (
+    <svg viewBox={`0 0 ${w} ${h}`} preserveAspectRatio="none" className={cn("h-full w-full overflow-visible", className)} aria-hidden>
+      <defs>
+        <linearGradient id={`ms-${id}`} x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor={color} stopOpacity={0.28} />
+          <stop offset="100%" stopColor={color} stopOpacity={0} />
+        </linearGradient>
+      </defs>
+      <path d={`${line} L${w} ${h} L0 ${h} Z`} fill={`url(#ms-${id})`} />
+      <path d={line} fill="none" stroke={color} strokeWidth={1.6} vectorEffect="non-scaling-stroke" strokeLinejoin="round" strokeLinecap="round" />
+    </svg>
+  );
+}
 
 /* ---------------- Page header ---------------- */
 
@@ -22,7 +47,10 @@ export function PageHeader({
   return (
     <div className={cn("flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between", className)}>
       <div className="min-w-0">
-        {eyebrow ? <div className="mb-1 text-[12px] font-medium text-ink-muted">{eyebrow}</div> : null}
+        <div className="mb-1.5 flex min-w-0 items-center gap-2">
+          <span className="ribbon-gradient h-[3px] w-7 shrink-0 rounded-full" aria-hidden />
+          {eyebrow ? <span className="truncate text-[12px] font-semibold text-[var(--primary-ink)]">{eyebrow}</span> : null}
+        </div>
         <h1 className="text-[22px] font-semibold tracking-[-0.02em] text-ink sm:text-[24px]">{title}</h1>
         {description ? <p className="mt-1 max-w-2xl text-[13px] leading-5 text-ink-muted">{description}</p> : null}
       </div>
@@ -78,6 +106,8 @@ export function MetricCard({
   loading,
   invert,
   className,
+  hue,
+  spark,
 }: {
   label: string;
   value: ReactNode;
@@ -89,28 +119,44 @@ export function MetricCard({
   /** When true, a decrease is good (missed calls, failures). */
   invert?: boolean;
   className?: string;
+  /** Colour for this metric; by default it follows the label's meaning (see hues.ts). */
+  hue?: Hue;
+  /** Small trend line beside the value (daily counts for the period). */
+  spark?: number[];
 }) {
   const good = delta == null ? null : invert ? delta <= 0 : delta >= 0;
+  const h = hue ?? hueFor(label);
   return (
-    <div className={cn("panel px-4 py-3.5", className)}>
+    <div data-hue={h} className={cn("panel hue-tile px-4 py-3.5", className)}>
       <div className="flex items-center justify-between gap-2">
         <span className="truncate text-[12px] font-medium text-ink-muted">{label}</span>
-        {Icon ? <Icon className="h-3.5 w-3.5 shrink-0 text-ink-muted/70" strokeWidth={1.75} /> : null}
+        {Icon ? (
+          <span className="hue-icon -my-1 flex h-7 w-7 shrink-0 items-center justify-center rounded-[7px]" aria-hidden>
+            <Icon className="h-[15px] w-[15px]" strokeWidth={1.9} />
+          </span>
+        ) : null}
       </div>
       {loading ? (
         <Skeleton className="mt-2 h-7 w-24" />
       ) : (
-        <div className="mt-1.5 break-words text-[21px] font-semibold leading-tight tracking-[-0.02em] text-ink tabular-nums sm:text-[24px]">{value}</div>
+        <div className="mt-1.5 flex min-w-0 items-end justify-between gap-2">
+          <div className="metric-value min-w-0 break-words text-[21px] font-semibold leading-tight tracking-[-0.02em] text-ink tabular-nums sm:text-[24px]">{value}</div>
+          {spark && spark.length > 1 && spark.some((v) => v > 0) ? (
+            <div className="h-7 w-[72px] shrink-0 sm:w-[88px]" aria-hidden>
+              <MiniSpark data={spark} color={HUE_HEX[h]} />
+            </div>
+          ) : null}
+        </div>
       )}
-      <div className="mt-2 flex min-h-[16px] items-center gap-1.5 text-[11.5px] text-ink-muted">
+      <div className="mt-2 flex min-h-[18px] items-center gap-1.5 text-[11.5px] text-ink-muted">
         {delta == null || loading ? (
           hint ?? (delta === null && !loading ? <span>No prior data</span> : null)
         ) : (
           <>
             <span
               className={cn(
-                "inline-flex items-center gap-0.5 rounded-[3px] px-1 py-px font-medium tabular-nums",
-                delta === 0 ? "bg-canvas-2 text-ink-muted" : good ? "bg-[#e6f8f1] text-[#0e6245]" : "bg-[#ffecec] text-[#a41d1d]",
+                "inline-flex items-center gap-0.5 rounded-full px-1.5 py-px font-semibold tabular-nums",
+                delta === 0 ? "bg-canvas-2 text-ink-muted" : good ? "bg-[#ddf5ea] text-[#0b6142]" : "bg-[#ffe5e3] text-[#a3231b]",
               )}
             >
               {delta === 0 ? <Minus className="h-3 w-3" /> : delta > 0 ? <ArrowUpRight className="h-3 w-3" /> : <ArrowDownRight className="h-3 w-3" />}
@@ -138,6 +184,7 @@ export function EmptyState({
   action,
   className,
   compact,
+  hue,
 }: {
   icon?: LucideIcon;
   title: string;
@@ -145,11 +192,13 @@ export function EmptyState({
   action?: ReactNode;
   className?: string;
   compact?: boolean;
+  /** Colour of the icon badge; by default it follows the title's meaning. */
+  hue?: Hue;
 }) {
   return (
     <div className={cn("flex flex-col items-center justify-center text-center", compact ? "px-4 py-8" : "px-6 py-14", className)}>
-      <div className="mb-3 flex h-9 w-9 items-center justify-center rounded-[6px] border border-hairline bg-canvas-2">
-        <Icon className="h-4 w-4 text-ink-muted" strokeWidth={1.75} />
+      <div data-hue={hue ?? hueFor(title)} className="hue-icon relative mb-3 flex h-10 w-10 items-center justify-center rounded-[10px] ring-4 ring-[var(--hue-faint)]">
+        <Icon className="h-[18px] w-[18px]" strokeWidth={1.75} />
       </div>
       <h3 className="text-[14px] font-semibold text-ink">{title}</h3>
       {description ? <p className="mt-1 max-w-sm text-[12.5px] leading-5 text-ink-muted">{description}</p> : null}
@@ -252,7 +301,9 @@ export function Notice({
 
 /* ---------------- Avatar ---------------- */
 
-export function InitialsAvatar({ name, size = 28, className }: { name: string | null | undefined; size?: number; className?: string }) {
+/** A coloured initials disc; the same name always gets the same colour. The initials
+ *  are drawn by CSS (::before), so they never leak into the row's text. */
+export function InitialsAvatar({ name, size = 28, className, hue }: { name: string | null | undefined; size?: number; className?: string; hue?: Hue }) {
   const text = (name ?? "?")
     .trim()
     .split(/\s+/)
@@ -261,12 +312,12 @@ export function InitialsAvatar({ name, size = 28, className }: { name: string | 
     .join("") || "?";
   return (
     <span
-      className={cn("inline-flex shrink-0 items-center justify-center rounded-full bg-slate-deep font-semibold text-white", className)}
+      data-hue={hue ?? hueFromString(name)}
+      data-initials={text}
+      className={cn("hue-solid inline-flex shrink-0 select-none items-center justify-center rounded-full font-semibold tracking-[0.01em] before:content-[attr(data-initials)]", className)}
       style={{ width: size, height: size, fontSize: Math.max(10, Math.round(size * 0.38)) }}
       aria-hidden
-    >
-      {text}
-    </span>
+    />
   );
 }
 

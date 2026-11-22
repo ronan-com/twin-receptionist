@@ -77,6 +77,8 @@ export type BookingRequest = {
   start: string;
   status: "booked" | "failed" | "saved";
   note: string;
+  // Where a callback stands, set by the business.
+  stage?: "new" | "contacted" | "won" | "lost";
 };
 
 export type BookingState = {

@@ -107,6 +107,8 @@ export const portalApi = {
     request<{ summary: string; messages: CallMessage[] }>("GET", `/api/portal/${id}/calls/${encodeURIComponent(callId)}`),
   bookings: (id: string) =>
     request<{ upcoming: CalendarEvent[]; requests: BookingRequest[] }>("GET", `/api/portal/${id}/bookings`),
+  setStage: (id: string, requestId: string, stage: string) =>
+    request<{ ok: true }>("PUT", `/api/portal/${id}/follow-ups/${encodeURIComponent(requestId)}`, { stage }),
 };
 
 export const adminApi = {

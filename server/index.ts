@@ -35,7 +35,7 @@ import { availableNumbers, buyNumber, callSummary, connectedNumbers, openOrders,
 import { ValidationError, buildInstructions, normaliseSettings } from "./prompt";
 import { clientsWithBooking, getClient, getOrgClient, insertClient, listClients, orgOfClient, removeClient, saveClient } from "./store";
 import { TelnyxError, enterOrg, hasKey, runAsOrg, telnyx } from "./telnyx";
-import { accessibleClients, customerClientId, customersFor, inviteCustomer, removeCustomer, revokeCustomerInvite } from "./customers";
+import { accessibleClients, customerClientId, setFollowUpStage, customersFor, inviteCustomer, removeCustomer, revokeCustomerInvite } from "./customers";
 import { createRequest, declineRequest, listRequests, markDone, pendingCount, pendingRequest, requestsForClient } from "./numberRequests";
 import { createAgency, inviteAgencyOwner, isSuspended, listAgencies, telnyxSettings, updateAgency } from "./agencies";
 import { previewEmail, sendSimText, startTextSim } from "./simulator";
@@ -566,6 +566,13 @@ async function route(req: Request): Promise<Response> {
 
   // End customers see their own receptionist's calls and nothing else.
   if (path.startsWith("/api/portal/")) {
+    // The one thing a customer may change: where a follow-up stands.
+    const stage = path.match(/^\/api\/portal\/([a-f0-9-]{36})\/follow-ups\/([A-Za-z0-9_-]{1,80})$/);
+    if (stage && method === "PUT") {
+      const mine = await customerClientId(ctx, stage[1]);
+      await setFollowUpStage(mine, stage[2], ((await body(req)) as any)?.stage);
+      return json({ ok: true });
+    }
     if (method !== "GET") return json({ error: "Not found" }, 404);
     if (path === "/api/portal/clients") return json({ clients: await accessibleClients(ctx) });
     const portal = path.match(/^\/api\/portal\/([a-f0-9-]{36})\/(calls|bookings|calls\/([A-Za-z0-9-]{8,80}))$/);

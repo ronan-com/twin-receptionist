@@ -66,6 +66,17 @@ export async function removeCustomer(ctx: Ctx, clientId: string, userId: string)
   });
 }
 
+// The business moves a follow-up through New, Contacted, Won, Lost.
+const STAGES = ["new", "contacted", "won", "lost"];
+export async function setFollowUpStage(clientId: string, requestId: string, stage: unknown): Promise<void> {
+  if (typeof stage !== "string" || !STAGES.includes(stage)) throw new ValidationError("Choose New, Contacted, Won or Lost.");
+  if (!/^[A-Za-z0-9_-]{1,80}$/.test(requestId)) throw new ValidationError("Unknown follow-up.");
+  const rows = await sql`
+    update booking_requests set data = jsonb_set(data, '{stage}', to_jsonb(${stage}::text))
+    where client_id = ${clientId} and data->>'id' = ${requestId} and data->>'kind' = 'callback' returning 1`;
+  if (rows.length === 0) throw new ValidationError("Unknown follow-up.");
+}
+
 // What a signed-in customer may look at.
 export async function accessibleClients(ctx: Ctx): Promise<{ id: string; businessName: string; receptionistName: string }[]> {
   const rows = await sql`

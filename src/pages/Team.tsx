@@ -327,6 +327,7 @@ export default function Team({ account, onAccount }: { account: Account; onAccou
             </li>
           ))}
         </ul>
+        {account.user.platformAdmin && (
         <form
           className="link-box"
           onSubmit={(e) => {
@@ -349,6 +350,7 @@ export default function Team({ account, onAccount }: { account: Account; onAccou
             Create
           </button>
         </form>
+        )}
       </section>
     </div>
   );

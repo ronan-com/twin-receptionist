@@ -31,10 +31,11 @@ import {
 import { isLocal } from "./auth";
 import { migrate } from "./db";
 import { checkEmail, connectEmail, connectedClientIds, disconnectEmail, emailStatus } from "./email";
-import { accountBalance, availableNumbers, buyNumber, callSummary, connectedNumbers, openOrders, voiceAppFor } from "./numbers";
+import { availableNumbers, buyNumber, callSummary, connectedNumbers, openOrders, voiceAppFor } from "./numbers";
 import { ValidationError, buildInstructions, normaliseSettings } from "./prompt";
-import { clientsWithBooking, getClient, getOrgClient, insertClient, listClients, removeClient, saveClient } from "./store";
-import { TelnyxError, hasKey, telnyx } from "./telnyx";
+import { clientsWithBooking, getClient, getOrgClient, insertClient, listClients, orgOfClient, removeClient, saveClient } from "./store";
+import { TelnyxError, enterOrg, hasKey, runAsOrg, telnyx } from "./telnyx";
+import { createAgency, inviteAgencyOwner, isSuspended, listAgencies, removeTelnyxKey, saveTelnyxKey, telnyxSettings, updateAgency } from "./agencies";
 import { previewEmail, sendSimText, startTextSim } from "./simulator";
 import {
   connectFromLink,
@@ -143,7 +144,8 @@ async function syncAssistant(client: Business): Promise<Business> {
 
 async function syncAll(): Promise<void> {
   for (const c of await clientsWithBooking()) {
-    await syncAssistant(c).catch((err) => console.error(`[booking ${c.id}] sync failed:`, err.message));
+    const orgId = await orgOfClient(c.id);
+    await runAsOrg(orgId, () => syncAssistant(c)).catch((err) => console.error(`[booking ${c.id}] sync failed:`, err.message));
   }
 }
 
@@ -228,6 +230,9 @@ function nextOpenDate(client: Business): string {
 async function hook(req: Request, clientId: string, action: string): Promise<Response> {
   const client = await getClient(clientId);
   if (!client || !tokenMatches(client.booking, req.headers.get("x-twin-key"))) return json({ error: "Not found" }, 404);
+  const orgId = await orgOfClient(clientId);
+  if (orgId && (await isSuspended(orgId))) return json({ error: "This service is paused. Take a message instead." });
+  enterOrg(orgId);
   if (!client.booking!.enabled) return json({ error: "Booking is switched off. Offer to take a message instead." });
   const text = await req.text();
   if (text.length > 8000) return json({ error: "Too large." }, 413);
@@ -354,8 +359,9 @@ async function numberState(ctx: Ctx, client: Business): Promise<NumberState> {
   const [numbers, pending, balance] = await Promise.all([
     connectedNumbers(voiceApp),
     openOrders(client.id),
-    // The Telnyx balance is the platform's own money: only its team sees it.
-    ctx.user.platformAdmin ? accountBalance() : Promise.resolve(null),
+    // The balance is whoever's money pays for the numbers: an agency sees its own,
+    // the platform's is only for the platform team.
+    telnyxSettings(ctx).then((t) => t.balance),
   ]);
   // Remember the connected numbers so the client list can show them without asking Telnyx again.
   const current = numbers.map((n) => n.phoneNumber);
@@ -503,12 +509,37 @@ async function route(req: Request): Promise<Response> {
     return json(await account((await sessionFrom(req))!));
   }
 
-  if (!ctx.org) return json({ error: "You're not in a team yet. Create one or ask for an invite." }, 403);
+  // The platform team's view of every agency. Not scoped to a team.
+  if (path.startsWith("/api/admin/")) {
+    if (path === "/api/admin/agencies") {
+      if (method === "GET") return json({ agencies: await listAgencies(ctx) });
+      if (method === "POST") return json(await createAgency(ctx, await body(req), appUrl(req)), 201);
+    }
+    const agency = path.match(/^\/api\/admin\/agencies\/([a-f0-9-]{36})(\/invites)?$/);
+    if (agency && agency[2] && method === "POST") return json(await inviteAgencyOwner(ctx, agency[1], await body(req), appUrl(req)), 201);
+    if (agency && !agency[2] && method === "PUT") {
+      await updateAgency(ctx, agency[1], await body(req));
+      return json({ agencies: await listAgencies(ctx) });
+    }
+    return json({ error: "Not found" }, 404);
+  }
+
+  if (!ctx.org) return json({ error: "You're not in a team yet. Ask the platform team for an invite." }, 403);
   const orgId = ctx.org.id;
+  if (!ctx.user.platformAdmin && (await isSuspended(orgId))) {
+    return json({ error: "This account is paused. Contact the platform team." }, 403);
+  }
+  // Everything below that talks to Telnyx uses this team's own account.
+  enterOrg(orgId);
 
   if (path === "/api/org" && method === "PUT") {
     await renameOrg(ctx, await body(req));
     return json(await account((await sessionFrom(req))!));
+  }
+  if (path === "/api/org/telnyx") {
+    if (method === "GET") return json(await telnyxSettings(ctx));
+    if (method === "PUT") return json(await saveTelnyxKey(ctx, await body(req)));
+    if (method === "DELETE") return json(await removeTelnyxKey(ctx));
   }
   if (path === "/api/team" && method === "GET") return json(await team(ctx));
   if (path === "/api/team/invites" && method === "POST") return json(await invite(ctx, await body(req), appUrl(req)), 201);
@@ -711,7 +742,10 @@ setInterval(async () => {
   try {
     for (const id of await connectedClientIds()) {
       const client = await getClient(id);
-      if (client) await checkEmail(client).catch((err) => console.error(`[email ${id}]`, err));
+      if (!client) continue;
+      const orgId = await orgOfClient(id);
+      if (orgId && (await isSuspended(orgId))) continue;
+      await runAsOrg(orgId, () => checkEmail(client)).catch((err) => console.error(`[email ${id}]`, err));
     }
   } finally {
     checking = false;

@@ -37,7 +37,7 @@ export default function TestLab({
           Call it from your browser to test it or demo it to the client. Allow the microphone when your browser asks.
         </p>
         {call}
-        <p className="hint">Test calls are billed per minute on your Telnyx account, the same as real calls.</p>
+        <p className="hint">Test calls are billed per minute, the same as real calls.</p>
       </div>
       <div hidden={tab !== "Text"}>
         <TextSim clientId={clientId} onTexted={onTexted} />

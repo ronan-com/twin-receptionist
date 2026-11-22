@@ -4,6 +4,7 @@ import Wordmark from "./components/Wordmark";
 import { accountApi, api, auth } from "./lib/api";
 import type { Account, Business, Session } from "./lib/shared";
 import { AcceptInvite, NoTeam, ResetPassword, SignIn } from "./pages/Auth";
+import Agencies from "./pages/Agencies";
 import Clients from "./pages/Clients";
 import Connect from "./pages/Connect";
 import Dashboard from "./pages/Dashboard";
@@ -41,8 +42,13 @@ function Shell({ account, onAccount }: { account: Account; onAccount: (a: Accoun
           ) : (
             <span className="app-biz">{account.org?.name}</span>
           )}
+          {account.user.platformAdmin && (
+            <Link to="/agencies" className="btn btn-ghost btn-sm">
+              Agencies
+            </Link>
+          )}
           <Link to="/team" className="btn btn-ghost btn-sm">
-            Team
+            Settings
           </Link>
           <button type="button" className="btn btn-ghost btn-sm" onClick={signOut}>
             Sign out
@@ -146,6 +152,7 @@ function Operator() {
     <Routes>
       <Route element={<Shell account={account} onAccount={onAccount} />}>
         <Route path="/" element={<Clients />} />
+        <Route path="/agencies" element={account.user.platformAdmin ? <Agencies /> : <Navigate to="/" replace />} />
         <Route path="/new" element={<NewClient />} />
         <Route path="/clients/:id" element={<Client />} />
         <Route path="/team" element={<Team account={account} onAccount={onAccount} />} />

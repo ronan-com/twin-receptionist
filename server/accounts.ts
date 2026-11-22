@@ -39,7 +39,7 @@ export class AuthError extends Error {
 
 // ---- Input checks ----
 
-function emailOf(value: unknown): string {
+export function emailOf(value: unknown): string {
   const email = String(value ?? "").trim().toLowerCase();
   if (email.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new ValidationError("Enter a valid email address.");
   return email;
@@ -52,7 +52,7 @@ function passwordOf(value: unknown): string {
   return password;
 }
 
-const textOf = (value: unknown, max: number) => String(value ?? "").trim().slice(0, max);
+export const textOf = (value: unknown, max: number) => String(value ?? "").trim().slice(0, max);
 
 const hashPassword = (password: string) => Bun.password.hash(password, { algorithm: "argon2id" });
 
@@ -128,11 +128,17 @@ export async function account(ctx: Ctx): Promise<Account> {
   const orgs = await sql`
     select o.id, o.name, m.role from memberships m join orgs o on o.id = m.org_id
     where m.user_id = ${ctx.user.id} order by o.name`;
+  let telnyx: Account["telnyx"] = "none";
+  if (ctx.org) {
+    const [t] = await sql`select telnyx_key is not null as own, platform_telnyx from orgs where id = ${ctx.org.id}`;
+    telnyx = t?.own ? "own" : t?.platform_telnyx ? "platform" : "none";
+  }
   return {
     user: ctx.user,
     org: ctx.org,
     role: ctx.role,
     orgs: orgs.map((o: any) => ({ id: o.id, name: o.name, role: o.role })),
+    telnyx,
   };
 }
 
@@ -163,7 +169,7 @@ export async function signUp(input: any): Promise<string> {
     if (!first && process.env.ALLOW_SIGNUP !== "true") throw new AuthError("Sign-up is by invitation. Ask your team for an invite.", 403);
     const [taken] = await tx`select 1 from users where email = ${email}`;
     if (taken) throw new ValidationError("There's already an account with that email. Sign in instead.");
-    await tx`insert into orgs (id, name) values (${orgId}, ${orgName})`;
+    await tx`insert into orgs (id, name, platform_telnyx) values (${orgId}, ${orgName}, ${first})`;
     await tx`insert into users (id, email, name, password_hash, platform_admin) values (${userId}, ${email}, ${name}, ${passwordHash}, ${first})`;
     await tx`insert into memberships (org_id, user_id, role) values (${orgId}, ${userId}, 'owner')`;
   });
@@ -211,11 +217,13 @@ export async function switchOrg(ctx: Ctx, orgId: unknown): Promise<void> {
 }
 
 export async function createOrg(ctx: Ctx, input: any): Promise<void> {
+  // Agencies are created by the platform team (see agencies.ts), not self-served.
+  if (!ctx.user.platformAdmin) throw new AuthError("Ask the platform team to set up another team for you.", 403);
   const name = textOf(input?.name, 80);
   if (!name) throw new ValidationError("Give the team a name.");
   const id = crypto.randomUUID();
   await sql.begin(async (tx) => {
-    await tx`insert into orgs (id, name) values (${id}, ${name})`;
+    await tx`insert into orgs (id, name, platform_telnyx) values (${id}, ${name}, true)`;
     await tx`insert into memberships (org_id, user_id, role) values (${id}, ${ctx.user.id}, 'owner')`;
   });
   await sql`update sessions set org_id = ${id} where token_hash = ${ctx.tokenHash}`;
@@ -261,9 +269,19 @@ export async function team(ctx: Ctx): Promise<TeamState> {
 
 export async function invite(ctx: Ctx, input: any, base: string): Promise<{ url: string; emailed: boolean }> {
   requireRole(ctx, "admin");
-  const email = emailOf(input?.email);
   const role: OrgRole = input?.role === "admin" ? "admin" : "member";
-  const orgId = ctx.org!.id;
+  return createInvite(ctx.org!.id, ctx.org!.name, emailOf(input?.email), role, ctx.user, base);
+}
+
+// Makes (or replaces) an invite link for someone to join an org.
+export async function createInvite(
+  orgId: string,
+  orgName: string,
+  email: string,
+  role: OrgRole,
+  by: { id: string; name: string; email: string },
+  base: string,
+): Promise<{ url: string; emailed: boolean }> {
   const [already] = await sql`
     select 1 from memberships m join users u on u.id = m.user_id where m.org_id = ${orgId} and u.email = ${email}`;
   if (already) throw new ValidationError(`${email} is already in this team.`);
@@ -274,13 +292,13 @@ export async function invite(ctx: Ctx, input: any, base: string): Promise<{ url:
   await sql`delete from invites where org_id = ${orgId} and email = ${email}`;
   await sql`
     insert into invites (token_hash, org_id, email, role, invited_by, expires_at)
-    values (${hashToken(token)}, ${orgId}, ${email}, ${role}, ${ctx.user.id}, ${new Date(Date.now() + INVITE_DAYS * 86_400_000)})`;
+    values (${hashToken(token)}, ${orgId}, ${email}, ${role}, ${by.id}, ${new Date(Date.now() + INVITE_DAYS * 86_400_000)})`;
   const url = `${base}/invite/${token}`;
-  const who = ctx.user.name || ctx.user.email;
+  const who = by.name || by.email;
   const emailed = await sendAccountEmail(
     email,
-    `${who} invited you to ${ctx.org!.name}`,
-    `${who} has invited you to join ${ctx.org!.name} on Twin Receptionist.\n\nAccept the invite:\n${url}\n\nThe link works for ${INVITE_DAYS} days.`,
+    `${who} invited you to ${orgName}`,
+    `${who} has invited you to ${role === "owner" ? "set up and run" : "join"} ${orgName} on Twin Receptionist.\n\nAccept the invite:\n${url}\n\nThe link works for ${INVITE_DAYS} days.`,
   ).catch((err) => {
     console.error("[mail] invite", err.message);
     return false;

@@ -282,29 +282,11 @@ export function AcceptInvite({ token }: { token: string }) {
 }
 
 export function NoTeam({ onDone }: { onDone: () => void }) {
-  const [name, setName] = useState("");
-  const { busy, error, run } = useAction();
   return (
-    <AuthFrame title="You're not in a team" intro="Ask your team for a new invite, or start your own.">
-      <form
-        className="stack"
-        onSubmit={(e) => {
-          e.preventDefault();
-          run(async () => {
-            await accountApi.createOrg(name);
-            onDone();
-          });
-        }}
-      >
-        <label className="field">
-          <span>Team or business name</span>
-          <input type="text" required autoFocus value={name} onChange={(e) => setName(e.target.value)} />
-        </label>
-        <ErrorNote error={error} />
-        <button type="submit" className="btn btn-primary btn-block" disabled={busy}>
-          {busy ? "Creating…" : "Start a team"}
-        </button>
-      </form>
+    <AuthFrame title="You're not in a team yet" intro="Teams are set up by the platform team. Ask them to send you an invite link, then open it.">
+      <button type="button" className="btn btn-secondary btn-block" onClick={onDone}>
+        Check again
+      </button>
     </AuthFrame>
   );
 }

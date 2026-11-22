@@ -405,6 +405,28 @@ export type Account = {
   org: { id: string; name: string } | null;
   role: OrgRole | null;
   orgs: { id: string; name: string; role: OrgRole }[];
+  // Whose Telnyx account this team's receptionists run on: its own key, the
+  // platform's (if the platform allowed it), or none yet (it must add one).
+  telnyx: "own" | "platform" | "none";
+};
+
+export type TelnyxSettings = {
+  mode: "own" | "platform" | "none";
+  last4: string;
+  balance: { amount: number; currency: string } | null;
+};
+
+export type Agency = {
+  id: string;
+  name: string;
+  createdAt: string;
+  members: number;
+  clients: number;
+  owners: string[];
+  pendingInvites: string[];
+  telnyx: "own" | "platform" | "none";
+  platformTelnyx: boolean;
+  suspended: boolean;
 };
 
 export type Session =

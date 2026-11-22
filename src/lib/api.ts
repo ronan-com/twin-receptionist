@@ -1,5 +1,7 @@
 import type {
   Account,
+  Agency,
+  TelnyxSettings,
   InviteInfo,
   OrgRole,
   Session,
@@ -81,6 +83,22 @@ export const accountApi = {
   revokeInvite: (id: string) => request<TeamState>("DELETE", `/api/team/invites/${id}`),
   changeRole: (userId: string, role: OrgRole) => request<TeamState>("PUT", `/api/team/members/${userId}`, { role }),
   removeMember: (userId: string) => request<TeamState>("DELETE", `/api/team/members/${userId}`),
+};
+
+export const telnyxApi = {
+  get: () => request<TelnyxSettings>("GET", "/api/org/telnyx"),
+  save: (apiKey: string) => request<TelnyxSettings>("PUT", "/api/org/telnyx", { apiKey }),
+  remove: () => request<TelnyxSettings>("DELETE", "/api/org/telnyx"),
+};
+
+export const adminApi = {
+  agencies: () => request<{ agencies: Agency[] }>("GET", "/api/admin/agencies").then((r) => r.agencies),
+  create: (details: { name: string; ownerEmail: string }) =>
+    request<{ url: string; emailed: boolean }>("POST", "/api/admin/agencies", details),
+  inviteOwner: (id: string, email: string) =>
+    request<{ url: string; emailed: boolean }>("POST", `/api/admin/agencies/${id}/invites`, { email }),
+  update: (id: string, change: { name?: string; suspended?: boolean; platformTelnyx?: boolean }) =>
+    request<{ agencies: Agency[] }>("PUT", `/api/admin/agencies/${id}`, change).then((r) => r.agencies),
 };
 
 export const api = {

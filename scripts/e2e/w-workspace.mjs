@@ -94,6 +94,21 @@ async function setRange(page, label) {
     btn.click();
   }, label);
 }
+/** Click an Export button and return the CSV text it would download. */
+async function exportCsv(page) {
+  await page.evaluate(() => {
+    window.__csv = null;
+    const orig = URL.createObjectURL.bind(URL);
+    URL.createObjectURL = (b) => {
+      b.text().then((t) => (window.__csv = t));
+      return orig(b);
+    };
+    HTMLAnchorElement.prototype.click = function () {}; // no real download
+  });
+  await clickText(page, "button", "Export");
+  await page.waitForFunction(() => typeof window.__csv === "string", { timeout: 5000 });
+  return page.evaluate(() => window.__csv);
+}
 async function closeSheet(page) {
   await page.keyboard.press("Escape");
   await page.waitForFunction(() => !document.querySelector("[role=dialog]"), { timeout: 5000 });
@@ -128,6 +143,8 @@ for (const width of [1280, 390]) {
     await waitText(page, "Isabella Rossi");
     await waitText(page, "Coming up");
     await waitText(page, "Grace Lee");
+    await waitText(page, "Your next steps");
+    await page.waitForFunction(() => /Isabella Rossi/.test(document.getElementById("dashboard-attention")?.innerText ?? ""), { timeout: 10000 });
     await noOverflow(page, `${tag} dashboard`);
     const now = new Date();
     const from = new Date(now.getTime() - 120 * 86_400_000).toISOString();
@@ -160,6 +177,12 @@ for (const width of [1280, 390]) {
     await clickText(page, "button", "Clear");
     await waitCallCount(page, api.calls.length);
     await noOverflow(page, `${tag} calls`);
+    const csv = await exportCsv(page);
+    const rows = csv.trim().split("\n");
+    assert(rows[0].startsWith("Started,"), "calls CSV has no header");
+    assert(rows.length === api.calls.length + 1, `calls CSV has ${rows.length - 1} rows`);
+    assert(csv.includes("Isabella Rossi"), "calls CSV is missing a caller");
+    await page.reload({ waitUntil: "networkidle0" });
   });
 
   await step(`${tag} call drawer opens with summary and transcript`, async () => {
@@ -237,6 +260,9 @@ for (const width of [1280, 390]) {
     await waitText(page, "Pipeline value");
     await noOverflow(page, `${tag} follow-ups pipeline`);
     await clickText(page, "button", "list");
+    const csv = await exportCsv(page);
+    assert(csv.startsWith("Created,") && csv.includes("Tom Reilly") && csv.includes("Isabella Rossi"), "follow-ups CSV is missing rows");
+    await page.reload({ waitUntil: "networkidle0" });
   });
 
   await step(`${tag} manager moves a follow-up stage and it persists after reload`, async () => {
@@ -262,6 +288,9 @@ for (const width of [1280, 390]) {
     await waitText(page, "Text conversations");
     await page.waitForSelector(".recharts-surface", { timeout: 10000 });
     await noOverflow(page, `${tag} reports`);
+    const csv = await exportCsv(page);
+    const total = csv.trim().split("\n").slice(1).reduce((n, l) => n + Number(l.split(",")[1]), 0);
+    assert(csv.startsWith("Date,Total") && total > 0, `reports CSV totals ${total} calls`);
   });
 
   await ctx.close();

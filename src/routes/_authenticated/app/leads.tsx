@@ -51,7 +51,12 @@ function qualificationEntries(q: unknown): { label: string; value: string }[] {
 
 function toCsv(rows: Lead[]) {
   const head = ["Created", "Name", "Phone", "Email", "Intent", "Stage", "Value", "Follow-up", "Enquiry"];
-  const esc = (v: unknown) => `"${String(v ?? "").replace(/"/g, '""')}"`;
+  // Quoted, and text a spreadsheet would run as a formula (=, @, +/- before a non-digit) is defused.
+  const esc = (v: unknown) => {
+    const s = String(v ?? "");
+    const safe = /^[=@\t\r]|^[+-](?![\d\s(])/.test(s) ? `'${s}` : s;
+    return `"${safe.replace(/"/g, '""')}"`;
+  };
   const lines = rows.map((l) =>
     [l.created_at, l.name, l.phone, l.email, l.intent, l.stage, l.value_cents != null ? (l.value_cents / 100).toFixed(2) : "", l.follow_up_at ?? "", l.enquiry].map(esc).join(","),
   );

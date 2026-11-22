@@ -56,7 +56,12 @@ function toCsv(rows: CallListRow[]) {
     "Sentiment",
     "Summary",
   ];
-  const esc = (v: unknown) => `"${String(v ?? "").replace(/"/g, '""')}"`;
+  // Quoted, and text a spreadsheet would run as a formula (=, @, +/- before a non-digit) is defused.
+  const esc = (v: unknown) => {
+    const s = String(v ?? "");
+    const safe = /^[=@\t\r]|^[+-](?![\d\s(])/.test(s) ? `'${s}` : s;
+    return `"${safe.replace(/"/g, '""')}"`;
+  };
   const lines = rows.map((c) =>
     [
       c.started_at,

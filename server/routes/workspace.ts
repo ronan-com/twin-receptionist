@@ -285,7 +285,9 @@ export function answeredLead(r: StoredRequest, clientId: string, callId: string 
     intent: "Callback request",
     summary: r.notes ?? (r.note || null),
     stage: r.stage && LEAD_STAGES.includes(r.stage) ? r.stage : "new",
-    follow_up_at: r.followUpAt !== undefined ? r.followUpAt : Number.isFinite(pref) ? new Date(pref).toISOString() : null,
+    // A call-back is due when the caller asked for it (a vague "mornings" means as soon as possible),
+    // so it shows on the dashboard's next steps until someone sets a time or marks it done.
+    follow_up_at: r.followUpAt !== undefined ? r.followUpAt : Number.isFinite(pref) ? new Date(pref).toISOString() : r.at,
     follow_up_status: r.followUpStatus ?? "pending",
     assigned_to: r.assignedTo ?? null,
     value_cents: r.valueCents ?? null,

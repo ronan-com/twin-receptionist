@@ -9,6 +9,7 @@ aws s3 cp --only-show-errors "s3://$BUCKET/$KEY" bundle.tgz
 tar -xzf bundle.tgz -C src.new && rm bundle.tgz
 rm -rf src.old; [ -d src ] && mv src src.old; mv src.new src
 cp src/deploy/docker-compose.yml src/deploy/Caddyfile .
+mkdir -p sites; [ -e sites/00-placeholder.caddy ] || echo '# placeholder so the import always matches' > sites/00-placeholder.caddy
 [ -s rds-ca.pem ] || curl -fsSL https://truststore.pki.rds.amazonaws.com/global/global-bundle.pem -o rds-ca.pem
 
 get() { aws ssm get-parameter --region $R --name "$1" --with-decryption --query Parameter.Value --output text; }

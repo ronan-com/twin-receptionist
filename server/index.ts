@@ -1,4 +1,4 @@
-import type { Business, CallMessage, NumberState, Settings, Voice } from "../src/lib/shared";
+import { defaultHours, type Business, type CallMessage, type IndustryKey, type NumberState, type Settings, type Voice } from "../src/lib/shared";
 import { existsSync, statSync } from "node:fs";
 import { join, normalize } from "node:path";
 import {
@@ -38,7 +38,7 @@ import { TelnyxError, enterOrg, hasKey, runAsOrg, telnyx } from "./telnyx";
 import { createTestLogins, demoCallDetail, ensureSandbox, fakeProvider, isDemo, resetSandbox, sandboxOrgId } from "./sandbox";
 import { listCalls } from "./calls";
 import { startCallSync } from "./callsync";
-import { workspaceBusinesses } from "./answered";
+import { industryKeyOf, workspaceBusinesses } from "./answered";
 import { audit } from "./audit";
 import { consoleRoutes } from "./routes/console";
 import { manageRoutes, setManageDeps } from "./routes/manage";
@@ -297,13 +297,19 @@ function assistantFields(s: Settings, instructions: string) {
   };
 }
 
-// Also used by the self-serve business sign-up (server/routes/signup.ts). With
-// defaultVoice, a missing voice becomes the first recommended one. With the fake
-// provider key of the local tests, the receptionist is a demo one (no provider calls).
-async function createClient(orgId: string, input: unknown, opts: { defaultVoice?: boolean } = {}): Promise<Business> {
+// Also used by the self-serve business sign-up (server/routes/signup.ts). A "quick"
+// create (sign-up, or "Create a business" in the Answered UI) fills what a short form
+// doesn't ask: Answered's industry label becomes ours, the industry's usual hours,
+// and the first recommended voice. With the fake provider key of the local tests,
+// the receptionist is a demo one (no provider calls).
+async function createClient(orgId: string, input: unknown, opts: { quick?: boolean } = {}): Promise<Business> {
   const voices = await voiceNames();
   const src = { ...((input ?? {}) as Record<string, unknown>) };
-  if (opts.defaultVoice && !voices.has(String(src.voiceId ?? ""))) src.voiceId = [...voices.keys()][0];
+  if (opts.quick) {
+    src.industry = industryKeyOf(src.industry);
+    if (!src.hours) src.hours = defaultHours(src.industry as IndustryKey);
+    if (!voices.has(String(src.voiceId ?? ""))) src.voiceId = [...voices.keys()][0];
+  }
   const settings = normaliseSettings(src, voices);
   const instructions = buildInstructions(settings);
   if (fakeProvider()) {
@@ -800,7 +806,7 @@ async function route(req: Request, server?: { requestIP(r: Request): { address: 
     if (method === "GET") return json({ clients: await listClients(orgId) });
     if (method === "POST") {
       const input = await req.json();
-      const created = await createClient(orgId, input, { defaultVoice: input?.defaultVoice === true });
+      const created = await createClient(orgId, input, { quick: input?.defaultVoice === true });
       await audit(ctx, "receptionist.create", { business: created.settings.businessName }, { clientId: created.id });
       return json({ client: created }, 201);
     }

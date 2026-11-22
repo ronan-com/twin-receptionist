@@ -41,6 +41,7 @@ import { Route as AuthenticatedAppCallsRouteImport } from './routes/_authenticat
 import { Route as AuthenticatedAppIntegrationsRouteImport } from './routes/_authenticated/app/integrations'
 import { Route as AuthenticatedAppKnowledgeRouteImport } from './routes/_authenticated/app/knowledge'
 import { Route as AuthenticatedAppLeadsRouteImport } from './routes/_authenticated/app/leads'
+import { Route as AuthenticatedAppOnboardingRouteImport } from './routes/_authenticated/app/onboarding'
 import { Route as AuthenticatedAppPhoneNumbersRouteImport } from './routes/_authenticated/app/phone-numbers'
 import { Route as AuthenticatedAppReceptionistRouteImport } from './routes/_authenticated/app/receptionist'
 import { Route as AuthenticatedAppSettingsRouteImport } from './routes/_authenticated/app/settings'
@@ -222,6 +223,12 @@ const AuthenticatedAppLeadsRoute = AuthenticatedAppLeadsRouteImport.update({
   path: '/leads',
   getParentRoute: () => AuthenticatedAppRouteRoute,
 } as any)
+const AuthenticatedAppOnboardingRoute =
+  AuthenticatedAppOnboardingRouteImport.update({
+    id: '/onboarding',
+    path: '/onboarding',
+    getParentRoute: () => AuthenticatedAppRouteRoute,
+  } as any)
 const AuthenticatedAppPhoneNumbersRoute =
   AuthenticatedAppPhoneNumbersRouteImport.update({
     id: '/phone-numbers',
@@ -288,6 +295,7 @@ export interface FileRoutesByFullPath {
   '/app/integrations': typeof AuthenticatedAppIntegrationsRoute
   '/app/knowledge': typeof AuthenticatedAppKnowledgeRoute
   '/app/leads': typeof AuthenticatedAppLeadsRoute
+  '/app/onboarding': typeof AuthenticatedAppOnboardingRoute
   '/app/phone-numbers': typeof AuthenticatedAppPhoneNumbersRoute
   '/app/receptionist': typeof AuthenticatedAppReceptionistRoute
   '/app/settings': typeof AuthenticatedAppSettingsRoute
@@ -325,6 +333,7 @@ export interface FileRoutesByTo {
   '/app/integrations': typeof AuthenticatedAppIntegrationsRoute
   '/app/knowledge': typeof AuthenticatedAppKnowledgeRoute
   '/app/leads': typeof AuthenticatedAppLeadsRoute
+  '/app/onboarding': typeof AuthenticatedAppOnboardingRoute
   '/app/phone-numbers': typeof AuthenticatedAppPhoneNumbersRoute
   '/app/receptionist': typeof AuthenticatedAppReceptionistRoute
   '/app/settings': typeof AuthenticatedAppSettingsRoute
@@ -366,6 +375,7 @@ export interface FileRoutesById {
   '/_authenticated/app/integrations': typeof AuthenticatedAppIntegrationsRoute
   '/_authenticated/app/knowledge': typeof AuthenticatedAppKnowledgeRoute
   '/_authenticated/app/leads': typeof AuthenticatedAppLeadsRoute
+  '/_authenticated/app/onboarding': typeof AuthenticatedAppOnboardingRoute
   '/_authenticated/app/phone-numbers': typeof AuthenticatedAppPhoneNumbersRoute
   '/_authenticated/app/receptionist': typeof AuthenticatedAppReceptionistRoute
   '/_authenticated/app/settings': typeof AuthenticatedAppSettingsRoute
@@ -407,6 +417,7 @@ export interface FileRouteTypes {
     | '/app/integrations'
     | '/app/knowledge'
     | '/app/leads'
+    | '/app/onboarding'
     | '/app/phone-numbers'
     | '/app/receptionist'
     | '/app/settings'
@@ -444,6 +455,7 @@ export interface FileRouteTypes {
     | '/app/integrations'
     | '/app/knowledge'
     | '/app/leads'
+    | '/app/onboarding'
     | '/app/phone-numbers'
     | '/app/receptionist'
     | '/app/settings'
@@ -484,6 +496,7 @@ export interface FileRouteTypes {
     | '/_authenticated/app/integrations'
     | '/_authenticated/app/knowledge'
     | '/_authenticated/app/leads'
+    | '/_authenticated/app/onboarding'
     | '/_authenticated/app/phone-numbers'
     | '/_authenticated/app/receptionist'
     | '/_authenticated/app/settings'
@@ -731,6 +744,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedAppLeadsRouteImport
       parentRoute: typeof AuthenticatedAppRouteRoute
     }
+    '/_authenticated/app/onboarding': {
+      id: '/_authenticated/app/onboarding'
+      path: '/onboarding'
+      fullPath: '/app/onboarding'
+      preLoaderRoute: typeof AuthenticatedAppOnboardingRouteImport
+      parentRoute: typeof AuthenticatedAppRouteRoute
+    }
     '/_authenticated/app/phone-numbers': {
       id: '/_authenticated/app/phone-numbers'
       path: '/phone-numbers'
@@ -829,6 +849,7 @@ interface AuthenticatedAppRouteRouteChildren {
   AuthenticatedAppIntegrationsRoute: typeof AuthenticatedAppIntegrationsRoute
   AuthenticatedAppKnowledgeRoute: typeof AuthenticatedAppKnowledgeRoute
   AuthenticatedAppLeadsRoute: typeof AuthenticatedAppLeadsRoute
+  AuthenticatedAppOnboardingRoute: typeof AuthenticatedAppOnboardingRoute
   AuthenticatedAppPhoneNumbersRoute: typeof AuthenticatedAppPhoneNumbersRoute
   AuthenticatedAppReceptionistRoute: typeof AuthenticatedAppReceptionistRoute
   AuthenticatedAppSettingsRoute: typeof AuthenticatedAppSettingsRoute
@@ -843,6 +864,7 @@ const AuthenticatedAppRouteRouteChildren: AuthenticatedAppRouteRouteChildren = {
   AuthenticatedAppIntegrationsRoute: AuthenticatedAppIntegrationsRoute,
   AuthenticatedAppKnowledgeRoute: AuthenticatedAppKnowledgeRoute,
   AuthenticatedAppLeadsRoute: AuthenticatedAppLeadsRoute,
+  AuthenticatedAppOnboardingRoute: AuthenticatedAppOnboardingRoute,
   AuthenticatedAppPhoneNumbersRoute: AuthenticatedAppPhoneNumbersRoute,
   AuthenticatedAppReceptionistRoute: AuthenticatedAppReceptionistRoute,
   AuthenticatedAppSettingsRoute: AuthenticatedAppSettingsRoute,

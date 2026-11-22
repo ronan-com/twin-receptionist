@@ -106,7 +106,7 @@ let bid = "";
 
 try {
   const bz = await fresh();
-  await step("business signs up and sees the finish-setting-up prompt on /app", async () => {
+  await step("business signs up and lands in the onboarding wizard", async () => {
     await bz.goto(`${B}/signup?as=business`, { waitUntil: "networkidle0" });
     await type(bz, "#name", biz.name);
     await type(bz, "#email", biz.email);
@@ -116,25 +116,75 @@ try {
     await clickText(bz, '[role="option"]', "Dental");
     await type(bz, "#suburb", "Manly");
     await clickText(bz, "button[type=submit]", "Create my receptionist");
-    await waitPath(bz, "/app", 20000);
-    await bz.waitForSelector("[data-setup-prompt]", { timeout: 15000 });
+    await waitPath(bz, "/app/onboarding", 20000);
+    await bz.waitForSelector('[data-step="business"]');
     const s = await apiFetch(bz, "GET", "/api/session/businesses");
     bid = s.body.businesses[0].id;
     assert(bid, "no business id");
   });
 
-  await step("phone width: /app with the setup prompt has no overflow at 390px", async () => {
+  await step("wizard: business details and hours save for real, then 'I'll finish later'", async () => {
     await bz.setViewport({ width: 390, height: 844 });
-    await bz.goto(`${B}/app`, { waitUntil: "networkidle0" });
-    await bz.waitForSelector("[data-setup-prompt]");
-    await noOverflow(bz, "/app");
+    await noOverflow(bz, "/app/onboarding (business)");
+    await bz.setViewport({ width: 1280, height: 900 });
+    await type(bz, "#ob-city", "Manly Beach");
+    await bz.$eval('[data-action="next"]', (b) => b.click());
+    await bz.waitForSelector('[data-step="hours"]', { timeout: 15000 });
+    const bs = (await apiFetch(bz, "GET", "/api/session/businesses")).body.businesses[0];
+    assert(bs.city === "Manly Beach", `city ${bs.city}`);
+    await bz.$eval('[data-action="next"]', (b) => b.click());
+    await bz.waitForSelector('[data-step="services"]', { timeout: 15000 });
+    const a = (await apiFetch(bz, "GET", `/api/manage/${bid}/receptionist`)).body.agents[0];
+    assert(a.onboarding === "pending" && a.onboarding_step === 2, `onboarding ${a.onboarding} ${a.onboarding_step}`);
+    await bz.$eval('[data-action="later"]', (b) => b.click());
+    await waitPath(bz, "/app");
+    await bz.waitForSelector("[data-setup-prompt]", { timeout: 10000 });
+    await bz.setViewport({ width: 390, height: 844 });
+    await noOverflow(bz, "/app (resume prompt)");
     await bz.setViewport({ width: 1280, height: 900 });
   });
 
+  await step("wizard: resume at services, add a service and a FAQ, greeting, finish -> dashboard", async () => {
+    await clickText(bz, "[data-setup-prompt] a", "Resume set-up");
+    await bz.waitForSelector('[data-step="services"]', { timeout: 10000 });
+    const tag = 'input[placeholder^="e.g. Check-up"]';
+    await bz.type(tag, "Emergency visit");
+    await bz.keyboard.press("Enter");
+    await type(bz, "#ob-q", `Is there parking ${stamp}?`);
+    await type(bz, "#ob-a", `Yes, free parking out the back ${stamp}.`);
+    await bz.$eval('[data-action="add-faq"]', (b) => b.click());
+    await waitText(bz, `Is there parking ${stamp}?`);
+    await bz.setViewport({ width: 390, height: 844 });
+    await noOverflow(bz, "/app/onboarding (services)");
+    await bz.setViewport({ width: 1280, height: 900 });
+    await bz.$eval('[data-action="next"]', (b) => b.click());
+    await bz.waitForSelector('[data-step="voice"]', { timeout: 15000 });
+    await type(bz, "#ob-greeting", `Welcome to Sam's Dental ${stamp}.`);
+    await bz.$eval('[data-action="next"]', (b) => b.click());
+    await bz.waitForSelector('[data-step="branding"]', { timeout: 15000 }).catch(async (e) => {
+      throw new Error(`${e.message}: ${(await bz.$eval("[data-page=onboarding] section", (x) => x.innerText)).slice(-300)}`);
+    });
+    await bz.waitForSelector("[data-brand-preview]");
+    await bz.$eval('[data-action="next"]', (b) => b.click());
+    await bz.waitForSelector('[data-step="extras"]', { timeout: 15000 });
+    await bz.setViewport({ width: 390, height: 844 });
+    await noOverflow(bz, "/app/onboarding (extras)");
+    await bz.setViewport({ width: 1280, height: 900 });
+    await bz.$eval('[data-action="next"]', (b) => b.click());
+    await waitPath(bz, "/app", 15000);
+    await sleep(800);
+    assert(path(bz) === "/app", `went on to ${path(bz)}`);
+    assert(!(await bz.$("[data-setup-prompt]")), "prompt shown after finishing");
+    const a = (await apiFetch(bz, "GET", `/api/manage/${bid}/receptionist`)).body.agents[0];
+    assert(a.onboarding === "done", `onboarding ${a.onboarding}`);
+    assert(a.booking_rules.services.includes("Emergency visit"), "service not saved");
+    assert(a.greeting.includes(stamp), "greeting not saved");
+    const ins = instructionsOf(bid);
+    assert(ins.includes(`free parking out the back ${stamp}`) && ins.includes("Emergency visit"), "wizard changes not in the instructions");
+  });
+
   await step("receptionist: edit details, greeting, tone, services, hours, voice and save", async () => {
-    await bz.goto(`${B}/app`, { waitUntil: "networkidle0" });
-    await clickText(bz, "[data-setup-prompt] a", "Set up my receptionist");
-    await waitPath(bz, "/app/receptionist");
+    await bz.goto(`${B}/app/receptionist`, { waitUntil: "networkidle0" });
     await bz.waitForSelector("#a-name");
     await type(bz, "#a-name", "Mia");
     await type(bz, "#a-city", "Manly Vale");
@@ -190,7 +240,7 @@ try {
     assert(ins.includes("Teeth whitening") && ins.includes("Mia"), "instructions not rebuilt");
   });
 
-  await step("receptionist: the setup prompt is gone after the first save", async () => {
+  await step("receptionist: no wizard or prompt once onboarding is done", async () => {
     await bz.goto(`${B}/app`, { waitUntil: "networkidle0" });
     await bz.waitForSelector('[data-page="app-dashboard"], main');
     await sleep(1000);
@@ -231,6 +281,50 @@ try {
     assert(k.status === 200, `knowledge GET answered ${k.status}`);
     const o = await apiFetch(a, "GET", `/api/manage/${bid}/receptionist`);
     assert(o.status === 404 || o.status === 403, `another org's business answered ${o.status}`);
+  });
+
+  await step("agency onboarding link: invited manager accepts -> wizard -> receptionist updated -> dashboard", async () => {
+    const a = await fresh();
+    await signIn(a, "a@a.test", "password-for-agency-a");
+    await waitPath(a, "/admin");
+    const c = await apiFetch(a, "POST", "/api/clients", { businessName: `Onboard Co ${stamp}`, industry: "Trades", suburb: "Fitzroy", timezone: "Australia/Melbourne", services: ["Blocked drains", "Hot water"], defaultVoice: true });
+    assert(c.status === 201, `create answered ${c.status} ${JSON.stringify(c.body)}`);
+    const cid = c.body.client.id;
+    const o = await apiFetch(a, "PUT", `/api/manage/${cid}/onboarding`, { status: "pending", step: 0 });
+    assert(o.status === 200, `onboarding answered ${o.status}`);
+    const inv = await apiFetch(a, "POST", `/api/manage/${cid}/team/invites`, { email: `olive-${stamp}@client.test`, role: "manager" });
+    assert(inv.status === 201 && inv.body.url, `invite answered ${inv.status}`);
+    const m = await fresh();
+    await m.goto(inv.body.url.replace(/^https?:\/\/[^/]+/, B), { waitUntil: "networkidle0" });
+    await waitText(m, `Onboard Co ${stamp}`);
+    await type(m, "#name", "Olive Owner");
+    await type(m, "#password", "manager-password-1");
+    await clickText(m, "button[type=submit]", "Accept invite");
+    await waitPath(m, "/app/onboarding", 15000);
+    await m.waitForSelector('[data-step="business"]');
+    await type(m, "#ob-name", `Onboard Plumbing ${stamp}`);
+    await m.$eval('[data-action="next"]', (b) => b.click());
+    for (const k of ["hours", "services", "voice"]) {
+      await m.waitForSelector(`[data-step="${k}"]`, { timeout: 15000 });
+      if (k === "voice") await type(m, "#ob-greeting", `G'day, Onboard Plumbing ${stamp}.`);
+      await m.$eval('[data-action="next"]', (b) => b.click());
+    }
+    await m.waitForSelector('[data-step="branding"]', { timeout: 15000 });
+    await m.$eval('[data-action="next"]', (b) => b.click());
+    await m.waitForSelector('[data-step="extras"]', { timeout: 15000 });
+    await clickText(m, '[data-extra="calendar"] button', "Use the built-in calendar");
+    await waitText(m, "Booking calendar on");
+    await clickText(m, '[data-extra="number"] button', "Request a number");
+    await waitText(m, "Requested.");
+    await m.$eval('[data-action="next"]', (b) => b.click());
+    await waitPath(m, "/app", 15000);
+    await waitText(m, `Onboard Plumbing ${stamp}`);
+    const r = (await apiFetch(m, "GET", `/api/manage/${cid}/receptionist`)).body.agents[0];
+    assert(r.onboarding === "done" && r.greeting.includes(stamp) && r.booking_rules.configured, `receptionist ${r.onboarding} ${r.greeting}`);
+    const ins = instructionsOf(cid);
+    assert(ins.includes(`Onboard Plumbing ${stamp}`), "new name not in the instructions");
+    const t = (await apiFetch(a, "GET", `/api/manage/${cid}/team`)).body;
+    assert(t.members.some((x) => x.profile.email === `olive-${stamp}@client.test` && x.access_role === "manager"), "not a manager");
   });
 
   // ---- Knowledge ----

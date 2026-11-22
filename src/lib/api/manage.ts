@@ -19,7 +19,7 @@ import { api } from "./base";
 // under /api/manage/<businessId>/... Every write is checked again on the server
 // (managers, agency staff and the platform team; viewers are read-only).
 
-export type AgentRow = Agent & { voice: Voice | null; voice_config: VoiceConfig | null; demo?: boolean; setup_fresh?: boolean };
+export type AgentRow = Agent & { voice: Voice | null; voice_config: VoiceConfig | null; demo?: boolean; setup_fresh?: boolean; onboarding?: "pending" | "done"; onboarding_step?: number };
 export type PhoneNumberRow = PhoneNumber & { agent: Pick<Agent, "id" | "name"> | null };
 export type TeamMember = MemberRow & { access_role: "manager" | "viewer" };
 export type TeamInvitation = Invitation & { access_role: "manager" | "viewer" };
@@ -57,6 +57,10 @@ export type ReceptionistSaved = { agent: AgentRow; applied: boolean; demo: boole
 
 export const updateReceptionist = (businessId: string, body: ReceptionistUpdate) =>
   api.put<ReceptionistSaved>(`${base(businessId)}/receptionist`, body);
+
+/** First-run onboarding: "pending" shows the wizard; step is where to resume. Agency staff set "pending" to send it. */
+export const saveOnboarding = (businessId: string, body: { status?: "pending" | "done"; step?: number }) =>
+  api.put<{ onboarding: "pending" | "done"; onboarding_step: number }>(`${base(businessId)}/onboarding`, body);
 
 /** The phone provider's voices. Scoped under a business so business users can read them. */
 export async function getVoices(_clientVisibleOnly: boolean, businessId?: string | null): Promise<Voice[]> {

@@ -1,21 +1,22 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { AudioLines, Bot, CalendarCheck, CheckCircle2, MessageSquareText, PhoneForwarded, Sparkles } from "lucide-react";
+import { Bot, CalendarCheck, CheckCircle2, MessageSquareText, PhoneForwarded } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { PageHeader, Panel, ErrorState, PageSkeleton, Notice } from "@/components/app/primitives";
 import { Field, FormSection, SaveBar, TagInput } from "@/components/app/forms";
 import { StatusBadge } from "@/components/app/StatusBadge";
+import { Bubble, TestPreviewDialog } from "@/components/app/SampleCall";
+import { HoursEditor, VoicePicker } from "@/components/app/ReceptionistFields";
 import { agentsQuery, phoneNumbersQuery } from "@/lib/app/queries";
 import { getVoices, updateReceptionist, type AgentRow } from "@/lib/api/manage";
-import { asBusinessHours, asRecord, asStringArray, DAY_KEYS, DAY_LABELS, type BusinessHours, type Voice } from "@/lib/app/types";
+import { asBusinessHours, asRecord, asStringArray, type BusinessHours, type Voice } from "@/lib/app/types";
 import { useWorkspace } from "@/lib/app/workspace";
 import { receptionistReadiness } from "@/lib/app/business-logic";
 import { fmtRelative } from "@/lib/app/format";
@@ -97,92 +98,6 @@ function ReceptionistPage() {
   if (agentsQ.error) return <ErrorState message={agentsQ.error.message} onRetry={() => void agentsQ.refetch()} />;
   if (!agent) return <ErrorState message="This business has no receptionist yet. Ask your agency to set one up." />;
   return <AgentEditor key={agent.id} agent={agent} />;
-}
-
-function VoicePicker({ voices, value, onChange, disabled, loading }: { voices: Voice[]; value: string | null; onChange: (id: string | null) => void; disabled?: boolean; loading?: boolean }) {
-  if (loading) return <div className="grid gap-2 sm:grid-cols-2">{Array.from({ length: 4 }).map((_, i) => <div key={i} className="h-[76px] animate-pulse rounded-[6px] bg-canvas-2" />)}</div>;
-  if (voices.length === 0) return <p className="text-[12.5px] text-ink-muted">Voices couldn't be loaded from the phone provider just now. Your current voice stays as it is.</p>;
-
-  return (
-    <div role="radiogroup" aria-label="Voice" className="grid gap-2 sm:grid-cols-2">
-      {voices.map((v) => {
-        const selected = v.id === value;
-        return (
-          <div
-            key={v.id}
-            role="radio"
-            aria-checked={selected}
-            aria-disabled={disabled}
-            tabIndex={disabled ? -1 : 0}
-            onClick={() => !disabled && onChange(v.id)}
-            onKeyDown={(e) => {
-              if (disabled) return;
-              if (e.key === "Enter" || e.key === " ") {
-                e.preventDefault();
-                onChange(v.id);
-              }
-            }}
-            className={cn(
-              "flex items-start gap-3 rounded-[6px] border p-3 text-left outline-none transition-colors",
-              selected ? "border-indigo bg-[#f7f6ff] ring-1 ring-indigo" : "border-hairline bg-white hover:border-[#c7c4ff]",
-              disabled ? "cursor-default opacity-70" : "cursor-pointer focus-visible:ring-2 focus-visible:ring-indigo",
-            )}
-          >
-            <span className={cn("mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full", selected ? "bg-indigo text-white" : "bg-canvas-2 text-ink-muted")}>
-              <AudioLines className="h-4 w-4" />
-            </span>
-            <span className="min-w-0 flex-1">
-              <span className="flex items-center gap-2">
-                <span className="truncate text-[13px] font-semibold text-ink">{v.display_name}</span>
-                {v.gender ? <span className="text-[11px] capitalize text-ink-muted">{v.gender}</span> : null}
-              </span>
-              <span className="mt-0.5 block text-[12px] text-ink-muted">{[v.accent, v.style].filter(Boolean).join(" · ")}</span>
-            </span>
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-
-function HoursEditor({ value, onChange, disabled }: { value: BusinessHours; onChange: (h: BusinessHours) => void; disabled?: boolean }) {
-  return (
-    <div>
-      <ul className="divide-y divide-hairline">
-        {DAY_KEYS.map((d) => {
-          const day = value[d];
-          return (
-            <li key={d} className="grid grid-cols-[1fr_auto] items-center gap-3 py-2.5 sm:grid-cols-[120px_auto_1fr]">
-              <span className="text-[13px] font-medium text-ink">{DAY_LABELS[d]}</span>
-              <div className="flex items-center gap-2 sm:order-3 sm:justify-self-end">
-                <span className="text-[12px] text-ink-muted">{day.closed ? "Closed" : "Open"}</span>
-                <Switch checked={!day.closed} onCheckedChange={(v) => onChange({ ...value, [d]: { ...day, closed: !v } })} disabled={disabled} aria-label={`${DAY_LABELS[d]} open`} />
-              </div>
-              <div className="col-span-2 flex items-center gap-2 sm:order-2 sm:col-span-1">
-                <Input type="time" value={day.open} onChange={(e) => onChange({ ...value, [d]: { ...day, open: e.target.value } })} disabled={disabled || day.closed} className="h-8 w-[112px] text-[12.5px]" aria-label={`${DAY_LABELS[d]} opens`} />
-                <span className="text-[12px] text-ink-muted">to</span>
-                <Input type="time" value={day.close} onChange={(e) => onChange({ ...value, [d]: { ...day, close: e.target.value } })} disabled={disabled || day.closed} className="h-8 w-[112px] text-[12.5px]" aria-label={`${DAY_LABELS[d]} closes`} />
-              </div>
-            </li>
-          );
-        })}
-      </ul>
-      {!disabled ? (
-        <Button
-          variant="outline"
-          size="sm"
-          className="mt-3 h-7 text-[12px]"
-          onClick={() => {
-            const next = { ...value };
-            for (const d of ["tue", "wed", "thu", "fri"] as const) next[d] = { ...value.mon };
-            onChange(next);
-          }}
-        >
-          Copy Monday to weekdays
-        </Button>
-      ) : null}
-    </div>
-  );
 }
 
 function AgentEditor({ agent }: { agent: AgentRow }) {
@@ -458,124 +373,6 @@ function AgentEditor({ agent }: { agent: AgentRow }) {
         disabledReason={ws.access.readOnlyReason}
       />
     </div>
-  );
-}
-
-function Bubble({ who, accent, children }: { who: string; accent?: boolean; children: React.ReactNode }) {
-  return (
-    <div className={cn("max-w-[92%] rounded-[8px] px-3 py-2", accent ? "bg-[#efeeff] text-ink" : "ml-auto bg-canvas-2 text-ink")}>
-      <div className="mb-0.5 text-[10.5px] font-semibold uppercase tracking-[0.05em] text-ink-muted">{who}</div>
-      <div className="leading-5 [overflow-wrap:anywhere]">{children}</div>
-    </div>
-  );
-}
-
-interface SampleLine {
-  who: "caller" | "agent";
-  text: string;
-}
-
-/**
- * Browser-only sample. Nothing is dialled, recorded or saved: the script below
- * is read aloud by the browser's own speech voice so the wording of the settings
- * on screen can be heard.
- */
-function TestPreviewDialog({ form, voice }: { form: AgentForm; voice: Voice | null }) {
-  const [open, setOpen] = useState(false);
-  const [playing, setPlaying] = useState(false);
-  const [spokenIndex, setSpokenIndex] = useState(-1);
-  const [speechError, setSpeechError] = useState(false);
-  const agentName = form.name || "Receptionist";
-  const service = form.services[0] ?? "an appointment";
-  const supported = typeof window !== "undefined" && "speechSynthesis" in window;
-  const browserVoiceName = useRef<string>("");
-
-  const script: SampleLine[] = [
-    { who: "agent", text: form.greeting || `Thanks for calling ${form.business_name || "us"}. How can I help?` },
-    { who: "caller", text: `Hi, this is Alex Sample. I'd like to book ${service} please.` },
-    { who: "agent", text: "Of course, Alex. What's the best mobile number for you?" },
-    { who: "caller", text: "It's 0400 000 000." },
-    { who: "agent", text: "Thank you. I'll pass that straight to the team and they'll confirm a time with you." },
-    { who: "caller", text: "Great, thanks." },
-    { who: "agent", text: "All noted. Have a lovely day." },
-  ];
-
-  const stop = useCallback(() => {
-    if (typeof window !== "undefined" && "speechSynthesis" in window) window.speechSynthesis.cancel();
-    setPlaying(false);
-    setSpokenIndex(-1);
-  }, []);
-
-  useEffect(() => stop, [stop]);
-  useEffect(() => {
-    if (!open) stop();
-  }, [open, stop]);
-
-  const play = () => {
-    if (!supported) return;
-    window.speechSynthesis.cancel();
-    setSpeechError(false);
-    setPlaying(true);
-    script.forEach((line, i) => {
-      const u = new SpeechSynthesisUtterance(line.text);
-      u.pitch = line.who === "caller" ? 0.9 : 1.05;
-      browserVoiceName.current = u.voice?.name || window.speechSynthesis.getVoices()[0]?.name || "your browser's default voice";
-      u.onstart = () => setSpokenIndex(i);
-      u.onerror = () => {
-        window.speechSynthesis.cancel();
-        setPlaying(false);
-        setSpokenIndex(-1);
-        setSpeechError(true);
-      };
-      if (i === script.length - 1) {
-        u.onend = () => {
-          setPlaying(false);
-          setSpokenIndex(-1);
-        };
-      }
-      window.speechSynthesis.speak(u);
-    });
-  };
-
-  return (
-    <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>
-        <Button variant="outline" size="sm">
-          <Sparkles className="mr-1.5 h-3.5 w-3.5" /> Hear a sample
-        </Button>
-      </DialogTrigger>
-      <DialogContent className="max-w-lg rounded-[6px]">
-        <DialogHeader>
-          <DialogTitle className="text-[16px]">Sample call</DialogTitle>
-          <DialogDescription className="text-[12.5px]">Browser-generated sample, not a live call or recording. Nothing is dialled, booked, sent or saved.</DialogDescription>
-        </DialogHeader>
-        <div className="max-h-[46vh] space-y-2 overflow-y-auto pr-1 text-[12.5px]">
-          {script.map((line, i) => (
-            <div key={i} className={cn("rounded-[8px]", i === spokenIndex ? "ring-1 ring-indigo" : "")}>
-              <Bubble who={line.who === "agent" ? agentName : "Alex Sample (sample caller)"} accent={line.who === "agent"}>
-                {line.text}
-              </Bubble>
-            </div>
-          ))}
-          <div className="flex flex-wrap gap-1.5 pt-1">
-            <StatusBadge tone="muted">Read aloud by your browser voice</StatusBadge>
-            {voice ? <StatusBadge tone="muted">Live voice on real calls: {voice.display_name}</StatusBadge> : null}
-          </div>
-          {!supported ? <p className="text-[12px] text-ink-muted">Your browser cannot read this aloud, so the script above is the full sample.</p> : null}
-          {speechError ? <p className="text-[12px] text-ink-muted">Your browser stopped reading the sample aloud. The full script above is unchanged.</p> : null}
-        </div>
-        <DialogFooter className="gap-2 sm:justify-between">
-          <span className="text-[11.5px] text-ink-muted">The wording comes from the settings on this page.</span>
-          {supported ? (
-            playing ? (
-              <Button variant="outline" size="sm" onClick={stop}>Stop</Button>
-            ) : (
-              <Button size="sm" onClick={play}>Play sample</Button>
-            )
-          ) : null}
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
   );
 }
 

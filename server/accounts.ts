@@ -201,6 +201,9 @@ export async function signUp(input: any): Promise<string> {
     await tx`select pg_advisory_xact_lock(727274002)`;
     const [{ n }] = await tx`select count(*)::int as n from users`;
     first = n === 0;
+    // On a fresh server, only the expected owner may become the first (platform) account.
+    const firstAdmin = (process.env.FIRST_ADMIN_EMAIL ?? "").trim().toLowerCase();
+    if (first && firstAdmin && email !== firstAdmin) throw new AuthError("Sign-up is by invitation. Ask your team for an invite.", 403);
     if (!first && process.env.ALLOW_SIGNUP !== "true") throw new AuthError("Sign-up is by invitation. Ask your team for an invite.", 403);
     const [taken] = await tx`select 1 from users where email = ${email}`;
     if (taken) throw new ValidationError("There's already an account with that email. Sign in instead.");

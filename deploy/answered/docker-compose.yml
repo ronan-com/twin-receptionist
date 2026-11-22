@@ -1,0 +1,27 @@
+# The isolated Answered build. Runs next to the main Twin stack on the same server,
+# with its own container, database (answered) and address. The main Caddy reaches
+# it over the main stack's network as answered-app:8791.
+name: answered
+services:
+  app:
+    build: { context: ./src, dockerfile: deploy/Dockerfile }
+    image: answered-app:latest
+    container_name: answered-app
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      HOST: 0.0.0.0
+      API_PORT: "8791"
+    volumes:
+      - app-data:/app/data
+      - /opt/twin/rds-ca.pem:/etc/ssl/rds-ca.pem:ro
+    networks: [twin]
+    logging: { driver: json-file, options: { max-size: 20m, max-file: "5" } }
+
+networks:
+  twin:
+    external: true
+    name: twin_default
+
+volumes:
+  app-data:

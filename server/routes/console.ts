@@ -11,6 +11,7 @@ import { ValidationError } from "../prompt";
 import { demoCallDetail, isDemo } from "../sandbox";
 import { runAsOrg, telnyx } from "../telnyx";
 import { json, readBody, type RouteArgs } from "./http";
+import { manageDeps } from "./manage";
 
 // Area C (console): the /admin screens. Paths: /api/console/...
 //  - The platform admin (not viewing as anyone) sees every agency and business.
@@ -1103,6 +1104,28 @@ async function updateCompany(ctx: Ctx, id: string, input: any) {
   const name = input?.name !== undefined ? nameOf(input.name, "client") : m.name;
   const industry = input?.industry !== undefined ? String(input.industry).slice(0, 40) : m.industry;
   await sql`update companies set name = ${name}, industry = ${industry} where id = ${id}`;
+  // The client's name is the business name everywhere (calls, dashboards, the receptionist's
+  // greeting), so a rename flows into its receptionists: their business name, and the old
+  // name inside their greeting. Each one is saved and pushed to the phone provider.
+  if (name !== m.name) {
+    const d = manageDeps();
+    const rows = await sql`select id, data from clients where company_id = ${id}`;
+    for (const r of rows) {
+      const c = { ...(r.data as Receptionist), id: r.id };
+      const s = c.settings ?? ({} as Receptionist["settings"]);
+      if (s.businessName && s.businessName !== m.name && rows.length > 1) continue; // a differently named line stays as is
+      const greeting = typeof s.greeting === "string" && m.name ? s.greeting.split(m.name).join(name) : s.greeting;
+      const next = { ...s, businessName: name, greeting };
+      try {
+        if (d) await runAsOrg(m.org_id, () => d.updateClient(c, next));
+        else await sql`update clients set data = jsonb_set(jsonb_set(data, '{settings,businessName}', to_jsonb(${name}::text)), '{settings,greeting}', to_jsonb(${greeting ?? ""}::text)) where id = ${r.id}`;
+      } catch (err) {
+        // Keep the rename even if the provider push fails; the receptionist can be re-saved.
+        console.error(`[rename ${r.id}]`, (err as Error).message);
+        await sql`update clients set data = jsonb_set(jsonb_set(data, '{settings,businessName}', to_jsonb(${name}::text)), '{settings,greeting}', to_jsonb(${greeting ?? ""}::text)) where id = ${r.id}`;
+      }
+    }
+  }
   await audit(ctx, "company.updated", { companyId: id, summary: `Updated client ${name}` }, { orgId: m.org_id });
 }
 

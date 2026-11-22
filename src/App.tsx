@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
-import { Link, Navigate, Outlet, Route, Routes, useNavigate, useParams } from "react-router-dom";
+import { Link, NavLink, Navigate, Outlet, Route, Routes, useNavigate, useParams } from "react-router-dom";
+import { Building2, LayoutGrid, LogOut, Plus, Settings as SettingsIcon } from "lucide-react";
 import ViewBanner from "./components/ViewBanner";
 import Wordmark from "./components/Wordmark";
 import { AccountContext } from "./lib/account";
@@ -26,50 +27,76 @@ function Shell({ account, onAccount }: { account: Account; onAccount: (a: Accoun
     await auth.signOut().catch(() => {});
     window.location.replace("/");
   }
+  const items = [
+    { to: "/", label: "Receptionists", icon: LayoutGrid, end: true, show: true },
+    { to: "/new", label: "New receptionist", icon: Plus, end: false, show: true },
+    { to: "/team", label: "Settings", icon: SettingsIcon, end: false, show: true },
+    { to: "/agencies", label: waiting > 0 ? `Agencies (${waiting})` : "Agencies", icon: Building2, end: false, show: account.user.platformAdmin },
+  ].filter((i) => i.show);
+  const teamPicker =
+    account.orgs.length > 1 ? (
+      <select
+        className="org-switch ws-switch"
+        aria-label="Team"
+        value={account.org?.id}
+        onChange={async (e) => {
+          onAccount(await accountApi.switchOrg(e.target.value));
+          navigate("/");
+        }}
+      >
+        {account.orgs.map((o) => (
+          <option key={o.id} value={o.id}>
+            {o.name}
+          </option>
+        ))}
+      </select>
+    ) : (
+      <p className="ws-biz">{account.org?.name}</p>
+    );
   return (
-    <div className="app" style={brandStyle(account.brand)}>
+    <div className="app ws" style={brandStyle(account.brand)}>
       {account.viewing && <ViewBanner viewing={account.viewing} />}
-      <header className="app-top">
-        <Wordmark to="/" brand={account.brand} />
-        <div className="app-top-right">
-          {account.orgs.length > 1 ? (
-            <select
-              className="org-switch"
-              aria-label="Team"
-              value={account.org?.id}
-              onChange={async (e) => {
-                onAccount(await accountApi.switchOrg(e.target.value));
-                navigate("/");
-              }}
-            >
-              {account.orgs.map((o) => (
-                <option key={o.id} value={o.id}>
-                  {o.name}
-                </option>
-              ))}
-            </select>
-          ) : (
-            <span className="app-biz">{account.org?.name}</span>
-          )}
-          {account.user.platformAdmin && (
-            <Link to="/agencies" className="btn btn-ghost btn-sm">
-              Agencies{waiting > 0 ? ` (${waiting})` : ""}
-            </Link>
-          )}
-          <Link to="/team" className="btn btn-ghost btn-sm">
-            Settings
-          </Link>
-          <button type="button" className="btn btn-ghost btn-sm" onClick={signOut}>
-            Sign out
-          </button>
-          <Link to="/new" className="btn btn-primary btn-sm">
-            New receptionist
-          </Link>
+      <aside className="ws-side">
+        <div className="ws-brand">
+          <Wordmark to="/" brand={account.brand} />
         </div>
-      </header>
-      <main className="app-main">
-        <Outlet />
-      </main>
+        {teamPicker}
+        <nav className="ws-nav" aria-label="Main">
+          {items.map((i) => (
+            <NavLink key={i.to} to={i.to} end={i.end} className={({ isActive }) => (isActive ? "is-on" : "")}>
+              <i.icon size={15} strokeWidth={1.8} aria-hidden />
+              <span>{i.label}</span>
+            </NavLink>
+          ))}
+        </nav>
+        <div className="ws-user">
+          <span className="ws-email">{account.user.email}</span>
+          <button type="button" className="btn btn-ghost btn-sm" onClick={signOut}>
+            <LogOut size={14} aria-hidden /> Sign out
+          </button>
+        </div>
+      </aside>
+      <div className="ws-main">
+        <header className="ws-mobile">
+          <div className="ws-mobile-top">
+            <Wordmark to="/" brand={account.brand} />
+            <button type="button" className="btn btn-ghost btn-sm" onClick={signOut}>
+              Sign out
+            </button>
+          </div>
+          <nav className="ws-chips" aria-label="Main">
+            {items.map((i) => (
+              <NavLink key={i.to} to={i.to} end={i.end} className={({ isActive }) => (isActive ? "is-on" : "")}>
+                {i.label}
+              </NavLink>
+            ))}
+          </nav>
+        </header>
+        <main className="ws-content">
+          {account.orgs.length > 1 && <div className="ws-mobile-team">{teamPicker}</div>}
+          <Outlet />
+        </main>
+      </div>
     </div>
   );
 }

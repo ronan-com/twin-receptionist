@@ -2289,3 +2289,47 @@ textarea::placeholder {
     grid-template-columns: minmax(0, 1fr);
   }
 }
+/* Agency side uses the same workspace; nav entries are links there. */
+.ws-nav a {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 34px;
+  padding: 0 10px;
+  border-radius: 6px;
+  color: var(--text-2);
+  font: 500 13.5px var(--font-body);
+  text-decoration: none;
+}
+.ws-nav a:hover {
+  background: var(--card-2);
+  color: var(--text);
+}
+.ws-nav a.is-on {
+  background: #efeeff;
+  color: var(--red);
+}
+.ws-mobile-team {
+  display: none;
+}
+@media (max-width: 960px) {
+  .ws-chips a {
+    flex: 0 0 auto;
+    padding: 6px 12px;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    background: var(--surface);
+    color: var(--text-2);
+    font: 500 13px var(--font-body);
+    text-decoration: none;
+  }
+  .ws-chips a.is-on {
+    background: var(--red);
+    border-color: var(--red);
+    color: #fff;
+  }
+  .ws-mobile-team {
+    display: block;
+    margin-bottom: 12px;
+  }
+}

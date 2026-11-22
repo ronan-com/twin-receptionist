@@ -11,7 +11,7 @@ import { CHART_COLORS } from "@/lib/app/constants";
 import { fmtDuration, fmtNumber, fmtPercent, fmtPhone, fmtRelative, fmtSmartDate, humanize } from "@/lib/app/format";
 import { buildDailySeries, buildOutcomeBreakdown, compareKpis, computeKpis, isInRange, type BreakdownPoint } from "@/lib/app/metrics";
 import { adminOverviewCountsQuery, rangeKey } from "@/lib/app/queries";
-import { getAdminAppointmentsLeads, getAdminRecentActivity, getConsoleCalls, type AdminRecentActivity, type ConsoleCall } from "@/lib/api/console";
+import { platformApi, getAdminAppointmentsLeads, getAdminRecentActivity, getConsoleCalls, type AdminRecentActivity, type ConsoleCall } from "@/lib/api/console";
 import type { AppointmentStatus, LeadStage } from "@/lib/app/types";
 import { BizCell, CallSheet, useConsole } from "./-shared";
 
@@ -143,6 +143,8 @@ function AdminOverview() {
         <MetricCard label="Failed calls" value={fmtNumber(failed.length)} icon={ServerCrash} loading={callsQ.isPending} />
       </MetricGrid>
 
+      {platform ? <AgenciesGlance /> : null}
+
       <Panel title="Needs attention">
         <ul className="space-y-2 text-[13px]">
           <AttentionRow icon={AlertTriangle} label="Open incidents" value={c?.openIncidents ?? 0} to="/admin/system" tone={c?.openIncidents ? "danger" : "muted"} />
@@ -259,4 +261,34 @@ function mergeActivity(data: AdminRecentActivity | undefined) {
     items.push({ key: `i-${i.id}`, at: i.started_at, text: i.title, business: i.business?.name ?? "Platform", icon: AlertTriangle, badge: <StatusBadge tone={i.status === "open" ? "danger" : "success"}>{humanize(i.status)}</StatusBadge> });
   }
   return items.sort((a, b) => new Date(b.at).getTime() - new Date(a.at).getTime()).slice(0, 14);
+}
+
+/** Platform overview: the agencies at a glance (the full list is on Agencies). */
+function AgenciesGlance() {
+  const q = useQuery({ queryKey: ["console", "agencies"], queryFn: platformApi.agencies });
+  const rows = (q.data ?? []).filter((a) => !a.sandbox).slice(0, 8);
+  return (
+    <Panel
+      title="Agencies"
+      actions={
+        <Button asChild size="sm" variant="ghost" className="h-7 text-[12px]">
+          <Link to="/admin/agencies">All agencies</Link>
+        </Button>
+      }
+      padded={false}
+    >
+      <ul className="divide-y divide-hairline" data-list="agencies">
+        {rows.map((a) => (
+          <li key={a.id} className="flex items-center justify-between gap-2 px-4 py-2 text-[13px]">
+            <span className="min-w-0 truncate font-medium text-ink">{a.name}</span>
+            <span className="shrink-0 text-[12px] text-ink-muted">
+              {a.clients} receptionist{a.clients === 1 ? "" : "s"}
+              {a.suspended ? " · paused" : ""}
+            </span>
+          </li>
+        ))}
+        {!q.isPending && rows.length === 0 ? <li className="px-4 py-4 text-center text-[12.5px] text-ink-muted">No agencies yet.</li> : null}
+      </ul>
+    </Panel>
+  );
 }

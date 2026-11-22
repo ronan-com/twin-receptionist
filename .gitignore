@@ -7,3 +7,6 @@ data/
 *.pem
 *.log
 *.tmp
+
+# agent worktrees
+.claude/

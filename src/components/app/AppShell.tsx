@@ -106,7 +106,7 @@ export function AppShell({ nav, variant, brandTo, sidebarHeader, topbarRight, ba
   const needsAttention = notifications.filter((n) => n.tone === "warning" || n.tone === "danger").length;
 
   return (
-    <div className="min-h-screen bg-canvas-2 text-ink">
+    <div data-app-shell className="min-h-screen bg-canvas-2 text-ink">
       {/* Desktop sidebar */}
       <aside className="fixed inset-y-0 left-0 z-30 hidden w-[232px] border-r border-hairline bg-white lg:block">
         <SidebarBody nav={nav} variant={variant} brandTo={brandTo} sidebarHeader={sidebarHeader} />

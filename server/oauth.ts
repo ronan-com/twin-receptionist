@@ -82,7 +82,8 @@ const redirectUri = (provider: OAuthProvider) => `${redirectBase()}/api/oauth/${
 // the database so the provider can send the browser back to any server instance.
 // Started either by the business from its connect link (linkToken), or by a
 // signed-in team member from the dashboard (clientId + orgId).
-export type SignInOrigin = { linkToken?: string; clientId?: string; orgId?: string };
+// returnTo: the dashboard page to come back to (a path on this server).
+export type SignInOrigin = { linkToken?: string; clientId?: string; orgId?: string; returnTo?: string };
 type Pending = SignInOrigin & { provider: OAuthProvider; purpose: OAuthPurpose; mode: EmailMode; verifier: string };
 
 const b64url = (buf: Buffer) => buf.toString("base64url");

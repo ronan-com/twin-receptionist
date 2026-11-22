@@ -191,6 +191,10 @@ try {
     await clickText(bz, '[role="option"]', "Trades");
     await type(bz, "#suburb", "Newtown");
     await clickText(bz, "button[type=submit]", "Create my receptionist");
+    // A new business starts in the onboarding wizard (area S); put it off for now.
+    await waitPath(bz, "/app/onboarding", 20000);
+    await bz.waitForSelector('[data-action="later"]');
+    await bz.$eval('[data-action="later"]', (b) => b.click());
     await waitPath(bz, "/app", 20000);
     await bz.waitForSelector('[data-page="app-dashboard"]');
     await waitText(bz, biz.businessName);

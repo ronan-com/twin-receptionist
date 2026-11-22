@@ -45,6 +45,8 @@ export function answeredBusiness(
   extra: { orgId: string; orgName: string; sandbox: boolean; suspended: boolean },
 ) {
   const s = r.settings;
+  // Contact details the business keeps in Settings (server/routes/manage.ts PUT /business).
+  const p = ((r as { profile?: Record<string, string> }).profile ?? {}) as Record<string, string | undefined>;
   const hours: Record<string, { open: string; close: string; closed: boolean }> = {};
   for (const [day, h] of Object.entries(s.hours ?? {})) hours[day] = { open: h.from, close: h.to, closed: !h.open };
   return {
@@ -54,13 +56,13 @@ export function answeredBusiness(
     industry: industryLabelOf(s.industry),
     timezone: s.timezone,
     city: s.suburb || null,
-    region: null,
-    country: "AU",
+    region: p.region || null,
+    country: p.country || "AU",
     address_line1: s.address || null,
-    postal_code: null,
-    phone: r.phoneNumbers?.[0] ?? null,
-    email: r.booking?.notifyEmail || null,
-    website: null,
+    postal_code: p.postal_code || null,
+    phone: p.phone || r.phoneNumbers?.[0] || null,
+    email: p.email || r.booking?.notifyEmail || null,
+    website: p.website || null,
     is_demo: extra.sandbox,
     status: extra.suspended ? "paused" : "active",
     business_hours: hours,

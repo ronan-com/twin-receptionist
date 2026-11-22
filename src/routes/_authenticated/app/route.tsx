@@ -5,6 +5,8 @@ import { AppShell } from "@/components/app/AppShell";
 import { WorkspaceSwitcher } from "@/components/app/WorkspaceSwitcher";
 import { DateRangeSelect } from "@/components/app/DateRangeSelect";
 import { Notice, ErrorState } from "@/components/app/primitives";
+import { SetupPrompt } from "@/components/app/SetupPrompt";
+import { WorkspaceBrand, WorkspaceLogo } from "@/components/app/WorkspaceBrand";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { CLIENT_NAV } from "@/lib/app/constants";
@@ -119,13 +121,22 @@ function ClientAppLayout() {
       nav={CLIENT_NAV}
       variant="client"
       brandTo="/app"
-      sidebarHeader={<WorkspaceSwitcher />}
+      sidebarHeader={
+        <>
+          <WorkspaceLogo />
+          <WorkspaceSwitcher />
+        </>
+      }
       topbarRight={<DateRangeSelect value={ws.rangePreset} onChange={ws.setRangePreset} />}
       banner={banner}
       notifications={notifications}
     >
       {ws.business ? (
-        <Outlet />
+        <>
+          <WorkspaceBrand />
+          <SetupPrompt />
+          <Outlet />
+        </>
       ) : (
         <div className="mx-auto max-w-lg py-16">
           <Notice tone="neutral" title="No business yet" action={<Button size="sm" variant="outline" onClick={() => void ws.signOut()}>Sign out</Button>}>

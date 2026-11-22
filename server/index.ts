@@ -619,7 +619,7 @@ async function route(req: Request): Promise<Response> {
     }
     if (method !== "GET") return json({ error: "Not found" }, 404);
     if (path === "/api/portal/clients") return json({ clients: await accessibleClients(ctx) });
-    const portal = path.match(/^\/api\/portal\/([a-f0-9-]{36})\/(calls|bookings|calls\/([A-Za-z0-9-]{8,80}))$/);
+    const portal = path.match(/^\/api\/portal\/([a-f0-9-]{36})\/(calls|bookings|receptionist|calls\/([A-Za-z0-9-]{8,80}))$/);
     if (!portal) return json({ error: "Not found" }, 404);
     const mine = await customerClientId(ctx, portal[1]);
     const client = await getOrgClient(orgId, mine);
@@ -628,6 +628,24 @@ async function route(req: Request): Promise<Response> {
       // Test calls and the text simulator are the agency's, not the customer's.
       const calls = (await listCalls(client.assistantId, 100)).filter((c) => !c.simulated && c.channel !== "web");
       return json({ calls, receptionist: client.settings.receptionistName || "" });
+    }
+    if (portal[2] === "receptionist") {
+      // What the business's receptionist knows. Read-only, and never the script, notes or keys.
+      const s = client.settings;
+      return json({
+        businessName: s.businessName,
+        receptionistName: s.receptionistName,
+        industry: s.industry,
+        suburb: s.suburb,
+        timezone: s.timezone,
+        hours: s.hours,
+        services: s.services,
+        greeting: s.greeting,
+        tone: s.tone,
+        voice: (s.voiceName ?? "").split(" - ")[0],
+        phoneNumbers: client.phoneNumbers ?? [],
+        agency: ctx.org!.name,
+      });
     }
     if (portal[3]) return json(await callDetail(client, portal[3]));
     return json({ upcoming: await upcomingEvents(client.id), requests: await requestsFor(client.id) });

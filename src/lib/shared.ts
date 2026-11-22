@@ -477,6 +477,21 @@ export type CustomerAccess = {
   invites: { id: string; email: string; expiresAt: string }[];
 };
 
+export type PortalReceptionist = {
+  businessName: string;
+  receptionistName: string;
+  industry: IndustryKey;
+  suburb: string;
+  timezone: string;
+  hours: Hours;
+  services: string[];
+  greeting: string;
+  tone: string;
+  voice: string;
+  phoneNumbers: string[];
+  agency: string;
+};
+
 export type PortalClient = { id: string; businessName: string; receptionistName: string; brand: Brand };
 
 export type InviteInfo = { orgName: string; email: string; role: OrgRole; hasAccount: boolean; businessName?: string };

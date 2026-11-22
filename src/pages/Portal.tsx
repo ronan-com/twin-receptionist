@@ -1,14 +1,15 @@
 import { useEffect, useState } from "react";
+import { BarChart3, Bot, CalendarDays, LayoutDashboard, LogOut, PhoneCall, UserRound } from "lucide-react";
 import ViewBanner from "../components/ViewBanner";
 import { brandStyle } from "../lib/brand";
 import Wordmark from "../components/Wordmark";
 import { accountApi, auth, portalApi } from "../lib/api";
-import { formatNumber, type Account, type BookingRequest, type CalendarEvent, type CallMessage, type CallSummary, type PortalClient } from "../lib/shared";
+import { formatNumber, type Account, type BookingRequest, type PortalReceptionist, describeHours, industry, type CalendarEvent, type CallMessage, type CallSummary, type PortalClient } from "../lib/shared";
 
 // The end customer's view: every call, booking and follow-up their receptionist
 // handled. Read-only; they never see the agency's dashboard.
 
-const TABS = ["Calls", "Bookings", "Follow-ups", "Reports"] as const;
+const TABS = ["Dashboard", "Calls", "Bookings", "Follow-ups", "Receptionist", "Reports"] as const;
 type Tab = (typeof TABS)[number];
 
 const when = (iso: string) => {
@@ -121,7 +122,8 @@ export default function Portal({ account }: { account: Account }) {
   const [data, setData] = useState<Loaded | null>(null);
   const [receptionist, setReceptionist] = useState("");
   const [error, setError] = useState("");
-  const [tab, setTab] = useState<Tab>("Calls");
+  const [tab, setTab] = useState<Tab>("Dashboard");
+  const [recep, setRecep] = useState<PortalReceptionist | null>(null);
   const [range, setRange] = useState<number>(30);
   const [q, setQ] = useState("");
   const [view, setView] = useState<"List" | "Week">("List");
@@ -140,6 +142,8 @@ export default function Portal({ account }: { account: Account }) {
   function load(id: string) {
     setData(null);
     setError("");
+    setRecep(null);
+    portalApi.receptionist(id).then(setRecep).catch(() => {});
     Promise.all([portalApi.calls(id), portalApi.bookings(id)])
       .then(([c, b]) => {
         setReceptionist(c.receptionist);
@@ -205,82 +209,238 @@ export default function Portal({ account }: { account: Account }) {
     };
   })();
 
+  const ICONS = { Dashboard: LayoutDashboard, Calls: PhoneCall, Bookings: CalendarDays, "Follow-ups": UserRound, Receptionist: Bot, Reports: BarChart3 } as const;
+  const brand = current?.brand ?? account.brand;
+  const go = (t: Tab) => {
+    setTab(t);
+    setQ("");
+    window.scrollTo(0, 0);
+  };
+  const openFollowUps = followUps.filter((f) => (stages[f.id] ?? f.stage ?? "new") === "new");
+  const nextUp = [...weekItems].filter((it) => new Date(it.start).getTime() > Date.now()).sort((x, y) => x.start.localeCompare(y.start)).slice(0, 5);
+
   return (
-    <div className="app" style={brandStyle(current?.brand ?? account.brand)}>
+    <div className="app ws" style={brandStyle(brand)}>
       {account.viewing && <ViewBanner viewing={account.viewing} />}
-      <header className="app-top">
-        <Wordmark to="/" brand={current?.brand ?? account.brand} />
-        <div className="app-top-right">
-          {clients && clients.length > 1 ? (
-            <select className="org-switch" aria-label="Business" value={clientId} onChange={(e) => setClientId(e.target.value)}>
-              {clients.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.businessName}
-                </option>
-              ))}
-            </select>
-          ) : (
-            <span className="app-biz">{current?.businessName}</span>
-          )}
+      <aside className="ws-side">
+        <div className="ws-brand">
+          <Wordmark to="/" brand={brand} />
+        </div>
+        {clients && clients.length > 1 ? (
+          <select className="org-switch ws-switch" aria-label="Business" value={clientId} onChange={(e) => setClientId(e.target.value)}>
+            {clients.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.businessName}
+              </option>
+            ))}
+          </select>
+        ) : (
+          <p className="ws-biz">{current?.businessName}</p>
+        )}
+        <nav className="ws-nav" aria-label="Workspace">
+          {TABS.map((t) => {
+            const Icon = ICONS[t];
+            return (
+              <button key={t} type="button" aria-current={tab === t ? "page" : undefined} className={tab === t ? "is-on" : ""} onClick={() => go(t)}>
+                <Icon size={15} strokeWidth={1.8} aria-hidden />
+                <span>{t}</span>
+              </button>
+            );
+          })}
+        </nav>
+        <div className="ws-user">
+          <span className="ws-email">{account.user.email}</span>
           <button type="button" className="btn btn-ghost btn-sm" onClick={signOut}>
-            Sign out
+            <LogOut size={14} aria-hidden /> Sign out
           </button>
         </div>
-      </header>
-      <main className="app-main">
-        <div className="dash-head">
-          <div>
-            <p className="eyebrow">{current?.businessName ?? account.org?.name}</p>
-            <h1>Your calls</h1>
+      </aside>
+
+      <div className="ws-main">
+        <header className="ws-mobile">
+          <div className="ws-mobile-top">
+            <Wordmark to="/" brand={brand} />
+            <button type="button" className="btn btn-ghost btn-sm" onClick={signOut}>
+              Sign out
+            </button>
           </div>
-          <div className="portal-range segmented segmented-4" role="radiogroup" aria-label="Time range">
-            {RANGES.map(([label, days]) => (
-              <button key={days} type="button" role="radio" aria-checked={range === days} className={range === days ? "is-on" : ""} onClick={() => setRange(days)}>
-                {label}
+          <nav className="ws-chips" aria-label="Workspace">
+            {TABS.map((t) => (
+              <button key={t} type="button" aria-current={tab === t ? "page" : undefined} className={tab === t ? "is-on" : ""} onClick={() => go(t)}>
+                {t}
               </button>
             ))}
-          </div>
-        </div>
-        {receptionist && <p className="muted portal-by">Answered by {receptionist}</p>}
+          </nav>
+        </header>
 
-        {error && (
-          <div className="notice notice-error" role="alert">
-            {error}
-          </div>
-        )}
-        {clients?.length === 0 && (
-          <section className="card empty">
-            <h2>Nothing shared with you yet</h2>
-            <p className="muted">Ask {account.org?.name} to share your receptionist with this login.</p>
-          </section>
-        )}
-        {!error && clients === null && <p className="muted center pad">Loading…</p>}
-
-        {current && (
-          <>
-            <div className="stat-row">
-              <div className="stat">
-                <span className="stat-n">{data ? (data.calls ?? []).filter((c) => inRange(c.startedAt)).length : "–"}</span>
-                <span className="stat-l">calls and texts, {rangeLabel === "today" ? "today" : `last ${rangeLabel}`}</span>
-              </div>
-              <div className="stat">
-                <span className="stat-n">{data ? upcomingCount : "–"}</span>
-                <span className="stat-l">upcoming bookings</span>
-              </div>
-              <div className="stat">
-                <span className="stat-n">{data ? (data.requests ?? []).filter((r) => r.kind === "callback" && inRange(r.at)).length : "–"}</span>
-                <span className="stat-l">follow-ups, {rangeLabel === "today" ? "today" : `last ${rangeLabel}`}</span>
-              </div>
+        <main className="ws-content">
+          <div className="dash-head">
+            <div>
+              <p className="eyebrow">{current?.businessName ?? account.org?.name}</p>
+              <h1>{tab === "Dashboard" ? "Your calls" : tab}</h1>
+              {receptionist && <p className="muted ws-by">Answered by {receptionist}</p>}
             </div>
+            {tab !== "Receptionist" && (
+              <div className="portal-range segmented segmented-4" role="radiogroup" aria-label="Time range">
+                {RANGES.map(([label, days]) => (
+                  <button key={days} type="button" role="radio" aria-checked={range === days} className={range === days ? "is-on" : ""} onClick={() => setRange(days)}>
+                    {label}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
 
-            <div className="segmented segmented-4 portal-tabs" role="tablist" aria-label="Sections">
-              {TABS.map((t) => (
-                <button key={t} type="button" role="tab" aria-selected={tab === t} className={tab === t ? "is-on" : ""} onClick={() => { setTab(t); setQ(""); }}>
-                  {t}
-                </button>
-              ))}
+          {error && (
+            <div className="notice notice-error" role="alert">
+              {error}
             </div>
+          )}
+          {clients?.length === 0 && (
+            <section className="card empty">
+              <h2>Nothing shared with you yet</h2>
+              <p className="muted">Ask {account.org?.name} to share your receptionist with this login.</p>
+            </section>
+          )}
+          {!error && clients === null && <p className="muted center pad">Loading…</p>}
 
+          {current && tab === "Dashboard" && (
+            <>
+              <div className="stat-row">
+                <div className="stat">
+                  <span className="stat-n">{data ? (data.calls ?? []).filter((c) => inRange(c.startedAt)).length : "–"}</span>
+                  <span className="stat-l">calls and texts, {rangeLabel === "today" ? "today" : `last ${rangeLabel}`}</span>
+                </div>
+                <div className="stat">
+                  <span className="stat-n">{data ? upcomingCount : "–"}</span>
+                  <span className="stat-l">upcoming bookings</span>
+                </div>
+                <div className="stat">
+                  <span className="stat-n">{data ? openFollowUps.length : "–"}</span>
+                  <span className="stat-l">waiting for a call back</span>
+                </div>
+              </div>
+              <div className="ws-grid">
+                <section className="card">
+                  <div className="card-head">
+                    <h2>Latest calls</h2>
+                    <button type="button" className="btn btn-ghost btn-sm" onClick={() => go("Calls")}>
+                      All calls
+                    </button>
+                  </div>
+                  {!data && <p className="muted">Loading…</p>}
+                  {data && calls.length === 0 && <p className="muted">No calls in this time range.</p>}
+                  {data && calls.length > 0 && (
+                    <ul className="calls">
+                      {calls.slice(0, 5).map((c) => (
+                        <CallRow key={c.id} clientId={current.id} call={c} outcome={outcomeOf(c, data.requests)} />
+                      ))}
+                    </ul>
+                  )}
+                </section>
+                <div className="ws-stack">
+                  <section className="card">
+                    <div className="card-head">
+                      <h2>Coming up</h2>
+                      <button type="button" className="btn btn-ghost btn-sm" onClick={() => go("Bookings")}>
+                        Bookings
+                      </button>
+                    </div>
+                    {data && nextUp.length === 0 && <p className="muted">Nothing booked yet.</p>}
+                    <ul className="portal-list">
+                      {nextUp.map((it) => (
+                        <li key={it.id}>
+                          <strong>{it.title}</strong>
+                          <span className="muted">{when(it.start)}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </section>
+                  <section className="card">
+                    <div className="card-head">
+                      <h2>Needs a call back</h2>
+                      <button type="button" className="btn btn-ghost btn-sm" onClick={() => go("Follow-ups")}>
+                        Follow-ups
+                      </button>
+                    </div>
+                    {data && openFollowUps.length === 0 && <p className="muted">Nobody is waiting.</p>}
+                    <ul className="portal-list">
+                      {openFollowUps.slice(0, 5).map((f) => (
+                        <li key={f.id}>
+                          <strong>{f.name || "Someone"}</strong>
+                          {f.service && <span>{f.service}</span>}
+                          {f.phone && (
+                            <a href={`tel:${f.phone}`} className="portal-phone">
+                              {formatNumber(f.phone)}
+                            </a>
+                          )}
+                        </li>
+                      ))}
+                    </ul>
+                  </section>
+                </div>
+              </div>
+            </>
+          )}
+
+          {current && tab === "Receptionist" && (
+            <section className="card">
+              {!recep && <p className="muted">Loading…</p>}
+              {recep && (
+                <>
+                  <p className="muted">
+                    What {recep.receptionistName || "your receptionist"} knows about {recep.businessName}. To change anything, contact {recep.agency}.
+                  </p>
+                  <dl className="review">
+                    <div>
+                      <dt>Business</dt>
+                      <dd>
+                        {recep.businessName}
+                        <span className="muted">
+                          {" "}
+                          · {industry(recep.industry).label}
+                          {recep.suburb ? ` · ${recep.suburb}` : ""}
+                        </span>
+                      </dd>
+                    </div>
+                    <div>
+                      <dt>Phone</dt>
+                      <dd>{recep.phoneNumbers.length ? recep.phoneNumbers.map(formatNumber).join(", ") : "Not connected yet"}</dd>
+                    </div>
+                    <div>
+                      <dt>Hours</dt>
+                      <dd>
+                        {describeHours(recep.hours).map((line) => (
+                          <span key={line} className="line">
+                            {line}
+                          </span>
+                        ))}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt>Callers can ask for</dt>
+                      <dd>{recep.services.join(", ")}</dd>
+                    </div>
+                    <div>
+                      <dt>Voice</dt>
+                      <dd>
+                        {recep.voice || "Default"}
+                        <span className="muted"> · {recep.tone === "friendly" ? "Friendly" : "Professional"}</span>
+                      </dd>
+                    </div>
+                    {recep.greeting && (
+                      <div>
+                        <dt>It answers with</dt>
+                        <dd className="quote">“{recep.greeting}”</dd>
+                      </div>
+                    )}
+                  </dl>
+                </>
+              )}
+            </section>
+          )}
+
+          {current && tab !== "Dashboard" && tab !== "Receptionist" && (
             <section className="card">
               {!data && !error && <p className="muted">Loading…</p>}
 
@@ -492,9 +652,9 @@ export default function Portal({ account }: { account: Account }) {
                 </div>
               )}
             </section>
-          </>
-        )}
-      </main>
+          )}
+        </main>
+      </div>
     </div>
   );
 }

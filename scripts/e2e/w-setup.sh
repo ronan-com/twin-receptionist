@@ -25,7 +25,7 @@ PSQL=(docker exec -i twin-pg psql -U twin -d "$DB" -q -v ON_ERROR_STOP=1)
 sleep 1
 if [ "${E2E_SKIP_BUILD:-}" != "1" ]; then bun run build 2>&1 | grep -E "built in|rror" || true; fi
 docker exec twin-pg psql -U twin -d postgres -q -c "drop database if exists $DB" -c "create database $DB" >/dev/null
-DBURL=$(grep '^DATABASE_URL=' "$ENVF" | cut -d= -f2- | sed "s#/twin\$#/$DB#")
+DBURL=$(grep "^DATABASE_URL=" "$ENVF" | cut -d= -f2- | sed -E "s#/[A-Za-z0-9_]+(\\?.*)?\$#/$DB\\1#")
 echo "$DBURL" > "$E/dburl"
 LEGACY_DATA_DIR="$E/nolegacy" DATABASE_URL="$DBURL" MAILBOX_KEY=$(openssl rand -base64 32) CALL_SYNC=off \
   TELNYX_API_KEY=platform-fake-key-0000000000 API_PORT=$PORT PUBLIC_URL=$B \

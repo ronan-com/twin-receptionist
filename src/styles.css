@@ -1654,3 +1654,77 @@ textarea:focus {
   gap: 0.25rem;
   justify-content: flex-end;
 }
+
+/* Set up list: one card, one row per thing to connect */
+.setup-list > h2 {
+  margin-bottom: 4px;
+}
+.fold {
+  border-top: 1px solid var(--border);
+}
+.setup-list > h2 + .fold {
+  margin-top: 12px;
+}
+.fold > summary {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 16px 0;
+  cursor: pointer;
+  list-style: none;
+}
+.fold > summary::-webkit-details-marker {
+  display: none;
+}
+.fold-title {
+  flex: 1;
+  font-weight: 600;
+}
+.fold-chev {
+  color: var(--muted);
+  font-size: 20px;
+  line-height: 1;
+  transition: transform 0.15s;
+}
+.fold[open] > summary .fold-chev {
+  transform: rotate(90deg);
+}
+.fold-body {
+  padding: 0 0 20px;
+}
+.fold-body .card {
+  border: 0;
+  background: none;
+  padding: 0;
+}
+.fold-body .card > h2,
+.fold-body .card-head h2 {
+  display: none;
+}
+.fold-body .card-head {
+  justify-content: flex-end;
+  margin-bottom: 6px;
+}
+.fold > summary:focus-visible {
+  outline: 2px solid var(--red-line, #e40014);
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+.danger-line {
+  margin: 28px 0 8px;
+  font-size: 14px;
+}
+.danger-line .link {
+  color: #ff8a8a;
+}
+@media (max-width: 560px) {
+  .fold > summary {
+    flex-wrap: wrap;
+  }
+  .fold-title {
+    flex-basis: 100%;
+  }
+  .fold-chev {
+    margin-left: auto;
+  }
+}

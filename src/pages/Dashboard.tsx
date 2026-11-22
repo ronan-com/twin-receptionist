@@ -1,4 +1,4 @@
-import { createElement, useCallback, useEffect, useRef, useState } from "react";
+import { createElement, useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { Link } from "react-router-dom";
 import { BusinessFields, HoursFields, NotesField, ServicesFields, VoiceFields } from "../components/fields";
 import BookingCard from "../components/BookingCard";
@@ -11,9 +11,11 @@ import {
   describeHours,
   formatNumber,
   industry,
+  type BookingState,
   type Business,
   type CallMessage,
   type CallSummary,
+  type EmailStatus,
   type Settings,
   type Voice,
 } from "../lib/shared";
@@ -273,6 +275,73 @@ function Editor({ business, onSaved, onClose }: { business: Business; onSaved: (
   );
 }
 
+// One list for everything that needs connecting. Each row shows where it stands
+// and opens to the full controls, so the page isn't a wall of cards.
+function Fold({ title, status, on, children, onClose }: { title: string; status: string; on: boolean; children: ReactNode; onClose: () => void }) {
+  return (
+    <details
+      className="fold"
+      onToggle={(e) => {
+        if (!(e.currentTarget as HTMLDetailsElement).open) onClose();
+      }}
+    >
+      <summary>
+        <span className="fold-title">{title}</span>
+        <span className={`pill ${on ? "pill-on" : ""}`}>{status}</span>
+        <span className="fold-chev" aria-hidden>
+          ›
+        </span>
+      </summary>
+      <div className="fold-body">{children}</div>
+    </details>
+  );
+}
+
+function SetupList({ business, onChange }: { business: Business; onChange: (b: Business) => void }) {
+  const [email, setEmail] = useState<EmailStatus | null>(null);
+  const [booking, setBooking] = useState<BookingState | null>(null);
+  const [tick, setTick] = useState(0);
+  const refresh = () => setTick((t) => t + 1);
+
+  useEffect(() => {
+    api.email(business.id).then(setEmail).catch(() => {});
+    api.booking(business.id).then(setBooking).catch(() => {});
+  }, [business.id, tick]);
+
+  const numbers = business.phoneNumbers ?? [];
+  const mobile = numbers.find((n) => n.startsWith("+614"));
+  const bookingOn = Boolean(booking?.setup?.enabled);
+  const providerName = { builtin: "Built-in calendar", google: "Google Calendar", microsoft: "Outlook" } as const;
+
+  return (
+    <section className="card setup-list">
+      <h2>Set up</h2>
+      <Fold title="Phone number" on={numbers.length > 0} status={numbers.length ? formatNumber(numbers[0]) : "Not connected"} onClose={refresh}>
+        <PhoneNumberCard clientId={business.id} businessName={business.settings.businessName} />
+      </Fold>
+      <Fold
+        title="Email"
+        on={Boolean(email?.connected)}
+        status={email?.connected ? `Connected${email.mode === "send" ? " · sends replies" : " · saves drafts"}` : "Not connected"}
+        onClose={refresh}
+      >
+        <EmailCard clientId={business.id} businessName={business.settings.businessName} />
+      </Fold>
+      <Fold
+        title="Calendar and bookings"
+        on={bookingOn}
+        status={bookingOn ? `On · ${providerName[booking!.setup!.provider] ?? "Calendar"}` : "Off"}
+        onClose={refresh}
+      >
+        <BookingCard clientId={business.id} onChanged={() => api.client(business.id).then(onChange).catch(() => {})} />
+      </Fold>
+      <Fold title="Text messages" on={Boolean(mobile)} status={mobile ? "On" : "Needs a mobile number"} onClose={refresh}>
+        <TextingCard clientId={business.id} businessName={business.settings.businessName} />
+      </Fold>
+    </section>
+  );
+}
+
 export default function Dashboard({ business, onChange, onDeleted }: Props) {
   const s = business.settings;
   const who = s.receptionistName || "Your receptionist";
@@ -311,15 +380,14 @@ export default function Dashboard({ business, onChange, onDeleted }: Props) {
       </Link>
       <div className="dash-head">
         <div>
-          <p className="eyebrow">{s.businessName}</p>
-          <h1>{who} is ready for a test call</h1>
+          <p className="eyebrow">Receptionist</p>
+          <h1>{s.businessName}</h1>
         </div>
         <div className="pills">
-          <span className="pill pill-on">Browser test call: on</span>
           {(business.phoneNumbers ?? []).length > 0 ? (
-            <span className="pill pill-on">Phone number connected</span>
+            <span className="pill pill-on">Live on {formatNumber(business.phoneNumbers![0])}</span>
           ) : (
-            <span className="pill">Phone number: not connected yet</span>
+            <span className="pill">Test mode · no phone number yet</span>
           )}
         </div>
       </div>
@@ -345,8 +413,6 @@ export default function Dashboard({ business, onChange, onDeleted }: Props) {
           />
 
           <Calls clientId={business.id} refreshKey={refreshKey} />
-
-          <EmailCard clientId={business.id} businessName={s.businessName} />
         </div>
 
         <div className="dash-col">
@@ -404,21 +470,16 @@ export default function Dashboard({ business, onChange, onDeleted }: Props) {
                   .replace(/\{\{telnyx_end_user_target\}\}/g, "the number they texted from")}</pre>}
           </section>
 
-          <BookingCard clientId={business.id} onChanged={() => api.client(business.id).then(onChange).catch(() => {})} />
-
-          <PhoneNumberCard clientId={business.id} businessName={s.businessName} />
-
-          <TextingCard clientId={business.id} businessName={s.businessName} />
-
-          <section className="card card-quiet">
-            <h2>Delete this receptionist</h2>
-            <p className="muted">Removes it and its call history.</p>
-            <button type="button" className="btn btn-danger btn-sm" onClick={remove} disabled={deleting}>
-              {deleting ? "Deleting…" : "Delete receptionist"}
-            </button>
-          </section>
+          <SetupList business={business} onChange={onChange} />
         </div>
       </div>
+
+      <p className="danger-line">
+        <button type="button" className="link" onClick={remove} disabled={deleting}>
+          {deleting ? "Deleting…" : "Delete this receptionist"}
+        </button>
+        <span className="muted"> Removes it and its call history.</span>
+      </p>
 
       {editing && (
         <Editor

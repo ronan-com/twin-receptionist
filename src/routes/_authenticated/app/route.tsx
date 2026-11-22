@@ -6,6 +6,7 @@ import { WorkspaceSwitcher } from "@/components/app/WorkspaceSwitcher";
 import { DateRangeSelect } from "@/components/app/DateRangeSelect";
 import { Notice, ErrorState } from "@/components/app/primitives";
 import { SetupPrompt } from "@/components/app/SetupPrompt";
+import { WorkspaceBrand, WorkspaceLogo } from "@/components/app/WorkspaceBrand";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { CLIENT_NAV } from "@/lib/app/constants";
@@ -120,13 +121,19 @@ function ClientAppLayout() {
       nav={CLIENT_NAV}
       variant="client"
       brandTo="/app"
-      sidebarHeader={<WorkspaceSwitcher />}
+      sidebarHeader={
+        <>
+          <WorkspaceLogo />
+          <WorkspaceSwitcher />
+        </>
+      }
       topbarRight={<DateRangeSelect value={ws.rangePreset} onChange={ws.setRangePreset} />}
       banner={banner}
       notifications={notifications}
     >
       {ws.business ? (
         <>
+          <WorkspaceBrand />
           <SetupPrompt />
           <Outlet />
         </>

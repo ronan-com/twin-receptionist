@@ -172,3 +172,21 @@ export async function getAudit(businessId: string): Promise<AuditRow[]> {
 /* ---------------- Your account (existing /api/account) ---------------- */
 
 export const updateAccount = (body: { name?: string; currentPassword?: string; newPassword?: string }) => api.put<unknown>("/api/account", body);
+
+/* ---------------- Branding (the business's own workspace look) ---------------- */
+
+export type BrandLook = { logo: string; bgColor: string; bgImage: string; primaryColor: string; accentColor: string };
+/** own: set on this business; agency: the agency's defaults; effective: what the workspace shows. */
+export type BrandState = { own: BrandLook; agency: BrandLook; effective: BrandLook };
+export type BrandChange = { bgColor?: string; primaryColor?: string; accentColor?: string; removeLogo?: boolean; removeBackground?: boolean };
+
+export const getBrand = (businessId: string) => api.get<BrandState>(`${base(businessId)}/brand`);
+export const saveBrand = (businessId: string, body: BrandChange) => api.put<BrandState>(`${base(businessId)}/brand`, body);
+
+/** Uploads a PNG, JPEG or WebP (the server checks the bytes). */
+export async function uploadBrandImage(businessId: string, kind: "logo" | "background", file: File): Promise<BrandState> {
+  const res = await fetch(`${base(businessId)}/brand/${kind}`, { method: "POST", credentials: "same-origin", headers: { "Content-Type": file.type || "application/octet-stream" }, body: file });
+  const data = await res.json().catch(() => null);
+  if (!res.ok) throw new Error((data && typeof data.error === "string" && data.error) || `Upload failed (${res.status}).`);
+  return data as BrandState;
+}

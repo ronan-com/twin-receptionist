@@ -2,6 +2,7 @@ import { DAYS, TIMEZONES, formatNumber, type Business, type DayKey, type Hours, 
 import { createInvite, emailOf, type Ctx } from "../accounts";
 import { answeredBusiness, industryKeyOf, membershipRole } from "../answered";
 import { audit } from "../audit";
+import { changeBrand, ownBrand, resolveBrand, uploadAsset } from "../brand";
 import { availability, bookingLive } from "../booking";
 import { CalendarError, calendarLink, providerOf } from "../calendars";
 import { dashboardSignInStart } from "../connect";
@@ -146,6 +147,11 @@ async function answeredAgent(c: Business, paused: boolean, voices?: Voice[]) {
     // Ours: nothing has been saved since the receptionist was made (sign-up defaults),
     // so the workspace offers the first-run "finish setting up" prompt.
     setup_fresh: c.createdAt === c.updatedAt,
+    // Ours: the first-run onboarding wizard (clients.data.onboarding). An agency sets it
+    // to "pending" when it sends a client their onboarding link; a self-signed-up
+    // business is pending until its first save. onboarding_step: where to resume.
+    onboarding: onboardingOf(c),
+    onboarding_step: Number((c as Onboarded).onboardingStep ?? 0),
   };
 }
 
@@ -529,7 +535,9 @@ export async function manageRoutes(args: ClientRouteArgs): Promise<Response | nu
       s = applyBusiness(s, { ...(body.business ?? {}), ...(body.business_hours !== undefined ? { business_hours: body.business_hours } : {}) });
 
       const changed = JSON.stringify(s) !== JSON.stringify(client.settings);
-      let next = changed ? await d.updateClient(client, s) : client;
+      // A fresh receptionist stays "pending" until onboarding is finished or skipped for good.
+      const base = { ...client, onboarding: onboardingOf(client) } as Business;
+      let next = changed ? await d.updateClient(base, s) : client;
       const fields: string[] = changed ? Object.keys(s).filter((k) => JSON.stringify((s as any)[k]) !== JSON.stringify((client.settings as any)[k])) : [];
 
       // Booking length, on/off and the notice email live on the calendar setup.
@@ -758,6 +766,38 @@ export async function manageRoutes(args: ClientRouteArgs): Promise<Response | nu
     }
   }
 
+  // ---- Onboarding wizard state ----
+  if (rest === "/onboarding" && method === "PUT") {
+    const body = await readBody(req);
+    const fresh = (await getClient(client.id)) ?? client;
+    const status = body?.status === undefined ? onboardingOf(fresh) : body.status;
+    if (status !== "pending" && status !== "done") throw new ValidationError("Onboarding is pending or done.");
+    const step = body?.step === undefined ? Number((fresh as Onboarded).onboardingStep ?? 0) : Math.max(0, Math.min(10, Math.floor(Number(body.step) || 0)));
+    // Saved without touching updatedAt, so it never counts as a settings change.
+    await saveClient({ ...fresh, onboarding: status, onboardingStep: step } as Business);
+    if (status !== onboardingOf(fresh)) await audit(ctx, status === "done" ? "onboarding.finished" : "onboarding.started", { summary: status === "done" ? "Onboarding finished" : "Onboarding started" }, where);
+    return json({ onboarding: status, onboarding_step: step });
+  }
+
+  // ---- Branding: the business's own logo, background and colours ----
+  if (rest === "/brand") {
+    if (method === "GET") return json(await brandState(clientOrgId, client.id));
+    if (method === "PUT") {
+      const body = await readBody(req);
+      await changeBrand(asBrandEditor(ctx), where, body);
+      await saveColours(where, body);
+      await audit(ctx, "brand.updated", { summary: "Workspace branding changed" }, where);
+      return json(await brandState(clientOrgId, client.id));
+    }
+  }
+  const brandUp = rest.match(/^\/brand\/(logo|background)$/);
+  if (brandUp && method === "POST") {
+    if (Number(req.headers.get("content-length") ?? 0) > 2_000_000) throw new ValidationError("That image is too big.");
+    await uploadAsset(asBrandEditor(ctx), where, brandUp[1] as "logo" | "background", new Uint8Array(await req.arrayBuffer()));
+    await audit(ctx, "brand.updated", { summary: brandUp[1] === "logo" ? "Logo uploaded" : "Background image uploaded" }, where);
+    return json(await brandState(clientOrgId, client.id), 201);
+  }
+
   // ---- Business profile (S15), billing (S12, S13) and activity (S14) ----
   if (rest === "/business" && method === "PUT") {
     const body = await readBody(req);
@@ -828,6 +868,72 @@ async function resync(client: Business, d: ManageDeps): Promise<{ synced: boolea
     await recordIncident({ kind: "knowledge_sync", orgId: await orgOfClient(client.id), clientId: client.id, message: `Couldn't update the receptionist: ${message}`.slice(0, 300) }).catch(() => {});
     return { synced: false, warning: "Saved, but the receptionist couldn't be updated just now. It will pick this up on the next change." };
   }
+}
+
+// ---- Onboarding ----
+type Onboarded = Business & { onboarding?: "pending" | "done"; onboardingStep?: number };
+function onboardingOf(c: Business): "pending" | "done" {
+  const o = (c as Onboarded).onboarding;
+  if (o === "pending" || o === "done") return o;
+  return c.createdAt === c.updatedAt ? "pending" : "done";
+}
+
+// ---- Branding ----
+// Logo and background go through server/brand.ts (the same storage the agency's
+// per-business branding uses). Its editors check for an agency admin, so after this
+// module's own check (managers, agency staff, platform; never viewers or "view as")
+// they're called as an editor of this one business. Colours (primary, accent) sit in
+// the same brand record (clients.brand / orgs.brand) until brand.ts has them.
+
+const HEX = /^#[0-9a-fA-F]{6}$/;
+const COLOUR_KEYS = ["primaryColor", "accentColor"] as const;
+
+const asBrandEditor = (ctx: Ctx): Ctx => ({ ...ctx, role: "admin" });
+
+async function colours(orgId: string, clientId: string | null) {
+  const [r] = clientId
+    ? await sql`select brand from clients where id = ${clientId} and org_id = ${orgId}`
+    : await sql`select brand from orgs where id = ${orgId}`;
+  const b = (r?.brand ?? {}) as Record<string, string>;
+  return { primaryColor: b.primaryColor ?? "", accentColor: b.accentColor ?? "" };
+}
+
+async function saveColours(where: { orgId: string; clientId: string }, body: any): Promise<void> {
+  const change: Record<string, string> = {};
+  for (const k of COLOUR_KEYS) {
+    if (body?.[k] === undefined) continue;
+    const c = String(body[k] ?? "");
+    if (c !== "" && !HEX.test(c)) throw new ValidationError("Pick a colour.");
+    change[k] = c.toLowerCase();
+  }
+  if (Object.keys(change).length === 0) return;
+  const [r] = await sql`select brand from clients where id = ${where.clientId} and org_id = ${where.orgId}`;
+  const next: Record<string, string> = { ...((r?.brand ?? {}) as Record<string, string>) };
+  for (const [k, v] of Object.entries(change)) {
+    if (v) next[k] = v;
+    else delete next[k];
+  }
+  await sql`update clients set brand = ${next as any} where id = ${where.clientId} and org_id = ${where.orgId}`;
+}
+
+// own: set on this business; agency: the agency's defaults; effective: what shows.
+async function brandState(orgId: string, clientId: string) {
+  const [own, ownC, agency, agencyC, effective] = await Promise.all([
+    ownBrand({ orgId, clientId }),
+    colours(orgId, clientId),
+    ownBrand({ orgId, clientId: null }),
+    colours(orgId, null),
+    resolveBrand(orgId, clientId),
+  ]);
+  return {
+    own: { ...own, ...ownC },
+    agency: { ...agency, ...agencyC },
+    effective: {
+      ...effective,
+      primaryColor: ownC.primaryColor || agencyC.primaryColor,
+      accentColor: ownC.accentColor || agencyC.accentColor,
+    },
+  };
 }
 
 // Answered's role names and ours.

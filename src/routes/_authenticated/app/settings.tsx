@@ -10,6 +10,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { PageHeader, Panel, Notice, UsageBar } from "@/components/app/primitives";
 import { StatusBadge } from "@/components/app/StatusBadge";
+import { BrandingEditor } from "@/components/app/BrandingEditor";
 import { Field, FormSection, SaveBar } from "@/components/app/forms";
 import { fmtDateTime, fmtNumber, fmtRelative, humanize } from "@/lib/app/format";
 import { usageQuery } from "@/lib/app/queries";
@@ -19,7 +20,7 @@ import { useWorkspace } from "@/lib/app/workspace";
 import { mergeFormOnRefresh } from "@/lib/app/business-logic";
 import { TIMEZONES } from "@/lib/shared";
 
-const SETTINGS_TABS = ["business", "hours", "account", "billing", "activity"] as const;
+const SETTINGS_TABS = ["business", "hours", "branding", "account", "billing", "activity"] as const;
 type SettingsTab = (typeof SETTINGS_TABS)[number];
 
 export const Route = createFileRoute("/_authenticated/app/settings")({
@@ -123,10 +124,14 @@ function SettingsPage() {
         timezone: submitted.timezone,
         business_hours: submitted.business_hours,
       });
-      return { submittedBusinessId: b.id, applied: res.applied };
+      return { submittedBusinessId: b.id, applied: res.applied, saved: res.business };
     },
-    onSuccess: ({ submittedBusinessId, applied }) => {
+    onSuccess: ({ submittedBusinessId, applied, saved }) => {
       if (loadedBusinessId.current !== submittedBusinessId) return;
+      // Show what the server stored (it tidies values, e.g. adds https:// to the website).
+      const stored = fromBusiness(saved);
+      setForm(stored);
+      setBaseline(JSON.stringify(stored));
       toast.success(applied ? "Saved and applied to your receptionist" : "Settings saved");
       void qc.invalidateQueries({ queryKey: ["businesses"] });
       void qc.invalidateQueries({ queryKey: ["agents", ws.businessId] });
@@ -167,6 +172,7 @@ function SettingsPage() {
         <TabsList className="h-9 w-full justify-start overflow-x-auto rounded-[6px] bg-canvas-2 p-1 sm:w-auto">
           <TabsTrigger value="business" className="text-[12.5px]">Business</TabsTrigger>
           <TabsTrigger value="hours" className="text-[12.5px]">Hours</TabsTrigger>
+          <TabsTrigger value="branding" className="text-[12.5px]">Branding</TabsTrigger>
           <TabsTrigger value="account" className="text-[12.5px]">Your account</TabsTrigger>
           <TabsTrigger value="billing" className="text-[12.5px]">Plan & usage</TabsTrigger>
           {canManage ? <TabsTrigger value="activity" className="text-[12.5px]">Activity</TabsTrigger> : null}
@@ -265,6 +271,10 @@ function SettingsPage() {
               </Button>
             ) : null}
           </Panel>
+        </TabsContent>
+
+        <TabsContent value="branding" className="mt-3">
+          <BrandingEditor />
         </TabsContent>
 
         <TabsContent value="account" className="mt-3 space-y-4">

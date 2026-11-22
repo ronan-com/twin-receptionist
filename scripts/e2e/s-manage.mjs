@@ -1,7 +1,7 @@
 // Browser test for the workspace's manage side (area S): a business that signed up on
 // its own edits its receptionist, knowledge and team. Run scripts/e2e/setup.sh first:
 //   E2E_PORT=8902 E2E_DB=e2e_s bash scripts/e2e/setup.sh && E2E_PORT=8902 node scripts/e2e/s-manage.mjs
-import { readFileSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import puppeteer from "puppeteer-core";
 
 const PORT = process.env.E2E_PORT || "8899";
@@ -234,10 +234,218 @@ try {
   });
 
   // ---- Knowledge ----
-  if (process.env.S_STEP1_ONLY !== "1") {
-    const { knowledgeAndTeam } = await import("./s-manage-more.mjs");
-    await knowledgeAndTeam({ step, assert, B, bz, fresh, apiFetch, type, clickText, waitText, waitPath, noOverflow, sleep, instructionsOf, signIn, getBid: () => bid, DIR, stamp, biz });
-  }
+  const Q = `Do you take payment plans ${stamp}?`;
+  const A1 = `Yes, interest-free over six months ${stamp}.`;
+  const A2 = `Yes, interest-free over twelve months ${stamp}.`;
+  await step("knowledge: add an item, it is in the receptionist's instructions", async () => {
+    await bz.goto(`${B}/app/knowledge`, { waitUntil: "networkidle0" });
+    await clickText(bz, "button", "Add knowledge");
+    await type(bz, "#k-q", Q);
+    await type(bz, "#k-a", A1);
+    await clickText(bz, '[role="dialog"] button', "Add");
+    await waitText(bz, Q);
+    await bz.waitForFunction(() => !document.querySelector('[role="dialog"]'));
+    assert(instructionsOf(bid).includes(A1), "answer not in the instructions");
+  });
+  await step("knowledge: edit the item, the instructions follow", async () => {
+    await clickText(bz, "tr", Q);
+    await bz.waitForSelector("#k-a");
+    await type(bz, "#k-a", A2);
+    await clickText(bz, '[role="dialog"] button', "Save changes");
+    await bz.waitForFunction(() => !document.querySelector('[role="dialog"]'));
+    await sleep(300);
+    const ins = instructionsOf(bid);
+    assert(ins.includes(A2) && !ins.includes(A1), "edit not in the instructions");
+  });
+  await step("knowledge: a draft is kept out of the instructions", async () => {
+    const r = await apiFetch(bz, "POST", `/api/manage/${bid}/knowledge`, { type: "policy", title: `Draft ${stamp}`, content: `Secret draft ${stamp}`, status: "draft", question: null, answer: null });
+    assert(r.status === 201, `draft answered ${r.status}`);
+    assert(!instructionsOf(bid).includes(`Secret draft ${stamp}`), "draft in the instructions");
+    await apiFetch(bz, "DELETE", `/api/manage/${bid}/knowledge/${r.body.item.id}`);
+  });
+  await step("phone width: /app/knowledge has no overflow at 390px", async () => {
+    await bz.setViewport({ width: 390, height: 844 });
+    await bz.goto(`${B}/app/knowledge`, { waitUntil: "networkidle0" });
+    await waitText(bz, Q);
+    await noOverflow(bz, "/app/knowledge");
+    await bz.setViewport({ width: 1280, height: 900 });
+    await bz.goto(`${B}/app/knowledge`, { waitUntil: "networkidle0" });
+  });
+  await step("knowledge: remove the item, it leaves the instructions", async () => {
+    await clickText(bz, "tr", Q);
+    await clickText(bz, '[role="dialog"] button', "Remove");
+    await clickText(bz, '[role="alertdialog"] button', "Remove");
+    await bz.waitForFunction((q) => !document.body.innerText.includes(q), { timeout: 10000 }, Q);
+    assert(!instructionsOf(bid).includes(A2), "removed answer still in the instructions");
+  });
+
+  // ---- Team ----
+  const viewerEmail = `vic-${stamp}@biz.test`;
+  let viewer = null;
+  await step("team: invite a viewer from the Team page", async () => {
+    await bz.goto(`${B}/app/team`, { waitUntil: "networkidle0" });
+    await clickText(bz, "button", "Invite");
+    await type(bz, "#inv-email", viewerEmail);
+    await clickText(bz, '[role="dialog"] button', "Send invitation");
+    await bz.waitForSelector('[data-testid="invite-link"]');
+    await waitText(bz, viewerEmail);
+  });
+  await step("team: the viewer accepts, lands on /app and is read-only", async () => {
+    const url = await bz.$eval('[data-testid="invite-link"]', (e) => e.textContent);
+    viewer = await fresh();
+    await viewer.goto(url.replace(/^https?:\/\/[^/]+/, B), { waitUntil: "networkidle0" });
+    await waitText(viewer, biz.businessName);
+    await type(viewer, "#name", "Vic Viewer");
+    await type(viewer, "#password", "viewer-password-1");
+    await clickText(viewer, "button[type=submit]", "Accept invite");
+    await waitPath(viewer, "/app", 15000);
+    await waitText(viewer, "View-only access");
+    const s = await apiFetch(viewer, "GET", "/api/session/businesses");
+    assert(s.body.memberships?.[0]?.access_role === "viewer" || s.body.memberships?.[0]?.role === "read_only", `membership ${JSON.stringify(s.body.memberships)}`);
+    await viewer.goto(`${B}/app/receptionist`, { waitUntil: "networkidle0" });
+    await viewer.waitForSelector("#a-name");
+    assert(await viewer.$eval("#a-name", (e) => e.disabled), "receptionist editable for a viewer");
+    assert(!(await viewer.$("[data-setup-prompt]")), "setup prompt shown to a viewer");
+    const w = await apiFetch(viewer, "PUT", `/api/manage/${bid}/receptionist`, { greeting: "viewer was here" });
+    assert(w.status === 403, `viewer PUT answered ${w.status}`);
+    const k = await apiFetch(viewer, "POST", `/api/manage/${bid}/knowledge`, { type: "faq", question: "x", answer: "y", status: "published" });
+    assert(k.status === 403, `viewer knowledge POST answered ${k.status}`);
+    const g = await apiFetch(viewer, "GET", `/api/manage/${bid}/knowledge`);
+    assert(g.status === 200, `viewer knowledge GET answered ${g.status}`);
+    const br = await apiFetch(viewer, "PUT", `/api/manage/${bid}/brand`, { primaryColor: "#000000" });
+    assert(br.status === 403, `viewer brand PUT answered ${br.status}`);
+    await viewer.goto(`${B}/app/team`, { waitUntil: "networkidle0" });
+    await waitText(viewer, "Team");
+    assert(!(await viewer.evaluate(() => [...document.querySelectorAll("button")].some((b) => b.textContent.trim() === "Invite"))), "viewer sees Invite");
+  });
+  await step("team: cancel a pending invite", async () => {
+    const other = `pat-${stamp}@biz.test`;
+    const r = await apiFetch(bz, "POST", `/api/manage/${bid}/team/invites`, { email: other, role: "manager" });
+    assert(r.status === 201, `invite answered ${r.status}`);
+    await bz.goto(`${B}/app/team`, { waitUntil: "networkidle0" });
+    await waitText(bz, other);
+    await clickText(bz, "button", "Cancel invite");
+    await bz.waitForFunction((e) => !document.body.innerText.includes(e), { timeout: 10000 }, other);
+    const t = await apiFetch(bz, "GET", `/api/manage/${bid}/team`);
+    assert(!t.body.invitations.some((i) => i.email === other), "invite still pending");
+  });
+  await step("team: remove the viewer; they lose access", async () => {
+    await bz.goto(`${B}/app/team`, { waitUntil: "networkidle0" });
+    await bz.waitForSelector(`button[aria-label="Actions for ${viewerEmail}"]`);
+    await bz.click(`button[aria-label="Actions for ${viewerEmail}"]`);
+    await clickText(bz, '[role="menuitem"]', "Remove access");
+    await clickText(bz, '[role="alertdialog"] button', "Remove");
+    await bz.waitForFunction((e) => !document.body.innerText.includes(e), { timeout: 10000 }, viewerEmail);
+    const g = await apiFetch(viewer, "GET", `/api/manage/${bid}/knowledge`);
+    assert(g.status === 401 || g.status === 403 || g.status === 404, `removed viewer answered ${g.status}`);
+  });
+  await step("team: the last manager can't remove themselves", async () => {
+    const t = await apiFetch(bz, "GET", `/api/manage/${bid}/team`);
+    const me = t.body.members.find((m) => m.profile.email === biz.email);
+    const r = await apiFetch(bz, "DELETE", `/api/manage/${bid}/team/members/${me.user_id}`);
+    assert(r.status === 400, `last manager removal answered ${r.status}`);
+  });
+  await step("phone width: /app/team has no overflow at 390px", async () => {
+    await bz.setViewport({ width: 390, height: 844 });
+    await bz.goto(`${B}/app/team`, { waitUntil: "networkidle0" });
+    await waitText(bz, biz.email);
+    await noOverflow(bz, "/app/team");
+    await bz.setViewport({ width: 1280, height: 900 });
+  });
+
+  // ---- Phone numbers, integrations, settings ----
+  await step("phone numbers: request a number; it shows as pending", async () => {
+    await bz.goto(`${B}/app/phone-numbers`, { waitUntil: "networkidle0" });
+    await clickText(bz, "button", "Request a number");
+    await type(bz, "#nr-note", "A Sydney 02 number please");
+    await clickText(bz, '[role="dialog"] button', "Send request");
+    await waitText(bz, "Requested");
+    const n = await apiFetch(bz, "GET", `/api/manage/${bid}/phone-numbers`);
+    assert(n.body.numbers.some((x) => x.status === "pending"), "no pending request");
+    await noOverflow(bz, "/app/phone-numbers");
+  });
+  await step("integrations: connect the built-in calendar, set a lead webhook; CRMs are coming soon", async () => {
+    await bz.goto(`${B}/app/integrations`, { waitUntil: "networkidle0" });
+    await bz.waitForSelector('[data-provider="hubspot"]');
+    const soon = await bz.$eval('[data-provider="hubspot"]', (e) => e.innerText);
+    assert(soon.includes("Coming soon"), "HubSpot not marked coming soon");
+    await bz.$eval('[data-provider="builtin_calendar"] button', (b) => b.click());
+    await bz.waitForSelector("#cal-min");
+    await clickText(bz, '[role="dialog"] button', "Connect");
+    await bz.waitForFunction(() => !document.querySelector('[role="dialog"]'), { timeout: 15000 });
+    const i = await apiFetch(bz, "GET", `/api/manage/${bid}/integrations`);
+    assert(i.body.integrations.some((x) => x.provider === "builtin_calendar" && x.status === "connected"), "calendar not connected");
+    assert(instructionsOf(bid).toLowerCase().includes("book"), "instructions lack booking");
+    const h = await apiFetch(bz, "PUT", `/api/manage/${bid}/calendar`, { leadWebhook: "https://example.com/answered" });
+    assert(h.status === 200 && h.body.integrations.some((x) => x.provider === "webhook"), `webhook answered ${h.status} ${JSON.stringify(h.body)}`);
+    const t = await apiFetch(bz, "POST", `/api/manage/${bid}/calendar/test`);
+    assert(t.status === 200, `calendar test answered ${t.status}`);
+    await bz.setViewport({ width: 390, height: 844 });
+    await bz.goto(`${B}/app/integrations`, { waitUntil: "networkidle0" });
+    await bz.waitForSelector('[data-provider="hubspot"]');
+    await noOverflow(bz, "/app/integrations");
+    await bz.setViewport({ width: 1280, height: 900 });
+  });
+  await step("settings: business profile and own name save", async () => {
+    await bz.goto(`${B}/app/settings`, { waitUntil: "networkidle0" });
+    await type(bz, "#b-phone", "02 9000 0000");
+    await type(bz, "#b-web", "samsdental.example.com");
+    await clickText(bz, "button", "Save changes");
+    await bz.waitForFunction(() => [...document.querySelectorAll("button")].some((b) => b.textContent.includes("Save changes") && b.disabled), { timeout: 10000 });
+    const bs = (await apiFetch(bz, "GET", "/api/session/businesses")).body.businesses[0];
+    assert(bs.phone === "02 9000 0000" && bs.website === "https://samsdental.example.com", `profile ${bs.phone} ${bs.website}`);
+    await clickTab(bz, "Your account");
+    await type(bz, "#me-name", "Samantha Business");
+    await clickText(bz, "button", "Save name");
+    await sleep(800);
+    const s = await apiFetch(bz, "GET", "/api/session");
+    assert(s.body.user.name === "Samantha Business", `name ${s.body.user.name}`);
+    await bz.setViewport({ width: 390, height: 844 });
+    await bz.goto(`${B}/app/settings`, { waitUntil: "networkidle0" });
+    await bz.waitForSelector("#b-name");
+    await noOverflow(bz, "/app/settings");
+    await bz.setViewport({ width: 1280, height: 900 });
+  });
+  // ---- Branding ----
+  await step("branding: colours preview live, save, and theme the workspace", async () => {
+    await bz.goto(`${B}/app/settings?tab=branding`, { waitUntil: "networkidle0" });
+    await bz.waitForSelector("#br-primary");
+    await type(bz, "#br-primary", "#0f766e");
+    await type(bz, "#br-accent", "#f59e0b");
+    const pv = await bz.$eval("[data-brand-preview]", (e) => e.style.getPropertyValue("--indigo"));
+    assert(pv === "#0f766e", `preview --indigo ${pv}`);
+    const before = await bz.evaluate(() => document.documentElement.style.getPropertyValue("--indigo"));
+    assert(before !== "#0f766e", "applied before saving");
+    await clickText(bz, "button", "Save colours");
+    await bz.waitForFunction(() => document.documentElement.style.getPropertyValue("--indigo") === "#0f766e", { timeout: 10000 });
+    const r = await apiFetch(bz, "GET", `/api/manage/${bid}/brand`);
+    assert(r.body.own.primaryColor === "#0f766e" && r.body.effective.accentColor === "#f59e0b", `brand ${JSON.stringify(r.body.own)}`);
+    const bad = await apiFetch(bz, "PUT", `/api/manage/${bid}/brand`, { primaryColor: "red" });
+    assert(bad.status === 400, `bad colour answered ${bad.status}`);
+  });
+  await step("branding: upload a logo; it shows in the sidebar; SVG is refused", async () => {
+    const dir = `${process.env.HOME}/s-e2e-fixtures`;
+    mkdirSync(dir, { recursive: true });
+    const png = `${dir}/logo.png`;
+    // 1x1 PNG
+    writeFileSync(png, Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==", "base64"));
+    const input = await bz.$('input[data-upload="logo"]');
+    await input.uploadFile(png);
+    await bz.waitForSelector("[data-workspace-logo] img", { timeout: 10000 });
+    const svg = await bz.evaluate(async (u) => (await fetch(u, { method: "POST", body: "<svg xmlns='http://www.w3.org/2000/svg'/>" })).status, `/api/manage/${bid}/brand/logo`);
+    assert(svg === 400, `svg answered ${svg}`);
+    await bz.setViewport({ width: 390, height: 844 });
+    await bz.goto(`${B}/app/settings?tab=branding`, { waitUntil: "networkidle0" });
+    await bz.waitForSelector("[data-brand-preview]");
+    await noOverflow(bz, "/app/settings?tab=branding");
+    await bz.setViewport({ width: 1280, height: 900 });
+    await clickText(bz, "[data-branding] button", "Remove");
+    await bz.waitForFunction(() => !document.querySelector("[data-workspace-logo] img"), { timeout: 10000 });
+  });
+  await step("branding: another org's business can't change this one's brand", async () => {
+    const w = await apiFetch(bz, "PUT", `/api/manage/${agencyClient}/brand`, { primaryColor: "#000000" });
+    assert(w.status === 404 || w.status === 403, `PUT answered ${w.status}`);
+  });
 } finally {
   await browser.close();
 }

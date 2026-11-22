@@ -128,3 +128,8 @@ export function demoCallDetail(id: string) {
     ]),
   };
 }
+
+// Local and end-to-end tests run with a fake phone-provider key (scripts/e2e/setup.sh).
+// Then new receptionists are made as demo ones, so sign-up and "create receptionist"
+// work without the provider. Production always has a real key, so never takes this path.
+export const fakeProvider = () => (process.env.TELNYX_API_KEY ?? "").startsWith("platform-fake") || process.env.E2E_FAKE_PROVIDER === "1";

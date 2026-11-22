@@ -1,5 +1,6 @@
 import { createHash, randomBytes } from "node:crypto";
 import type { Account, OrgRole, TeamState } from "../src/lib/shared";
+import { clientAccessOf, consoleOf } from "./answered";
 import { resolveBrand } from "./brand";
 import { iso, sql } from "./db";
 import { importLegacyData } from "./legacy";
@@ -50,7 +51,7 @@ export function emailOf(value: unknown): string {
   return email;
 }
 
-function passwordOf(value: unknown): string {
+export function passwordOf(value: unknown): string {
   const password = String(value ?? "");
   if (password.length < 10) throw new ValidationError("Use a password of at least 10 characters.");
   if (password.length > 200) throw new ValidationError("That password is too long.");
@@ -59,7 +60,7 @@ function passwordOf(value: unknown): string {
 
 export const textOf = (value: unknown, max: number) => String(value ?? "").trim().slice(0, max);
 
-const hashPassword = (password: string) => Bun.password.hash(password, { algorithm: "argon2id" });
+export const hashPassword = (password: string) => Bun.password.hash(password, { algorithm: "argon2id" });
 
 // ---- Base URL for links in emails ----
 
@@ -93,7 +94,7 @@ export function clearCookie(req: Request): string {
   return `${COOKIE}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0${secure(req) ? "; Secure" : ""}`;
 }
 
-async function startSession(userId: string, orgId: string | null): Promise<string> {
+export async function startSession(userId: string, orgId: string | null): Promise<string> {
   const token = newToken();
   await sql`
     insert into sessions (token_hash, user_id, org_id, expires_at)
@@ -168,12 +169,17 @@ export async function account(ctx: Ctx): Promise<Account> {
     const [t] = await sql`select telnyx_key is not null as own, platform_telnyx from orgs where id = ${ctx.org.id}`;
     telnyx = t?.own ? "own" : t?.platform_telnyx ? "platform" : "none";
   }
+  const consoleKind = consoleOf(ctx);
   return {
     user: ctx.user,
     org: ctx.org,
     role: ctx.role,
     orgs: orgs.map((o: any) => ({ id: o.id, name: o.name, role: o.role })),
     telnyx,
+    // The Answered UI: which screens this person uses, and their access to each business.
+    console: consoleKind,
+    home: consoleKind ? "/admin" : "/app",
+    access: await clientAccessOf(ctx),
     ...(ctx.viewing ? { viewing: ctx.viewing } : {}),
     brand: ctx.org ? await resolveBrand(ctx.org.id, await brandClient(ctx)) : undefined,
   };
@@ -206,6 +212,8 @@ export async function signUp(input: any): Promise<string> {
     // On a fresh server, only the expected owner may become the first (platform) account.
     const firstAdmin = (process.env.FIRST_ADMIN_EMAIL ?? "").trim().toLowerCase();
     if (first && firstAdmin && email !== firstAdmin) throw new AuthError("Sign-up is by invitation. Ask your team for an invite.", 403);
+    // The self-serve sign-up (server/routes/signup.ts) only comes here for the very first account.
+    if (!first && input?.firstOnly === true) throw new AuthError("The first account was just created. Refresh and try again.", 409);
     if (!first && process.env.ALLOW_SIGNUP !== "true") throw new AuthError("Sign-up is by invitation. Ask your team for an invite.", 403);
     const [taken] = await tx`select 1 from users where email = ${email}`;
     if (taken) throw new ValidationError("There's already an account with that email. Sign in instead.");

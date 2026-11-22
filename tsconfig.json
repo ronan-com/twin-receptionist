@@ -10,7 +10,9 @@
     "skipLibCheck": true,
     "isolatedModules": true,
     "allowImportingTsExtensions": true,
-    "types": ["vite/client", "bun"]
+    "types": ["vite/client", "bun"],
+    "paths": { "@/*": ["./src/*"] }
   },
-  "include": ["src", "server", "vite.config.ts"]
+  "include": ["src", "server", "scripts/e2e/mkclient.ts", "vite.config.ts"],
+  "exclude": ["src/legacy"]
 }

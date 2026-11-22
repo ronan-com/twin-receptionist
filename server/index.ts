@@ -1,4 +1,4 @@
-import type { Business, CallMessage, CallSummary, NumberState, Settings, Voice } from "../src/lib/shared";
+import type { Business, CallMessage, NumberState, Settings, Voice } from "../src/lib/shared";
 import { existsSync, statSync } from "node:fs";
 import { join, normalize } from "node:path";
 import {
@@ -29,13 +29,22 @@ import {
   type Ctx,
 } from "./accounts";
 import { isLocal } from "./auth";
-import { migrate } from "./db";
+import { migrate, sql } from "./db";
 import { checkEmail, connectEmail, connectedClientIds, disconnectEmail, emailStatus } from "./email";
 import { availableNumbers, buyNumber, callSummary, connectedNumbers, openOrders, voiceAppFor } from "./numbers";
 import { ValidationError, buildInstructions, normaliseSettings } from "./prompt";
 import { clientsWithBooking, getClient, getOrgClient, insertClient, listClients, orgOfClient, removeClient, saveClient } from "./store";
 import { TelnyxError, enterOrg, hasKey, runAsOrg, telnyx } from "./telnyx";
-import { createTestLogins, demoCallDetail, demoCalls, ensureSandbox, isDemo, resetSandbox, sandboxOrgId } from "./sandbox";
+import { createTestLogins, demoCallDetail, ensureSandbox, fakeProvider, isDemo, resetSandbox, sandboxOrgId } from "./sandbox";
+import { listCalls } from "./calls";
+import { startCallSync } from "./callsync";
+import { workspaceBusinesses } from "./answered";
+import { audit } from "./audit";
+import { consoleRoutes } from "./routes/console";
+import { manageRoutes } from "./routes/manage";
+import { signupRoutes } from "./routes/signup";
+import { workspaceRoutes } from "./routes/workspace";
+import type { ClientAccess, RouteArgs } from "./routes/http";
 import { changeBrand, ownBrand, serveAsset, uploadAsset } from "./brand";
 import { accessibleClients, customerClientId, setFollowUpStage, customersFor, inviteCustomer, removeCustomer, revokeCustomerInvite } from "./customers";
 import { createRequest, declineRequest, listRequests, markDone, pendingCount, pendingRequest, requestsForClient } from "./numberRequests";
@@ -95,7 +104,11 @@ const RECOMMENDED = [
 
 let voiceCache: Voice[] | null = null;
 
+// Local tests run with a fake provider key: one stand-in voice (see fakeProvider).
+const DEMO_VOICE: Voice = { id: "demo-voice", name: "Grace - Helpful Hand", label: "Demo voice", gender: "female", recommended: true };
+
 async function loadVoices(): Promise<Voice[]> {
+  if (fakeProvider()) return [DEMO_VOICE];
   if (voiceCache) return voiceCache;
   const res = await telnyx<{ voices?: any[]; data?: any[] }>("GET", "/text-to-speech/voices");
   const all = res.voices ?? res.data ?? [];
@@ -278,9 +291,22 @@ function assistantFields(s: Settings, instructions: string) {
   };
 }
 
-async function createClient(orgId: string, input: unknown): Promise<Business> {
-  const settings = normaliseSettings(input, await voiceNames());
+// Also used by the self-serve business sign-up (server/routes/signup.ts). With
+// defaultVoice, a missing voice becomes the first recommended one. With the fake
+// provider key of the local tests, the receptionist is a demo one (no provider calls).
+async function createClient(orgId: string, input: unknown, opts: { defaultVoice?: boolean } = {}): Promise<Business> {
+  const voices = await voiceNames();
+  const src = { ...((input ?? {}) as Record<string, unknown>) };
+  if (opts.defaultVoice && !voices.has(String(src.voiceId ?? ""))) src.voiceId = [...voices.keys()][0];
+  const settings = normaliseSettings(src, voices);
   const instructions = buildInstructions(settings);
+  if (fakeProvider()) {
+    const now = new Date().toISOString();
+    const id = crypto.randomUUID();
+    const demo: Business = { id, assistantId: `demo-${id}`, settings, instructions, createdAt: now, updatedAt: now };
+    await insertClient(orgId, demo);
+    return demo;
+  }
   const created = await telnyx<{ id?: string; data?: { id: string } }>("POST", "/ai/assistants", {
     ...assistantFields(settings, instructions),
     model: MODEL,
@@ -318,25 +344,6 @@ async function updateClient(existing: Business, input: unknown): Promise<Busines
   const client: Business = { ...existing, settings, instructions, updatedAt: new Date().toISOString() };
   await saveClient(client);
   return client;
-}
-
-async function listCalls(assistantId: string, limit = 20): Promise<CallSummary[]> {
-  if (isDemo(assistantId)) return demoCalls().slice(0, limit);
-  const query = `metadata-%3Eassistant_id=eq.${encodeURIComponent(assistantId)}&order=created_at.desc&limit=${limit}`;
-  const res = await telnyx<{ data?: any[] }>("GET", `/ai/conversations?${query}`);
-  return (res.data ?? []).map((c) => {
-    const meta = c.metadata ?? {};
-    // Browser test calls arrive as phone calls from a throwaway SIP login, so
-    // tell them apart by the "anonymous@" target and hide the SIP address.
-    const web = String(meta.telnyx_agent_target ?? "").startsWith("anonymous@");
-    return {
-      id: c.id,
-      startedAt: c.created_at ?? "",
-      channel: web ? "web" : (meta.telnyx_conversation_channel ?? "call"),
-      from: web ? "" : (meta.telnyx_end_user_target ?? ""),
-      simulated: meta.twin_simulator === "true",
-    };
-  });
 }
 
 async function callDetail(
@@ -414,9 +421,33 @@ const withCookie = (body: unknown, cookie: string, status = 200) =>
 
 const body = (req: Request) => req.json().catch(() => ({}));
 
+// Who may use /api/workspace/<id> and /api/manage/<id>: see ClientAccess in server/routes/http.ts.
+async function clientAccessFor(ctx: Ctx, orgId: string, id: string): Promise<{ client: Business; orgId: string; access: ClientAccess } | null> {
+  if (ctx.viewing?.client) {
+    if (ctx.viewing.client !== id) return null;
+    const client = await getOrgClient(orgId, id);
+    return client ? { client, orgId, access: "viewer" } : null;
+  }
+  if (ctx.role === "customer") {
+    const [a] = await sql`
+      select a.role from client_access a join clients c on c.id = a.client_id
+      where a.user_id = ${ctx.user.id} and a.client_id = ${id} and c.org_id = ${orgId}`;
+    const client = a ? await getOrgClient(orgId, id) : null;
+    return client ? { client, orgId, access: a.role === "manager" ? "manager" : "viewer" } : null;
+  }
+  const own = await getOrgClient(orgId, id);
+  if (own) return { client: own, orgId, access: "staff" };
+  if (ctx.user.platformAdmin) {
+    const any = await getClient(id);
+    const owner = any ? await orgOfClient(id) : null;
+    return any && owner ? { client: any, orgId: owner, access: "platform" } : null;
+  }
+  return null;
+}
+
 // Everyone signs in. A person only ever sees the receptionists of the
 // organisation they're working in.
-async function route(req: Request): Promise<Response> {
+async function route(req: Request, server?: { requestIP(r: Request): { address: string } | null }): Promise<Response> {
   const url = new URL(req.url);
   const path = url.pathname;
   const method = req.method;
@@ -450,6 +481,8 @@ async function route(req: Request): Promise<Response> {
     const { open, firstRun } = await signupOpen();
     return json({ signedIn: false, signupOpen: open, firstRun });
   }
+  // Self-serve sign-up for agencies and businesses (the Answered build).
+  if (path.startsWith("/api/signup/")) return (await signupRoutes(req, path, { createClient }, server)) ?? json({ error: "Not found" }, 404);
   if (path === "/api/signup" && method === "POST") return withCookie({ ok: true }, sessionCookie(req, await signUp(await body(req))), 201);
   if (path === "/api/login" && method === "POST") return withCookie({ ok: true }, sessionCookie(req, await signIn(await body(req))));
   if (path === "/api/logout" && method === "POST") {
@@ -510,6 +543,9 @@ async function route(req: Request): Promise<Response> {
   // ---- Everything below needs a signed-in person ----
   const ctx = await sessionFrom(req);
   if (!ctx) return json({ error: "Please sign in." }, 401);
+
+  // The Answered workspace: the businesses this person works with, in Answered's shapes.
+  if (path === "/api/session/businesses" && method === "GET") return json(await workspaceBusinesses(ctx));
 
   if (path === "/api/account" && method === "PUT") {
     await updateProfile(ctx, await body(req));
@@ -574,7 +610,9 @@ async function route(req: Request): Promise<Response> {
     if (path === "/api/admin/sandbox/logins" && method === "POST") return json({ logins: await createTestLogins(ctx) }, 201);
     if (path === "/api/admin/view-as") {
       if (method === "POST") {
-        await viewAs(ctx, await body(req));
+        const input = await body(req);
+        await viewAs(ctx, input);
+        await audit(ctx, "view_as.start", { orgId: input?.orgId ?? null, clientId: input?.clientId ?? null });
         return json(await account((await sessionFrom(req))!));
       }
       if (method === "DELETE") {
@@ -607,6 +645,34 @@ async function route(req: Request): Promise<Response> {
   }
   // Everything below that talks to Telnyx uses this team's own account.
   enterOrg(orgId);
+
+  // ---- The Answered UI's route modules (server/routes/*), wired once here ----
+  const area = path.match(/^\/api\/(workspace|manage|console)(\/.*)?$/);
+  if (area) {
+    const base: RouteArgs = { req, url, path, method, ctx, orgId, appUrl: appUrl(req) };
+    if (area[1] === "console") {
+      // Agency staff and the platform team only.
+      if (ctx.role === "customer" && !ctx.user.platformAdmin) return json({ error: "Not allowed." }, 403);
+      return (await consoleRoutes(base)) ?? json({ error: "Not found" }, 404);
+    }
+    let rest = area[2] ?? "";
+    let client: Business | null = null;
+    let clientOrgId: string | null = null;
+    let access: ClientAccess | null = null;
+    const one = rest.match(/^\/([a-f0-9-]{36})(\/.*)?$/);
+    if (one) {
+      const found = await clientAccessFor(ctx, orgId, one[1]);
+      if (!found) return json({ error: "That business isn't shared with you." }, 404);
+      ({ client, orgId: clientOrgId, access } = found);
+      if (access === "viewer" && method !== "GET" && method !== "HEAD") {
+        return json({ error: "Your access to this business is view-only. Ask a manager to change it." }, 403);
+      }
+      if (clientOrgId !== orgId) enterOrg(clientOrgId);
+      rest = one[2] ?? "";
+    }
+    const handler = area[1] === "workspace" ? workspaceRoutes : manageRoutes;
+    return (await handler({ ...base, client, clientOrgId, access, rest })) ?? json({ error: "Not found" }, 404);
+  }
 
   // End customers see their own receptionist's calls and nothing else.
   if (path.startsWith("/api/portal/")) {
@@ -723,7 +789,12 @@ async function route(req: Request): Promise<Response> {
 
   if (path === "/api/clients") {
     if (method === "GET") return json({ clients: await listClients(orgId) });
-    if (method === "POST") return json({ client: await createClient(orgId, await req.json()) }, 201);
+    if (method === "POST") {
+      const input = await req.json();
+      const created = await createClient(orgId, input, { defaultVoice: input?.defaultVoice === true });
+      await audit(ctx, "receptionist.create", { business: created.settings.businessName }, { clientId: created.id });
+      return json({ client: created }, 201);
+    }
   }
 
   const cust = path.match(/^\/api\/clients\/([a-f0-9-]{36})\/(customers(?:\/([a-f0-9-]{36}))?|customer-invites\/([a-f0-9]{16}))$/);
@@ -894,9 +965,9 @@ Bun.serve({
   // Bun drops a request after 10 quiet seconds by default. Checking a mailbox and
   // writing several replies takes longer than that.
   idleTimeout: 240,
-  async fetch(req) {
+  async fetch(req, server) {
     try {
-      return await route(req);
+      return await route(req, server);
     } catch (err) {
       if (err instanceof ValidationError) return json({ error: err.message }, 400);
       if (err instanceof AuthError) return json({ error: err.message }, err.status);
@@ -911,6 +982,9 @@ Bun.serve({
     }
   },
 });
+
+// Keep call_log filled from the phone provider (server/callsync.ts).
+startCallSync();
 
 // Check every connected mailbox once a minute. One at a time, so a slow mail
 // server can't pile up connections.

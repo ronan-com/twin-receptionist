@@ -434,6 +434,11 @@ export type Account = {
   viewing?: Viewing;
   // Logo and background for this team's screens (a business's own, in its customer view).
   brand?: Brand;
+  // The Answered UI: "platform"/"agency" use the console (/admin), business users (null) the workspace (/app).
+  console: "platform" | "agency" | null;
+  home: "/admin" | "/app";
+  // A business user's access to each receptionist shared with them in this org.
+  access: { clientId: string; role: "manager" | "viewer" }[];
 };
 
 export type TelnyxSettings = {

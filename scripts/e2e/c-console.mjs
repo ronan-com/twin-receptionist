@@ -192,8 +192,8 @@ try {
   await step("agency brands the client (colours, live preview)", async () => {
     await ag.goto(`${B}${companyPath}`, { waitUntil: "networkidle0" });
     await ag.waitForSelector("[data-brand-editor]");
-    await setColour(ag, "primary", "#0f766e");
-    await setColour(ag, "sidebar", "#0b3b36");
+    await setColour(ag, "primaryColor", "#0f766e");
+    await setColour(ag, "sidebarColor", "#0b3b36");
     const preview = await ag.$eval("[data-brand-preview]", (e) => e.style.getPropertyValue("--primary"));
     assert(preview === "#0f766e", `preview --primary is ${preview}`);
     await click(ag, '[data-action="save-colours"]');
@@ -219,7 +219,7 @@ try {
     assert(primary === "#0f766e", `--primary on /app is ${primary}`);
     const sess = await apiFetch(cu, "GET", "/api/session");
     assert(sess.body.access?.[0]?.role === "manager", `access ${JSON.stringify(sess.body.access)}`);
-    const sidebar = await cu.$eval("[data-brand-shell] aside", (e) => getComputedStyle(e).backgroundColor);
+    const sidebar = await cu.$eval("[data-app-shell] aside", (e) => getComputedStyle(e).backgroundColor);
     assert(sidebar === "rgb(11, 59, 54)", `sidebar ${sidebar}`);
     const admin = await apiFetch(cu, "GET", "/api/console/companies");
     assert(admin.status === 403, `customer reached the console: ${admin.status}`);

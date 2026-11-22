@@ -99,11 +99,14 @@ export async function signInStart(provider: OAuthProvider, token: string, mode: 
 
 // The same, started by a team member from the dashboard (calendar only: a
 // mailbox is the business's to connect).
-export async function dashboardSignInStart(provider: OAuthProvider, orgId: string, client: Business): Promise<string> {
+// returnTo: where to send the browser afterwards (the workspace's integrations page,
+// or the console); only paths under /app/ or /admin/ are kept.
+export async function dashboardSignInStart(provider: OAuthProvider, orgId: string, client: Business, returnTo?: string): Promise<string> {
   if (!client.booking || providerOf(client) !== provider) {
     throw new ValidationError(`Choose ${provider === "google" ? "Google Calendar" : "Outlook"} in the calendar card first.`);
   }
-  return startSignIn(provider, "calendar", { clientId: client.id, orgId });
+  const back = returnTo && /^\/(app|admin)\/[A-Za-z0-9/_-]*$/.test(returnTo) ? returnTo : undefined;
+  return startSignIn(provider, "calendar", { clientId: client.id, orgId, ...(back ? { returnTo: back } : {}) });
 }
 
 const back = (purpose: OAuthPurpose) => (purpose === "calendar" ? "calendar" : "connected");
@@ -115,7 +118,7 @@ export async function signInFinish(provider: OAuthProvider, params: URLSearchPar
   if (!pending) {
     return `/connect/expired?error=${encodeURIComponent("That sign-in took too long or was already used. Please try again.")}`;
   }
-  const where = pending.linkToken ? `/connect/${pending.linkToken}` : `/admin/clients/${pending.clientId}`;
+  const where = pending.linkToken ? `/connect/${pending.linkToken}` : (pending.returnTo ?? `/admin/clients/${pending.clientId}`);
   try {
     if (params.get("error")) throw new ValidationError("Sign-in was cancelled.");
     const result = await finishSignIn(pending, params.get("code") ?? "");

@@ -3,15 +3,15 @@ import { createFileRoute, Outlet, redirect } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { AppShell } from "@/components/app/AppShell";
 import { WorkspaceSwitcher } from "@/components/app/WorkspaceSwitcher";
-import { BrandLogo, BusinessBrand } from "@/components/app/BusinessBrand";
 import { DateRangeSelect } from "@/components/app/DateRangeSelect";
 import { Notice, ErrorState } from "@/components/app/primitives";
+import { SetupPrompt } from "@/components/app/SetupPrompt";
+import { WorkspaceBrand, WorkspaceLogo } from "@/components/app/WorkspaceBrand";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { CLIENT_NAV } from "@/lib/app/constants";
 import { integrationsQuery, phoneNumbersQuery, unansweredQuery } from "@/lib/app/queries";
 import { useWorkspace } from "@/lib/app/workspace";
-import type { Brand } from "@/lib/shared";
 
 // The business workspace. Business users (managers and viewers) live here; the
 // platform team gets here only while viewing as a business. Agency staff and the
@@ -116,18 +116,14 @@ function ClientAppLayout() {
     return null;
   })();
 
-  // The company's branding (set by its agency in the console).
-  const brand = (ws.business as { brand?: Brand } | null)?.brand;
   return (
-    <div data-brand-shell>
-    <BusinessBrand brand={brand} />
     <AppShell
       nav={CLIENT_NAV}
       variant="client"
       brandTo="/app"
       sidebarHeader={
         <>
-          <BrandLogo brand={brand} name={ws.business?.name} />
+          <WorkspaceLogo />
           <WorkspaceSwitcher />
         </>
       }
@@ -136,7 +132,11 @@ function ClientAppLayout() {
       notifications={notifications}
     >
       {ws.business ? (
-        <Outlet />
+        <>
+          <WorkspaceBrand />
+          <SetupPrompt />
+          <Outlet />
+        </>
       ) : (
         <div className="mx-auto max-w-lg py-16">
           <Notice tone="neutral" title="No business yet" action={<Button size="sm" variant="outline" onClick={() => void ws.signOut()}>Sign out</Button>}>
@@ -145,6 +145,5 @@ function ClientAppLayout() {
         </div>
       )}
     </AppShell>
-    </div>
   );
 }

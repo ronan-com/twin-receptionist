@@ -1,9 +1,9 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { useMutation } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { ImageUp } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { brandVars, isDark } from "@/components/app/BusinessBrand";
+import { brandVars, textOn } from "@/components/app/WorkspaceBrand";
 import type { BrandChange } from "@/lib/api/console";
 import type { Brand } from "@/lib/shared";
 
@@ -22,20 +22,20 @@ type Props = {
 };
 
 const COLOURS = [
-  { key: "primary", label: "Primary", hint: "Buttons, links, highlights", def: "#635bff" },
-  { key: "accent", label: "Accent", hint: "Secondary highlights", def: "#635bff" },
-  { key: "sidebar", label: "Sidebar", hint: "Optional", def: "#ffffff" },
+  { key: "primaryColor", label: "Primary", hint: "Buttons, links, highlights", def: "#635bff" },
+  { key: "accentColor", label: "Accent", hint: "Secondary highlights", def: "#635bff" },
+  { key: "sidebarColor", label: "Sidebar", hint: "Optional", def: "#ffffff" },
   { key: "bgColor", label: "Background", hint: "Optional, behind the cards", def: "#f6f9fc" },
 ] as const;
 type ColourKey = (typeof COLOURS)[number]["key"];
 
 export function BrandEditor({ brand, fallback, canManage, previewName, upload, save, onSaved }: Props) {
-  const [draft, setDraft] = useState<Record<ColourKey, string>>({ primary: "", accent: "", sidebar: "", bgColor: "" });
+  const [draft, setDraft] = useState<Record<ColourKey, string>>({ primaryColor: "", accentColor: "", sidebarColor: "", bgColor: "" });
   const logoInput = useRef<HTMLInputElement>(null);
   const bgInput = useRef<HTMLInputElement>(null);
   useEffect(() => {
-    setDraft({ primary: brand?.primary ?? "", accent: brand?.accent ?? "", sidebar: brand?.sidebar ?? "", bgColor: brand?.bgColor ?? "" });
-  }, [brand?.primary, brand?.accent, brand?.sidebar, brand?.bgColor]);
+    setDraft({ primaryColor: brand?.primaryColor ?? "", accentColor: brand?.accentColor ?? "", sidebarColor: brand?.sidebarColor ?? "", bgColor: brand?.bgColor ?? "" });
+  }, [brand?.primaryColor, brand?.accentColor, brand?.sidebarColor, brand?.bgColor]);
 
   const up = useMutation({
     mutationFn: ({ kind, file }: { kind: "logo" | "background"; file: File }) => upload(kind, file),
@@ -60,12 +60,12 @@ export function BrandEditor({ brand, fallback, canManage, previewName, upload, s
   const eff = {
     logo: brand?.logo || fallback?.logo || "",
     bgImage: brand?.bgImage || fallback?.bgImage || "",
-    primary: draft.primary || fallback?.primary || "",
-    accent: draft.accent || fallback?.accent || "",
-    sidebar: draft.sidebar || fallback?.sidebar || "",
+    primaryColor: draft.primaryColor || fallback?.primaryColor || "",
+    accentColor: draft.accentColor || fallback?.accentColor || "",
+    sidebarColor: draft.sidebarColor || fallback?.sidebarColor || "",
     bgColor: draft.bgColor || fallback?.bgColor || "",
   };
-  const sidebarDark = isDark(eff.sidebar);
+  const sidebarDark = /^#[0-9a-f]{6}$/i.test(eff.sidebarColor) && textOn(eff.sidebarColor) === "#ffffff";
 
   return (
     <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(0,340px)]" data-brand-editor>
@@ -146,7 +146,7 @@ export function BrandEditor({ brand, fallback, canManage, previewName, upload, s
                 Save colours
               </Button>
               {dirty ? (
-                <Button size="sm" variant="ghost" className="h-8 text-[12.5px]" onClick={() => setDraft({ primary: brand?.primary ?? "", accent: brand?.accent ?? "", sidebar: brand?.sidebar ?? "", bgColor: brand?.bgColor ?? "" })}>
+                <Button size="sm" variant="ghost" className="h-8 text-[12.5px]" onClick={() => setDraft({ primaryColor: brand?.primaryColor ?? "", accentColor: brand?.accentColor ?? "", sidebarColor: brand?.sidebarColor ?? "", bgColor: brand?.bgColor ?? "" })}>
                   Undo
                 </Button>
               ) : null}
@@ -159,11 +159,11 @@ export function BrandEditor({ brand, fallback, canManage, previewName, upload, s
         <div className="mb-1.5 text-[12px] font-medium text-ink-muted">Preview: {previewName}'s workspace</div>
         <div
           className="overflow-hidden rounded-[8px] border border-hairline"
-          style={{ ...brandVars(eff), background: [eff.bgImage ? `center/cover url(${eff.bgImage})` : "", eff.bgColor || "var(--canvas-2)"].filter(Boolean).join(", ") }}
+          style={{ ...(brandVars(eff) as CSSProperties), background: [eff.bgImage ? `center/cover url(${eff.bgImage})` : "", eff.bgColor || "var(--canvas-2)"].filter(Boolean).join(", ") }}
           data-brand-preview
         >
           <div className="flex h-[200px]">
-            <div className="flex w-[92px] shrink-0 flex-col gap-1.5 border-r border-hairline p-2" style={{ background: eff.sidebar || "#ffffff", color: sidebarDark ? "#ffffff" : "var(--ink)" }}>
+            <div className="flex w-[92px] shrink-0 flex-col gap-1.5 border-r border-hairline p-2" style={{ background: eff.sidebarColor || "#ffffff", color: sidebarDark ? "#ffffff" : "var(--ink)" }}>
               {eff.logo ? <img src={eff.logo} alt="" className="mb-1 max-h-7 max-w-full object-contain" /> : <div className="mb-1 truncate text-[10.5px] font-semibold">{previewName}</div>}
               {["Overview", "Calls", "Bookings"].map((n, i) => (
                 <div key={n} className="truncate rounded-[4px] px-1.5 py-1 text-[10px]" style={i === 0 ? { background: "var(--primary)", color: "var(--primary-foreground)" } : { opacity: 0.8 }}>

@@ -1,4 +1,3 @@
-import { resolveBrand } from "./brand";
 import type { Business as Receptionist, IndustryKey } from "../src/lib/shared";
 import type { Ctx } from "./accounts";
 import { iso, sql } from "./db";
@@ -46,6 +45,8 @@ export function answeredBusiness(
   extra: { orgId: string; orgName: string; sandbox: boolean; suspended: boolean },
 ) {
   const s = r.settings;
+  // Contact details the business keeps in Settings (server/routes/manage.ts PUT /business).
+  const p = ((r as { profile?: Record<string, string> }).profile ?? {}) as Record<string, string | undefined>;
   const hours: Record<string, { open: string; close: string; closed: boolean }> = {};
   for (const [day, h] of Object.entries(s.hours ?? {})) hours[day] = { open: h.from, close: h.to, closed: !h.open };
   return {
@@ -55,13 +56,13 @@ export function answeredBusiness(
     industry: industryLabelOf(s.industry),
     timezone: s.timezone,
     city: s.suburb || null,
-    region: null,
-    country: "AU",
+    region: p.region || null,
+    country: p.country || "AU",
     address_line1: s.address || null,
-    postal_code: null,
-    phone: r.phoneNumbers?.[0] ?? null,
-    email: r.booking?.notifyEmail || null,
-    website: null,
+    postal_code: p.postal_code || null,
+    phone: p.phone || r.phoneNumbers?.[0] || null,
+    email: p.email || r.booking?.notifyEmail || null,
+    website: p.website || null,
     is_demo: extra.sandbox,
     status: extra.suspended ? "paused" : "active",
     business_hours: hours,
@@ -107,12 +108,8 @@ export async function workspaceBusinesses(ctx: Ctx) {
           from clients c join orgs o on o.id = c.org_id where c.org_id = ${ctx.org!.id}
           order by c.data->'settings'->>'businessName'`;
   const rows: any[] = ctx.viewing?.client ? await pick("viewing") : ctx.role === "customer" ? await pick("access") : ctx.org ? await pick("org") : [];
-  const businesses = await Promise.all(
-    rows.map(async (r) => ({
-      ...answeredBusiness({ ...r.data, id: r.id }, { orgId: r.org_id, orgName: r.org_name, sandbox: Boolean(r.sandbox), suspended: Boolean(r.suspended_at) }),
-      // The company's branding (console), falling back to the agency's: themes /app.
-      brand: await resolveBrand(r.org_id, r.id),
-    })),
+  const businesses = rows.map((r) =>
+    answeredBusiness({ ...r.data, id: r.id }, { orgId: r.org_id, orgName: r.org_name, sandbox: Boolean(r.sandbox), suspended: Boolean(r.suspended_at) }),
   );
   const memberships = rows
     .filter((r) => r.access_role)

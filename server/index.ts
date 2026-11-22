@@ -31,8 +31,8 @@ import {
 import { isLocal } from "./auth";
 import { migrate, sql } from "./db";
 import { checkEmail, connectEmail, connectedClientIds, disconnectEmail, emailStatus } from "./email";
-import { availableNumbers, buyNumber, connectedNumbers, openOrders, voiceAppFor } from "./numbers";
-import { ValidationError, buildInstructions, normaliseSettings } from "./prompt";
+import { availableNumbers, buyNumber, callSummary, connectedNumbers, openOrders, voiceAppFor } from "./numbers";
+import { ValidationError, buildInstructions, knowledgeFor, normaliseSettings } from "./prompt";
 import { clientsWithBooking, getClient, getOrgClient, insertClient, listClients, orgOfClient, removeClient, saveClient } from "./store";
 import { TelnyxError, enterOrg, hasKey, runAsOrg, telnyx } from "./telnyx";
 import { createTestLogins, ensureSandbox, fakeProvider, isDemo, resetSandbox, sandboxOrgId } from "./sandbox";
@@ -41,7 +41,7 @@ import { startCallSync } from "./callsync";
 import { industryKeyOf, workspaceBusinesses } from "./answered";
 import { audit } from "./audit";
 import { consoleRoutes, isClientPaused } from "./routes/console";
-import { manageRoutes } from "./routes/manage";
+import { manageRoutes, setManageDeps } from "./routes/manage";
 import { signupRoutes } from "./routes/signup";
 import { workspaceRoutes } from "./routes/workspace";
 import type { ClientAccess, RouteArgs } from "./routes/http";
@@ -145,14 +145,20 @@ const HANGUP = {
   hangup: { description: "End the call once the caller has said goodbye or has nothing else to ask." },
 };
 
-function instructionsFor(client: Business, settings = client.settings): string {
-  return buildInstructions(settings, bookingLive(client) ? { minutes: client.booking!.minutes } : null);
+// The script, with the business's published knowledge items (server/routes/manage.ts).
+async function instructionsFor(client: Business, settings = client.settings): Promise<string> {
+  return buildInstructions(settings, bookingLive(client) ? { minutes: client.booking!.minutes } : null, await knowledgeFor(client.id));
 }
 
 // Pushes the script and tools that match the client's booking setup to Telnyx.
+// A demo receptionist has no assistant: its script is only saved.
 async function syncAssistant(client: Business): Promise<Business> {
-  if (isDemo(client.assistantId)) return client;
-  const instructions = instructionsFor(client);
+  if (isDemo(client.assistantId)) {
+    const next = { ...client, instructions: await instructionsFor(client), updatedAt: new Date().toISOString() };
+    await saveClient(next);
+    return next;
+  }
+  const instructions = await instructionsFor(client);
   const tools = bookingLive(client) ? [HANGUP, ...bookingTools(client, publicUrl())] : [HANGUP];
   await telnyx("POST", `/ai/assistants/${client.assistantId}`, { instructions, tools });
   const next = { ...client, instructions, updatedAt: new Date().toISOString() };
@@ -346,7 +352,7 @@ async function createClient(orgId: string, input: unknown, opts: { quick?: boole
 
 async function updateClient(existing: Business, input: unknown): Promise<Business> {
   const settings = normaliseSettings(input, await voiceNames());
-  const instructions = instructionsFor(existing, settings);
+  const instructions = await instructionsFor(existing, settings);
   // Telnyx updates an assistant with POST, not PATCH. (The demo receptionist has none.)
   if (!isDemo(existing.assistantId)) await telnyx("POST", `/ai/assistants/${existing.assistantId}`, assistantFields(settings, instructions));
   const client: Business = { ...existing, settings, instructions, updatedAt: new Date().toISOString() };
@@ -374,6 +380,9 @@ async function numberState(ctx: Ctx, client: Business): Promise<NumberState> {
   }
   return { numbers, pending, balance, canBuy: ctx.user.platformAdmin, requests: await requestsForClient(client.id) };
 }
+
+// The workspace's manage side (server/routes/manage.ts) uses the same receptionist plumbing.
+setManageDeps({ updateClient, syncAssistant, setUpBooking, changeBooking, removeBooking, loadVoices, nextOpenDate });
 
 // A redirect to a path on this server (Response.redirect needs an absolute URL).
 const redirectTo = (path: string) => new Response(null, { status: 302, headers: { Location: path } });

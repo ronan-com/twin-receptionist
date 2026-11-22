@@ -25,7 +25,12 @@ export type IndustryKey =
   | "professional"
   | "other";
 
-export type Tone = "friendly" | "professional";
+export type Tone = "friendly" | "professional" | "calm" | "upbeat" | "direct";
+
+/** The English the receptionist writes and speaks in (wording and spelling; the voice sets the accent). */
+export type Dialect = "en-AU" | "en-GB" | "en-NZ" | "en-US";
+/** Extra details the receptionist collects on a booking or message, beyond name and number. */
+export type CollectField = "email" | "address" | "reason" | "new_customer" | "preferred_time";
 
 export type Settings = {
   businessName: string;
@@ -41,6 +46,16 @@ export type Settings = {
   greeting: string;
   tone: Tone;
   notes: string;
+  // Receptionist depth (all optional: older records don't have them). See server/prompt.ts.
+  personality?: string;
+  dialect?: Dialect;
+  closing?: string;
+  avoid?: string[];
+  faqStyle?: "brief" | "detailed";
+  collect?: CollectField[];
+  questions?: string[];
+  /** Paused by the business: callers hear `message`, a message is taken, nothing is booked. */
+  paused?: { at: string; message: string } | null;
 };
 
 export type BookingProvider = "builtin" | "google" | "microsoft";

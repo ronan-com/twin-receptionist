@@ -6,9 +6,12 @@ import {
   defaultHours,
   describeHours,
   industry,
+  type CollectField,
+  type Dialect,
   type Hours,
   type IndustryKey,
   type Settings,
+  type Tone,
 } from "../src/lib/shared";
 import { sql } from "./db";
 
@@ -40,7 +43,77 @@ function cleanHours(input: unknown, key: IndustryKey): Hours {
 
 export class ValidationError extends Error {}
 
-export function normaliseSettings(input: unknown, voiceNames: Map<string, string>): Settings {
+// ---- Receptionist depth (area R): persona, conversation, what to collect, pause ----
+
+export const TONES: Tone[] = ["friendly", "professional", "calm", "upbeat", "direct"];
+export const DIALECTS: Dialect[] = ["en-AU", "en-GB", "en-NZ", "en-US"];
+export const COLLECT_FIELDS: CollectField[] = ["email", "address", "reason", "new_customer", "preferred_time"];
+const DIALECT_NAME: Record<Dialect, string> = {
+  "en-AU": "Australian English",
+  "en-GB": "British English",
+  "en-NZ": "New Zealand English",
+  "en-US": "American English",
+};
+const TONE_LINE: Record<Tone, string> = {
+  friendly: "Warm, relaxed and friendly, the way a good local receptionist sounds.",
+  professional: "Polite, clear and professional. Efficient without sounding cold.",
+  calm: "Calm, patient and reassuring. Speak at an unhurried pace, especially when the caller is stressed.",
+  upbeat: "Upbeat and positive, with genuine energy, without being over the top.",
+  direct: "Direct and to the point. Friendly, but skip small talk and get the caller what they need quickly.",
+};
+const COLLECT_ASK: Record<CollectField, string> = {
+  email: "their email address (spell it back to check)",
+  address: "the street address where the work or visit is",
+  reason: "a short description of what it's about",
+  new_customer: "whether they have been to us before",
+  preferred_time: "what days and times usually suit them",
+};
+export const DEFAULT_PAUSE_MESSAGE = "Thanks for calling. We're not taking bookings over the phone right now, but I can take a message and the team will get back to you.";
+
+const cleanList = (v: unknown, max: number, each: number) =>
+  (Array.isArray(v) ? v : [])
+    .map((x) => clean(x, each))
+    .filter(Boolean)
+    .slice(0, max);
+
+/**
+ * The optional depth fields. `src` is the incoming settings; anything it leaves out
+ * keeps its `current` value, so an older client (or the legacy full-replace form)
+ * that doesn't know these fields never wipes them.
+ */
+function depthFields(src: Record<string, unknown>, current: Partial<Settings>): Partial<Settings> {
+  const has = (k: string) => Object.prototype.hasOwnProperty.call(src, k);
+  const out: Partial<Settings> = {};
+  const personality = has("personality") ? clean(String(src.personality ?? "").replace(/\r?\n+/g, " "), 400) : (current.personality ?? "");
+  if (personality) out.personality = personality;
+  const dialect = has("dialect") ? src.dialect : current.dialect;
+  if (DIALECTS.includes(dialect as Dialect) && dialect !== "en-AU") out.dialect = dialect as Dialect;
+  const closing = has("closing") ? clean(src.closing, 200) : (current.closing ?? "");
+  if (closing) out.closing = closing;
+  const avoid = has("avoid") ? cleanList(src.avoid, 12, 80) : (current.avoid ?? []);
+  if (avoid.length) out.avoid = avoid;
+  const faqStyle = has("faqStyle") ? src.faqStyle : current.faqStyle;
+  if (faqStyle === "detailed") out.faqStyle = "detailed";
+  const collect = has("collect") ? (Array.isArray(src.collect) ? src.collect : []) : (current.collect ?? []);
+  const fields = COLLECT_FIELDS.filter((f) => collect.includes(f));
+  if (fields.length) out.collect = fields;
+  const questions = has("questions") ? cleanList(src.questions, 6, 160) : (current.questions ?? []);
+  if (questions.length) out.questions = questions;
+  const paused = has("paused") ? src.paused : current.paused;
+  if (paused && typeof paused === "object") {
+    const p = paused as Record<string, unknown>;
+    const at = typeof p.at === "string" && !Number.isNaN(Date.parse(p.at)) ? p.at : new Date().toISOString();
+    out.paused = { at, message: clean(p.message, 300) || DEFAULT_PAUSE_MESSAGE };
+  }
+  return out;
+}
+
+/** What callers hear first: the greeting, or the pause message while paused. */
+export function greetingOf(s: Settings): string {
+  return s.paused ? s.paused.message : s.greeting;
+}
+
+export function normaliseSettings(input: unknown, voiceNames: Map<string, string>, current: Partial<Settings> = {}): Settings {
   const src = (input ?? {}) as Record<string, unknown>;
 
   const businessName = clean(src.businessName, 80);
@@ -74,8 +147,9 @@ export function normaliseSettings(input: unknown, voiceNames: Map<string, string
     voiceId,
     voiceName,
     greeting,
-    tone: src.tone === "professional" ? "professional" : "friendly",
+    tone: TONES.includes(src.tone as Tone) ? (src.tone as Tone) : "friendly",
     notes: clean(String(src.notes ?? "").replace(/\r/g, ""), 1500),
+    ...depthFields(src, current),
   };
 }
 
@@ -117,16 +191,30 @@ export function buildInstructions(s: Settings, booking: { minutes: number } | nu
   const preset = industry(s.industry);
   const where = s.suburb ? ` in ${s.suburb}, Australia` : " in Australia";
   const who = s.receptionistName ? `Your name is ${s.receptionistName}. ` : "";
-  const tone =
-    s.tone === "professional"
-      ? "Polite, clear and professional. Efficient without sounding cold."
-      : "Warm, relaxed and friendly, the way a good local receptionist sounds.";
+  const tone = TONE_LINE[s.tone] ?? TONE_LINE.friendly;
+  const english = DIALECT_NAME[s.dialect ?? "en-AU"] ?? DIALECT_NAME["en-AU"];
+  const personality = s.personality ? `\n- Personality: ${s.personality}` : "";
 
   const info: string[] = describeHours(s.hours).map((line) => `- ${line}`);
   if (s.address) info.push(`- Address: ${s.address}`);
 
+  if (s.paused) return pausedInstructions(s, preset.noun, where, who, english, tone, info, booking !== null);
+
   const notes = s.notes
     ? `\nMore about the business (use this to answer questions)\n${s.notes}\n`
+    : "";
+  const answers =
+    s.faqStyle === "detailed"
+      ? "- When answering a question, give the full answer from what's written here, then check it covered what they needed."
+      : "- When answering a question, keep it to a sentence or two and offer more detail if they want it.";
+  const avoid = s.avoid?.length
+    ? `\n- Never discuss or give opinions on: ${s.avoid.join("; ")}. If asked, say it's not something you can help with on the phone and offer to pass a message to the team.`
+    : "";
+  const closing = s.closing ? `\n- To finish the conversation, say something close to: "${s.closing}"` : "";
+  const extras = (s.collect ?? []).map((f) => COLLECT_ASK[f]);
+  const collectStep = extras.length ? `\n   Also ask for ${extras.join(", ")}, one at a time.` : "";
+  const questions = s.questions?.length
+    ? `\n   Then ask these questions, one at a time, and include the answers in the request:\n${s.questions.map((q) => `   - ${q}`).join("\n")}`
     : "";
 
   return `You are the receptionist for ${s.businessName}, a ${preset.noun}${where}. ${who}It is {{telnyx_current_time_${s.timezone}}} local time.
@@ -134,13 +222,14 @@ export function buildInstructions(s: Settings, booking: { minutes: number } | nu
 You answer both phone calls and text messages. This conversation's channel is "{{telnyx_conversation_channel}}": "sms_chat" or "web_chat" means you are texting, anything else means a voice call.
 
 How you speak on a call
-- Australian English. ${tone}
+- ${english}. ${tone}${personality}
 - One or two short sentences per turn. Ask one question at a time and wait for the answer.
 - If the caller interrupts, stop talking and listen.
 - Say times the natural way ("two fifteen in the afternoon"), never in 24-hour format.
+${answers}
 
 How you write by text
-- Australian English. ${tone}
+- ${english}. ${tone}
 - Keep each reply under 300 characters. Plain text only: no markdown, lists or emoji.
 - Ask one question per message.
 - Write times as "2:15pm" and dates as "Tue 3 Dec".
@@ -161,7 +250,7 @@ ${
       : `2. Ask which day suits. Offer two times on that day inside opening hours. If they ask for a time when the business is closed, say so and offer the nearest open time.`
   }
 3. Ask for their full name. If it is unusual, ask them to spell it.
-4. On a call, ask for the best mobile number. Read it back in groups (for example "oh four one two, three four five, six seven eight") and ask them to confirm. If they correct it, read the corrected number back before continuing. By text, skip this unless they give a different number.
+4. On a call, ask for the best mobile number. Read it back in groups (for example "oh four one two, three four five, six seven eight") and ask them to confirm. If they correct it, read the corrected number back before continuing. By text, skip this unless they give a different number.${collectStep}${questions}
 ${
     booking
       ? `5. Repeat it back once: what they need, day, time, name and number.
@@ -176,6 +265,24 @@ Rules
 - Do not quote prices unless they are written above. Say the team can go through pricing when they confirm.
 - If you do not know something, say you will pass the question to the team. Never make up an answer.
 - If they ask for a person, take their name, number and a short message${booking ? ", call request_callback with them," : ""} and say the team will get back to them.
-- Only talk about ${s.businessName}. Politely decline anything unrelated.
-- On a call, when the ${preset.customer} has nothing else, say goodbye and end the call. By text, just sign off; there is nothing to end.`;
+- Only talk about ${s.businessName}. Politely decline anything unrelated.${avoid}
+- On a call, when the ${preset.customer} has nothing else, say goodbye and end the call. By text, just sign off; there is nothing to end.${closing}`;
+}
+
+// While the business has paused its receptionist: greet with the pause message (the
+// greeting itself, see greetingOf), take a message, never book. Only request_callback
+// stays on the assistant (server/index.ts syncAssistant); the hooks refuse the rest.
+function pausedInstructions(s: Settings, noun: string, where: string, who: string, english: string, tone: string, info: string[], callback: boolean): string {
+  return `You are the receptionist for ${s.businessName}, a ${noun}${where}. ${who}It is {{telnyx_current_time_${s.timezone}}} local time.
+
+The business has paused its receptionist for now. You have already told the caller: "${s.paused!.message}"
+
+What to do
+- ${english}. ${tone}
+- Do not book, check availability, quote prices or answer detailed questions. Say the team will help when they get back to them.
+- Offer to take a message: their full name, the best number to reach them (read it back in groups to confirm) and a short note of what it's about. Then repeat it back once${callback ? " and call request_callback with it" : ""}.
+- If they only want the opening hours or address, you can give them:
+${info.join("\n")}
+- You are an AI assistant. If asked, say so plainly.
+- When they have nothing else, say goodbye and end the call. By text, keep replies under 300 characters, plain text, and just sign off.`;
 }

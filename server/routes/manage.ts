@@ -11,7 +11,7 @@ import { checkEmail, connectEmail, disconnectEmail, emailStatus } from "../email
 import { recordIncident } from "../incidents";
 import { webhookSecret } from "../notify";
 import { createRequest, requestsForClient } from "../numberRequests";
-import { ValidationError } from "../prompt";
+import { COLLECT_FIELDS, DEFAULT_PAUSE_MESSAGE, DIALECTS, TONES, ValidationError } from "../prompt";
 import { isDemo } from "../sandbox";
 import { getClient, orgOfClient, saveClient } from "../store";
 import { json, readBody, type ClientAccess, type ClientRouteArgs } from "./http";
@@ -99,7 +99,12 @@ async function answeredAgent(c: Business, paused: boolean, voices?: Voice[]) {
     id: c.id,
     business_id: c.id,
     name: s.receptionistName || "Receptionist",
-    status: paused ? "paused" : "active",
+    status: paused || s.paused ? "paused" : "active",
+    // Ours (area R): who paused it. "agency" = the agency or platform paused the whole
+    // account (only they can resume); "business" = paused from this page.
+    paused_by: paused ? "agency" : s.paused ? "business" : null,
+    paused_at: s.paused?.at ?? null,
+    paused_message: s.paused?.message ?? "",
     greeting: s.greeting,
     tone: s.tone,
     business_context: s.notes || null,
@@ -108,6 +113,12 @@ async function answeredAgent(c: Business, paused: boolean, voices?: Voice[]) {
     voice_config: null,
     language: "en-AU",
     accent: "Australian",
+    // Ours (area R): the English it writes and speaks in (the voice sets the accent).
+    dialect: s.dialect ?? "en-AU",
+    closing_line: s.closing ?? "",
+    faq_style: s.faqStyle ?? "brief",
+    collect_fields: s.collect ?? [],
+    phone_numbers: c.phoneNumbers ?? [],
     speaking_speed: 1,
     provider: "telnyx",
     provider_agent_id: isDemo(c.assistantId) ? null : c.assistantId,
@@ -127,15 +138,18 @@ async function answeredAgent(c: Business, paused: boolean, voices?: Voice[]) {
       buffer_minutes: 0,
       max_days_ahead: 14,
       allow_new_patients: true,
+      provider: c.booking ? providerOf(c) : null,
+      lead_webhook: c.booking?.leadWebhook ?? "",
+      live,
     },
     escalation_rules: { transfer_on_request: false, escalate_on_negative_sentiment: false, notify_email: c.booking?.notifyEmail ?? "", notify_sms: "" },
     tool_permissions: ["end_call", ...(live ? ["lookup_availability", "book_appointment", "take_message"] : [])],
     transfer_rules: [],
-    qualification_questions: [],
-    restricted_topics: [],
+    qualification_questions: s.questions ?? [],
+    restricted_topics: s.avoid ?? [],
     transfer_number: null,
     after_hours_message: null,
-    personality: null,
+    personality: s.personality || null,
     business_hours_behaviour: { mode: "always_on" },
     voicemail_behaviour: { mode: "take_message" },
     interruption_settings: { allow_barge_in: true },
@@ -527,7 +541,23 @@ export async function manageRoutes(args: ClientRouteArgs): Promise<Response | nu
       let s: Settings = { ...client.settings };
       if (body.name !== undefined) s.receptionistName = str(body.name, 30);
       if (body.greeting !== undefined) s.greeting = str(body.greeting, 300);
-      if (body.tone !== undefined) s.tone = ["professional", "direct", "calm"].includes(body.tone) ? "professional" : "friendly";
+      if (body.tone !== undefined) s.tone = TONES.includes(body.tone) ? body.tone : "friendly";
+      // Area R: persona and conversation depth (server/prompt.ts puts them in the script).
+      // An empty value removes the key, so an untouched record doesn't count as changed.
+      const opt = <K extends keyof Settings>(k: K, v: Settings[K] | undefined) => {
+        const empty = v === undefined || v === null || v === "" || (Array.isArray(v) && v.length === 0);
+        if (!empty) s[k] = v as Settings[K];
+        else if (k in client.settings) (s as any)[k] = Array.isArray(v) ? [] : "";
+        else delete s[k];
+      };
+      const list = (v: unknown, max: number, each: number) => (Array.isArray(v) ? v : []).map((x) => str(x, each)).filter(Boolean).slice(0, max);
+      if (body.personality !== undefined) opt("personality", str(body.personality, 400));
+      if (body.dialect !== undefined) opt("dialect", DIALECTS.includes(body.dialect) && body.dialect !== "en-AU" ? body.dialect : undefined);
+      if (body.closing_line !== undefined) opt("closing", str(body.closing_line, 200));
+      if (body.restricted_topics !== undefined) opt("avoid", list(body.restricted_topics, 12, 80));
+      if (body.faq_style !== undefined) opt("faqStyle", body.faq_style === "detailed" ? "detailed" : undefined);
+      if (body.qualification_questions !== undefined) opt("questions", list(body.qualification_questions, 6, 160));
+      if (body.collect_fields !== undefined) opt("collect", COLLECT_FIELDS.filter((f) => Array.isArray(body.collect_fields) && body.collect_fields.includes(f)));
       if (body.business_context !== undefined) s.notes = String(body.business_context ?? "").slice(0, 1500);
       if (body.voice_id !== undefined && body.voice_id !== null) s.voiceId = String(body.voice_id);
       const rules = body.booking_rules && typeof body.booking_rules === "object" ? body.booking_rules : null;
@@ -550,6 +580,8 @@ export async function manageRoutes(args: ClientRouteArgs): Promise<Response | nu
         if (typeof rules?.enabled === "boolean" && rules.enabled !== next.booking.enabled) change.enabled = rules.enabled;
         const notify = body.escalation_rules?.notify_email;
         if (typeof notify === "string" && notify.trim() !== (next.booking.notifyEmail ?? "")) change.notifyEmail = notify;
+        const hook = rules?.lead_webhook;
+        if (typeof hook === "string" && hook.trim() !== (next.booking.leadWebhook ?? "")) change.leadWebhook = hook.trim();
         if (Object.keys(change).length > 0) {
           next = await d.changeBooking(next, change);
           fields.push(...Object.keys(change).map((k) => `booking.${k}`));
@@ -558,6 +590,31 @@ export async function manageRoutes(args: ClientRouteArgs): Promise<Response | nu
       if (fields.length > 0) await audit(ctx, "receptionist.updated", { summary: `Receptionist settings changed (${fields.join(", ")})`, fields }, where);
       return json({ agent: await answeredAgent(next, paused), applied: !isDemo(next.assistantId), demo: isDemo(next.assistantId), changed: fields });
     }
+  }
+  // Area R: the business pauses or resumes its own receptionist. While paused, callers
+  // hear the pause message, a message is taken and nothing is booked (server/prompt.ts,
+  // syncAssistant and the booking hooks). Saved and pushed to the phone provider first;
+  // only then does it count. A pause by the agency or platform is theirs to lift.
+  if (rest === "/receptionist/pause" && method === "POST") {
+    const body = await readBody(req);
+    const pause = body?.paused !== false;
+    if (!pause && paused) throw new ValidationError("Your agency or the platform team has paused this account. Contact them to resume it.");
+    if (!pause && !client.settings.paused) return json({ agent: await answeredAgent(client, paused), applied: false, demo: isDemo(client.assistantId) });
+    const s: Settings = {
+      ...client.settings,
+      paused: pause ? { at: client.settings.paused?.at ?? new Date().toISOString(), message: str(body?.message, 300) || DEFAULT_PAUSE_MESSAGE } : null,
+    };
+    let next = await d.updateClient({ ...client, onboarding: onboardingOf(client) } as Business, s);
+    let warning: string | undefined;
+    try {
+      // The tools: booking off while paused, back on when resumed.
+      next = await d.syncAssistant(next);
+    } catch (err) {
+      warning = "The greeting and script were updated, but the booking tools couldn't be changed just now. Bookings are refused while paused either way.";
+      await recordIncident({ kind: "receptionist_pause", orgId: clientOrgId, clientId: client.id, message: `Couldn't update the tools: ${(err as Error).message}`.slice(0, 300) }).catch(() => {});
+    }
+    await audit(ctx, pause ? "receptionist.paused" : "receptionist.resumed", { summary: pause ? "Receptionist paused" : "Receptionist resumed" }, where);
+    return json({ agent: await answeredAgent(next, paused), applied: !isDemo(next.assistantId), demo: isDemo(next.assistantId), warning });
   }
   if (rest === "/voices" && method === "GET") return json({ voices: (await voicesSafe()).map(answeredVoice) });
 

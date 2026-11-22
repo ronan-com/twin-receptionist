@@ -4,7 +4,7 @@ import { DAYS } from "../src/lib/shared";
 import { publicUrl } from "./booking";
 import { sql } from "./db";
 import { recordIncident, resolveIncidents } from "./incidents";
-import { ValidationError } from "./prompt";
+import { ValidationError, greetingOf } from "./prompt";
 import { isDemo } from "./sandbox";
 import { getClient, orgOfClient } from "./store";
 import { runAsOrg, telnyx } from "./telnyx";
@@ -400,7 +400,8 @@ async function markApplied(clientId: string, error: string | null) {
  */
 export async function withAutomations<P extends { instructions?: string; tools?: unknown[]; greeting?: string }>(client: Business, payload: P): Promise<P> {
   const row = await loadAutomations(client.id).catch(() => null);
-  if (!row?.stored) return payload;
+  // Paused by the business (server/prompt.ts): the pause script and greeting go as they are.
+  if (!row?.stored || client.settings.paused) return payload;
   return overlayPayload(client, row.settings, payload, { publicUrl: publicUrl(), token: row.token });
 }
 
@@ -421,7 +422,7 @@ export async function applyAutomations(client: Business, deps: AutomationDeps): 
     const res = await telnyx<any>("GET", `/ai/assistants/${client.assistantId}`);
     const current = (res.data ?? res)?.telephony_settings ?? {};
     const row = await loadAutomations(client.id);
-    const greet = overlayPayload(synced, row.settings, { greeting: synced.settings.greeting }, { publicUrl: publicUrl(), token: row.token });
+    const greet = synced.settings.paused ? {} : overlayPayload(synced, row.settings, { greeting: synced.settings.greeting }, { publicUrl: publicUrl(), token: row.token });
     await telnyx("POST", `/ai/assistants/${client.assistantId}`, { ...greet, ...telephonyPayload(row.settings, current) });
     await markApplied(client.id, null);
     await resolveIncidents("automations_apply", client.id);
@@ -567,11 +568,11 @@ export async function dynamicVariables(clientId: string, token: string): Promise
   }
   const a = row.settings;
   const open = openNow(client.settings);
-  const normal = greetingFor(client.settings.greeting, a);
+  const normal = client.settings.paused ? greetingOf(client.settings) : greetingFor(client.settings.greeting, a);
   return json({
     dynamic_variables: {
       twin_open_now: open ? "yes" : "no",
-      twin_greeting: a.hoursMode.enabled && !open ? afterHoursGreeting(client, a) : normal,
+      twin_greeting: a.hoursMode.enabled && !open && !client.settings.paused ? afterHoursGreeting(client, a) : normal,
     },
   });
 }

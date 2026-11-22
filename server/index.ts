@@ -32,7 +32,7 @@ import { isLocal } from "./auth";
 import { migrate, sql } from "./db";
 import { checkEmail, connectEmail, connectedClientIds, disconnectEmail, emailStatus } from "./email";
 import { availableNumbers, buyNumber, callSummary, connectedNumbers, openOrders, voiceAppFor } from "./numbers";
-import { ValidationError, buildInstructions, knowledgeFor, normaliseSettings } from "./prompt";
+import { ValidationError, buildInstructions, greetingOf, knowledgeFor, normaliseSettings } from "./prompt";
 import { clientsWithBooking, getClient, getOrgClient, insertClient, listClients, orgOfClient, removeClient, saveClient } from "./store";
 import { TelnyxError, enterOrg, hasKey, runAsOrg, telnyx } from "./telnyx";
 import { createTestLogins, ensureSandbox, fakeProvider, isDemo, resetSandbox, sandboxOrgId } from "./sandbox";
@@ -161,7 +161,9 @@ async function syncAssistant(client: Business): Promise<Business> {
     return next;
   }
   const instructions = await instructionsFor(client);
-  const tools = bookingLive(client) ? [HANGUP, ...bookingTools(client, publicUrl())] : [HANGUP];
+  // Paused by the business: only the take-a-message tool stays (server/prompt.ts).
+  const booking = bookingLive(client) ? bookingTools(client, publicUrl()).filter((t: any) => !client.settings.paused || t.webhook?.name === "request_callback") : [];
+  const tools = [HANGUP, ...booking];
   await telnyx("POST", `/ai/assistants/${client.assistantId}`, await withAutomations(client, { instructions, tools }));
   const next = { ...client, instructions, updatedAt: new Date().toISOString() };
   await saveClient(next);
@@ -259,6 +261,7 @@ async function hook(req: Request, clientId: string, action: string): Promise<Res
   const orgId = await orgOfClient(clientId);
   if (orgId && (await isSuspended(orgId))) return json({ error: "This service is paused. Take a message instead." });
   enterOrg(orgId);
+  if (client.settings.paused && action !== "callback") return json({ error: "The receptionist is paused, so nothing can be booked. Take a message with request_callback instead." });
   if (!client.booking!.enabled) return json({ error: "Booking is switched off. Offer to take a message instead." });
   const closed = action === "callback" ? null : await bookingBlocked(client);
   if (closed) return json({ error: closed });
@@ -290,7 +293,7 @@ function assistantFields(s: Settings, instructions: string) {
     name: `${s.businessName} · ${process.env.PRODUCT_NAME || "Twin Receptionist"}`,
     description: `Created by the ${process.env.PRODUCT_NAME || "Twin Receptionist"} setup.`,
     instructions,
-    greeting: s.greeting,
+    greeting: greetingOf(s),
     voice_settings: { voice: s.voiceId, voice_speed: 1.0 },
     widget_settings: {
       theme: "dark",
@@ -353,7 +356,7 @@ async function createClient(orgId: string, input: unknown, opts: { quick?: boole
 }
 
 async function updateClient(existing: Business, input: unknown): Promise<Business> {
-  const settings = normaliseSettings(input, await voiceNames());
+  const settings = normaliseSettings(input, await voiceNames(), existing.settings);
   const instructions = await instructionsFor(existing, settings);
   // Telnyx updates an assistant with POST, not PATCH. (The demo receptionist has none.)
   if (!isDemo(existing.assistantId)) await telnyx("POST", `/ai/assistants/${existing.assistantId}`, await withAutomations({ ...existing, settings }, assistantFields(settings, instructions)));

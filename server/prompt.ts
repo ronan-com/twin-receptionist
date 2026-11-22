@@ -10,6 +10,7 @@ import {
   type IndustryKey,
   type Settings,
 } from "../src/lib/shared";
+import { sql } from "./db";
 
 // Business owners type this text and it goes into the agent's script, so strip
 // the characters Telnyx treats as template syntax and keep lengths sane.
@@ -78,7 +79,41 @@ export function normaliseSettings(input: unknown, voiceNames: Map<string, string
   };
 }
 
-export function buildInstructions(s: Settings, booking: { minutes: number } | null = null): string {
+// ---- Knowledge (the business's own questions and answers, from the workspace) ----
+
+export type KnowledgeEntry = { kind: string; question: string; answer: string };
+
+const QA_KINDS = new Set(["faq", "custom_qa"]);
+const KNOWLEDGE_MAX_ITEMS = 60;
+const KNOWLEDGE_MAX_CHARS = 8000;
+
+// The published knowledge items of one receptionist, oldest first.
+export async function knowledgeFor(clientId: string): Promise<KnowledgeEntry[]> {
+  const rows = await sql`
+    select kind, question, answer from knowledge_items
+    where client_id = ${clientId} and enabled order by created_at, id limit ${KNOWLEDGE_MAX_ITEMS}`;
+  return rows.map((r: any) => ({ kind: r.kind ?? "faq", question: r.question, answer: r.answer }));
+}
+
+// The knowledge block of the instructions. Typed by the business, so cleaned like the
+// other settings, and capped so a long list can't crowd out the script.
+export function knowledgeSection(items: KnowledgeEntry[]): string {
+  const lines: string[] = [];
+  let used = 0;
+  for (const k of items) {
+    const q = clean(k.question, 200);
+    const a = clean(String(k.answer ?? "").replace(/\r?\n+/g, " "), 1000);
+    if (!q || !a) continue;
+    const line = QA_KINDS.has(k.kind) ? `- Q: ${q}\n  A: ${a}` : `- ${q}: ${a}`;
+    if (used + line.length > KNOWLEDGE_MAX_CHARS) break;
+    used += line.length;
+    lines.push(line);
+  }
+  if (lines.length === 0) return "";
+  return `\nAnswers the business has written (use them when callers ask; don't read them out unprompted)\n${lines.join("\n")}\n`;
+}
+
+export function buildInstructions(s: Settings, booking: { minutes: number } | null = null, knowledge: KnowledgeEntry[] = []): string {
   const preset = industry(s.industry);
   const where = s.suburb ? ` in ${s.suburb}, Australia` : " in Australia";
   const who = s.receptionistName ? `Your name is ${s.receptionistName}. ` : "";
@@ -117,7 +152,7 @@ ${info.join("\n")}
 
 What callers can ask for
 ${s.services.map((x) => `- ${x}`).join("\n")}
-${notes}
+${notes}${knowledgeSection(knowledge)}
 Taking a ${preset.booking} request
 1. Ask what they need, and match it to the list above.
 ${

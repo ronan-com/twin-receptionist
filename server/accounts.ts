@@ -331,6 +331,8 @@ export async function createInvite(
   base: string,
   clientId: string | null = null,
   businessName = "",
+  // For a business invite: what they get once they accept (client_access.role).
+  accessRole: "manager" | "viewer" | null = null,
 ): Promise<{ url: string; emailed: boolean }> {
   const [already] = await sql`
     select 1 from memberships m join users u on u.id = m.user_id where m.org_id = ${orgId} and u.email = ${email}`;
@@ -341,8 +343,8 @@ export async function createInvite(
   const token = newToken();
   await sql`delete from invites where org_id = ${orgId} and email = ${email}`;
   await sql`
-    insert into invites (token_hash, org_id, email, role, invited_by, expires_at, client_id)
-    values (${hashToken(token)}, ${orgId}, ${email}, ${role}, ${by.id}, ${new Date(Date.now() + INVITE_DAYS * 86_400_000)}, ${clientId})`;
+    insert into invites (token_hash, org_id, email, role, invited_by, expires_at, client_id, access_role)
+    values (${hashToken(token)}, ${orgId}, ${email}, ${role}, ${by.id}, ${new Date(Date.now() + INVITE_DAYS * 86_400_000)}, ${clientId}, ${clientId ? accessRole : null})`;
   const url = `${base}/invite/${token}`;
   const who = by.name || by.email;
   const emailed = await sendAccountEmail(
@@ -402,7 +404,7 @@ export async function removeMember(ctx: Ctx, userId: string): Promise<void> {
 
 async function inviteFor(token: string) {
   const [i] = await sql`
-    select i.token_hash, i.org_id, i.email, i.role, i.client_id, o.name as org_name, u.id as user_id,
+    select i.token_hash, i.org_id, i.email, i.role, i.client_id, i.access_role, o.name as org_name, u.id as user_id,
       (select c.data->'settings'->>'businessName' from clients c where c.id = i.client_id) as business
     from invites i join orgs o on o.id = i.org_id left join users u on u.email = i.email
     where i.token_hash = ${hashToken(token)} and i.expires_at > now()`;
@@ -412,7 +414,14 @@ async function inviteFor(token: string) {
 
 export async function inviteInfo(token: string) {
   const i = await inviteFor(token);
-  return { orgName: i.org_name, email: i.email, role: i.role, hasAccount: Boolean(i.user_id), businessName: i.business ?? undefined };
+  return {
+    orgName: i.org_name,
+    email: i.email,
+    role: i.role,
+    hasAccount: Boolean(i.user_id),
+    businessName: i.business ?? undefined,
+    ...(i.client_id ? { accessRole: (i.access_role ?? "viewer") as "manager" | "viewer" } : {}),
+  };
 }
 
 // New people choose a name and password; people with an account confirm theirs.
@@ -431,7 +440,13 @@ export async function acceptInvite(token: string, input: any): Promise<string> {
   }
   await sql.begin(async (tx) => {
     await tx`insert into memberships (org_id, user_id, role) values (${i.org_id}, ${userId}, ${i.role}) on conflict do nothing`;
-    if (i.client_id) await tx`insert into client_access (user_id, client_id) values (${userId}, ${i.client_id}) on conflict do nothing`;
+    // A business invite carries the access it gives (manager or viewer; viewer if unset).
+    if (i.client_id) {
+      const role = i.access_role === "manager" ? "manager" : "viewer";
+      await tx`
+        insert into client_access (user_id, client_id, role) values (${userId}, ${i.client_id}, ${role})
+        on conflict (user_id, client_id) do update set role = excluded.role`;
+    }
     await tx`delete from invites where token_hash = ${i.token_hash}`;
   });
   return startSession(userId, i.org_id);

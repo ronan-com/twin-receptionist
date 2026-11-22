@@ -1,19 +1,31 @@
 import type { ReactNode } from "react";
 import { Link } from "@tanstack/react-router";
+import { CalendarCheck, Clock, PhoneIncoming } from "lucide-react";
 import { BrandMark, BrandWave } from "@/components/app/BrandMark";
+import type { Hue } from "@/components/app/hues";
+
+const AUTH_FACTS: { label: string; value: string; hue: Hue; icon: typeof PhoneIncoming }[] = [
+  { label: "Answers", value: "Every call", hue: "indigo", icon: PhoneIncoming },
+  { label: "Books into", value: "Your calendar", hue: "cyan", icon: CalendarCheck },
+  { label: "Availability", value: "24 / 7", hue: "magenta", icon: Clock },
+];
 
 // Answered's sign-in layout: brand panel on the left (wide screens), form on the right.
 export function AuthLayout({ title, subtitle, children, footer }: { title: string; subtitle?: ReactNode; children: ReactNode; footer?: ReactNode }) {
   return (
     <div className="min-h-screen bg-white text-ink lg:grid lg:grid-cols-[1.05fr_1fr]">
       <aside className="relative hidden overflow-hidden border-r border-hairline bg-canvas-2 lg:flex lg:flex-col lg:justify-between lg:p-10">
-        <div
-          className="pointer-events-none absolute -right-40 -top-40 h-[560px] w-[560px] rounded-full opacity-60 blur-3xl"
-          style={{ background: "conic-gradient(from 200deg, #ffb37a, #ff8fb1, #c084fc, #8b9bff, #00d4ff, #ffb37a)" }}
-          aria-hidden
-        />
+        {/* Answered's ribbon: a colour sweep across the top, fading into the canvas. */}
+        <div className="auth-ribbon" aria-hidden>
+          <div className="auth-ribbon__band auth-ribbon__band--a" />
+          <div className="auth-ribbon__band auth-ribbon__band--b" />
+          <div className="auth-ribbon__fibers" />
+          <div className="auth-ribbon__fade" />
+        </div>
         <div className="relative">
-          <BrandMark to="/" size="lg" />
+          <span className="inline-flex rounded-[10px] bg-white/90 px-3 py-2 shadow-[0_6px_24px_-12px_rgba(6,27,49,0.45)] backdrop-blur">
+            <BrandMark to="/" size="lg" />
+          </span>
         </div>
         <div className="relative max-w-md">
           <BrandWave className="mb-6 h-4" animate />
@@ -21,25 +33,26 @@ export function AuthLayout({ title, subtitle, children, footer }: { title: strin
           <p className="mt-4 text-[15px] leading-6 text-ink-muted">
             Your workspace shows what your receptionist handled today — calls, bookings, follow-ups and the questions it couldn't answer yet.
           </p>
-          <dl className="mt-8 grid grid-cols-3 gap-4 border-t border-hairline pt-6 text-[12.5px] text-ink-muted">
-            <div>
-              <dt>Answers</dt>
-              <dd className="mt-1 text-[20px] font-semibold tabular-nums text-ink">Every call</dd>
-            </div>
-            <div>
-              <dt>Books into</dt>
-              <dd className="mt-1 text-[20px] font-semibold tabular-nums text-ink">Your calendar</dd>
-            </div>
-            <div>
-              <dt>Availability</dt>
-              <dd className="mt-1 text-[20px] font-semibold tabular-nums text-ink">24 / 7</dd>
-            </div>
+          <dl className="mt-8 grid grid-cols-3 gap-3 text-[12.5px] text-ink-muted">
+            {AUTH_FACTS.map((f) => (
+              <div key={f.label} data-hue={f.hue} className="rounded-[10px] border border-[var(--hue-line)] bg-white/80 p-3 shadow-[0_4px_18px_-12px_rgba(6,27,49,0.35)]">
+                <dt>
+                  <span className="hue-icon mb-2 flex h-7 w-7 items-center justify-center rounded-[7px]" aria-hidden>
+                    <f.icon className="h-[15px] w-[15px]" />
+                  </span>
+                  {f.label}
+                </dt>
+                <dd className="mt-0.5 text-[17px] font-semibold leading-tight tracking-[-0.01em] text-ink">{f.value}</dd>
+              </div>
+            ))}
           </dl>
         </div>
         <p className="relative text-[12px] text-ink-muted">© {new Date().getFullYear()} Answered. Built for businesses that never want to miss a call.</p>
       </aside>
 
-      <main className="flex min-h-screen min-w-0 flex-col px-4 py-8 sm:px-10 lg:min-h-0 lg:justify-center lg:px-16">
+      <main className="relative flex min-h-screen min-w-0 flex-col px-4 py-8 sm:px-10 lg:min-h-0 lg:justify-center lg:px-16">
+        {/* On phones the side panel is hidden: keep a ribbon across the top. */}
+        <div className="pointer-events-none absolute inset-x-0 top-0 h-[5px] bg-[linear-gradient(90deg,#635bff,#a78bfa_22%,#ff5caa_46%,#ff7a59_68%,#ffb03d_84%,#00d4ff)] lg:hidden" aria-hidden />
         <div className="mb-10 lg:hidden">
           <BrandMark to="/" />
         </div>

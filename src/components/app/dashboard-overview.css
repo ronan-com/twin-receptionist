@@ -5,42 +5,19 @@
   position: relative;
   overflow: hidden;
   border-radius: 10px;
-  border-top-width: 1px;
   padding: 18px;
-  background: white;
   box-shadow: 0 2px 5px #14263e03;
 }
-.client-overview .overview-metrics > div:first-child {
-  border-color: #d9d4ff;
-  background: linear-gradient(120deg, #f0edff, #fff 90%);
-}
+/* Tile colours come from MetricCard's hue (styles.css [data-hue] / .hue-tile). */
 .client-overview .overview-metrics > div > div:first-child {
   min-height: 28px;
 }
-.client-overview .overview-metrics > div > div:first-child > svg {
-  width: 28px;
-  height: 28px;
-  padding: 6px;
-  border-radius: 8px;
-  color: #6254ff;
-  background: #eeebff;
-}
-.client-overview .overview-metrics > div:nth-child(2) > div:first-child > svg {
-  color: #238477;
-  background: #e8f5ef;
-}
-.client-overview .overview-metrics > div:nth-child(3) > div:first-child > svg {
-  color: #5b76b2;
-  background: #edf2fc;
-}
-.client-overview .overview-metrics > div:nth-child(4) > div:first-child > svg {
-  color: #947249;
-  background: #faf1e5;
+.client-overview .overview-metrics .metric-value {
+  font-size: 30px;
+  letter-spacing: -0.045em;
 }
 .client-overview .overview-metrics > div > div:nth-child(2) {
   margin-top: 8px;
-  font-size: 30px;
-  letter-spacing: -0.045em;
 }
 .client-overview .overview-support > section,
 .client-overview .overview-calls {

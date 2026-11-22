@@ -33,7 +33,8 @@ import {
 import { AppointmentBadge, StatusBadge } from "@/components/app/StatusBadge";
 import { CallDetailSheet } from "@/components/app/CallDetailSheet";
 import { fmtCurrency, fmtNumber, fmtRelative } from "@/lib/app/format";
-import { isInRange } from "@/lib/app/metrics";
+import { buildDailySeries, isInRange } from "@/lib/app/metrics";
+import { dailyCounts } from "@/components/app/hues";
 import {
   agentsQuery,
   integrationsQuery,
@@ -155,6 +156,16 @@ function OverviewPage() {
     [m.leads, ws.range],
   );
 
+  // Small trend lines in the KPI tiles (data the page already has).
+  const sparks = useMemo(
+    () => ({
+      answered: buildDailySeries(m.current, ws.range.from, ws.range.to, tz).map((p) => p.answered),
+      bookings: dailyCounts(bookingsInRange.map((a) => a.created_at), ws.range.from, ws.range.to),
+      enquiries: dailyCounts(enquiriesInRange.map((l) => l.created_at), ws.range.from, ws.range.to),
+    }),
+    [m.current, bookingsInRange, enquiriesInRange, ws.range, tz],
+  );
+
   const thresholds = readUsageThresholds(ws.business);
   // Quota warnings follow the subscription billing period, not the date filter
   // at the top of the dashboard.
@@ -216,12 +227,12 @@ function OverviewPage() {
 
       <div className="overview-metrics grid grid-cols-2 gap-3 xl:grid-cols-4">
         <MetricCard
-          className="border-t-2 border-t-indigo"
           label="Answered calls"
           value={fmtNumber(k.answered)}
           delta={showDeltas ? d.answered : undefined}
           icon={PhoneIncoming}
           loading={m.loading}
+          spark={sparks.answered}
           hint={`${fmtNumber(k.total)} calls in total`}
         />
         <MetricCard
@@ -230,6 +241,7 @@ function OverviewPage() {
           delta={showDeltas ? d.bookings : undefined}
           icon={CalendarCheck}
           loading={m.loading}
+          spark={sparks.bookings}
           hint={`${fmtNumber(aiBookingsInRange.length)} made by your receptionist`}
         />
         <MetricCard
@@ -238,10 +250,11 @@ function OverviewPage() {
           delta={showDeltas ? d.leads : undefined}
           icon={UserRound}
           loading={m.loading}
+          spark={sparks.enquiries}
           hint="People who left their details"
         />
         <MetricCard
-          className={attention.length ? "border-t-2 border-t-[#f0a800]" : ""}
+          hue={attention.length ? "amber" : "green"}
           label="Needs attention"
           value={attentionError ? "Unavailable" : fmtNumber(attention.length)}
           icon={AlertTriangle}
@@ -315,7 +328,9 @@ function OverviewPage() {
             </div>
           ) : attention.length === 0 ? (
             <div className="flex items-start gap-3 p-5">
-              <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0 text-[#1a9c5b]" />
+              <span data-hue="green" className="hue-icon flex h-9 w-9 shrink-0 items-center justify-center rounded-[9px]" aria-hidden>
+                <CheckCircle2 className="h-[18px] w-[18px]" />
+              </span>
               <div>
                 <p className="text-[14px] font-semibold">
                   You're all caught up
@@ -469,7 +484,9 @@ function OverviewPage() {
             </p>
           ) : upcoming.length === 0 ? (
             <div className="p-5">
-              <CalendarCheck className="mb-2 h-5 w-5 text-indigo" />
+              <span data-hue="cyan" className="hue-icon mb-2.5 flex h-9 w-9 items-center justify-center rounded-[9px]" aria-hidden>
+                <CalendarCheck className="h-[18px] w-[18px]" />
+              </span>
               <p className="text-[13px] font-medium">
                 No upcoming appointments
               </p>
@@ -484,9 +501,9 @@ function OverviewPage() {
                   <Link
                     to="/app/bookings"
                     search={{ booking: a.id }}
-                    className="flex min-w-0 items-start gap-3 p-4 transition-colors hover:bg-[#f8f7ff] focus-visible:outline-indigo motion-reduce:transition-none"
+                    className="row-hover flex min-w-0 items-start gap-3 p-4 focus-visible:outline-indigo motion-reduce:transition-none"
                   >
-                    <span className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-[#efeeff] text-indigo">
+                    <span data-hue="cyan" className="hue-icon mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg" aria-hidden>
                       <CalendarCheck className="h-4 w-4" />
                     </span>
                     <span className="min-w-0 flex-1">

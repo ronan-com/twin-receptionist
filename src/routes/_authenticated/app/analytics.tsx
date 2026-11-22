@@ -4,7 +4,8 @@ import { BarChart3, Clock, Download, Moon, PhoneForwarded, Sparkles, Timer } fro
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { PageHeader, Panel, ErrorState, MetricCard, MetricGrid, Notice, KeyValue } from "@/components/app/primitives";
-import { CallVolumeChart, ChartCard, DirectionChart, OutcomeDonut, PeakHoursChart, RankedBars, SimpleBarChart, StackedStatusChart, TrendChart } from "@/components/app/Charts";
+import { CallVolumeChart, ChartCard, DirectionChart, OutcomeDonut, PeakHoursChart, RankedBars, SimpleBarChart, STATE_COLORS, StackedStatusChart, TrendChart } from "@/components/app/Charts";
+import { HUE_HEX } from "@/components/app/hues";
 import { StatusBadge } from "@/components/app/StatusBadge";
 import { CHART_COLORS } from "@/lib/app/constants";
 import { fmtDuration, fmtHours, fmtNumber, fmtPercent } from "@/lib/app/format";
@@ -112,13 +113,13 @@ function AnalyticsPage() {
 
       <MetricGrid cols={4}>
         <MetricCard label="Resolved by AI" value={fmtPercent(k.aiResolutionRate)} delta={m.deltas.aiResolutionRate} icon={Sparkles} loading={m.loading} hint={`${fmtNumber(k.aiResolved)} of ${fmtNumber(k.answered)} answered calls`} />
-        <MetricCard label="Transfer rate" value={fmtPercent(k.transferRate)} delta={m.deltas.transferRate} icon={PhoneForwarded} loading={m.loading} invert hint={`${fmtNumber(k.transfers)} handed to your team`} />
+        <MetricCard label="Transfer rate" value={fmtPercent(k.transferRate)} delta={m.deltas.transferRate} icon={PhoneForwarded} hue="coral" loading={m.loading} invert hint={`${fmtNumber(k.transfers)} handed to your team`} />
         <MetricCard label="Avg. handle time" value={fmtDuration(k.avgHandleSeconds)} delta={m.deltas.avgHandleSeconds} icon={Timer} loading={m.loading} invert hint={`${fmtHours(k.totalTalkSeconds)} total talk time`} />
-        <MetricCard label="After-hours handled" value={fmtNumber(k.afterHoursHandled)} delta={m.deltas.afterHoursHandled} icon={Moon} loading={m.loading} hint={`${fmtPercent(k.total ? k.afterHoursHandled / k.total : 0)} of all calls`} />
+        <MetricCard label="After-hours handled" value={fmtNumber(k.afterHoursHandled)} delta={m.deltas.afterHoursHandled} icon={Moon} hue="violet" spark={daily.map((d) => d.afterHours)} loading={m.loading} hint={`${fmtPercent(k.total ? k.afterHoursHandled / k.total : 0)} of all calls`} />
       </MetricGrid>
 
       <div className="grid gap-4 lg:grid-cols-3">
-        <ChartCard title="Call volume" description="Calls per day, answered vs missed" className="lg:col-span-2" empty={empty} legend={[{ label: "Answered", color: CHART_COLORS.indigo }, { label: "Missed", color: CHART_COLORS.coral }]}>
+        <ChartCard title="Call volume" description="Calls per day, answered vs missed" className="lg:col-span-2" empty={empty} legend={[{ label: "Answered", color: STATE_COLORS.answered }, { label: "Missed", color: STATE_COLORS.missed }, { label: "Failed", color: STATE_COLORS.failed }]}>
           <StackedStatusChart data={daily} />
         </ChartCard>
         <ChartCard title="Outcomes" description="What happened on each call" empty={empty}>
@@ -127,10 +128,10 @@ function AnalyticsPage() {
       </div>
 
       <div className="grid gap-4 lg:grid-cols-3">
-        <ChartCard title="Bookings & leads" description="Created per day" empty={empty} legend={[{ label: "Bookings", color: CHART_COLORS.cyan }, { label: "Leads", color: CHART_COLORS.magenta }]}>
+        <ChartCard title="Bookings & leads" description="Created per day" empty={empty} legend={[{ label: "Bookings", color: HUE_HEX.cyan }, { label: "Leads", color: CHART_COLORS.magenta }]}>
           <TrendChart data={trend} />
         </ChartCard>
-        <ChartCard title="Busiest hours" description="When your phone rings most" empty={empty}>
+        <ChartCard title="Busiest hours" description="When your phone rings most" empty={empty} legend={[{ label: "Busiest", color: STATE_COLORS.peak }, { label: "After hours", color: STATE_COLORS.afterHours }]}>
           <PeakHoursChart data={hours} />
         </ChartCard>
         <ChartCard title="By weekday" description="Total calls per day of week" empty={empty}>
@@ -175,9 +176,12 @@ function AnalyticsPage() {
         </Panel>
         <Panel title="Efficiency" description="What the receptionist saved you">
           <div className="space-y-3">
-            <div className="rounded-[6px] bg-canvas-2 p-3">
+            <div data-hue="green" className="rounded-[8px] border border-[var(--hue-line)] bg-[linear-gradient(150deg,var(--hue-soft),#fff_75%)] p-3">
               <div className="flex items-center gap-2 text-[12px] text-ink-muted">
-                <Clock className="h-3.5 w-3.5" /> Reception hours saved
+                <span className="hue-icon flex h-6 w-6 items-center justify-center rounded-[6px]" aria-hidden>
+                  <Clock className="h-3.5 w-3.5" />
+                </span>
+                Reception hours saved
               </div>
               <div className="mt-1 text-[24px] font-semibold tracking-tight text-ink">{fmtNumber(k.estimatedReceptionHours, { maximumFractionDigits: 1 })}h</div>
               <div className="text-[11.5px] text-ink-muted">Talk time plus after-call wrap-up a human would have spent</div>
@@ -198,7 +202,7 @@ function AnalyticsPage() {
       </div>
 
       <div className="grid gap-4 lg:grid-cols-2">
-        <ChartCard title="Inbound vs outbound" description="Direction of calls per day" empty={empty} legend={[{ label: "Inbound", color: CHART_COLORS.indigo }, { label: "Outbound", color: CHART_COLORS.cyan }]}>
+        <ChartCard title="Inbound vs outbound" description="Direction of calls per day" empty={empty} legend={[{ label: "Inbound", color: CHART_COLORS.indigo }, { label: "Outbound", color: STATE_COLORS.outbound }]}>
           <DirectionChart data={daily} />
         </ChartCard>
         <Panel title="By receptionist" description="Calls handled per receptionist in this period" actions={<BarChart3 className="h-4 w-4 text-ink-muted" />}>

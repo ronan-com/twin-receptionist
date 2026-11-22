@@ -34,6 +34,22 @@ export function textOn(hex: string): string {
   return 0.2126 * r + 0.7152 * g + 0.0722 * b > 0.45 ? "#0a2540" : "#ffffff";
 }
 
+function luminance(hex: string): number {
+  const [r, g, b] = rgb(hex).map((c) => {
+    const s = c / 255;
+    return s <= 0.03928 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4;
+  });
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+}
+/** The brand colour darkened until text in it passes AA (4.5:1) on a light tint. */
+function readableInk(hex: string): string {
+  for (let by = 0.15; by < 0.95; by += 0.05) {
+    const c = shade(hex, by);
+    if (1.0 / (luminance(c) + 0.05) >= 4.9) return c; // white is 1.0; a 4.9 margin covers the tint
+  }
+  return "#061b31";
+}
+
 /** CSS custom properties for a look (also used by the settings preview). */
 export function brandVars(look: Partial<BrandLook> | null | undefined): Record<string, string> {
   const vars: Record<string, string> = {};
@@ -45,6 +61,10 @@ export function brandVars(look: Partial<BrandLook> | null | undefined): Record<s
     vars["--primary"] = p;
     vars["--primary-foreground"] = textOn(p);
     vars["--ring"] = p;
+    // Dashboard accents (styles.css): text-strength primary, and the ribbon's colours.
+    vars["--primary-ink"] = readableInk(p);
+    vars["--ribbon-2"] = HEX.test(a) ? a : shade(p, 0.12);
+    vars["--ribbon-3"] = HEX.test(a) ? a : p;
   }
   if (HEX.test(a)) {
     vars["--accent"] = a;

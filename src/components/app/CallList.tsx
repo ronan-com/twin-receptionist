@@ -12,7 +12,29 @@ import { tzDateTime } from "@/lib/app/business-logic";
 import type { CallListRow } from "@/lib/app/types";
 import { CallStatusBadge, OutcomeBadge } from "./StatusBadge";
 import { EmptyState } from "./primitives";
+import type { Hue } from "./hues";
 import { Skeleton } from "@/components/ui/skeleton";
+
+function callHue(call: CallListRow): Hue {
+  switch (call.outcome) {
+    case "booked":
+      return "cyan";
+    case "lead_captured":
+      return "magenta";
+    case "transferred":
+    case "unresolved":
+      return "coral";
+    case "callback_requested":
+      return "amber";
+    case "voicemail":
+    case "no_answer":
+    case "spam":
+      return "slate";
+    case "resolved":
+      return "indigo";
+  }
+  return call.status === "failed" || call.status === "missed" ? "coral" : "indigo";
+}
 
 const columns =
   "md:grid-cols-[minmax(0,1.1fr)_minmax(0,1.8fr)_minmax(0,1fr)_minmax(0,.9fr)]";
@@ -89,19 +111,16 @@ export function CallList({
                 onClick={() => onOpen(call.id)}
                 aria-haspopup="dialog"
                 className={cn(
-                  "grid w-full min-w-0 gap-2.5 px-4 py-4 text-left outline-none transition-colors hover:bg-[#f8f7ff] focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-indigo motion-reduce:transition-none md:items-center md:gap-4",
+                  "row-hover grid w-full min-w-0 gap-2.5 px-4 py-4 text-left outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-indigo motion-reduce:transition-none md:items-center md:gap-4",
                   columns,
-                  selectedId === call.id && "bg-[#f4f3ff]",
+                  selectedId === call.id && "bg-[color-mix(in_srgb,var(--indigo)_8%,#fff)]",
                 )}
               >
                 <span className="flex min-w-0 items-center gap-2.5">
+                  {/* Arrow = direction; colour = how the call ended (matches its outcome chip). */}
                   <span
-                    className={cn(
-                      "flex h-8 w-8 shrink-0 items-center justify-center rounded-lg",
-                      call.direction === "inbound"
-                        ? "bg-[#efeeff] text-indigo"
-                        : "bg-[#e6f6ff] text-[#0b5d87]",
-                    )}
+                    data-hue={callHue(call)}
+                    className="hue-icon flex h-8 w-8 shrink-0 items-center justify-center rounded-lg"
                   >
                     {call.direction === "inbound" ? (
                       <ArrowDownLeft

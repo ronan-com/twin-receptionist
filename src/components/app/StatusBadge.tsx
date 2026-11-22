@@ -23,18 +23,41 @@ import {
 } from "@/lib/app/constants";
 import { titleCase } from "@/lib/app/format";
 
-export type Tone = "neutral" | "success" | "info" | "warning" | "danger" | "indigo" | "muted" | "live";
+export type Tone = "neutral" | "success" | "info" | "warning" | "danger" | "indigo" | "muted" | "live" | "cyan" | "magenta" | "coral";
 
+// Status colours mean the same thing everywhere:
+//   live / on / active / connected = green, pending / waiting / needs setup = amber,
+//   paused / off / not started = grey, failed / error = red.
+// The extra hues (indigo, cyan, magenta, coral) are for categories such as call
+// outcomes, and match the chart colours for the same thing.
 const TONES: Record<Tone, string> = {
   neutral: "bg-canvas-2 text-ink border-hairline",
-  muted: "bg-canvas-2 text-ink-muted border-hairline",
-  success: "bg-[#e6f8f1] text-[#0e6245] border-[#c8eedf]",
+  muted: "bg-[#f1f4f8] text-[#4a5b6e] border-[#e1e6ed]",
+  success: "bg-[#e3f7ee] text-[#0b6142] border-[#c3ecd9]",
   info: "bg-[#e6f6ff] text-[#0b5d87] border-[#c5e7fb]",
-  warning: "bg-[#fff4e0] text-[#8a4b00] border-[#ffe1b0]",
-  danger: "bg-[#ffecec] text-[#a41d1d] border-[#ffd0d0]",
-  indigo: "bg-[#efeeff] text-[#4338ca] border-[#dcdaff]",
-  live: "bg-[#e6f8f1] text-[#0e6245] border-[#c8eedf]",
+  warning: "bg-[#fff3dc] text-[#7f4a00] border-[#ffdfa6]",
+  danger: "bg-[#ffeceb] text-[#a3231b] border-[#ffcfcb]",
+  indigo: "bg-[color-mix(in_srgb,var(--indigo)_11%,#fff)] text-[var(--primary-ink)] border-[color-mix(in_srgb,var(--indigo)_24%,#fff)]",
+  live: "bg-[#e3f7ee] text-[#0b6142] border-[#c3ecd9]",
+  cyan: "bg-[#e0f8ff] text-[#0a6680] border-[#b8ecfa]",
+  magenta: "bg-[#ffebf4] text-[#a8125b] border-[#ffcfe4]",
+  coral: "bg-[#fff0eb] text-[#a8391a] border-[#ffd6c9]",
 };
+
+/** One tone per state word, so every page colours a status the same way. */
+export const STATE_TONE = {
+  live: "success",
+  on: "success",
+  active: "success",
+  connected: "success",
+  pending: "warning",
+  waiting: "warning",
+  needs_setup: "warning",
+  paused: "muted",
+  off: "muted",
+  failed: "danger",
+  error: "danger",
+} as const satisfies Record<string, Tone>;
 
 export function StatusBadge({
   tone = "neutral",
@@ -77,8 +100,9 @@ export function callStatusTone(s: CallStatus): Tone {
     case "voicemail":
       return "info";
     case "missed":
+      return "coral";
     case "cancelled":
-      return "warning";
+      return "muted";
     case "failed":
       return "danger";
   }
@@ -88,14 +112,16 @@ export const CallStatusBadge = ({ status }: { status: CallStatus }) => (
 );
 
 export function outcomeTone(o: CallOutcome | null): Tone {
+  // Same colours as the outcome chart (OUTCOME_COLORS).
   switch (o) {
     case "resolved":
       return "indigo";
     case "booked":
-      return "success";
+      return "cyan";
     case "lead_captured":
-      return "info";
+      return "magenta";
     case "transferred":
+      return "coral";
     case "callback_requested":
       return "warning";
     case "voicemail":
@@ -139,7 +165,7 @@ export const ProviderStatusBadge = ({ status }: { status: ProviderStatus }) => {
 };
 
 export const AgentStatusBadge = ({ status }: { status: AgentStatus }) => {
-  const tone: Tone = status === "active" ? "success" : status === "paused" ? "warning" : status === "disabled" ? "danger" : "muted";
+  const tone: Tone = status === "active" ? "success" : "muted";
   return <StatusBadge tone={tone} dot={status === "active"}>{titleCase(status)}</StatusBadge>;
 };
 

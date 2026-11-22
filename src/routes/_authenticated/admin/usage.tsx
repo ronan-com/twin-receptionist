@@ -34,7 +34,7 @@ function UsagePage() {
 
   const bizCols: Column<BizUsage>[] = [
     { key: "biz", header: "Client", cell: (b) => <BizCell biz={b} showAgency={platform} /> },
-    { key: "status", header: "Status", hideBelow: "sm", cell: (b) => <StatusBadge tone={b.status === "active" ? "success" : "warning"}>{b.status === "active" ? "Active" : "Paused"}</StatusBadge> },
+    { key: "status", header: "Status", hideBelow: "sm", cell: (b) => <StatusBadge tone={b.status === "active" ? "success" : "muted"}>{b.status === "active" ? "Active" : "Paused"}</StatusBadge> },
     { key: "calls", header: "Calls", align: "right", cell: (b) => <span className="tabular-nums">{fmtNumber(b.calls)}</span> },
     { key: "minutes", header: "Minutes", align: "right", cell: (b) => <span className="tabular-nums">{fmtNumber(b.minutes)}</span> },
     { key: "texts", header: "Texts", align: "right", hideBelow: "md", cell: (b) => <span className="tabular-nums">{fmtNumber(b.texts)}</span> },

@@ -65,7 +65,7 @@ export function DataTable<T>({
       <div className="w-full overflow-x-auto">
         <table className="w-full min-w-[520px] border-collapse text-[13px]">
           <thead>
-            <tr className="border-b border-hairline bg-canvas-2/60">
+            <tr className="border-b border-hairline bg-[linear-gradient(180deg,#f8fafd,#f3f6fa)]">
               {columns.map((c) => (
                 <th
                   key={c.key}
@@ -114,9 +114,9 @@ export function DataTable<T>({
                       tabIndex={onRowClick ? 0 : undefined}
                       aria-selected={selected || undefined}
                       className={cn(
-                        "border-b border-hairline last:border-b-0",
-                        onRowClick && "cursor-pointer outline-none transition-colors hover:bg-canvas-2/70 focus-visible:bg-canvas-2",
-                        selected && "bg-[#f4f3ff]",
+                        "row-hover border-b border-hairline last:border-b-0",
+                        onRowClick && "cursor-pointer outline-none focus-visible:bg-[color-mix(in_srgb,var(--indigo)_7%,#fff)] focus-visible:shadow-[inset_3px_0_0_var(--indigo)]",
+                        selected && "bg-[color-mix(in_srgb,var(--indigo)_8%,#fff)] shadow-[inset_3px_0_0_var(--indigo)]",
                         rowClassName?.(row),
                       )}
                     >

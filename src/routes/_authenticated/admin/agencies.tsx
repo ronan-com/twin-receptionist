@@ -150,7 +150,7 @@ function AgenciesPage() {
                       <div className="flex flex-wrap items-center gap-1.5 font-medium text-ink">
                         <span className="break-words">{a.name}</span>
                         {own ? <StatusBadge tone="indigo">Your team</StatusBadge> : null}
-                        {a.suspended ? <StatusBadge tone="danger">Paused</StatusBadge> : null}
+                        {a.suspended ? <StatusBadge tone="muted" dot>Paused</StatusBadge> : null}
                         {a.sandbox ? <StatusBadge tone="warning">Test lab</StatusBadge> : null}
                       </div>
                       <div className="text-[12px] text-ink-muted">

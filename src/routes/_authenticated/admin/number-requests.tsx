@@ -315,7 +315,7 @@ function AgencyRequests() {
                     {r.status === "declined" && r.reason ? ` · “${r.reason}”` : ""}
                   </span>
                 </span>
-                <StatusBadge tone={r.status === "pending" ? "info" : r.status === "done" ? "success" : "muted"}>{r.status === "pending" ? "Waiting" : r.status === "done" ? "Connected" : "Declined"}</StatusBadge>
+                <StatusBadge tone={r.status === "pending" ? "warning" : r.status === "done" ? "success" : "muted"}>{r.status === "pending" ? "Waiting" : r.status === "done" ? "Connected" : "Declined"}</StatusBadge>
               </li>
             ))}
           </ul>

@@ -114,13 +114,13 @@ function ClientsPage() {
       header: "Status",
       cell: (b) =>
         b.onboarding_pending ? (
-          <StatusBadge tone="info" dot>
+          <StatusBadge tone="warning" dot>
             <span data-onboarding="pending">Waiting for client to finish setup</span>
           </StatusBadge>
         ) : b.receptionists.length === 0 ? (
           <StatusBadge tone="muted">Setting up</StatusBadge>
         ) : (
-          <StatusBadge tone={b.status === "active" ? "success" : "warning"} dot>
+          <StatusBadge tone={b.status === "active" ? "success" : "muted"} dot>
             {b.status === "active" ? "Active" : "Paused"}
           </StatusBadge>
         ),

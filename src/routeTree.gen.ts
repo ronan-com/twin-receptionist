@@ -33,6 +33,7 @@ import { Route as AuthenticatedAdminReceptionistsRouteImport } from './routes/_a
 import { Route as AuthenticatedAdminSettingsRouteImport } from './routes/_authenticated/admin/settings'
 import { Route as AuthenticatedAdminSystemRouteImport } from './routes/_authenticated/admin/system'
 import { Route as AuthenticatedAdminTestLabRouteImport } from './routes/_authenticated/admin/test-lab'
+import { Route as AuthenticatedAdminUsageRouteImport } from './routes/_authenticated/admin/usage'
 import { Route as AuthenticatedAdminVoicesRouteImport } from './routes/_authenticated/admin/voices'
 import { Route as AuthenticatedAppIndexRouteImport } from './routes/_authenticated/app/index'
 import { Route as AuthenticatedAppAnalyticsRouteImport } from './routes/_authenticated/app/analytics'
@@ -47,6 +48,7 @@ import { Route as AuthenticatedAppSettingsRouteImport } from './routes/_authenti
 import { Route as AuthenticatedAppTeamRouteImport } from './routes/_authenticated/app/team'
 import { Route as AuthenticatedAdminClientsIndexRouteImport } from './routes/_authenticated/admin/clients.index'
 import { Route as AuthenticatedAdminClientsBusinessIdRouteImport } from './routes/_authenticated/admin/clients.$businessId'
+import { Route as AuthenticatedAdminClientsNewRouteImport } from './routes/_authenticated/admin/clients.new'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -177,6 +179,11 @@ const AuthenticatedAdminTestLabRoute =
     path: '/test-lab',
     getParentRoute: () => AuthenticatedAdminRouteRoute,
   } as any)
+const AuthenticatedAdminUsageRoute = AuthenticatedAdminUsageRouteImport.update({
+  id: '/usage',
+  path: '/usage',
+  getParentRoute: () => AuthenticatedAdminRouteRoute,
+} as any)
 const AuthenticatedAdminVoicesRoute =
   AuthenticatedAdminVoicesRouteImport.update({
     id: '/voices',
@@ -257,6 +264,12 @@ const AuthenticatedAdminClientsBusinessIdRoute =
     path: '/clients/$businessId',
     getParentRoute: () => AuthenticatedAdminRouteRoute,
   } as any)
+const AuthenticatedAdminClientsNewRoute =
+  AuthenticatedAdminClientsNewRouteImport.update({
+    id: '/clients/new',
+    path: '/clients/new',
+    getParentRoute: () => AuthenticatedAdminRouteRoute,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -281,6 +294,7 @@ export interface FileRoutesByFullPath {
   '/admin/settings': typeof AuthenticatedAdminSettingsRoute
   '/admin/system': typeof AuthenticatedAdminSystemRoute
   '/admin/test-lab': typeof AuthenticatedAdminTestLabRoute
+  '/admin/usage': typeof AuthenticatedAdminUsageRoute
   '/admin/voices': typeof AuthenticatedAdminVoicesRoute
   '/app/analytics': typeof AuthenticatedAppAnalyticsRoute
   '/app/bookings': typeof AuthenticatedAppBookingsRoute
@@ -295,6 +309,7 @@ export interface FileRoutesByFullPath {
   '/admin/': typeof AuthenticatedAdminIndexRoute
   '/app/': typeof AuthenticatedAppIndexRoute
   '/admin/clients/$businessId': typeof AuthenticatedAdminClientsBusinessIdRoute
+  '/admin/clients/new': typeof AuthenticatedAdminClientsNewRoute
   '/admin/clients/': typeof AuthenticatedAdminClientsIndexRoute
 }
 export interface FileRoutesByTo {
@@ -318,6 +333,7 @@ export interface FileRoutesByTo {
   '/admin/settings': typeof AuthenticatedAdminSettingsRoute
   '/admin/system': typeof AuthenticatedAdminSystemRoute
   '/admin/test-lab': typeof AuthenticatedAdminTestLabRoute
+  '/admin/usage': typeof AuthenticatedAdminUsageRoute
   '/admin/voices': typeof AuthenticatedAdminVoicesRoute
   '/app/analytics': typeof AuthenticatedAppAnalyticsRoute
   '/app/bookings': typeof AuthenticatedAppBookingsRoute
@@ -332,6 +348,7 @@ export interface FileRoutesByTo {
   '/admin': typeof AuthenticatedAdminIndexRoute
   '/app': typeof AuthenticatedAppIndexRoute
   '/admin/clients/$businessId': typeof AuthenticatedAdminClientsBusinessIdRoute
+  '/admin/clients/new': typeof AuthenticatedAdminClientsNewRoute
   '/admin/clients': typeof AuthenticatedAdminClientsIndexRoute
 }
 export interface FileRoutesById {
@@ -359,6 +376,7 @@ export interface FileRoutesById {
   '/_authenticated/admin/settings': typeof AuthenticatedAdminSettingsRoute
   '/_authenticated/admin/system': typeof AuthenticatedAdminSystemRoute
   '/_authenticated/admin/test-lab': typeof AuthenticatedAdminTestLabRoute
+  '/_authenticated/admin/usage': typeof AuthenticatedAdminUsageRoute
   '/_authenticated/admin/voices': typeof AuthenticatedAdminVoicesRoute
   '/_authenticated/app/analytics': typeof AuthenticatedAppAnalyticsRoute
   '/_authenticated/app/bookings': typeof AuthenticatedAppBookingsRoute
@@ -373,6 +391,7 @@ export interface FileRoutesById {
   '/_authenticated/admin/': typeof AuthenticatedAdminIndexRoute
   '/_authenticated/app/': typeof AuthenticatedAppIndexRoute
   '/_authenticated/admin/clients/$businessId': typeof AuthenticatedAdminClientsBusinessIdRoute
+  '/_authenticated/admin/clients/new': typeof AuthenticatedAdminClientsNewRoute
   '/_authenticated/admin/clients/': typeof AuthenticatedAdminClientsIndexRoute
 }
 export interface FileRouteTypes {
@@ -400,6 +419,7 @@ export interface FileRouteTypes {
     | '/admin/settings'
     | '/admin/system'
     | '/admin/test-lab'
+    | '/admin/usage'
     | '/admin/voices'
     | '/app/analytics'
     | '/app/bookings'
@@ -414,6 +434,7 @@ export interface FileRouteTypes {
     | '/admin/'
     | '/app/'
     | '/admin/clients/$businessId'
+    | '/admin/clients/new'
     | '/admin/clients/'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -437,6 +458,7 @@ export interface FileRouteTypes {
     | '/admin/settings'
     | '/admin/system'
     | '/admin/test-lab'
+    | '/admin/usage'
     | '/admin/voices'
     | '/app/analytics'
     | '/app/bookings'
@@ -451,6 +473,7 @@ export interface FileRouteTypes {
     | '/admin'
     | '/app'
     | '/admin/clients/$businessId'
+    | '/admin/clients/new'
     | '/admin/clients'
   id:
     | '__root__'
@@ -477,6 +500,7 @@ export interface FileRouteTypes {
     | '/_authenticated/admin/settings'
     | '/_authenticated/admin/system'
     | '/_authenticated/admin/test-lab'
+    | '/_authenticated/admin/usage'
     | '/_authenticated/admin/voices'
     | '/_authenticated/app/analytics'
     | '/_authenticated/app/bookings'
@@ -491,6 +515,7 @@ export interface FileRouteTypes {
     | '/_authenticated/admin/'
     | '/_authenticated/app/'
     | '/_authenticated/admin/clients/$businessId'
+    | '/_authenticated/admin/clients/new'
     | '/_authenticated/admin/clients/'
   fileRoutesById: FileRoutesById
 }
@@ -675,6 +700,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedAdminTestLabRouteImport
       parentRoute: typeof AuthenticatedAdminRouteRoute
     }
+    '/_authenticated/admin/usage': {
+      id: '/_authenticated/admin/usage'
+      path: '/usage'
+      fullPath: '/admin/usage'
+      preLoaderRoute: typeof AuthenticatedAdminUsageRouteImport
+      parentRoute: typeof AuthenticatedAdminRouteRoute
+    }
     '/_authenticated/admin/voices': {
       id: '/_authenticated/admin/voices'
       path: '/voices'
@@ -773,6 +805,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedAdminClientsBusinessIdRouteImport
       parentRoute: typeof AuthenticatedAdminRouteRoute
     }
+    '/_authenticated/admin/clients/new': {
+      id: '/_authenticated/admin/clients/new'
+      path: '/clients/new'
+      fullPath: '/admin/clients/new'
+      preLoaderRoute: typeof AuthenticatedAdminClientsNewRouteImport
+      parentRoute: typeof AuthenticatedAdminRouteRoute
+    }
   }
 }
 
@@ -789,9 +828,11 @@ interface AuthenticatedAdminRouteRouteChildren {
   AuthenticatedAdminSettingsRoute: typeof AuthenticatedAdminSettingsRoute
   AuthenticatedAdminSystemRoute: typeof AuthenticatedAdminSystemRoute
   AuthenticatedAdminTestLabRoute: typeof AuthenticatedAdminTestLabRoute
+  AuthenticatedAdminUsageRoute: typeof AuthenticatedAdminUsageRoute
   AuthenticatedAdminVoicesRoute: typeof AuthenticatedAdminVoicesRoute
   AuthenticatedAdminIndexRoute: typeof AuthenticatedAdminIndexRoute
   AuthenticatedAdminClientsBusinessIdRoute: typeof AuthenticatedAdminClientsBusinessIdRoute
+  AuthenticatedAdminClientsNewRoute: typeof AuthenticatedAdminClientsNewRoute
   AuthenticatedAdminClientsIndexRoute: typeof AuthenticatedAdminClientsIndexRoute
 }
 
@@ -810,10 +851,12 @@ const AuthenticatedAdminRouteRouteChildren: AuthenticatedAdminRouteRouteChildren
     AuthenticatedAdminSettingsRoute: AuthenticatedAdminSettingsRoute,
     AuthenticatedAdminSystemRoute: AuthenticatedAdminSystemRoute,
     AuthenticatedAdminTestLabRoute: AuthenticatedAdminTestLabRoute,
+    AuthenticatedAdminUsageRoute: AuthenticatedAdminUsageRoute,
     AuthenticatedAdminVoicesRoute: AuthenticatedAdminVoicesRoute,
     AuthenticatedAdminIndexRoute: AuthenticatedAdminIndexRoute,
     AuthenticatedAdminClientsBusinessIdRoute:
       AuthenticatedAdminClientsBusinessIdRoute,
+    AuthenticatedAdminClientsNewRoute: AuthenticatedAdminClientsNewRoute,
     AuthenticatedAdminClientsIndexRoute: AuthenticatedAdminClientsIndexRoute,
   }
 

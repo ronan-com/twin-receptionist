@@ -1,5 +1,5 @@
 import type { Business } from "../../src/lib/shared";
-import { industry } from "../../src/lib/shared";
+import { defaultHours, industry } from "../../src/lib/shared";
 import { AuthError, emailOf, hashPassword, passwordOf, sessionCookie, signUp, startSession, textOf } from "../accounts";
 import { industryKeyOf } from "../answered";
 import { audit } from "../audit";
@@ -19,7 +19,7 @@ import { readBody } from "./http";
 
 export type SignupDeps = {
   /** The same path as POST /api/clients (server/index.ts createClient). */
-  createClient: (orgId: string, input: unknown, opts?: { defaultVoice?: boolean }) => Promise<Business>;
+  createClient: (orgId: string, input: unknown, opts?: { quick?: boolean }) => Promise<Business>;
 };
 
 const LIMIT = Number(process.env.SIGNUP_LIMIT_PER_HOUR ?? 5);
@@ -118,13 +118,14 @@ async function business(req: Request, input: any, ip: string, deps: SignupDeps):
       {
         businessName,
         industry: key,
+        hours: defaultHours(key),
         suburb: textOf(input?.suburb, 60),
         timezone: input?.timezone,
         services: industry(key).services,
         receptionistName: textOf(input?.receptionistName, 30) || "Mia",
         voiceId: input?.voiceId,
       },
-      { defaultVoice: true },
+      { quick: true },
     ),
   );
   const userId = crypto.randomUUID();

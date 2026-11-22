@@ -5,6 +5,7 @@ import { AppShell } from "@/components/app/AppShell";
 import { WorkspaceSwitcher } from "@/components/app/WorkspaceSwitcher";
 import { DateRangeSelect } from "@/components/app/DateRangeSelect";
 import { Notice, ErrorState } from "@/components/app/primitives";
+import { SetupPrompt } from "@/components/app/SetupPrompt";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { CLIENT_NAV } from "@/lib/app/constants";
@@ -125,7 +126,10 @@ function ClientAppLayout() {
       notifications={notifications}
     >
       {ws.business ? (
-        <Outlet />
+        <>
+          <SetupPrompt />
+          <Outlet />
+        </>
       ) : (
         <div className="mx-auto max-w-lg py-16">
           <Notice tone="neutral" title="No business yet" action={<Button size="sm" variant="outline" onClick={() => void ws.signOut()}>Sign out</Button>}>

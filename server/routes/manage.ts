@@ -143,6 +143,9 @@ async function answeredAgent(c: Business, paused: boolean, voices?: Voice[]) {
     updated_at: now,
     // Ours: a demo receptionist never reaches the phone provider.
     demo: isDemo(c.assistantId),
+    // Ours: nothing has been saved since the receptionist was made (sign-up defaults),
+    // so the workspace offers the first-run "finish setting up" prompt.
+    setup_fresh: c.createdAt === c.updatedAt,
   };
 }
 

@@ -19,7 +19,7 @@ import { api } from "./base";
 // under /api/manage/<businessId>/... Every write is checked again on the server
 // (managers, agency staff and the platform team; viewers are read-only).
 
-export type AgentRow = Agent & { voice: Voice | null; voice_config: VoiceConfig | null; demo?: boolean };
+export type AgentRow = Agent & { voice: Voice | null; voice_config: VoiceConfig | null; demo?: boolean; setup_fresh?: boolean };
 export type PhoneNumberRow = PhoneNumber & { agent: Pick<Agent, "id" | "name"> | null };
 export type TeamMember = MemberRow & { access_role: "manager" | "viewer" };
 export type TeamInvitation = Invitation & { access_role: "manager" | "viewer" };

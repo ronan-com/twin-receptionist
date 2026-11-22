@@ -9,3 +9,6 @@
 	}
 	reverse_proxy app:8791
 }
+
+# Extra sites (e.g. the isolated Answered build) drop their own file in /opt/twin/sites.
+import /etc/caddy/sites/*.caddy

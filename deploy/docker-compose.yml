@@ -22,6 +22,7 @@ services:
       SITE_HOSTS: ${SITE_HOSTS}
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./sites:/etc/caddy/sites:ro
       - caddy-data:/data
       - caddy-config:/config
     depends_on: [app]

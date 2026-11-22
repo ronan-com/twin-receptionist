@@ -88,7 +88,7 @@ function ClientAppLayout() {
         <div className="border-b border-[#dcdaff] bg-[#f4f3ff] px-4 py-2 text-[12.5px] text-[#4338ca]">
           <div className="mx-auto flex max-w-[1400px] flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
             <span>
-              <span className="font-semibold">Staff view.</span> You're viewing <span className="font-medium">{ws.business.name}</span> as the platform team. This is read only.
+              <span className="font-semibold">Staff view.</span> You're viewing <span className="font-medium">{ws.business.name}</span> as {ws.isPlatformAdmin ? "the platform team" : "their agency"}. This is read only.
             </span>
             <button type="button" onClick={() => void ws.exitView()} className="self-start font-medium underline-offset-2 hover:underline sm:self-auto">
               Exit view

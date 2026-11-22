@@ -43,6 +43,10 @@ let deps: ManageDeps | null = null;
 export function setManageDeps(d: ManageDeps): void {
   deps = d;
 }
+/** For other route modules (e.g. the console renaming a client). */
+export function manageDeps(): ManageDeps | null {
+  return deps;
+}
 function need(): ManageDeps {
   if (!deps) throw new Error("manage routes used before setManageDeps");
   return deps;
@@ -987,8 +991,9 @@ async function brandState(orgId: string, clientId: string) {
     agency: { ...agency, ...agencyC },
     effective: {
       ...effective,
-      primaryColor: ownC.primaryColor || agencyC.primaryColor,
-      accentColor: ownC.accentColor || agencyC.accentColor,
+      // resolveBrand covers receptionist, then its company (console), then the agency.
+      primaryColor: effective.primaryColor || ownC.primaryColor || agencyC.primaryColor,
+      accentColor: effective.accentColor || ownC.accentColor || agencyC.accentColor,
     },
   };
 }

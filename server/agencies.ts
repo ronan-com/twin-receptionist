@@ -64,9 +64,16 @@ export async function listAgencies(ctx: Ctx): Promise<Agency[]> {
 
 // Step into an agency (or one business's customer view) from the master admin. Read-only.
 export async function viewAs(ctx: Ctx, input: any): Promise<void> {
-  onlyPlatform(ctx);
   const orgId = String(input?.orgId ?? "");
   const clientId = input?.clientId ? String(input.clientId) : null;
+  if (!ctx.user.platformAdmin) {
+    // Agency owners and admins may see one of their own clients' workspaces (read-only),
+    // never another agency and never an agency-level view.
+    if (ctx.viewing) throw new AuthError("Exit the current view first.", 403);
+    requireRole(ctx, "admin");
+    if (!clientId) throw new AuthError("Choose one of your clients to view.", 403);
+    if (orgId !== ctx.org?.id) throw new AuthError("That client isn't in your agency.", 403);
+  }
   if (!/^[a-f0-9-]{36}$/.test(orgId) || (clientId && !/^[a-f0-9-]{36}$/.test(clientId))) throw new ValidationError("Unknown agency.");
   const [o] = await sql`select 1 from orgs where id = ${orgId}`;
   if (!o) throw new ValidationError("Unknown agency.");

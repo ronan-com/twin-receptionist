@@ -123,6 +123,9 @@ export type Business = {
   connect?: { tokenHash: string; expiresAt: string; createdAt: string };
   // Numbers Telnyx reports as connected, refreshed whenever the phone number card loads.
   phoneNumbers?: string[];
+  // Made from the console's "send the client an onboarding link": "pending" until the
+  // client finishes setting it up in their workspace, then "done".
+  onboarding?: "pending" | "done";
   createdAt: string;
   updatedAt: string;
 };
@@ -433,7 +436,15 @@ export function blankSettings(): Settings {
 // "customer" is the end business: read-only, sees only their own receptionist.
 export type OrgRole = "owner" | "admin" | "member" | "customer";
 
-export type Brand = { logo: string; bgColor: string; bgImage: string };
+export type Brand = {
+  logo: string;
+  bgColor: string;
+  bgImage: string;
+  /** Brand colours (#rrggbb, "" = the default). */
+  primaryColor?: string;
+  accentColor?: string;
+  sidebarColor?: string;
+};
 
 export type Viewing = { org: string; client: string | null; business: string };
 

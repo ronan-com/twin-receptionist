@@ -216,7 +216,9 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const exitView = useCallback(async () => {
     await authApi.exitView();
     await queryClient.cancelQueries();
-    queryClient.clear();
+    // Reset (not just clear) so the mounted console refetches the session: exiting an
+    // agency view from /admin stays on /admin and must switch back to the platform console.
+    await queryClient.resetQueries();
     navigate({ to: "/admin", replace: true });
   }, [queryClient, navigate]);
 

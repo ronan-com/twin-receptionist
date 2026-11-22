@@ -179,7 +179,7 @@ export const updateAccount = (body: { name?: string; currentPassword?: string; n
 
 /* ---------------- Branding (the business's own workspace look) ---------------- */
 
-export type BrandLook = { logo: string; bgColor: string; bgImage: string; primaryColor: string; accentColor: string };
+export type BrandLook = { logo: string; bgColor: string; bgImage: string; primaryColor: string; accentColor: string; /** Set per company in the console. */ sidebarColor?: string };
 /** own: set on this business; agency: the agency's defaults; effective: what the workspace shows. */
 export type BrandState = { own: BrandLook; agency: BrandLook; effective: BrandLook };
 export type BrandChange = { bgColor?: string; primaryColor?: string; accentColor?: string; removeLogo?: boolean; removeBackground?: boolean };

@@ -68,13 +68,18 @@ export function WorkspaceBrand() {
     if (look?.bgColor && HEX.test(look.bgColor)) bg.push(`background-color: ${look.bgColor};`);
     // The image URL comes from our own server (/brand/<uuid>).
     if (look?.bgImage && /^\/brand\/[a-f0-9-]{36}$/.test(look.bgImage)) bg.push(`background-image: url("${look.bgImage}"); background-size: cover; background-position: center; background-attachment: fixed;`);
-    if (bg.length) {
+    // A sidebar colour (set per company in the console); light text on a dark one.
+    const side = look?.sidebarColor && HEX.test(look.sidebarColor) ? look.sidebarColor : "";
+    const sideRule = side
+      ? `[data-app-shell] aside { background: ${side} !important;${textOn(side) === "#ffffff" ? " --ink: #ffffff; --ink-muted: rgba(255,255,255,0.75); --hairline: rgba(255,255,255,0.18);" : ""} }`
+      : "";
+    if (bg.length || side) {
       if (!style) {
         style = document.createElement("style");
         style.id = STYLE_ID;
         document.head.appendChild(style);
       }
-      style.textContent = `[data-app-shell] { ${bg.join(" ")} }`;
+      style.textContent = `${bg.length ? `[data-app-shell] { ${bg.join(" ")} }` : ""}\n${sideRule}`;
     } else style?.remove();
     return () => {
       for (const k of Object.keys(vars)) root.style.removeProperty(k);

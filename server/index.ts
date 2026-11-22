@@ -40,7 +40,7 @@ import { callDetail, listCalls } from "./calls";
 import { startCallSync } from "./callsync";
 import { industryKeyOf, workspaceBusinesses } from "./answered";
 import { audit } from "./audit";
-import { consoleRoutes } from "./routes/console";
+import { consoleRoutes, isClientPaused } from "./routes/console";
 import { manageRoutes, setManageDeps } from "./routes/manage";
 import { signupRoutes } from "./routes/signup";
 import { automationHooks, automationRoutes } from "./routes/automations";
@@ -260,6 +260,8 @@ async function hook(req: Request, clientId: string, action: string): Promise<Res
   if (!client || !tokenMatches(client.booking, req.headers.get("x-twin-key"))) return json({ error: "Not found" }, 404);
   const orgId = await orgOfClient(clientId);
   if (orgId && (await isSuspended(orgId))) return json({ error: "This service is paused. Take a message instead." });
+  // One business paused from the console (clients.paused_at).
+  if (await isClientPaused(clientId)) return json({ error: "This service is paused. Take a message instead." });
   enterOrg(orgId);
   if (client.settings.paused && action !== "callback") return json({ error: "The receptionist is paused, so nothing can be booked. Take a message with request_callback instead." });
   if (!client.booking!.enabled) return json({ error: "Booking is switched off. Offer to take a message instead." });
@@ -655,7 +657,7 @@ async function route(req: Request, server?: { requestIP(r: Request): { address: 
     if (area[1] === "console") {
       // Agency staff and the platform team only.
       if (ctx.role === "customer" && !ctx.user.platformAdmin) return json({ error: "Not allowed." }, 403);
-      return (await consoleRoutes(base)) ?? json({ error: "Not found" }, 404);
+      return (await consoleRoutes(base, { createClient })) ?? json({ error: "Not found" }, 404);
     }
     let rest = area[2] ?? "";
     let client: Business | null = null;
@@ -668,6 +670,10 @@ async function route(req: Request, server?: { requestIP(r: Request): { address: 
       ({ client, orgId: clientOrgId, access } = found);
       if (access === "viewer" && method !== "GET" && method !== "HEAD") {
         return json({ error: "Your access to this business is view-only. Ask a manager to change it." }, 403);
+      }
+      // Paused from the console: the business can look but not change anything.
+      if (access === "manager" && method !== "GET" && method !== "HEAD" && (await isClientPaused(client!.id))) {
+        return json({ error: "This business is paused. Contact your agency to resume it." }, 403);
       }
       if (clientOrgId !== orgId) enterOrg(clientOrgId);
       rest = one[2] ?? "";
@@ -892,7 +898,7 @@ async function route(req: Request, server?: { requestIP(r: Request): { address: 
         try {
           return Response.redirect(await dashboardSignInStart(provider, orgId, client), 302);
         } catch (err) {
-          return redirectTo(`/clients/${client.id}?error=${encodeURIComponent((err as Error).message)}`);
+          return redirectTo(`/admin/clients/${client.id}?error=${encodeURIComponent((err as Error).message)}`);
         }
       }
     } else if (match[2] === "/booking/test") {

@@ -1,4 +1,6 @@
-import type { CallSummary } from "../src/lib/shared";
+import type { Business, CallMessage, CallSummary } from "../src/lib/shared";
+import { callSummary } from "./numbers";
+import { ValidationError } from "./prompt";
 import { demoCallDetail, demoCalls, isDemo } from "./sandbox";
 import { telnyx } from "./telnyx";
 
@@ -48,4 +50,27 @@ const DEMO_OUTCOMES: Record<string, { outcome: string; seconds: number }> = {
 export function demoExtras(id: string): { outcome: string | null; seconds: number | null; summary: string } {
   const d = DEMO_OUTCOMES[id];
   return { outcome: d?.outcome ?? null, seconds: d ? d.seconds : null, summary: demoCallDetail(id).summary };
+}
+
+// One conversation's transcript and summary. Only for calls that belong to this
+// receptionist (the provider's assistant id must match). Call inside the org scope.
+export async function callDetail(
+  business: Business,
+  conversationId: string,
+): Promise<{ summary: string; messages: CallMessage[] }> {
+  if (!/^[A-Za-z0-9-]{8,80}$/.test(conversationId)) throw new ValidationError("Unknown call.");
+  if (isDemo(business.assistantId)) return demoCallDetail(conversationId);
+  const convo = await telnyx<{ data?: any }>("GET", `/ai/conversations/${conversationId}`);
+  if ((convo.data?.metadata ?? {}).assistant_id !== business.assistantId) throw new ValidationError("Unknown call.");
+
+  const [res, summary] = await Promise.all([
+    telnyx<{ data?: any[] }>("GET", `/ai/conversations/${conversationId}/messages`),
+    // The summary is a nice-to-have; never let it block the transcript.
+    callSummary(conversationId).catch(() => ""),
+  ]);
+  const messages = (res.data ?? [])
+    .filter((m) => (m.role === "user" || m.role === "assistant") && (m.text || m.content))
+    .map((m) => ({ role: m.role, text: String(m.text ?? m.content), at: m.sent_at ?? m.created_at ?? "" }))
+    .sort((a, b) => a.at.localeCompare(b.at));
+  return { summary, messages };
 }

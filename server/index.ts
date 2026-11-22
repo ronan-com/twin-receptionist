@@ -1,4 +1,4 @@
-import type { Business, CallMessage, NumberState, Settings, Voice } from "../src/lib/shared";
+import type { Business, NumberState, Settings, Voice } from "../src/lib/shared";
 import { existsSync, statSync } from "node:fs";
 import { join, normalize } from "node:path";
 import {
@@ -31,12 +31,12 @@ import {
 import { isLocal } from "./auth";
 import { migrate, sql } from "./db";
 import { checkEmail, connectEmail, connectedClientIds, disconnectEmail, emailStatus } from "./email";
-import { availableNumbers, buyNumber, callSummary, connectedNumbers, openOrders, voiceAppFor } from "./numbers";
+import { availableNumbers, buyNumber, connectedNumbers, openOrders, voiceAppFor } from "./numbers";
 import { ValidationError, buildInstructions, normaliseSettings } from "./prompt";
 import { clientsWithBooking, getClient, getOrgClient, insertClient, listClients, orgOfClient, removeClient, saveClient } from "./store";
 import { TelnyxError, enterOrg, hasKey, runAsOrg, telnyx } from "./telnyx";
-import { createTestLogins, demoCallDetail, ensureSandbox, fakeProvider, isDemo, resetSandbox, sandboxOrgId } from "./sandbox";
-import { listCalls } from "./calls";
+import { createTestLogins, ensureSandbox, fakeProvider, isDemo, resetSandbox, sandboxOrgId } from "./sandbox";
+import { callDetail, listCalls } from "./calls";
 import { startCallSync } from "./callsync";
 import { workspaceBusinesses } from "./answered";
 import { audit } from "./audit";
@@ -344,28 +344,6 @@ async function updateClient(existing: Business, input: unknown): Promise<Busines
   const client: Business = { ...existing, settings, instructions, updatedAt: new Date().toISOString() };
   await saveClient(client);
   return client;
-}
-
-async function callDetail(
-  business: Business,
-  conversationId: string,
-): Promise<{ summary: string; messages: CallMessage[] }> {
-  if (!/^[A-Za-z0-9-]{8,80}$/.test(conversationId)) throw new ValidationError("Unknown call.");
-  if (isDemo(business.assistantId)) return demoCallDetail(conversationId);
-  // Only return transcripts for calls that belong to this client's receptionist.
-  const convo = await telnyx<{ data?: any }>("GET", `/ai/conversations/${conversationId}`);
-  if ((convo.data?.metadata ?? {}).assistant_id !== business.assistantId) throw new ValidationError("Unknown call.");
-
-  const [res, summary] = await Promise.all([
-    telnyx<{ data?: any[] }>("GET", `/ai/conversations/${conversationId}/messages`),
-    // The summary is a nice-to-have; never let it block the transcript.
-    callSummary(conversationId).catch(() => ""),
-  ]);
-  const messages = (res.data ?? [])
-    .filter((m) => (m.role === "user" || m.role === "assistant") && (m.text || m.content))
-    .map((m) => ({ role: m.role, text: String(m.text ?? m.content), at: m.sent_at ?? m.created_at ?? "" }))
-    .sort((a, b) => a.at.localeCompare(b.at));
-  return { summary, messages };
 }
 
 async function numberState(ctx: Ctx, client: Business): Promise<NumberState> {

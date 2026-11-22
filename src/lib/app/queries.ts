@@ -2,7 +2,7 @@ import { queryOptions } from "@tanstack/react-query";
 import * as consoleApi from "@/lib/api/console";
 import * as manageApi from "@/lib/api/manage";
 import * as workspaceApi from "@/lib/api/workspace";
-import { normaliseDemoCallDetail, normaliseDemoCallListRow } from "./business-logic";
+import { normaliseDemoCallListRow } from "./business-logic";
 import type { ResolvedRange } from "./date-range";
 
 // The same query names and return shapes as Answered's original, but every query
@@ -45,15 +45,18 @@ export const adminCallsForRangeQuery = (range: ResolvedRange) =>
     queryFn: async () => (await workspaceApi.getAdminCallsForRange(range)).map(normaliseDemoCallListRow),
   });
 
-export const callDetailQuery = (callId: string | null) =>
+/** businessId: the workspace's business, or null in the console (asks /api/console). */
+export const callDetailQuery = (callId: string | null, businessId: string | null = null) =>
   queryOptions({
     queryKey: ["call", callId],
     enabled: !!callId,
     queryFn: async () => {
-      const row = await workspaceApi.getCallDetail(callId!);
+      // Our transcripts are what the phone provider captured (or the test lab's sample
+      // calls), so they're shown as they are, never regenerated for demo workspaces.
+      const row = await workspaceApi.getCallDetail(callId!, businessId);
       row.transcript_segments.sort((a, b) => a.seq - b.seq);
       row.call_events.sort((a, b) => a.occurred_at.localeCompare(b.occurred_at));
-      return normaliseDemoCallDetail(row);
+      return row;
     },
   });
 

@@ -23,6 +23,8 @@ export type Ctx = {
 };
 
 const COOKIE = "twin_sid";
+// The product name in account emails ("Answered" on the Answered build).
+const PRODUCT = process.env.PRODUCT_NAME || "Twin Receptionist";
 const SESSION_DAYS = 30;
 const INVITE_DAYS = 7;
 const RESET_MINUTES = 60;
@@ -340,7 +342,7 @@ export async function createInvite(
     role === "customer" ? `${who} gave you access to your calls` : `${who} invited you to ${orgName}`,
     role === "customer"
       ? `${who} (${orgName}) has set up your receptionist${businessName ? ` for ${businessName}` : ""}. Sign in to see every call, booking and follow-up.\n\nSet up your login:\n${url}\n\nThe link works for ${INVITE_DAYS} days.`
-      : `${who} has invited you to ${role === "owner" ? "set up and run" : "join"} ${orgName} on Twin Receptionist.\n\nAccept the invite:\n${url}\n\nThe link works for ${INVITE_DAYS} days.`,
+      : `${who} has invited you to ${role === "owner" ? "set up and run" : "join"} ${orgName} on ${PRODUCT}.\n\nAccept the invite:\n${url}\n\nThe link works for ${INVITE_DAYS} days.`,
   ).catch((err) => {
     console.error("[mail] invite", err.message);
     return false;
@@ -443,7 +445,7 @@ export async function requestReset(input: any, base: string): Promise<void> {
     values (${hashToken(token)}, ${u.id}, ${new Date(Date.now() + RESET_MINUTES * 60_000)})`;
   await sendAccountEmail(
     email,
-    "Reset your Twin Receptionist password",
+    `Reset your ${PRODUCT} password`,
     `Someone asked to reset the password for this account. If it was you, choose a new one here:\n${base}/reset/${token}\n\nThe link works for ${RESET_MINUTES} minutes. If it wasn't you, ignore this email.`,
   ).catch((err) => console.error("[mail] reset", err.message));
 }

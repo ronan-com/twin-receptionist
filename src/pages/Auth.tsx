@@ -128,7 +128,7 @@ export function SignIn({ signupOpen, firstRun, onSignedIn }: { signupOpen: boole
                 type="text"
                 required
                 autoComplete="organization"
-                placeholder="Twin Sales"
+                placeholder="Your agency name"
                 value={orgName}
                 onChange={(e) => setOrgName(e.target.value)}
               />

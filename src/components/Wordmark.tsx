@@ -15,7 +15,7 @@ export default function Wordmark({ to = "/", brand }: { to?: string; brand?: Bra
     <Link to={to} className="wordmark" aria-label={`${product.product} home`}>
       <span className="wordmark-name">
         {product.name}
-        <span className="wordmark-dot">.</span>
+        {product.dot && <span className="wordmark-dot">.</span>}
       </span>
       <span className="wordmark-sub">Receptionist</span>
     </Link>

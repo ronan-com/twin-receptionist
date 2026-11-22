@@ -264,8 +264,8 @@ async function hook(req: Request, clientId: string, action: string): Promise<Res
 function assistantFields(s: Settings, instructions: string) {
   const who = s.receptionistName || "your receptionist";
   return {
-    name: `${s.businessName} · Twin Receptionist`,
-    description: "Created by the Twin Receptionist setup.",
+    name: `${s.businessName} · ${process.env.PRODUCT_NAME || "Twin Receptionist"}`,
+    description: `Created by the ${process.env.PRODUCT_NAME || "Twin Receptionist"} setup.`,
     instructions,
     greeting: s.greeting,
     voice_settings: { voice: s.voiceId, voice_speed: 1.0 },

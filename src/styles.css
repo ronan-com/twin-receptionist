@@ -2039,3 +2039,98 @@ textarea:focus {
   flex-direction: column;
   gap: 10px;
 }
+
+/* ===================================================================
+   Answered theme (branch: answered). Light, Stripe-like palette taken
+   from the Answered AI app: white canvas, #f6f9fc panels, #e3e8ee
+   hairlines, #061b31 ink, indigo #635bff accent, Inter.
+   The token names keep their Twin names (--red is the accent).
+   =================================================================== */
+:root {
+  --bg: #f6f9fc;
+  --surface: #ffffff;
+  --card: #ffffff;
+  --card-2: #f6f9fc;
+  --border: #e3e8ee;
+  --border-strong: #cfd7df;
+  --text: #061b31;
+  --text-2: #425466;
+  --muted: #5b6b7c;
+  --red: #635bff;
+  --red-bright: #635bff;
+  --red-press: #533afd;
+  --red-soft: rgba(99, 91, 255, 0.1);
+  --red-line: rgba(99, 91, 255, 0.45);
+  --ok: #0a9b63;
+  --ok-soft: rgba(10, 155, 99, 0.1);
+  --radius: 8px;
+  --radius-lg: 12px;
+  --font-display: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-body: "Inter", ui-sans-serif, system-ui, sans-serif;
+  color-scheme: light;
+}
+.card {
+  box-shadow: 0 1px 2px rgba(6, 27, 49, 0.04);
+}
+.card-accent {
+  border-color: var(--border);
+  background: var(--card);
+}
+.nav,
+.app-top {
+  background: rgba(255, 255, 255, 0.92);
+}
+.hero-card {
+  box-shadow: 0 40px 90px -50px rgba(99, 91, 255, 0.45);
+}
+.cta {
+  background: radial-gradient(60% 120% at 50% 100%, rgba(99, 91, 255, 0.14), transparent 70%);
+}
+.auth {
+  background: radial-gradient(50% 60% at 50% 0%, rgba(99, 91, 255, 0.12), transparent 70%), var(--bg);
+}
+.pill-on {
+  border-color: rgba(10, 155, 99, 0.35);
+  color: #067a4b;
+}
+.pill-warn {
+  border-color: rgba(176, 116, 0, 0.35);
+  background: rgba(240, 180, 41, 0.14);
+  color: #8a5a00;
+}
+.danger-line .link {
+  color: #c4302b;
+}
+.view-banner {
+  background: #fff6e0;
+  border-bottom-color: rgba(176, 116, 0, 0.35);
+  color: #6b4500;
+}
+.wordmark-name {
+  letter-spacing: -0.02em;
+}
+.notice-error {
+  color: #9b1c1c;
+}
+.notice-ok {
+  color: #065f46;
+}
+.bar {
+  background: var(--red);
+}
+.notice-error {
+  background: rgba(196, 48, 43, 0.07);
+  border-color: rgba(196, 48, 43, 0.35);
+}
+.notice-wait {
+  color: #7a4f00;
+  background: rgba(240, 180, 60, 0.12);
+}
+.btn-secondary:hover:not(:disabled),
+.voice:hover {
+  border-color: #9aa8b6;
+}
+input::placeholder,
+textarea::placeholder {
+  color: #8796a5;
+}

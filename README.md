@@ -26,6 +26,8 @@ The first account to sign up becomes the owner and the **platform admin** (sees 
 
 ### In the cloud
 
+**Production runs on AWS (Sydney). Where everything is, how to deploy, and how to change the domain: [deploy/AWS.md](deploy/AWS.md).**
+
 `deploy/` holds the Dockerfile, Caddy and AWS setup. The server needs `DATABASE_URL`, `PUBLIC_URL` (its https address: used for the receptionists' booking tools, connect/invite/reset links, Google/Microsoft sign-in and secure cookies), `HOST=0.0.0.0`, `TELNYX_API_KEY` and `MAILBOX_KEY` (keep it forever: it decrypts saved mailbox logins). Run **one** instance: the mail checker and booking locks live in the process. Changing `PUBLIC_URL` and restarting re-points every receptionist's tools.
 
 For booking on real calls and texts on a laptop, also run this and leave it open (in the cloud, `PUBLIC_URL` does this job):

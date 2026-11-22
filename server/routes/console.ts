@@ -1,5 +1,5 @@
 import type { Business as Receptionist, CallMessage } from "../../src/lib/shared";
-import { formatNumber } from "../../src/lib/shared";
+import { formatNumber, industry, INDUSTRIES, type IndustryKey } from "../../src/lib/shared";
 import { AuthError, createInvite, emailOf, requireRole, type Ctx } from "../accounts";
 import { changeBrand, ownBrand, uploadAsset } from "../brand";
 import { answeredBusiness } from "../answered";
@@ -1219,7 +1219,8 @@ export type ConsoleDeps = { createClient: (orgId: string, input: unknown, opts?:
 export const onboardingPending = (c: Receptionist) => c.onboarding === "pending" && c.createdAt === c.updatedAt;
 
 async function quickReceptionist(ctx: Ctx, deps: ConsoleDeps, m: CompanyRow): Promise<string> {
-  const created = await deps.createClient(m.org_id, { businessName: m.name, industry: m.industry || "other", defaultVoice: true }, { quick: true });
+  const key = (INDUSTRIES.some((i) => i.key === m.industry) ? m.industry : "other") as IndustryKey;
+  const created = await deps.createClient(m.org_id, { businessName: m.name, industry: key, services: [...industry(key).services], defaultVoice: true }, { quick: true });
   await sql`
     update clients set company_id = ${m.id}, data = jsonb_set(data, '{onboarding}', '"pending"')
     where id = ${created.id} and org_id = ${m.org_id}`;
@@ -1230,11 +1231,18 @@ async function quickReceptionist(ctx: Ctx, deps: ConsoleDeps, m: CompanyRow): Pr
 async function sendOnboarding(ctx: Ctx, deps: ConsoleDeps, companyId: string | null, input: any, base: string) {
   canManage(ctx);
   const email = emailOf(input?.email);
-  let id = companyId;
-  if (!id) id = await createCompany(ctx, input);
+  const id = companyId ?? (await createCompany(ctx, input));
   const m = await oneCompany(ctx, id);
   const rows = await clientsInScope(m.org_id, null, m.id);
-  if (!rows.length) await quickReceptionist(ctx, deps, m);
+  if (!rows.length) {
+    try {
+      await quickReceptionist(ctx, deps, m);
+    } catch (err) {
+      // Don't leave an empty client behind when it was made just now.
+      if (!companyId) await sql`delete from companies where id = ${m.id} and not exists (select 1 from clients where company_id = ${m.id})`;
+      throw err;
+    }
+  }
   const shared = await shareCompany(ctx, m.id, { email, role: "manager" }, base);
   await audit(ctx, "company.onboarding_sent", { companyId: m.id, email, summary: `Sent ${email} an onboarding link for ${m.name}` }, { orgId: m.org_id });
   return { id: m.id, url: shared.url, emailed: shared.emailed, added: shared.added };

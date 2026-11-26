@@ -10,11 +10,12 @@ OUT="$HERE/out"
 STAGE=$(mktemp -d); trap 'rm -rf "$STAGE"' EXIT; chmod 755 "$STAGE"
 [ -f "$REPO/package.json" ] && [ -f "$REPO/bun.lock" ] && [ -f "$REPO/deploy/Dockerfile" ] || { echo "make-bundle: $REPO does not look like the app repo" >&2; exit 1; }
 
-# App source. Anchored (./x) excludes are top-level folders only; the rest match anywhere.
+# App source. Never the setup site (download-site/ holds its database and old bundles). Anchored (./x) excludes are top-level folders only; the rest match anywhere.
 tar -czf "$STAGE/app-src.tgz" -C "$REPO" \
   --owner=0 --group=0 --numeric-owner --sort=name \
   --exclude=./.git --exclude=./.claude --exclude=./dist --exclude=./data --exclude=./installer \
   --exclude=./.tanstack --exclude=./deploy/selfhost/out \
+  --exclude=./download-site \
   --exclude=node_modules --exclude=.git --exclude=.env --exclude='.env.*' --exclude='*.env' \
   --exclude='*.pem' --exclude='*.log' --exclude='*.tmp' \
   .

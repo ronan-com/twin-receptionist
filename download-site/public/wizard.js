@@ -5,27 +5,42 @@
   const root = document.querySelector(".wiz");
   if (!root) return;
 
-  // Brand step: shrink the chosen logo and put it in the form
+  // Brand step: shrink the chosen logo to a small PNG (it travels to the agency's server as one
+  // setting, so it must stay under about 30 KB) and put it in the form.
   const lf = document.getElementById("logoFile");
-  if (lf) lf.addEventListener("change", function () {
-    const file = lf.files && lf.files[0]; if (!file) return;
-    const read = new FileReader();
-    read.onload = function () {
-      const img = new Image();
-      img.onload = function () {
-        const k = Math.min(1, 240 / Math.max(img.width, img.height)), c = document.createElement("canvas");
-        c.width = Math.max(1, Math.round(img.width * k)); c.height = Math.max(1, Math.round(img.height * k));
-        c.getContext("2d").drawImage(img, 0, 0, c.width, c.height);
-        const data = c.toDataURL("image/png");
-        document.getElementById("logo").value = data;
-        const p = document.getElementById("logoPreview"); p.src = data; p.hidden = false;
-        document.getElementById("logoNote").textContent = "Logo added.";
-      };
-      img.onerror = function () { document.getElementById("logoNote").textContent = "That file isn't a picture we can read."; };
-      img.src = read.result;
+  if (lf) {
+    const note = document.getElementById("logoNote"), prev = document.getElementById("logoPreview");
+    const rm = document.getElementById("logoRemove"), field = document.getElementById("logo"), flag = document.getElementById("removeLogo");
+    const MAX = 29000;
+    const set = function (data) {
+      field.value = data || ""; flag.value = data ? "" : "1";
+      prev.hidden = !data; if (data) prev.src = data; rm.hidden = !data;
     };
-    read.readAsDataURL(file);
-  });
+    lf.addEventListener("change", function () {
+      const file = lf.files && lf.files[0]; if (!file) return;
+      const read = new FileReader();
+      read.onload = function () {
+        const img = new Image();
+        img.onload = function () {
+          let data = "";
+          for (const edge of [240, 192, 144, 112, 80, 56]) {
+            const k = Math.min(1, edge / Math.max(img.width, img.height)), c = document.createElement("canvas");
+            c.width = Math.max(1, Math.round(img.width * k)); c.height = Math.max(1, Math.round(img.height * k));
+            c.getContext("2d").drawImage(img, 0, 0, c.width, c.height);
+            data = c.toDataURL("image/png");
+            if (data.length <= MAX) break;
+          }
+          if (data.length > MAX) { note.textContent = "That picture is too detailed to shrink enough. Try a simpler logo, or add it later in Settings."; lf.value = ""; return; }
+          set(data);
+          note.textContent = "Logo added. Choose another file to replace it.";
+        };
+        img.onerror = function () { note.textContent = "We couldn't read that file. Try a PNG or JPG."; lf.value = ""; };
+        img.src = read.result;
+      };
+      read.readAsDataURL(file);
+    });
+    if (rm) rm.addEventListener("click", function () { set(""); lf.value = ""; note.textContent = "No logo. You can add one later in Settings."; });
+  }
 
   // Copy buttons
   document.addEventListener("click", function (e) {

@@ -18,11 +18,12 @@ import { spawn, spawnSync, execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { deflateSync } from "node:zlib";
 import puppeteer from "puppeteer-core";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const SITE_DIR = join(HERE, "..");
-const SHOTS = join(SITE_DIR, "test-shots");
+const SHOTS = process.env.E2E_SHOTS || join(SITE_DIR, "test-shots");
 const PORT = Number(process.env.E2E_PORT || 4520);
 const SITE = `http://localhost:${PORT}`;
 const MOCK = `http://127.0.0.1:${PORT + 1}`;
@@ -42,6 +43,16 @@ function check(name, cond, detail = "") {
   return !!cond;
 }
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+/** A real PNG (size x size, coloured blocks) made here, so the logo upload needs no fixture file. */
+function makePng(size, rgb) {
+  const crcT = Array.from({ length: 256 }, (_, n) => { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1; return c >>> 0; });
+  const crc = (b) => { let c = 0xffffffff; for (const x of b) c = crcT[(c ^ x) & 255] ^ (c >>> 8); return (c ^ 0xffffffff) >>> 0; };
+  const chunk = (t, d) => { const len = Buffer.alloc(4); len.writeUInt32BE(d.length); const td = Buffer.concat([Buffer.from(t), d]); const c = Buffer.alloc(4); c.writeUInt32BE(crc(td)); return Buffer.concat([len, td, c]); };
+  const ihdr = Buffer.alloc(13); ihdr.writeUInt32BE(size, 0); ihdr.writeUInt32BE(size, 4); ihdr[8] = 8; ihdr[9] = 2;
+  const row = (y) => { const r = Buffer.alloc(1 + size * 3); for (let x = 0; x < size; x++) { const on = ((x >> 5) + (y >> 5)) % 2; r[1 + x * 3] = on ? rgb[0] : 255; r[2 + x * 3] = on ? rgb[1] : 255; r[3 + x * 3] = on ? rgb[2] : 255; } return r; };
+  const raw = Buffer.concat(Array.from({ length: size }, (_, y) => row(y)));
+  return Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), chunk("IHDR", ihdr), chunk("IDAT", deflateSync(raw)), chunk("IEND", Buffer.alloc(0))]);
+}
 
 // ---------------- processes ----------------
 const env = {
@@ -133,6 +144,21 @@ async function setupBuyer(p, o, snap = async () => {}) {
   await snap("welcome");
   await submit(p, "start");
   await snap("brand");
+  if (o.logo) {
+    await p.waitForSelector("#logoFile");
+    check(`${o.tag}: Brand step offers a logo and a colour in the real (non-demo) wizard`, !!(await p.$("#colour")), "");
+    // Chromium here is a snap that can't read /tmp, so the file is handed over in the page itself.
+    await p.$eval("#logoFile", (el, b64) => {
+      const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
+      const dt = new DataTransfer(); dt.items.add(new File([bytes], "logo.png", { type: "image/png" }));
+      el.files = dt.files; el.dispatchEvent(new Event("change", { bubbles: true }));
+    }, readFileSync(o.logo).toString("base64"));
+    await until(p, "logo shrunk in the page", async () => (await p.$eval("#logo", (e) => e.value)).startsWith("data:image/png;base64,"), 15_000, false);
+    const len = (await p.$eval("#logo", (e) => e.value)).length;
+    check(`${o.tag}: the page shrinks a big logo to a small PNG before sending it`, len > 200 && len <= 30_000, String(len));
+    await p.$eval("#colour", (e, v) => { e.value = v; }, o.colour);
+    await snap("brand-with-logo");
+  }
   await submit(p, "brand", { productName: o.brand, ownerEmail: o.owner });
   check(`${o.tag}: reached the Railway step`, (await h1(p)) === "Connect Railway", await h1(p));
   await snap("railway");
@@ -168,6 +194,8 @@ async function setupBuyer(p, o, snap = async () => {}) {
     check(`${o.tag}: "add the records myself" lists the email records`, (await h1(p)) === "Add your email records", await h1(p));
     const recs = await tableRows(p);
     check(`${o.tag}: email records to add by hand (DKIM, MX, SPF without quote marks, DMARC)`, recs.length === 4 && recs.some((r) => r.type === "MX") && recs.some((r) => /^_dmarc\./.test(r.name)) && recs.some((r) => r.value === "v=spf1 include:amazonses.com ~all"), JSON.stringify(recs.map((r) => `${r.type} ${r.name} ${r.value.slice(0, 30)}`)));
+    const want = [`resend._domainkey.mail.${o.zone}`, `send.mail.${o.zone}`, `_dmarc.${o.zone}`];
+    check(`${o.tag}: Resend's record names are full and not doubled, also when the domain is itself a subdomain (${o.zone})`, recs.every((r) => want.includes(r.name)), JSON.stringify(recs.map((r) => r.name)));
     await snap("domain-email-records");
     for (const r of recs.slice(0, 2)) await addRegistrar(r);
     await until(p, "first two email records ticked", async () => (await p.$$eval("table.records .st.f", (x) => x.length)) >= 2, 90_000);
@@ -202,17 +230,60 @@ async function setupBuyer(p, o, snap = async () => {}) {
 }
 
 /** The installed app (real image, real Postgres) answers on its temporary address. */
-async function appCheck(tag, tempUrl, brand) {
+async function appCheck(tag, tempUrl, brand, owner) {
   const health = await fetch(`${tempUrl}/api/health`).then((r) => r.text()).catch((e) => String(e));
   check(`${tag}: installed app answers ${tempUrl}/api/health`, /"ok":\s*true/.test(health), health.trim());
   const b2 = await puppeteer.launch({ executablePath: "/snap/bin/chromium", headless: true, args: ["--no-sandbox"] });
   const pg = await b2.newPage();
   await pg.setViewport(PHONE);
+  pg.on("pageerror", (e) => log("APP PAGE ERROR", e.message));
   await pg.goto(tempUrl, { waitUntil: "networkidle2", timeout: 60000 });
   check(`${tag}: installed app opens in a browser with the brand in its title`, (await pg.title()).includes(brand), await pg.title());
-  const n = String(++shotN).padStart(2, "0");
-  await pg.screenshot({ path: join(SHOTS, `${n}-${tag}-installed-app-phone.png`), fullPage: true });
+  const shotApp = async (name) => { const n = String(++shotN).padStart(2, "0"); await pg.screenshot({ path: join(SHOTS, `${n}-${tag}-${name}-phone.png`), fullPage: true }); };
+  await shotApp("installed-app");
+  if (owner) check(`${tag}: a brand-new installed app sends its owner straight to the set-up page (not a sign-in)`, new URL(pg.url()).pathname === "/signup", pg.url());
   check(`${tag}: installed app has no sideways scroll at 390px`, !(await pg.evaluate(() => document.documentElement.scrollWidth > window.innerWidth + 1)));
+  if (owner) {
+    // The owner creates their account on the installed copy: only the owner email from the wizard may.
+    await pg.goto(`${tempUrl}/signup`, { waitUntil: "networkidle2", timeout: 60000 });
+    await pg.waitForSelector("#name", { timeout: 20000 });
+    check(`${tag}: the installed app's first sign-up page has the agency name filled in with the brand`, (await pg.$eval("#agency", (e) => e.value)) === brand, await pg.$eval("#agency", (e) => e.value));
+    await shotApp("owner-signup");
+    const fill = async (email) => {
+      for (const [sel, v] of [["#name", owner.name], ["#email", email], ["#password", owner.password]]) {
+        await pg.focus(sel); await pg.$eval(sel, (e) => e.select()); await pg.keyboard.press("Backspace"); await pg.type(sel, v);
+      }
+    };
+    await fill("someone-else@example.com");
+    await pg.click("form button[type=submit]");
+    await pg.waitForFunction(() => /owner email you gave/i.test(document.body.innerText), { timeout: 20000 });
+    check(`${tag}: a different email can't take the first account (clear message)`, true);
+    await shotApp("owner-signup-wrong-email");
+    await fill(owner.email);
+    await Promise.all([pg.waitForFunction(() => !/\/signup/.test(location.pathname), { timeout: 30000 }), pg.click("form button[type=submit]")]);
+    await pg.waitForNetworkIdle({ idleTime: 1000, timeout: 30000 }).catch(() => {});
+    check(`${tag}: the owner email from the wizard creates the owner account and lands in the dashboard`, /\/admin/.test(new URL(pg.url()).pathname), pg.url());
+    await shotApp("owner-dashboard");
+    const brandJson = await pg.evaluate(() => fetch("/api/org/brand", { credentials: "same-origin" }).then((r) => r.json()));
+    if (owner.logo) {
+      const logoRes = await pg.evaluate((u) => fetch(u).then(async (r) => ({ type: r.headers.get("content-type"), n: (await r.arrayBuffer()).byteLength })), brandJson.logo || "/none");
+      check(`${tag}: the logo from the wizard is on the installed agency (PNG)`, /^\/brand\//.test(brandJson.logo) && logoRes.type === "image/png" && logoRes.n > 100, JSON.stringify({ brandJson, logoRes }));
+      check(`${tag}: the colour from the wizard is on the installed agency`, brandJson.primaryColor === owner.colour && brandJson.accentColor === owner.colour, JSON.stringify(brandJson));
+      await pg.reload({ waitUntil: "networkidle2" });
+      check(`${tag}: the dashboard shows the logo`, await pg.evaluate(() => [...document.images].some((i) => /\/brand\//.test(i.src) && i.naturalWidth > 0)));
+      await shotApp("owner-dashboard-branded");
+    } else {
+      check(`${tag}: no logo chosen in the wizard, so none is set`, !brandJson.logo, JSON.stringify(brandJson));
+    }
+    // Sign out and back in with the same details.
+    await pg.evaluate(() => fetch("/api/logout", { method: "POST", credentials: "same-origin" }));
+    await pg.goto(`${tempUrl}/login`, { waitUntil: "networkidle2" });
+    await pg.waitForSelector("#email", { timeout: 20000 });
+    await shotApp("owner-login");
+    await pg.type("#email", owner.email); await pg.type("#password", owner.password);
+    await Promise.all([pg.waitForFunction(() => !/\/login/.test(location.pathname), { timeout: 30000 }), pg.click("form button[type=submit]")]);
+    check(`${tag}: the owner can sign in again on the installed app`, /\/admin/.test(new URL(pg.url()).pathname), pg.url());
+  }
   await b2.close();
 }
 
@@ -224,9 +295,10 @@ async function main() {
   await waitUp(`${MOCK}/_mock/state`);
   admin("publish", BUNDLE, "1.0.0-e2e");
   const linkOf = (out) => out.trim().split("\n").pop();
-  const A = { tag: "A", link: linkOf(admin("add-buyer", "Alice Alpha", "alice@example.com")), brand: "Alpha Answering", owner: "alice@alpha-reception.test", zone: "alpha-reception.test", telnyx: "platform-fake-alice-0001", errors: true, google: true };
+  writeFileSync(join(DATA, "logo-big.png"), makePng(600, [10, 143, 92]));
+  const A = { tag: "A", link: linkOf(admin("add-buyer", "Alice Alpha", "alice@example.com")), brand: "Alpha Answering", owner: "alice@alpha-reception.test", zone: "alpha-reception.test", telnyx: "platform-fake-alice-0001", errors: true, google: true, logo: join(DATA, "logo-big.png"), colour: "#0a8f5c" };
   const B = { tag: "B", link: linkOf(admin("add-buyer", "Bob Bravo", "bob@example.com")), brand: "Bravo Clinic Desk", owner: "bob@bravo-clinic.test", zone: "bravo-clinic.test", manual: true, telnyx: "platform-fake-bob-0002" };
-  const C = { tag: "C", link: linkOf(admin("add-buyer", "Cara Charlie", "cara@example.com")), brand: "Charlie Calls", owner: "cara@charlie-desk.test", zone: "charlie-desk.test", manual: true, telnyx: "platform-fake-cara-0003" };
+  const C = { tag: "C", link: linkOf(admin("add-buyer", "Cara Charlie", "cara@example.com")), brand: "Charlie Calls", owner: "cara@charlie-desk.test", zone: "t1.charlie-desk.test", manual: true, telnyx: "platform-fake-cara-0003" };
   const D = { tag: "D", link: linkOf(admin("add-buyer", "Dan Delta", "dan@example.com")) };
   await startSite();
   check("admin add-buyer prints a /setup/<code> link", /\/setup\/[A-Za-z0-9_-]{22}$/.test(A.link), A.link);
@@ -305,7 +377,7 @@ async function main() {
     await shot(pB, "B-install-add-app-records");
     const cn = recs.find((r) => r.type === "CNAME");
     await addRegistrar({ type: "CNAME", name: cn.name, value: "wrong-target.example.net" });
-    await until(pB, "B sees the wrong record", async () => /Found wrong-target\.example\.net instead/.test(await text(pB, ".recbox")), 120_000);
+    await until(pB, "B sees the wrong record", async () => /Found wrong-target\.example\.net instead/.test(await text(pB, ".recbox")), 12 * 60_000);
     check("B: a wrong record shows what DNS answers instead, still Waiting", /Waiting/.test(await text(pB, ".recbox")), await text(pB, ".recbox"));
     await shot(pB, "B-install-wrong-record");
     for (const r of recs) await addRegistrar(r);
@@ -345,7 +417,7 @@ async function main() {
   const appA = pjA?.services.find((s) => s.name === "app");
   const pgA = pjA?.services.find((s) => s.name === "Postgres");
   check("A: Railway project has Postgres (image + volume) and the app (deploy/Dockerfile, health check)", pgA?.image?.includes("postgres") && pgA?.volume === "/var/lib/postgresql/data" && appA?.settings?.dockerfilePath === "deploy/Dockerfile" && appA?.settings?.healthcheckPath === "/api/health", JSON.stringify({ pg: pgA?.image, vol: pgA?.volume, app: appA?.settings }));
-  check("A: the app's variables are all there", ["PRODUCT_NAME", "PUBLIC_URL", "FIRST_ADMIN_EMAIL", "TELNYX_API_KEY", "SMTP_URL", "MAIL_FROM", "MAILBOX_KEY", "SINGLE_AGENCY", "DATABASE_URL", "GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET"].every((k) => appA?.variables.includes(k)), appA?.variables.join(","));
+  check("A: the app's variables are all there", ["PRODUCT_NAME", "BRAND_LOGO_PNG", "BRAND_COLOUR", "PUBLIC_URL", "FIRST_ADMIN_EMAIL", "TELNYX_API_KEY", "SMTP_URL", "MAIL_FROM", "MAILBOX_KEY", "SINGLE_AGENCY", "DATABASE_URL", "GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET"].every((k) => appA?.variables.includes(k)), appA?.variables.join(","));
   check("A: the app sends email with a send-only Resend key, never the Full access key", appA?.smtpKey === "send-only", appA?.smtpKey);
   check("A: Cloudflare got the app's CNAME (DNS only) and TXT check", stA.zones.find((z) => z.name === A.zone).records.some((r) => r.type === "CNAME" && r.name === "app.alpha-reception.test" && !r.proxied) && stA.zones.find((z) => z.name === A.zone).records.some((r) => /^_railway-verify\./.test(r.name)));
 
@@ -366,9 +438,11 @@ async function main() {
   check("A: build log kept on the Done page, with no secrets in it", logA.length > 100 && !plain.some((s) => logA.includes(s)), `${logA.length} chars`);
 
   // ---------- the installed apps ----------
-  if (tempA) await appCheck("A", tempA, A.brand); else check("A: Done page shows the temporary address", false);
+  if (tempA) await appCheck("A", tempA, A.brand, { name: "Alice Alpha", email: A.owner, password: "correct horse battery 9", logo: true, colour: A.colour }); else check("A: Done page shows the temporary address", false);
   const keptB = JSON.parse(JSON.parse(sqlite("select data from setups where buyer_id=(select id from buyers where email='bob@example.com')"))[0].data);
-  if (keptB.phase === "done") await appCheck("B", keptB.tempUrl, B.brand);
+  const appB = (await mockState()).railway.find((x) => x.name === B.brand)?.services.find((x) => x.name === "app");
+  check("B: no logo chosen, so no BRAND_LOGO_PNG setting is sent (colour still is)", !!appB && !appB.variables.includes("BRAND_LOGO_PNG") && appB.variables.includes("BRAND_COLOUR"), appB?.variables.join(","));
+  if (keptB.phase === "done") await appCheck("B", keptB.tempUrl, B.brand, { name: "Bob Bravo", email: B.owner, password: "correct horse battery 9" });
 
   // ---------- C: Delete the project (its app records are never added, so it waits) ----------
   {

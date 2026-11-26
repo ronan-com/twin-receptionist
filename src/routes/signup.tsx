@@ -12,7 +12,7 @@ import { INDUSTRIES } from "@/lib/app/constants";
 import { sessionQuery } from "@/lib/app/workspace";
 import { TIMEZONES } from "@/lib/shared";
 import { cn } from "@/lib/utils";
-import { PRODUCT } from "@/lib/app/product";
+import { OTHER_BRAND, PRODUCT } from "@/lib/app/product";
 
 type Kind = "business" | "agency";
 
@@ -47,7 +47,8 @@ function SignupPage() {
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [agencyName, setAgencyName] = useState("");
+  // A copy sold under its own name starts with that name as the agency name.
+  const [agencyName, setAgencyName] = useState(OTHER_BRAND ? PRODUCT : "");
   const [businessName, setBusinessName] = useState("");
   const [industry, setIndustry] = useState("");
   const [suburb, setSuburb] = useState("");

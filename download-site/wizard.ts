@@ -116,10 +116,14 @@ function brand(c: Ctx) {
   <label class="f" for="ownerEmail">Owner email</label>
   <input id="ownerEmail" name="ownerEmail" type="email" maxlength="200" required autocomplete="email" value="${val(c, "ownerEmail", br?.ownerEmail || c.b.email)}">
   <p class="hint">You'll sign in with this as the owner of your agency.</p>
-  ${DEMO ? `<label class="f" for="logoFile">Your logo</label><input id="logoFile" type="file" accept="image/png,image/jpeg,image/webp">
-  <input type="hidden" id="logo" name="logo" value="${esc(br?.logo || "")}"><p class="hint" id="logoNote">${br?.logo ? "Logo added." : "PNG or JPG. You can change it later."}</p>
-  <p><img id="logoPreview" alt="" width="96"${br?.logo ? ` src="${esc(br.logo)}"` : " hidden"}></p>
-  <label class="f" for="colour">Brand colour</label><input id="colour" name="colour" type="color" value="${esc(br?.colour || "#635bff")}">` : ""}`)}</div>
+  <label class="f" for="logoFile">Your logo (optional)</label>
+  <input id="logoFile" type="file" accept="image/png,image/jpeg,image/webp">
+  <input type="hidden" id="logo" name="logo" value="${esc(br?.logo || "")}">
+  <input type="hidden" id="removeLogo" name="removeLogo" value="">
+  <p class="hint" id="logoNote">${br?.logo ? "Logo added. Choose another file to replace it." : "A PNG or JPG works best. We shrink it for you."}</p>
+  <p class="logoRow"><img id="logoPreview" alt="Your logo" width="96"${br?.logo ? ` src="${esc(br.logo)}"` : " hidden"}> <button type="button" class="linkbtn" id="logoRemove"${br?.logo ? "" : " hidden"}>Remove logo</button></p>
+  <label class="f" for="colour">Brand colour</label><input id="colour" name="colour" type="color" value="${esc(br?.colour || "#635bff")}">
+  <p class="hint">Used for buttons and highlights in your dashboard. You can change the logo and colour later in Settings.</p>`)}</div>
 ${nav(c, primary("Continue"))}`;
 }
 
@@ -319,7 +323,7 @@ function install(c: Ctx) {
     const sv = s.server!;
     const region = sv.regions?.find((r) => r.slug === sv.region)?.name.replace(/ \d+$/, "") || sv.region;
     const rows: [string, string][] = [
-      ["Dashboard", esc(host)], ["Server", `${esc(region)} · ${esc((sv.sizes?.find((z) => z.slug === sv.size)?.label.match(/(\d+) GB memory/) || [])[1] || "2")} GB · US$${sv.price}/mo`],
+      ["Brand", `${esc(s.brand?.productName || "")} · ${s.brand?.logo ? "logo added" : "no logo yet"}`], ["Dashboard", esc(host)], ["Server", `${esc(region)} · ${esc((sv.sizes?.find((z) => z.slug === sv.size)?.label.match(/(\d+) GB memory/) || [])[1] || "2")} GB · US$${sv.price}/mo`],
       ["Phones", `Telnyx ${esc(secretHint(c.b.id, "telnyx_key") || "")}`], ["Email from", esc(s.email?.from || "")],
       ["DNS", s.domain?.mode === "cloudflare" ? "Handled by the wizard" : "You add one record"],
     ];
@@ -430,7 +434,7 @@ function done(c: Ctx) {
   const { text, next } = logRead(c.b.id);
   return `${head(c, "Your agency is live", `${P(c)} is running on your own server. Everything here is yours.`)}
 <div class="live"><div class="dot">● Live</div><a class="url" href="${esc(url)}" target="_blank" rel="noopener noreferrer">${esc(url)}</a>
-<p class="hint">Create your account with <b>${esc(s.brand?.ownerEmail || "your owner email")}</b>. Only that address can make the first account.</p></div>
+<p class="hint"><b>First time in:</b> you'll see <b>Set up your agency</b>. Use <b>${esc(s.brand?.ownerEmail || "your owner email")}</b> and pick a password. Only that address can create the first account.</p></div>
 <div class="checks"><b>Before you go</b>
   <div>${icon("check")}<span>Delete your DigitalOcean token. <a href="https://cloud.digitalocean.com/account/api/tokens" target="_blank" rel="noopener noreferrer">Open DigitalOcean</a></span></div>
   ${s.domain?.mode === "cloudflare" ? `<div>${icon("check")}<span>Delete your Cloudflare token. <a href="https://dash.cloudflare.com/profile/api-tokens" target="_blank" rel="noopener noreferrer">Open Cloudflare</a></span></div>` : ""}
@@ -456,7 +460,7 @@ ${nav(c, `<a class="btn p" href="${base(c)}/open">Open your dashboard ${icon("ex
   return `${head(c, "Your agency is live", `${P(c)} is running in your own Railway account. Everything here is yours.`)}
 <div class="live"><div class="dot">● Live</div><a class="url" href="${esc(pending && temp ? temp : url)}" target="_blank" rel="noopener noreferrer">${esc(pending && temp ? temp : url)}</a>
 ${pending ? `<p class="hint">Your temporary address. <b>${esc(hostOf(s))}</b> starts working by itself once the records below are in.</p>` : temp ? `<p class="hint">Also at your temporary address: <a href="${esc(temp)}" target="_blank" rel="noopener noreferrer">${esc(temp.replace(/^https?:\/\//, ""))}</a></p>` : ""}
-<p class="hint">Create your account with <b>${esc(s.brand?.ownerEmail || "your owner email")}</b>. Only that address can make the first account.</p></div>
+<p class="hint"><b>First time in:</b> you'll see <b>Set up your agency</b>. Use <b>${esc(s.brand?.ownerEmail || "your owner email")}</b> and pick a password. Only that address can create the first account.</p></div>
 ${pending && s.finishRecords?.length ? `<div class="recbox"><b>Records for ${esc(hostOf(s))}</b>${recordTable(s.finishRecords, true)}</div>` : ""}
 <div class="checks"><b>Before you go</b>
   <div>${icon("check")}<span>Delete your Railway token. <a href="https://railway.com/account/tokens" target="_blank" rel="noopener noreferrer">Open Railway</a></span></div>

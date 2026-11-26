@@ -325,14 +325,23 @@ export async function checkResend(key: string): Promise<Check> {
   }
 }
 
-/** Resend record names are relative; turn them into full names for `domain` inside `zone`. */
+/**
+ * Resend gives record names relative to the *registered root* domain, not to the sending domain
+ * or the wizard's zone: for mail.t1.chloeeai.co it says `resend._domainkey.mail.t1` and `send.mail.t1`
+ * (root chloeeai.co); for the apex chloeeai.co it says `resend._domainkey` and `send`.
+ * Turn them into full names. No public-suffix list needed: the label path of the sending domain
+ * below its root is the tail of the name, so whatever of the domain is left after that tail is the root.
+ * `zone` (the wizard's domain, maybe itself a subdomain) is only used to leave names that are already full alone.
+ */
 export function fqdn(name: string, domain: string, zone: string): string {
   const n = String(name || "").toLowerCase().replace(/\.$/, "");
   if (!n || n === "@") return domain;
-  if (n === domain || n === zone || n.endsWith("." + zone)) return n;
-  const rel = domain === zone ? "" : domain.slice(0, -(zone.length + 1));
-  if (rel && (n === rel || n.endsWith("." + rel))) return `${n}.${zone}`;
-  return `${n}.${domain}`;
+  if (n === domain || n === zone || n.endsWith("." + domain) || n.endsWith("." + zone)) return n;
+  const nl = n.split("."), dl = domain.split(".");
+  for (let k = Math.min(nl.length, dl.length - 1); k >= 1; k--) {
+    if (nl.slice(-k).join(".") === dl.slice(0, k).join(".")) return `${n}.${dl.slice(k).join(".")}`;
+  }
+  return `${n}.${domain}`; // the sending domain is the root itself
 }
 
 /** Every domain in the Resend account (it pages). */

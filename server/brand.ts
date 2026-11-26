@@ -75,6 +75,10 @@ async function dropAsset(s: Scope, kind: Kind): Promise<void> {
 
 export async function uploadAsset(ctx: Ctx, s: Scope, kind: Kind, bytes: Uint8Array): Promise<void> {
   requireRole(ctx, "admin");
+  await storeAsset(s, kind, bytes);
+}
+
+async function storeAsset(s: Scope, kind: Kind, bytes: Uint8Array): Promise<void> {
   if (bytes.length === 0) throw new ValidationError("Choose an image to upload.");
   if (bytes.length > LIMITS[kind]) {
     throw new ValidationError(`That image is too big. Keep a ${kind} under ${Math.round(LIMITS[kind] / 1000)} KB.`);
@@ -89,6 +93,10 @@ export async function uploadAsset(ctx: Ctx, s: Scope, kind: Kind, bytes: Uint8Ar
 
 export async function changeBrand(ctx: Ctx, s: Scope, input: any): Promise<void> {
   requireRole(ctx, "admin");
+  await saveBrand(s, input);
+}
+
+async function saveBrand(s: Scope, input: any): Promise<void> {
   for (const k of COLOURS) {
     if (input?.[k] === undefined) continue;
     const c = String(input[k]);
@@ -102,6 +110,30 @@ export async function changeBrand(ctx: Ctx, s: Scope, input: any): Promise<void>
   if (input?.removeBackground === true) {
     await dropAsset(s, "background");
     await patch(s, { bgImage: null });
+  }
+}
+
+// A new install (SINGLE_AGENCY) can carry the agency's logo and colour from the setup wizard as
+// BRAND_LOGO_PNG (the PNG, base64) and BRAND_COLOUR (#rrggbb). They are applied once, when the
+// owner's account (and agency) is first created, and never again: after that the owner's own
+// changes in Settings are the only truth, even though the variables stay set.
+export async function applyInstallBrand(orgId: string): Promise<void> {
+  const logo = (process.env.BRAND_LOGO_PNG ?? "").trim();
+  const colour = (process.env.BRAND_COLOUR ?? "").trim();
+  const scope: Scope = { orgId, clientId: null };
+  if (logo) {
+    try {
+      await storeAsset(scope, "logo", new Uint8Array(Buffer.from(logo, "base64")));
+    } catch (e) {
+      console.error("[install brand] logo not applied:", (e as Error).message);
+    }
+  }
+  if (colour) {
+    try {
+      await saveBrand(scope, { primaryColor: colour, accentColor: colour });
+    } catch (e) {
+      console.error("[install brand] colour not applied:", (e as Error).message);
+    }
   }
 }
 

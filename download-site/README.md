@@ -42,7 +42,7 @@ behind **Show me how** (from `handoff-content/providers/<id>.md`).
 | Step | What they do | What we check |
 |---|---|---|
 | Welcome | Read three tiles, press Start | |
-| Brand | Brand name, owner email (`FIRST_ADMIN_EMAIL`) | format |
+| Brand | Brand name, owner email (`FIRST_ADMIN_EMAIL`), optional logo (shrunk to a small PNG in the page) and colour | email format; logo is a real PNG under 30 KB |
 | Hosting | Railway **account token** (Account Settings > Tokens, Workspace: *No workspace*) | `me { email workspaces }`, then plan: refuses Free / no card ("needs the Hobby plan") |
 | Phones | Telnyx key (becomes the app's `TELNYX_API_KEY`; every client runs on it) | `GET /v2/balance`; trial warning |
 | Email | Resend key (Full access) + the from address, e.g. `hello@mail.<domain>` | key works; the sending domain is added to Resend (an existing one is reused) |
@@ -62,7 +62,7 @@ retry carries on where it stopped.
    variables Railway's own template sets (random password), then `volumeCreate` at
    `/var/lib/postgresql/data`.
 3. The app: `serviceCreate` (empty), `variableCollectionUpsert` (`skipDeploys`):
-   `PRODUCT_NAME`, `PUBLIC_URL=https://app.<domain>`, `FIRST_ADMIN_EMAIL`, `TELNYX_API_KEY`,
+   `PRODUCT_NAME`, `BRAND_LOGO_PNG` / `BRAND_COLOUR` (if chosen), `PUBLIC_URL=https://app.<domain>`, `FIRST_ADMIN_EMAIL`, `TELNYX_API_KEY`,
    `SMTP_URL`, `MAIL_FROM`, `MAILBOX_KEY` (new random 32 bytes), `SINGLE_AGENCY=1`, OAuth keys if
    given, `HOST=0.0.0.0`, `API_PORT=PORT=8791`, `DATABASE_URL=${{Postgres.DATABASE_URL}}`,
    `RAILWAY_DOCKERFILE_PATH=deploy/Dockerfile`. `SMTP_URL` uses a **send-only Resend key for that
@@ -84,6 +84,12 @@ retry carries on where it stopped.
 8. We poll `customDomain { status { certificateStatus } }` and the app's `/api/health`. When the
    certificate is `VALID`, setup finishes by itself. **Finish now** finishes without waiting:
    Railway issues the certificate on its own once the records are in, and the Done page lists them.
+
+**Logo and colour.** They travel as the app's `BRAND_LOGO_PNG` (base64) and `BRAND_COLOUR` settings
+(DigitalOcean: the same two lines in `.env`). With `SINGLE_AGENCY` the app applies them once, when the
+owner first creates the account (`applyInstallBrand` in `server/brand.ts`), then never again, so
+whatever the owner later changes in Settings sticks. The installed app sends a brand-new copy's owner
+straight to its "Set up your agency" page, with the agency name filled in from `PRODUCT_NAME`.
 
 **Try again** (failed build) sends the app again to the same project: same database and
 settings. **Delete the project** runs `projectDelete` (app, database and volume) and removes the
@@ -186,7 +192,9 @@ bun download-site/admin.ts backup [file]                               # consist
 bun download-site/admin.ts gen-key                                     # a new SETUP_SECRET_KEY (first install only)
 ```
 
-Publish a new app version (Railway and DigitalOcean both install from it):
+Publish a new app version (Railway and DigitalOcean both install from it). `make-package.sh` /
+`make-bundle.sh` never include `download-site/` (our database, keys and old bundles live there) in the
+app source that goes to buyers:
 
 ```bash
 bash download-site/make-package.sh 1.0.1

@@ -40,7 +40,10 @@ function LoginPage() {
   useEffect(() => {
     let active = true;
     queryClient.fetchQuery({ ...sessionQuery(), staleTime: 0 }).then((s) => {
-      if (active && s.signedIn) navigate({ to: redirectTo ?? homeOf(s), replace: true });
+      if (!active) return;
+      if (s.signedIn) navigate({ to: redirectTo ?? homeOf(s), replace: true });
+      // A brand-new agency copy has no accounts yet: its owner needs the set-up page, not a sign-in.
+      else if (s.singleAgency && s.firstRun) navigate({ to: "/signup", replace: true });
     }, () => {});
     return () => {
       active = false;

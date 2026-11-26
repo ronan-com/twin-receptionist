@@ -189,7 +189,10 @@ Bun.serve({
       const b: any = await req.json();
       const name = String(b.name).toLowerCase();
       if (domains.some((d) => d.name === name)) return json(403, { statusCode: 403, name: "validation_error", message: "This domain is already registered." });
-      const zone = name.split(".").slice(-2).join(".");
+      // Like the real API: names are relative to the registered root (a .com.au style root is three labels),
+      // so mail.t1.chloeeai.co gives resend._domainkey.mail.t1 and the apex chloeeai.co gives resend._domainkey.
+      const parts = name.split(".");
+      const zone = parts.slice(-(/^(com|net|org|edu|gov|id|asn)\.au$|^co\.(uk|nz)$/.test(parts.slice(-2).join(".")) ? 3 : 2)).join(".");
       const rel = name === zone ? "" : "." + name.slice(0, -(zone.length + 1));
       const dkim = "p=MIGfMA0GCSqGSIb3DQEBAQUAA4GNADCBiQKBgQ" + randomBytes(24).toString("base64").replace(/[+/=]/g, "x");
       const d = {

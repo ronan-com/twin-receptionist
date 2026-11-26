@@ -124,9 +124,9 @@ function sameOrigin(req: Request): boolean {
 
 async function readForm(req: Request): Promise<Record<string, string> | null> {
   if (!(req.headers.get("content-type") || "").startsWith("application/x-www-form-urlencoded")) return {};
-  if (Number(req.headers.get("content-length") || 0) > (DEMO ? 400 : 16) * 1024) return null;
+  if (Number(req.headers.get("content-length") || 0) > (DEMO ? 400 : 48) * 1024) return null;
   const text = await req.text();
-  if (text.length > (DEMO ? 400 : 16) * 1024) return null;
+  if (text.length > (DEMO ? 400 : 48) * 1024) return null;
   const out: Record<string, string> = {};
   for (const [k, v] of new URLSearchParams(text)) if (!(k in out)) out[k] = v;
   return out;

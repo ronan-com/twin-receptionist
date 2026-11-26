@@ -23,6 +23,8 @@ const MIN = 60_000;
 const ago = (iso?: string) => (iso ? Date.now() - Date.parse(iso) : Infinity);
 const str = (v: unknown, max = 500) => (typeof v === "string" ? v.trim().slice(0, max) : "");
 const isEmail = (v: string) => /^[^\s@<>"]+@[^\s@<>"]+\.[^\s@<>"]+$/.test(v) && v.length <= 200;
+const LOGO_MAX = 30_000; // characters of PNG data URL: it rides along as one setting (a DigitalOcean server's settings are capped at 64 KB)
+const pngBytes = (dataUrl: string) => { try { const b = Buffer.from(dataUrl.slice(dataUrl.indexOf(",") + 1), "base64"); return b.length > 8 && b[0] === 0x89 && b[1] === 0x50 && b[2] === 0x4e && b[3] === 0x47; } catch { return false; } };
 const errMsg = (e: unknown) => (e instanceof ProviderError ? e.message : "Something went wrong on our side. Try again in a minute.");
 const safeLog = (where: string, e: unknown) => console.error(`[setup] ${where}: ${e instanceof ProviderError ? `provider error ${e.status} ${e.code}` : (e as Error)?.name || "error"}`);
 
@@ -97,11 +99,22 @@ export const actions: Record<string, Action> = {
     const g = guard(b, "brand"); if (g) return g;
     const productName = str(f.productName, 60).replace(/[\r\n]/g, " ");
     const ownerEmail = str(f.ownerEmail, 200).toLowerCase();
-    if (!productName) return err("Give your brand a name.", f);
-    if (!isEmail(ownerEmail)) return err("Enter a real email address.", f);
-    updateSetup(b.id, (s) => { const logo = /^data:image\/png;base64,[A-Za-z0-9+/=]+$/.test(f.logo || "") ? f.logo : s.brand?.logo;
-      const colour = /^#[0-9a-fA-F]{6}$/.test(f.colour || "") ? f.colour : s.brand?.colour;
-      s.brand = { productName, ownerEmail, ownPhoneAccount: false, logo, colour }; nextStep(b, s, "brand"); });
+    const keep = { productName: f.productName || "", ownerEmail: f.ownerEmail || "" };
+    if (!productName) return err("Give your brand a name.", keep);
+    if (!isEmail(ownerEmail)) return err("Enter a real email address.", keep);
+    // The logo arrives already shrunk by the page (wizard.js) as a PNG data URL. It travels to the
+    // agency's own server as one setting, so it has to stay small.
+    let logo: string | undefined;
+    if (f.logo) {
+      if (f.logo.length > LOGO_MAX) return err("That logo is too big to send. Choose a smaller picture, or leave the logo out and add it later in Settings.", keep);
+      if (!/^data:image\/png;base64,[A-Za-z0-9+/]+={0,2}$/.test(f.logo) || !pngBytes(f.logo)) return err("We couldn't read that logo. Choose a PNG or JPG picture, or leave it out and add it later in Settings.", keep);
+      logo = f.logo;
+    }
+    updateSetup(b.id, (s) => {
+      if (!logo && f.removeLogo !== "1") logo = s.brand?.logo;
+      const colour = /^#[0-9a-fA-F]{6}$/.test(f.colour || "") ? f.colour.toLowerCase() : s.brand?.colour;
+      s.brand = { productName, ownerEmail, ownPhoneAccount: false, logo, colour }; nextStep(b, s, "brand");
+    });
     return null;
   },
 
@@ -510,6 +523,14 @@ async function tickZone(id: number) {
   }
 }
 
+/** The logo and colour from the Brand step. The app applies them once, when the owner first signs up. */
+function brandSettings(s: SetupData): Record<string, string> {
+  const v: Record<string, string> = {};
+  if (s.brand?.logo) v.BRAND_LOGO_PNG = s.brand.logo.slice(s.brand.logo.indexOf(",") + 1);
+  if (s.brand?.colour) v.BRAND_COLOUR = s.brand.colour;
+  return v;
+}
+
 function buildSettings(id: number, s: SetupData): string {
   const resendKey = getSecret(id, "resend_key");
   const smtp = s.email?.mode === "resend" ? `smtps://resend:${resendKey}@smtp.resend.com:465` : smtpUrl(s.email!.smtp!.host, s.email!.smtp!.port, s.email!.smtp!.user, getSecret(id, "smtp_password") || "");
@@ -518,6 +539,7 @@ function buildSettings(id: number, s: SetupData): string {
     DOMAIN: hostOf(s),
     FIRST_ADMIN_EMAIL: s.brand!.ownerEmail,
     TELNYX_API_KEY: getSecret(id, "telnyx_key") || "",
+    ...brandSettings(s),
     OWN_PHONE_ACCOUNT: "", // the buyer is the agency: every client runs on their Telnyx key
     SMTP_URL: smtp,
     MAIL_FROM: s.email!.from || "",
@@ -918,6 +940,7 @@ async function railwayVars(id: number, s: SetupData, token: string): Promise<Rec
     // Encrypts saved mailbox and calendar logins in the database. Lives only in Railway.
     MAILBOX_KEY: randomBytes(32).toString("base64"),
     SINGLE_AGENCY: "1",
+    ...brandSettings(s),
     HOST: "0.0.0.0",
     API_PORT: String(APP_PORT),
     PORT: String(APP_PORT),

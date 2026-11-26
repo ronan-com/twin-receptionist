@@ -1,7 +1,7 @@
 import { createHash, randomBytes } from "node:crypto";
 import type { Account, OrgRole, TeamState } from "../src/lib/shared";
 import { clientAccessOf, consoleOf } from "./answered";
-import { resolveBrand } from "./brand";
+import { applyInstallBrand, resolveBrand } from "./brand";
 import { iso, sql } from "./db";
 import { importLegacyData } from "./legacy";
 import { mailerReady, sendAccountEmail } from "./mailer";
@@ -246,7 +246,14 @@ export async function signUp(input: any): Promise<string> {
     first = n === 0;
     // On a fresh server, only the expected owner may become the first (platform) account.
     const firstAdmin = (process.env.FIRST_ADMIN_EMAIL ?? "").trim().toLowerCase();
-    if (first && firstAdmin && email !== firstAdmin) throw new AuthError("Sign-up is by invitation. Ask your team for an invite.", 403);
+    if (first && firstAdmin && email !== firstAdmin) {
+      throw new AuthError(
+        singleAgency()
+          ? "Use the owner email you gave during setup to create the first account."
+          : "Sign-up is by invitation. Ask your team for an invite.",
+        403,
+      );
+    }
     // The self-serve sign-up (server/routes/signup.ts) only comes here for the very first account.
     if (!first && input?.firstOnly === true) throw new AuthError("The first account was just created. Refresh and try again.", 409);
     if (!first && (process.env.ALLOW_SIGNUP !== "true" || singleAgency())) throw new AuthError("Sign-up is by invitation. Ask your team for an invite.", 403);
@@ -258,6 +265,7 @@ export async function signUp(input: any): Promise<string> {
   });
   // Receptionists made before accounts existed belong to the first account.
   if (first) await importLegacyData(orgId).catch((err) => console.error("[legacy import]", err));
+  if (first && singleAgency()) await applyInstallBrand(orgId);
   return startSession(userId, orgId);
 }
 

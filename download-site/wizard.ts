@@ -540,7 +540,7 @@ function done(c: Ctx) {
   <div>${icon("check")}<span>${s.sshKeyAdded ? `Log in to the server with your SSH key: <code>ssh root@${esc(s.ip || "")}</code>` : "Server login: DigitalOcean emailed you its root password, or use the droplet's Console."}</span></div>
 </div>
 ${lockedOut(c)}
-${notice("info", "We've deleted every key you gave us. We have no login to your server or accounts. Your agency shares health and usage counts with us (never calls or customer details). That is on by default and you can switch it off in your dashboard, under Settings, then Support. Support access, which would let us sign in to help you, is off unless you turn it on there.")}
+${notice("info", "We've deleted every key you gave us. We have no login to your server or accounts. Your agency shares health and usage counts and a short, masked list of recent problems with us (never calls or customer details), and updates itself overnight. Sharing, Support access (which lets us sign in and, unless you say no, fix things for you, but never see your keys, billing or owner account) and automatic updates are all on by default so we can help you fast. You can switch each one off in your dashboard, under Settings: Support and Updates.")}
 <details class="log"><summary>Show details</summary><pre id="log" data-next="${next}">${esc(text.slice(-60000))}</pre></details>
 ${nav(c, `<a class="btn p" href="${esc(url)}" target="_blank" rel="noopener noreferrer">Open your dashboard ${icon("ext")}</a>`, { back: false })}`;
 }
@@ -732,7 +732,7 @@ export function wizardPage(b: Buyer, s: SetupData, code: string, sid: string, vi
   // A one-time link (owner password reset): a big button, shown once and never stored.
   const flLink = flash?.link && /^https?:\/\/[^\s"'<>]+$/.test(flash.link)
     ? `<p class="resetlink"><a class="btn p big" href="${esc(flash.link)}" target="_blank" rel="noopener noreferrer" data-owner-reset-link>Set a new password ${icon("ext")}</a></p>` : "";
-  const title = `${META[view].title} · Set up ${s.brand?.productName || CONFIG.productName}`;
+  const title = `${META[view].title} · Set up ${s.brand?.productName || NEUTRAL()}`;
   return `<!doctype html>
 <html lang="en-AU">
 <head>

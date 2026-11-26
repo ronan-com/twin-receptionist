@@ -823,17 +823,33 @@ export type Brand = {
 };
 
 // `support` is set for a sign-in by the setup provider's support person (Settings, "Support"); `by` is who.
-export type Viewing = { org: string; client: string | null; business: string; support?: boolean; by?: string };
+export type Viewing = { org: string; client: string | null; business: string; support?: boolean; by?: string; /** support session that may make changes (the owner allows it by default) */ canEdit?: boolean };
 
 // Settings, "Support" (server/supportSync.ts).
 export type SupportSettings = {
   configured: boolean;
   seller: string;
   sync: { enabled: boolean; lastSentAt: string | null; lastOk: boolean | null; lastError: string };
-  access: { enabled: boolean; until: string | null; grantedAt: string | null };
+  access: { enabled: boolean; until: string | null; grantedAt: string | null; isDefault?: boolean };
+  /** Support can make changes (never keys, billing, the owner or exports) while access is on. */
+  edit: { enabled: boolean };
   sends: string[];
   neverSent: string;
   recent: { action: string; summary: string; at: string }[];
+};
+
+// Settings, "Updates" (server/autoUpdate.ts).
+export type UpdatesStatus = {
+  /** this copy has its own Railway project token, so it can update itself */
+  available: boolean;
+  enabled: boolean;
+  mode: "overnight" | "asap";
+  version: string;
+  latest: string;
+  deploying: boolean;
+  lastResult: "ok" | "failed" | "";
+  lastError: string;
+  lastAt: string | null;
 };
 
 export type Account = {

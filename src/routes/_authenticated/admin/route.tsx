@@ -120,7 +120,7 @@ function AdminLayout() {
               <span>
                 {ws.viewing.support ? (
                   <>
-                    <span className="font-semibold">Support session.</span> {ws.viewing.by || "Your setup provider"} is helping you, with your permission. Read only, and every sign-in is in the audit log.
+                    <span className="font-semibold">Support session.</span> {ws.viewing.by || "Your setup provider"} is helping you, with your permission. {ws.viewing.canEdit ? "They can fix things for you but never see or change your keys, billing or owner account, or export your data." : "Read only."} Every sign-in and change is in your audit log.
                   </>
                 ) : (
                   <>

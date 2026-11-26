@@ -9,7 +9,8 @@ import { mailerReady, sendAccountEmail } from "./mailer";
 import { ValidationError } from "./prompt";
 import { UI_PRODUCT } from "./product";
 import { accountMode, providerOfOrg } from "./voice/config";
-import { supportAccessOpen, supportSeller } from "./supportAccess";
+import { supportAccessOpen, supportEditAllowed, supportSeller } from "./supportAccess";
+export { readOnlyView } from "./supportChanges";
 
 // People sign in with an email and password. Each person belongs to one or more
 // organisations (an agency, the sales team, or a single business), with a role:
@@ -21,7 +22,7 @@ import { supportAccessOpen, supportSeller } from "./supportAccess";
 export type Ctx = {
   // Set while the platform team is viewing as an agency or a customer (read-only).
   // `support` marks a sign-in by the setup provider's support person (Settings, "Support access").
-  viewing?: { org: string; client: string | null; business: string; support?: boolean; by?: string };
+  viewing?: { org: string; client: string | null; business: string; support?: boolean; by?: string; canEdit?: boolean };
   tokenHash: string;
   user: { id: string; email: string; name: string; platformAdmin: boolean };
   org: { id: string; name: string } | null;
@@ -153,7 +154,8 @@ export async function sessionFrom(req: Request): Promise<Ctx | null> {
       user: { ...user, platformAdmin: false },
       org: { id: o.id, name: o.name },
       role: client ? "customer" : "admin",
-      viewing: { org: o.name, client, business, support: true, by: supportSeller() },
+      // canEdit: the owner lets support make changes (the default). Only for the agency itself, never for a customer's view.
+      viewing: { org: o.name, client, business, support: true, by: supportSeller(), ...(client ? {} : { canEdit: await supportEditAllowed() }) },
     };
   }
   // The platform team stepping into an agency (or a business's customer view), read-only.

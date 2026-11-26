@@ -196,7 +196,7 @@ describe("POST /api/sync on the real site", () => {
     expect((await fetch(post(null, good()))).status).toBe(401);
     expect((await fetch(post("st_" + "z".repeat(43), good()))).status).toBe(401);
     expect((await fetch(`${SITE}/api/sync`)).status).toBe(405);
-    expect((await fetch(post(token, "x".repeat(20_000)))).status).toBe(413);
+    expect((await fetch(post(token, "x".repeat(70_000)))).status).toBe(413);
     let limited = 0;
     for (let i = 0; i < 25; i++) if ((await fetch(post(token, good()))).status === 429) limited++;
     expect(limited).toBeGreaterThan(0);
@@ -237,7 +237,7 @@ describe("the admin pages", () => {
     const html = await (await adminGet(`/admin/b/${buyerId}`)).text();
     expect(html).toContain("Health and support");
     expect(html).toContain("Sync now");
-    expect(html).toContain("Ask the buyer to turn on Support access");
+    expect(html).toContain("Ask the agency to turn on Support access");
     expect(html).toMatch(/<button class="btn o" type="button" disabled>View as<\/button>/);
     expect(html).not.toContain("callerName");
   });

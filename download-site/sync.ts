@@ -13,8 +13,10 @@ import { ANY_MOCK, CONFIG, db, now, sha256 } from "./lib";
 import { siteKey } from "./store";
 
 // ---------------- the whitelist ----------------
-type Field = "number" | "boolean" | "string" | "string?" | { [k: string]: Field };
-export const SHAPE: { [k: string]: Field } = {
+type Shape = { [k: string]: Field };
+type Field = "number" | "boolean" | "string" | "string?" | Shape | { $array: Shape; max: number };
+const isArray = (f: Field): f is { $array: Shape; max: number } => typeof f === "object" && "$array" in f && typeof (f as any).max === "number";
+export const SHAPE: Shape = {
   v: "number",
   sentAt: "string",
   appVersion: "string",
@@ -24,7 +26,9 @@ export const SHAPE: { [k: string]: Field } = {
   lastCallAt: "string?",
   brand: { name: "string", logoUrl: "string" },
   extras: { email: "boolean", domain: "boolean", openRouter: "boolean" },
-  support: { sharing: "boolean", access: "boolean", accessUntil: "string?" },
+  support: { sharing: "boolean", access: "boolean", accessUntil: "string?", edit: "boolean" },
+  updates: { available: "boolean", enabled: "boolean", mode: "string", latest: "string", lastResult: "string", lastError: "string", lastAt: "string?" },
+  problems: { $array: { kind: "string", msg: "string", count: "number", last: "string" }, max: 50 },
 };
 const ISO = (s: string) => /^\d{4}-\d\d-\d\dT[\d:.]+Z$/.test(s);
 const FORMAT: Record<string, (s: string) => boolean> = {
@@ -32,10 +36,16 @@ const FORMAT: Record<string, (s: string) => boolean> = {
   sentAt: ISO,
   lastCallAt: ISO,
   accessUntil: ISO,
+  lastAt: ISO,
+  last: ISO,
+  kind: (s) => /^[a-z0-9_.:-]{1,40}$/.test(s),
+  mode: (s) => s === "overnight" || s === "asap",
+  latest: (s) => /^[A-Za-z0-9._+-]{1,40}$/.test(s),
+  lastResult: (s) => s === "ok" || s === "failed",
   publicUrl: (s) => /^https?:\/\/[^\s"'<>\\]{1,300}$/.test(s),
   logoUrl: (s) => /^https?:\/\/[^\s"'<>\\]{1,400}$/.test(s),
 };
-const MAX_LEN: Record<string, number> = { name: 80 };
+const MAX_LEN: Record<string, number> = { name: 80, msg: 200, lastError: 200 };
 const looksPersonal = (s: string) => /[^\s@]+@[^\s@]+\.[^\s@]+/.test(s) || /(?:\+|\b)\d[\d\s().-]{7,}\d/.test(s);
 const textOk = (k: string, s: string) => !s || (FORMAT[k] ? FORMAT[k](s) : !looksPersonal(s));
 
@@ -46,16 +56,20 @@ export type Snapshot = {
   lastCallAt: string | null;
   brand: { name: string; logoUrl: string };
   extras: { email: boolean; domain: boolean; openRouter: boolean };
-  support: { sharing: boolean; access: boolean; accessUntil: string | null };
+  support: { sharing: boolean; access: boolean; accessUntil: string | null; edit: boolean };
+  updates: { available: boolean; enabled: boolean; mode: string; latest: string; lastResult: string; lastError: string; lastAt: string | null };
+  problems: Problem[];
 };
+export type Problem = { kind: string; msg: string; count: number; last: string };
 
 /** Keeps only what SHAPE allows. We never trust the app's payload: unknown fields are dropped, text is clipped. */
 export function cleanSnapshot(raw: unknown): Snapshot | null {
-  const walk = (shape: { [k: string]: Field }, v: any): any => {
+  const walk = (shape: Shape, v: any): any => {
     const out: Record<string, any> = {};
     for (const [k, f] of Object.entries(shape)) {
       const x = v && typeof v === "object" ? v[k] : undefined;
-      if (typeof f === "object") out[k] = walk(f, x);
+      if (isArray(f)) out[k] = (Array.isArray(x) ? x.slice(0, f.max) : []).map((item) => walk(f.$array, item));
+      else if (typeof f === "object") out[k] = walk(f, x);
       else if (f === "number") out[k] = typeof x === "number" && Number.isFinite(x) && x >= 0 ? Math.round(x) : 0;
       else if (f === "boolean") out[k] = x === true;
       else {
@@ -100,7 +114,35 @@ export const deleteSyncData = (buyerId: number) => {
   db().query("DELETE FROM sync_tokens WHERE buyer_id = ?").run(buyerId);
   db().query("DELETE FROM sync_snapshots WHERE buyer_id = ?").run(buyerId);
   db().query("DELETE FROM sync_history WHERE buyer_id = ?").run(buyerId);
+  db().query("DELETE FROM sync_push WHERE buyer_id = ?").run(buyerId);
+  db().query("DELETE FROM sync_off WHERE buyer_id = ?").run(buyerId);
 };
+
+// ---------------- "Push update now" ----------------
+const PUSH_MINUTES = 60;
+/** Asks for the next heartbeat's answer to carry updateNow. Refused when the app can't or won't update itself. */
+export function requestPush(buyerId: number, by: string): { ok: true } | { ok: false; reason: "unavailable" | "off" | "current" | "unknown" } {
+  const st = latestSnapshot(buyerId);
+  if (!st) return { ok: false, reason: "unknown" };
+  if (!st.snap.updates.available) return { ok: false, reason: "unavailable" };
+  if (!st.snap.updates.enabled) return { ok: false, reason: "off" };
+  db().query("INSERT INTO sync_push (buyer_id, requested_at, requested_by) VALUES (?, ?, ?) ON CONFLICT (buyer_id) DO UPDATE SET requested_at = excluded.requested_at, requested_by = excluded.requested_by").run(buyerId, now(), by.slice(0, 200));
+  return { ok: true };
+}
+export const pushPending = (buyerId: number, at = Date.now()): boolean => {
+  const r = db().query("SELECT requested_at FROM sync_push WHERE buyer_id = ?").get(buyerId) as { requested_at: string } | null;
+  return !!r && at - Date.parse(r.requested_at) < PUSH_MINUTES * 60_000;
+};
+/** True once, then the request is gone (and an expired one is dropped without being sent). */
+export function takePush(buyerId: number, at = Date.now()): boolean {
+  const live = pushPending(buyerId, at);
+  db().query("DELETE FROM sync_push WHERE buyer_id = ?").run(buyerId);
+  return live;
+}
+
+// ---------------- what happens after a heartbeat is stored (alerts.ts registers here) ----------------
+export type HeartbeatHook = (buyerId: number, prev: Snapshot | null, next: Snapshot) => void;
+export const heartbeatHooks: HeartbeatHook[] = [];
 
 // ---------------- storing ----------------
 const KEEP_HISTORY = 48;
@@ -131,7 +173,7 @@ export const history = (buyerId: number, n = 12): Beat[] =>
   (db().query("SELECT at, data FROM sync_history WHERE buyer_id = ? ORDER BY id DESC LIMIT ?").all(buyerId, n) as { at: string; data: string }[]).map((r) => ({ at: r.at, ...JSON.parse(r.data) }));
 
 // ---------------- the app calling in ----------------
-export const MAX_SYNC_BODY = 16 * 1024;
+export const MAX_SYNC_BODY = 64 * 1024;
 export type Received = { status: number; body: Record<string, unknown>; buyerId?: number };
 
 /** POST /api/sync: token auth, a size cap, the whitelist. Rate limits are applied by the caller (server.ts). */
@@ -143,8 +185,12 @@ export function receive(token: string, bodyText: string): Received {
   try { raw = JSON.parse(bodyText); } catch { return { status: 400, body: { error: "bad json" }, buyerId: id }; }
   const snap = cleanSnapshot(raw);
   if (!snap) return { status: 400, body: { error: "bad snapshot" }, buyerId: id };
+  const prev = latestSnapshot(id)?.snap ?? null;
   storeSnapshot(id, snap, "heartbeat");
-  return { status: 200, body: { ok: true }, buyerId: id };
+  db().query("DELETE FROM sync_off WHERE buyer_id = ?").run(id);
+  for (const h of heartbeatHooks) { try { h(id, prev, snap); } catch (e) { console.error(`[sync] hook failed: ${(e as Error)?.name}`); } }
+  // The app may be asked to update now. It still only does so if its owner has automatic updates on.
+  return { status: 200, body: takePush(id) ? { ok: true, updateNow: true } : { ok: true }, buyerId: id };
 }
 
 // ---------------- how a buyer looks ----------------
@@ -227,6 +273,33 @@ export async function viewAsLink(buyerId: number, appUrl: string, doFetch: typeo
     return { ok: false, reason: "error", message: `The app answered ${r.status}.` };
   }
   return { ok: true, url: link };
+}
+
+export type LogLine = { at: string; level: string; line: string };
+/** "Fetch recent logs": the app's last 200 log lines (scrubbed by the app), only while the buyer has Support access on. Never stored. */
+export async function fetchLogs(buyerId: number, appUrl: string, doFetch: typeof fetch = fetch): Promise<Outcome<{ lines: LogLine[] }>> {
+  const base = appBase(appUrl);
+  const tok = callToken(buyerId);
+  if (!base || !tok) return { ok: false, reason: "no-app", message: "We don't have this app's address, or it was installed before syncing existed." };
+  const r = await callApp(base, "/api/support/logs", tok, doFetch);
+  if (!r) return { ok: false, reason: "unreachable", message: "The app didn't answer. It may be down, restarting or asleep." };
+  if (r.status === 403 && r.json?.error === "access_off") return { ok: false, reason: "off", message: "The buyer hasn't turned on Support access." };
+  if (r.status === 401 || r.status === 404) return { ok: false, reason: "refused", message: "This version of the app can't send logs yet. The buyer needs to update." };
+  if (r.status !== 200 || !r.json?.ok || !Array.isArray(r.json.lines)) return { ok: false, reason: "error", message: `The app answered ${r.status}.` };
+  const lines: LogLine[] = r.json.lines.slice(-200).filter((l: any) => l && typeof l.line === "string").map((l: any) => ({ at: String(l.at || "").slice(0, 30), level: String(l.level || "log").slice(0, 8), line: String(l.line).slice(0, 300) }));
+  return { ok: true, lines };
+}
+
+/** Is a silent app down, or did its owner just turn sharing off? Asks it directly (with the call token). */
+export async function probeApp(buyerId: number, appUrl: string, doFetch: typeof fetch = fetch): Promise<"sharing-off" | "alive" | "unreachable" | "refused" | "no-app"> {
+  const base = appBase(appUrl);
+  const tok = callToken(buyerId);
+  if (!base || !tok) return "no-app";
+  const r = await callApp(base, "/api/support/ping", tok, doFetch);
+  if (!r) return "unreachable";
+  if (r.status === 401) return "refused";
+  if (r.status === 200 && r.json?.sharing === false) return "sharing-off";
+  return r.status === 200 ? "alive" : "unreachable";
 }
 
 export type OwnerReset = { ok: true; url: string; minutes: number } | { ok: false; reason: "outdated" | "unreachable" | "limited" | "error"; message: string };

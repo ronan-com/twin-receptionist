@@ -19,8 +19,9 @@ import { LinkBox, READ_ONLY_HINT, useConsole } from "./-shared";
 import { PRODUCT } from "@/lib/app/product";
 import { EmailCalendarsSection } from "./-email-calendars";
 import { SupportSection } from "./-support";
+import { UpdatesSection } from "./-updates";
 
-const TABS = ["team", "branding", "account", "platform", "email", "support"] as const;
+const TABS = ["team", "branding", "account", "platform", "email", "support", "updates"] as const;
 type Tab = (typeof TABS)[number];
 
 export const Route = createFileRoute("/_authenticated/admin/settings")({
@@ -50,6 +51,7 @@ function AdminSettingsPage() {
           {platform ? <TabsTrigger value="platform">Platform admins</TabsTrigger> : null}
           {serverSettings ? <TabsTrigger value="email">Email and calendars</TabsTrigger> : null}
           {supportTab ? <TabsTrigger value="support">Support</TabsTrigger> : null}
+          {supportTab ? <TabsTrigger value="updates">Updates</TabsTrigger> : null}
         </TabsList>
         <TabsContent value="team" className="mt-4">
           <TeamSection />
@@ -68,6 +70,11 @@ function AdminSettingsPage() {
         {serverSettings ? (
           <TabsContent value="email" className="mt-4">
             <EmailCalendarsSection />
+          </TabsContent>
+        ) : null}
+        {supportTab ? (
+          <TabsContent value="updates" className="mt-4">
+            <UpdatesSection />
           </TabsContent>
         ) : null}
         {supportTab ? (

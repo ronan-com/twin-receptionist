@@ -20,7 +20,8 @@ export function useConsole() {
   const viewingAgency = Boolean(ws.viewing && !ws.viewing.client);
   const platform = ws.isPlatformAdmin && !viewingAgency;
   const role = ws.session?.role ?? null;
-  const readOnly = Boolean(ws.viewing);
+  // A support session with "Support can make changes" on is not read only (the server still refuses keys, billing, the owner and exports).
+  const readOnly = Boolean(ws.viewing && !ws.viewing.canEdit);
   // Pausing, sharing, branding, team: agency owners/admins and the platform admin.
   const canManage = !readOnly && (ws.isPlatformAdmin || role === "owner" || role === "admin");
   // SINGLE_AGENCY: the server is this one agency, on its own Telnyx key (no platform, no number requests).

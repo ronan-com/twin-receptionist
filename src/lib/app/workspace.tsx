@@ -174,7 +174,8 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
 
   const access = useMemo<Access>(() => {
     if (!business || !session) return NO_ACCESS;
-    if (session.viewing) {
+    // A support session that may make changes (the owner allows it by default) works like an agency admin; any other view is read only.
+    if (session.viewing && !(session.viewing.canEdit && !session.viewing.client)) {
       return {
         kind: "staff_view",
         role: null,

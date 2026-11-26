@@ -19,7 +19,8 @@ import { CONFIG, RAILWAY, addBuyer, db, now, setupLink, sha256, type Buyer } fro
 import { esc } from "./pages";
 import { welcomeEmail } from "./content";
 import { agencyUrl, allow, appUrlOf, stepDone, updateInfo } from "./setup";
-import { ago, hasSyncToken, allSnapshots, deleteSyncData, dot, history, latestSnapshot, logSupport, seen, supportLog, syncNow, viewAsLink, type Stored } from "./sync";
+import { ago, hasSyncToken, allSnapshots, deleteSyncData, dot, fetchLogs, history, latestSnapshot, logSupport, pushPending, requestPush, seen, supportLog, syncNow, viewAsLink, type Stored } from "./sync";
+import { alertHistory } from "./alerts";
 import { DEMO_READY } from "./demo";
 import { ALL_SECRETS, STEPS, getSetup, logRead, resetSetup, secretHint, type SetupData } from "./store";
 import { wizardPage } from "./wizard";
@@ -136,7 +137,7 @@ const pill = (st: Status) => `<span class="pill ${st.replace(/\s/g, "-")}">${st}
 /** The installed app version and an "Update available" pill when we've published a newer one. */
 function versionCell(b: Buyer, s: SetupData): string {
   const u = updateInfo(b, s);
-  return u ? `${esc(u.installed || "unknown")}${u.available ? ` <span class="pill installing" title="Version ${esc(u.latest)} is published; this buyer hasn't updated yet">Update available</span>` : ""}` : "";
+  return u ? `${esc(u.installed || "unknown")}${u.available ? ` <span class="pill installing" title="Version ${esc(u.latest)} is published; this agency hasn't updated yet">Update available</span>` : ""}` : "";
 }
 const copyBtn = (v: string) => `<button type="button" class="copy" data-copy="${esc(v)}">Copy</button>`;
 function page(title: string, body: string, opts: { sid?: string; email?: string; wide?: boolean } = {}) {
@@ -154,8 +155,8 @@ function page(title: string, body: string, opts: { sid?: string; email?: string;
 <body class="adm">
 <div class="ribbon" aria-hidden="true"></div>
 <header class="top"><a class="mark" href="/admin"><span>${esc(CONFIG.sellerName)} · Admin</span></a>
-<nav>${opts.sid ? `<span class="who">${esc(opts.email || "")}</span><form method="post" action="/admin/logout"><input type="hidden" name="t" value="${esc(csrf(opts.sid))}"><button class="linkbtn" type="submit">Sign out</button></form>` : ""}</nav></header>
-<div class="shell wiz admshell"><main>${body}</main></div>
+<nav>${opts.sid ? `<a href="/admin">Agencies</a> <a href="/admin/problems">Problems</a> <a href="/admin/alerts">Alerts</a> ${navLinkHtml()} <span class="who">${esc(opts.email || "")}</span><form method="post" action="/admin/logout"><input type="hidden" name="t" value="${esc(csrf(opts.sid))}"><button class="linkbtn" type="submit">Sign out</button></form>` : ""}</nav></header>
+<div class="shell wiz admshell"${opts.live ? ` data-live="1" data-status="${esc(opts.live.status)}" data-rev="${esc(opts.live.rev)}"` : ""}><main>${body}</main></div>
 </body>
 </html>`;
 }
@@ -181,8 +182,24 @@ function syncCell(st: Stored | null) {
   return `<span class="hdot ${dot(st)}" title="${esc(st.snap.health.ok ? "Healthy" : "Needs a look")}"></span><span class="pill seen-${k}">${SEEN_LABEL[k]}</span> <span class="hint">${esc(ago(st.receivedAt))}</span>`;
 }
 
-function listPage(sid: string, email: string, q: string, filter: string, flash = "", kind = "") {
-  const all = rows();
+/** Their automatic updates, in one line: on/off, unavailable (buyer must press Update), or failed. */
+function autoState(st: Stored | null): { text: string; tone: "ok" | "off" | "bad" | "" } {
+  if (!st) return { text: "", tone: "" };
+  const u = st.snap.updates;
+  if (!u.available) return { text: "Auto-update unavailable — agency must press Update", tone: "off" };
+  if (u.lastResult === "failed") return { text: `Auto-update failed${u.lastError ? `: ${u.lastError}` : ""}`, tone: "bad" };
+  if (!u.enabled) return { text: "Auto-update off (the owner's choice)", tone: "off" };
+  const latest = currentPackage()?.version || "";
+  const behind = latest && st.snap.appVersion && latest !== st.snap.appVersion;
+  return { text: `Auto-update on (${u.mode === "asap" ? "as soon as available" : "overnight 2-4am"})${behind ? `, ${latest} waiting` : ""}`, tone: "ok" };
+}
+const problemBadge = (st: Stored | null) => (st && st.snap.problems.length ? ` <a class="pill failed" href="/admin/problems" title="${esc(st.snap.problems.map((p) => p.kind).join(", "))}">${st.snap.problems.length} problem${st.snap.problems.length === 1 ? "" : "s"}</a>` : "");
+
+function listPage(sid: string, email: string, q: string, filter: string, flash = "") {
+  const everyone = rows();
+  // The list is real agencies only. Test runs (the demo flag) sit in a small collapsed section at the bottom.
+  const all = everyone.filter((r) => r.b.demo !== 1);
+  const tests = everyone.filter((r) => r.b.demo === 1);
   const counts = Object.fromEntries(STATUSES.map((s) => [s, all.filter((r) => r.status === s).length]));
   const demoCount = all.filter((r) => r.b.demo === 1).length;
   const needle = q.trim().toLowerCase();
@@ -190,16 +207,25 @@ function listPage(sid: string, email: string, q: string, filter: string, flash =
   const snaps = allSnapshots();
   const syncing = all.filter((r) => seen(snaps.get(r.b.id) ?? null) === "live").length;
   const tr = shown.map((r) => { const st = snaps.get(r.b.id) ?? null; return `<tr>
-<td data-l="Buyer"><a href="/admin/b/${r.b.id}"><b>${esc(r.b.name)}</b></a>${r.b.demo === 1 ? ` <span class="pill demo">Test</span>` : ""}<br><span class="hint">${esc(r.b.email)}</span></td>
+<td data-l="Agency"><a href="/admin/b/${r.b.id}"><b>${esc(r.b.name)}</b></a>${problemBadge(st)}<br><span class="hint">${esc(r.b.email)}</span></td>
 <td data-l="Brand">${esc(r.s.brand?.productName || "")}</td>
 <td data-l="Status">${pill(r.status)}</td>
 <td data-l="Live at">${r.live ? `<a href="${esc(r.live)}" target="_blank" rel="noopener noreferrer">${esc(r.live.replace(/^https?:\/\//, ""))}</a>` : ""}</td>
 <td data-l="Sync">${syncCell(st)}</td>
-<td data-l="Version">${versionCell(r.b, r.s) || esc(st?.snap.appVersion || "")}</td>
+<td data-l="Version">${versionCell(r.b, r.s) || esc(st?.snap.appVersion || "")}${st ? `<br><span class="hint ${autoState(st).tone === "bad" ? "bad" : ""}">${esc(autoState(st).text)}</span>` : ""}</td>
 <td data-l="Calls 7d">${st ? st.snap.counts.calls7d : ""}</td>
 <td data-l="Receptionists">${st ? st.snap.counts.receptionists : ""}</td>
 <td data-l="Last activity">${esc(when(r.updated))}</td></tr>`; }).join("");
-  return page("Buyers", `${flash}
+  const testRows = tests.map((r) => `<tr>
+<td data-l="Test run"><a href="/admin/b/${r.b.id}">${esc(r.b.name)}</a></td>
+<td data-l="Created">${esc(when(r.b.created_at))}</td>
+<td data-l="Status">${pill(r.status)}</td>
+<td data-l=""><form method="post" action="/admin/b/${r.b.id}/delete">${hiddenT(sid)}<button class="linkbtn" type="submit" data-confirm="${esc(`Delete the test run ${r.b.name}?`)}">Delete</button></form></td></tr>`).join("");
+  const testsSection = tests.length || DEMO_READY ? `<section class="card tests">
+<div class="titlerow"><details><summary>Test runs (${tests.length})</summary>${tests.length ? `<div style="overflow-x:auto"><table class="records"><thead><tr><th>Name</th><th>Created</th><th>Status</th><th></th></tr></thead><tbody>${testRows}</tbody></table></div>` : `<p class="hint">No test runs.</p>`}</details>
+${DEMO_READY ? `<form method="post" action="/admin/demo" target="_blank">${hiddenT(sid)}<button class="btn o" type="submit" title="Makes a test agency with pretend accounts and opens their setup in a new tab">Start a test run</button></form>` : ""}</div>
+</section>` : "";
+  return page("Agencies", `${flash}
 <section class="card">
 <div class="titlerow"><h1>Buyers</h1>${DEMO_READY ? `<form method="post" action="/admin/demo" target="_blank">${hiddenT(sid)}<button class="btn p" type="submit" title="Makes a test buyer with pretend accounts and opens their setup in a new tab">Start a test run</button></form>` : ""}</div>
 <p class="lead">${all.length} buyer${all.length === 1 ? "" : "s"}${demoCount ? ` (${demoCount} test)` : ""}. ${counts.live} live, ${counts.installing} installing, ${counts.failed} failed. ${syncing} syncing now.</p>
@@ -253,16 +279,34 @@ ${x ? `<div class="counts">${([["Calls 24h", x.counts.calls24h], ["Calls 7d", x.
   ${act("sync", "Sync now", "btn o")}
   ${accessOff ? `<button class="btn o" type="button" disabled>View as</button>` : act("view-as", "View as", "btn p")}
 </div></div>
-${accessOff ? `<p class="hint"><b>Ask the buyer to turn on Support access.</b> It's off in their app (Settings, Support). It's theirs to switch on, for 24 hours, 7 days or until they turn it off. "Sync now" refreshes this.</p>` : `<p class="hint">"View as" opens their dashboard read-only, through a link that works once for 60 seconds. It only works while they have Support access on, and their app records every sign-in in their audit log.</p>`}
+${problemsPanel(b.id, st)}
+${accessOff ? `<p class="hint"><b>Ask the agency to turn on Support access.</b> It's off in their app (Settings, Support). It's theirs to switch on, for 24 hours, 7 days or until they turn it off. "Sync now" refreshes this.</p>` : `<p class="hint">"View as" opens their dashboard read-only, through a link that works once for 60 seconds. It only works while they have Support access on, and their app records every sign-in in their audit log.</p>`}
+<div class="summary"><div><span>Automatic updates</span><b>${esc(autoState(st).text || "Unknown")}${x ? ` · ${x.support.edit ? "support can make changes" : "support is read-only"}` : ""}</b></div></div>
 ${beats.length ? `<details class="log"><summary>Recent heartbeats</summary><div class="beats">${beats.map((h) => `${esc(when(h.at))} · ${h.ok ? "healthy" : "needs a look"} · ${h.calls24h} calls today · ${h.errors24h} errors · v${esc(h.v)}`).join("<br>")}</div></details>` : ""}
 ${log.length ? `<details class="log"><summary>What we did (our side)</summary><div class="beats">${log.map((l) => `${esc(when(l.at))} · ${esc(l.admin_email)} · ${esc(l.action)}${l.note ? ` · ${esc(l.note)}` : ""}`).join("<br>")}</div></details>` : ""}`;
 }
+  ${x && x.updates.available && x.updates.enabled ? (pushPending(b.id) ? `<button class="btn o" type="button" disabled title="They'll be asked on their next heartbeat (within 15 minutes)">Update requested</button>` : act("push-update", "Push update now", "btn o")) : `<button class="btn o" type="button" disabled title="${x ? (x.updates.available ? "The owner turned automatic updates off" : "This agency can't update itself: the agency presses Update on their setup link") : "Nothing heard yet"}">Push update now</button>`}
+  ${accessOff ? `<button class="btn o" type="button" disabled>Fetch recent logs</button>` : act("logs", "Fetch recent logs", "btn o")}
 
 function buyerPage(sid: string, email: string, b: Buyer, flash = "") {
   const s = getSetup(b.id);
   const st = statusOf(b, s);
   const link = setupLink(b.code);
   const held = s.phase === "done" ? [] : ALL_SECRETS.map((n) => [n, secretHint(b.id, n)] as const).filter(([, h]) => h);
+const PROBLEM_HELP: Record<string, string> = {
+  booking_sync: "Calendar or booking sync", text_failed: "Texts that didn't send", email_failed: "Emails that didn't send", provider_api: "Phone, AI or other provider errors",
+  automation_apply: "Automations that couldn't be applied", update_failed: "Automatic update failed", call_sync: "Call history sync", server_error: "Unexpected server errors",
+};
+/** The problems the app reported in the last 24 hours (already scrubbed by the app and again by us). */
+function problemsPanel(buyerId: number, st: Stored | null): string {
+  const ps = st?.snap.problems ?? [];
+  if (!st) return "";
+  const h = alertHistory(5, buyerId);
+  return `<h3>Problems (last 24 hours)</h3>
+${ps.length ? `<table class="records"><thead><tr><th>Kind</th><th>What</th><th>Times</th><th>Last</th></tr></thead><tbody>${ps.map((p) => `<tr><td data-l="Kind"><span class="pill failed">${esc(p.kind)}</span><br><span class="hint">${esc(PROBLEM_HELP[p.kind] || "")}</span></td><td data-l="What">${esc(p.msg)}</td><td data-l="Times">${p.count}</td><td data-l="Last">${esc(ago(p.last))}</td></tr>`).join("")}</tbody></table>` : `<p class="hint">No problems reported.</p>`}
+${h.length ? `<details class="log"><summary>Recent alerts for this agency</summary><div class="beats">${h.map((a) => `${esc(when(a.at))} · ${esc(a.kind)} · ${esc(a.message)}${a.sent ? ` · sent: ${esc(a.sent)}` : " · not sent (no channel set)"}`).join("<br>")}</div></details>` : ""}`;
+}
+
   const { text } = logRead(b.id);
   const steps = STEPS.map((id) => `<li class="${stepDone(b, s, id) ? "ok" : id === s.step ? "run" : ""}"><i></i>${esc(id)}</li>`).join("");
   const act = (what: string, label: string, cls: string, confirm = "") => `<form method="post" action="/admin/b/${b.id}/${what}">${hiddenT(sid)}<button class="${cls}" type="submit"${confirm ? ` data-confirm="${esc(confirm)}"` : ""}>${label}</button></form>`;
@@ -274,14 +318,14 @@ function buyerPage(sid: string, email: string, b: Buyer, flash = "") {
     ["Created", esc(when(b.created_at))], ["Installed", esc(when(s.installedAt))], ["App version", versionCell(b, s)],
   ];
   return page(b.name, `${flash}
-<p><a href="/admin">← All buyers</a></p>
+<p><a href="/admin">← All agencies</a></p>
 <section class="card">
 <h1>${esc(b.name)}${b.demo === 1 ? ` <span class="pill demo">Test</span>` : ""}</h1>
 <div class="summary">${rowsHtml.filter(([, v]) => v).map(([k, v]) => `<div><span>${k}</span><b>${v}</b></div>`).join("")}</div>
 ${s.error && st === "failed" ? notice("err", esc(s.error)) : ""}
 <label class="f">Private setup link</label>
 <div class="linkrow"><code id="setup-link">${esc(link)}</code>${copyBtn(link)}</div>
-${updateInfo(b, s)?.available ? `<p class="hint">An update (version ${esc(updateInfo(b, s)!.latest)}) is available for this buyer. The update link is their setup link: it opens on "Update your agency". ${copyBtn(link)}</p>` : ""}
+${updateInfo(b, s)?.available ? `<p class="hint">An update (version ${esc(updateInfo(b, s)!.latest)}) is available for this agency. The update link is their setup link: it opens on "Update your agency". ${copyBtn(link)}</p>` : ""}
 ${b.revoked_at ? notice("info", `This link was turned off on ${esc(when(b.revoked_at))}.`) : ""}
 ${healthSection(sid, b, s)}
 <h2>Keys we hold</h2>
@@ -301,6 +345,30 @@ ${held.length ? `<ul class="keys">${held.map(([n, h]) => `<li><b>${esc(n)}</b> <
 export interface AdminCtx {
   ip: string;
   sameOrigin: (req: Request) => boolean;
+</section>`, { sid, email, live: live ? { status: `/admin/b/${b.id}/status`, rev: statusJson(b, 0).rev } : undefined });
+}
+
+/** Every problem every live agency reported in the last 24 hours, newest first. */
+function problemsPage(sid: string, email: string) {
+  const snaps = allSnapshots();
+  const names = new Map(rows().map((r) => [r.b.id, r] as const));
+  const all = [...snaps].flatMap(([id, st]) => (names.get(id)?.b.demo === 1 ? [] : st.snap.problems.map((p) => ({ id, p, name: names.get(id)?.b.name || `Agency ${id}`, brand: names.get(id)?.s.brand?.productName || "" }))))
+    .sort((a, b) => (a.p.last < b.p.last ? 1 : -1));
+  const agencies = new Set(all.map((x) => x.id)).size;
+  return page("Problems", `<p><a href="/admin">← All agencies</a></p>
+<section class="card"><h1>Problems</h1>
+<p class="lead">${all.length ? `${all.length} problem${all.length === 1 ? "" : "s"} across ${agencies} agenc${agencies === 1 ? "y" : "ies"}, from the last 24 hours.` : "Nothing reported by any agency in the last 24 hours."} The apps send a kind and a masked one-line description, never names, numbers or what anyone said.</p>
+${all.length ? `<div style="overflow-x:auto"><table class="records"><thead><tr><th>Agency</th><th>Kind</th><th>What</th><th>Times</th><th>Last</th></tr></thead><tbody>${all.map((x) => `<tr><td data-l="Agency"><a href="/admin/b/${x.id}"><b>${esc(x.name)}</b></a>${x.brand ? `<br><span class="hint">${esc(x.brand)}</span>` : ""}</td><td data-l="Kind"><span class="pill failed">${esc(x.p.kind)}</span></td><td data-l="What">${esc(x.p.msg)}</td><td data-l="Times">${x.p.count}</td><td data-l="Last">${esc(ago(x.p.last))}</td></tr>`).join("")}</tbody></table></div>` : ""}
+</section>`, { sid, email });
+}
+
+function alertsPage(sid: string, email: string) {
+  const list = alertHistory(200);
+  const names = new Map(rows().map((r) => [r.b.id, r.b.name] as const));
+  return page("Alerts", `<p><a href="/admin">← All agencies</a></p>
+<section class="card"><h1>Alerts</h1>
+<p class="lead">Raised when an agency goes quiet for 30 minutes, a new kind of problem appears, or an automatic update fails. One per agency per kind per hour.${process.env.ALERT_WEBHOOK_URL || process.env.SITE_SMTP_URL ? "" : " <b>No alert channel is set (ALERT_WEBHOOK_URL, or SITE_SMTP_URL + SITE_MAIL_FROM), so these are only recorded here.</b>"}</p>
+${list.length ? `<div style="overflow-x:auto"><table class="records"><thead><tr><th>When (UTC)</th><th>Agency</th><th>Kind</th><th>What</th><th>Sent to</th></tr></thead><tbody>${list.map((a) => `<tr><td data-l="When">${esc(when(a.at))}</td><td data-l="Agency"><a href="/admin/b/${a.buyer_id}">${esc(names.get(a.buyer_id) || `Buyer ${a.buyer_id}`)}</a></td><td data-l="Kind"><span class="pill failed">${esc(a.kind)}</span></td><td data-l="What">${esc(a.message)}</td><td data-l="Sent to">${esc(a.sent || "nowhere")}</td></tr>`).join("")}</tbody></table></div>` : `<p class="hint">No alerts yet.</p>`}
   readForm: (req: Request) => Promise<Record<string, string> | null>;
   html: (body: string, status?: number, extra?: Record<string, string>) => Response;
   redirect: (to: string, extra?: Record<string, string>) => Response;
@@ -316,7 +384,17 @@ const flashOf = (url: URL) => {
     "sync-unreachable": ["err", "Their app didn't answer. It may be down, restarting or asleep."],
     "sync-refused": ["err", "Their app didn't accept our token. It was installed before syncing existed, or its settings changed."],
     "sync-error": ["err", "Their app's answer wasn't what we expected."],
-    "view-off": ["info", "Ask the buyer to turn on Support access: it's off in their app (Settings, Support)."],
+    "push-ok": ["ok", "Asked. Their app gets the request with its next heartbeat (within 15 minutes) and updates if its owner has automatic updates on."],
+    "push-unavailable": ["err", "This agency can't update itself (no project token). The agency presses Update on their setup link."],
+    "push-off": ["info", "The owner turned automatic updates off, so we can't push an update."],
+    "push-unknown": ["err", "We haven't heard from this app yet."],
+    "push-current": ["info", "Already on the newest version."],
+    "logs-off": ["info", "The agency hasn't turned on Support access, so we can't fetch logs."],
+    "logs-no-app": ["err", "We don't have this app's address, or it was installed before syncing existed."],
+    "logs-unreachable": ["err", "Their app didn't answer. It may be down, restarting or asleep."],
+    "logs-refused": ["err", "This version of the app can't send logs yet. The agency needs to update."],
+    "logs-error": ["err", "Their app's answer wasn't what we expected."],
+    "view-off": ["info", "Ask the agency to turn on Support access: it's off in their app (Settings, Support)."],
     "view-no-app": ["err", "We don't have this app's address, or it was installed before syncing existed."],
     "view-unreachable": ["err", "Their app didn't answer. It may be down, restarting or asleep."],
     "view-refused": ["err", "Their app didn't accept our token. It was installed before syncing existed, or its settings changed."],
@@ -372,14 +450,18 @@ export async function adminRoute(req: Request, url: URL, c: AdminCtx): Promise<R
   let f: Record<string, string> = {};
   if (method === "POST") {
     const form = await c.readForm(req);
-    if (!form || !c.sameOrigin(req) || !csrfOk(sess.sid, form.t || "")) return c.html(page("Reload", `<section class="card narrow"><h1>Please reload the page</h1><p class="lead">Your form expired, so we didn't act on it.</p><p><a class="btn o" href="/admin">Back to buyers</a></p></section>`), 403);
+    if (!form || !c.sameOrigin(req) || !csrfOk(sess.sid, form.t || "")) return c.html(page("Reload", `<section class="card narrow"><h1>Please reload the page</h1><p class="lead">Your form expired, so we didn't act on it.</p><p><a class="btn o" href="/admin">Back to agencies</a></p></section>`), 403);
     f = form;
   }
   if (path === "/admin/logout" && method === "POST") {
     db().query("DELETE FROM admin_sessions WHERE id_hash = ?").run(sha256(sess.sid));
     return c.redirect("/admin", { "Set-Cookie": endCookie });
   }
-  if (path === "/admin" && method === "GET") return c.html(listPage(sess.sid, sess.email, url.searchParams.get("q") || "", STATUSES.includes(url.searchParams.get("status") as Status) ? url.searchParams.get("status")! : "", flashOf(url), ["real", "demo"].includes(url.searchParams.get("kind") || "") ? url.searchParams.get("kind")! : ""));
+  if (path === "/admin" && method === "GET") return c.html(listPage(sess.sid, sess.email, url.searchParams.get("q") || "", STATUSES.includes(url.searchParams.get("status") as Status) ? url.searchParams.get("status")! : "", flashOf(url)));
+
+  // The whole fleet: every problem, and every alert we've raised.
+  if (path === "/admin/problems" && method === "GET") return c.html(problemsPage(sess.sid, sess.email));
+  if (path === "/admin/alerts" && method === "GET") return c.html(alertsPage(sess.sid, sess.email));
 
   // "Start a demo": a demo buyer (no email), then their setup link. The button opens this in a new tab.
   if (path === "/admin/demo" && method === "POST") {
@@ -410,14 +492,14 @@ export async function adminRoute(req: Request, url: URL, c: AdminCtx): Promise<R
 <h1>${esc(b.name)} is added</h1><p class="lead">Send them this private link. It's the only way into their setup.</p>
 <div class="linkrow"><code id="new-link">${esc(link)}</code>${copyBtn(link)}</div>
 ${mail}
-<div class="nav"><a class="btn g" href="/admin">← All buyers</a><div class="right"><a class="btn p" href="/admin/b/${b.id}">Open buyer</a></div></div>
+<div class="nav"><a class="btn g" href="/admin">← All agencies</a><div class="right"><a class="btn p" href="/admin/b/${b.id}">Open agency</a></div></div>
 </section>`, sess));
   }
 
   m = path.match(/^\/admin\/b\/(\d{1,9})(?:\/(setup|revoke|restore|reset|delete|sync|view-as))?$/);
   if (m) {
     const b = buyerById(Number(m[1]));
-    if (!b) return c.html(page("Not found", `<section class="card narrow"><h1>No such buyer</h1><p><a href="/admin">← All buyers</a></p></section>`), 404);
+    if (!b) return c.html(page("Not found", `<section class="card narrow"><h1>No such agency</h1><p><a href="/admin">← All agencies</a></p></section>`), 404);
     const what = m[2];
     if (!what && method === "GET") return c.html(buyerPage(sess.sid, sess.email, b, flashOf(url)));
     if (what === "setup" && method === "GET") {
@@ -462,5 +544,26 @@ ${mail}
 </section>`, sess));
     }
   }
-  return c.html(page("Not found", `<section class="card narrow"><h1>Page not found</h1><p><a href="/admin">← All buyers</a></p></section>`), 404);
+  return c.html(page("Not found", `<section class="card narrow"><h1>Page not found</h1><p><a href="/admin">← All agencies</a></p></section>`), 404);
 }
+    if (["revoke", "restore", "reset"].includes(what!)) logSupport(b.id, sess.email, what === "revoke" ? "turned their link off" : what === "restore" ? "turned their link back on" : "reset their setup");
+    if (what === "push-update") {
+      const wait = allow(`support:${sess.email}`, 60, 60 * 60_000);
+      if (wait) return c.redirect(`/admin/b/${b.id}?m=bad`);
+      const r = requestPush(b.id, sess.email);
+      logSupport(b.id, sess.email, "push-update", r.ok ? "requested" : `refused: ${r.reason}`);
+      return c.redirect(`/admin/b/${b.id}?m=${r.ok ? "push-ok" : `push-${r.reason}`}`);
+    }
+    if (what === "logs") {
+      const wait = allow(`support:${sess.email}`, 60, 60 * 60_000);
+      if (wait) return c.redirect(`/admin/b/${b.id}?m=bad`);
+      const r = await fetchLogs(b.id, appUrlOf(getSetup(b.id)));
+      logSupport(b.id, sess.email, "fetch-logs", r.ok ? `${r.lines.length} lines` : `refused: ${r.reason}`);
+      if (!r.ok) return c.redirect(`/admin/b/${b.id}?m=logs-${r.reason}`);
+      return c.html(page("Recent logs", `<section class="card">
+<h1>Recent logs: ${esc(b.name)}</h1>
+<p class="lead">The last ${r.lines.length} lines their app logged, with numbers, emails, links, keys and anything in quotes already masked by the app. Shown here only; we don't keep them. Their app records that we looked.</p>
+<pre class="loglines">${esc(r.lines.map((l) => `${l.at.slice(11, 19)} ${l.level.padEnd(5)} ${l.line}`).join("\n"))}</pre>
+<p><a href="/admin/b/${b.id}">← Back to ${esc(b.name)}</a></p>
+</section>`, sess));
+    }

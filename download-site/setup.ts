@@ -8,9 +8,9 @@ import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { CONFIG, PACKAGES_DIR, RAILWAY, currentPackage, db, listPackages, now, slug, type Buyer } from "./lib";
 import {
-  DEFAULT_REGION, DEFAULT_SIZE, ProviderError, cfCanEdit, cfEnsure, cfFindZone, cfHasDmarc, cfRecords, cfZone, checkCloudflare,
+  DEFAULT_REGION, DEFAULT_SIZE, ProviderError, cfCanEdit, cfEnsure, cfFindZone, cfRecords, cfZone, checkCloudflare,
   checkDigitalOcean, checkGoogle, checkMicrosoft, checkRailway, checkResend, checkSmtp, checkTelnyx, checkTwilio, checkVapi, doApi, lookup, normalizeDomain,
-  railway, railwayUpload, recordLive, resendDomain, resendSend, resendSendingKey, resendStatus, resendVerify, smtpSend, smtpUrl,
+  RAILWAY_API, railway, railwayUpload, recordLive, resendDomain, resendSend, resendSendingKey, resendStatus, resendVerify, smtpSend, smtpUrl,
 } from "./providers";
 import {
   STEPS, OPTIONAL_HUB, isOptional, buyerByAttemptToken, buyerByDropletToken, deleteAllSecrets, getSecret, getSetup, hasSecret, logAppend, logBytes,
@@ -1157,20 +1157,6 @@ async function deleteRailwayProject(b: Buyer): Promise<Flash | null> {
   return ok("Project deleted. Press Install to make a new one.");
 }
 
-/** The app's source (.tar.gz), taken out of the published bundle once and kept next to it. */
-async function appSource(): Promise<Uint8Array> {
-  const pkg = currentPackage();
-  if (!pkg) throw new ProviderError("The app isn't ready to install yet. Please try again later or contact support.");
-  const bundle = join(PACKAGES_DIR, pkg.file);
-  const cached = bundle.replace(/\.tgz$/, ".app-src.tgz");
-  if (!existsSync(cached)) {
-    const p = Bun.spawn(["tar", "-xzOf", bundle, "./app-src.tgz"], { stdout: "pipe", stderr: "ignore" });
-    const out = new Uint8Array(await new Response(p.stdout).arrayBuffer());
-    if ((await p.exited) !== 0 || out.length < 1000) throw new ProviderError("The app bundle is damaged. Contact support.");
-    writeFileSync(cached, out, { mode: 0o600 });
-  }
-  return new Uint8Array(readFileSync(cached));
-}
 
 const PROJECT_Q = "query($id: String!) { project(id: $id) { id environments { edges { node { id name } } } } }";
 const DOMAIN_FIELDS = "id domain status { verified certificateStatus verificationDnsHost verificationToken dnsRecords { recordType hostlabel fqdn zone requiredValue currentValue status purpose } }";
@@ -1223,7 +1209,12 @@ async function railwayVars(id: number, s: SetupData, token: string): Promise<Rec
   };
   if (s.calendars?.google) { v.GOOGLE_CLIENT_ID = s.calendars.google.clientId; v.GOOGLE_CLIENT_SECRET = getSecret(id, "google_secret") || ""; }
   if (s.calendars?.microsoft) { v.MICROSOFT_CLIENT_ID = s.calendars.microsoft.clientId; v.MICROSOFT_CLIENT_SECRET = getSecret(id, "microsoft_secret") || ""; }
-  void token;
+  // Optional "Ask for help" in their dashboard: an OpenRouter key our admin added for them.
+  const orKey = getSecret(id, "openrouter_key");
+  if (orKey) v.OPENROUTER_API_KEY = orKey;
+  // Fresh installs only: Support access starts ON (the owner can switch it off in Settings, "Support"). Never set by an update.
+  v.SUPPORT_ACCESS_DEFAULT = "on";
+  Object.assign(v, await autoUpdateVars(id, token, { projectId: s.rw?.projectId, environmentId: s.rw?.environmentId, serviceId: s.rw?.appId }));
   return v;
 }
 
@@ -1254,6 +1245,23 @@ async function tickRailCreate(id: number) {
     }
     const base = { projectId: rw.projectId, environmentId: rw.environmentId };
     if (!rw.pgId) {
+/**
+ * The app's own Railway PROJECT token, so it can update itself without us holding anyone's access: scoped to this one
+ * project and environment, made with the account token the buyer just gave us, and handed straight to the app (we keep
+ * nothing). Best effort: if Railway won't make one the agency still installs, and the admin shows "Auto-update
+ * unavailable: buyer must press Update". Returns the variables to set, or none.
+ */
+export async function autoUpdateVars(id: number, accountToken: string, ids: { projectId?: string; environmentId?: string; serviceId?: string }): Promise<Record<string, string>> {
+  if (!ids.projectId || !ids.environmentId || !ids.serviceId) return {};
+  try {
+    const t = await createProjectToken(accountToken, ids.projectId, ids.environmentId, "Automatic updates", { base: RAILWAY_API });
+    return { RAILWAY_PROJECT_TOKEN: t, AUTOUPDATE_PROJECT_ID: ids.projectId, AUTOUPDATE_ENVIRONMENT_ID: ids.environmentId, AUTOUPDATE_SERVICE_ID: ids.serviceId };
+  } catch (e) {
+    console.log(`[setup] buyer ${id}: no project token for automatic updates (${e instanceof RailwayError ? e.code : "error"})`);
+    return {};
+  }
+}
+
       progress(id, "Adding your database (Postgres)");
       const pw = randomBytes(24).toString("hex");
       const svc = (await railway(token, "mutation($input: ServiceCreateInput!) { serviceCreate(input: $input) { id } }", {
@@ -1547,6 +1555,10 @@ async function tickUpdate(id: number) {
       return;
     }
     // Built and running on Railway: wait until the live address answers.
+      // Automatic updates: a project token for the app, if it has none yet (or its last automatic update failed). Not kept by us.
+      if (!("RAILWAY_PROJECT_TOKEN" in have) || latestSnapshot(id)?.snap.updates.lastResult === "failed") {
+        Object.assign(add, await autoUpdateVars(id, token, { projectId, environmentId: u.envId, serviceId: u.appId }));
+      }
     if (!due(`up-health:${id}`, fast ? 1500 : 5000)) return;
     const urls = [...new Set([s.domainPending && s.tempUrl ? s.tempUrl : agencyUrl(s), s.tempUrl].filter(Boolean) as string[])];
     let healthy = false;

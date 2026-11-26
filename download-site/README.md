@@ -195,6 +195,29 @@ Sessions: random 256-bit id, `HttpOnly`, `SameSite=Strict`, `Path=/admin`, 12 ho
   View as asks the app for a one-time link (60 seconds, single use); the app refuses unless the buyer turned Support access
   on, and writes every link and sign-in to the buyer's audit log. Our clicks are in `support_log`. Agencies installed
   before this have no token: they sync nothing and can't be viewed.
+- **Automatic updates** (`releases.ts`, the app's Settings, "Updates"). At install, and at the buyer's next manual
+  **Update your agency**, we use the Railway token they just gave us to make a **project token** (`projectTokenCreate`,
+  scoped to their one project and environment) and set it on their app as `RAILWAY_PROJECT_TOKEN` (with
+  `AUTOUPDATE_PROJECT_ID`, `AUTOUPDATE_ENVIRONMENT_ID`, `AUTOUPDATE_SERVICE_ID`). We don't keep it. Hourly the app calls
+  `GET /api/releases/latest` (Bearer: its sync token) and gets the version, notes, SHA-256 and a bundle address signed with
+  our site key that runs out in 10 minutes (`GET /api/releases/bundle/<version>?b=&exp=&sig=`). If its owner's switch is on
+  and it is 2-4am their time (or they chose "as soon as available") it downloads, checks the SHA-256, sets `APP_VERSION`
+  and uploads to its own service; the new version reports the result in its first heartbeat. A failed update is an
+  incident, a problem, and an alert. If Railway won't make a token the install carries on and the admin shows
+  "Auto-update unavailable: buyer must press Update". **Push update now** (buyer page) queues `updateNow` on the next
+  heartbeat answer; the app still obeys its owner's off switch.
+- **Problems and logs.** The heartbeat carries up to 50 problems from the last 24 hours (a kind, a scrubbed one-line
+  message, a count, a time), shown per buyer and on `/admin/problems`, with a red badge in the buyers list. **Fetch recent
+  logs** asks the app (call token) for its last 200 log lines, scrubbed by the app; only while the buyer's Support access is
+  on, shown once and never stored.
+- **Support changes.** On a fresh install Support access starts on (`SUPPORT_ACCESS_DEFAULT=on`, set only at install, never
+  by an update) and "Support can make changes" is on: a "View as" session may fix things like an agency admin (never keys,
+  billing, the owner, deleting the agency or exports; `server/supportChanges.ts`), and every change is audited "By support".
+- **Alerts** (`alerts.ts`, `/admin/alerts`). We alert when an agency that was reporting is silent for 30 minutes (after
+  asking the app directly, so an owner who turned sharing off isn't an outage), when a new kind of problem appears, and when
+  an automatic update fails: one per agency per kind per hour, to `ALERT_WEBHOOK_URL` (POST JSON with `text` and `content`,
+  so Slack and Discord work) and/or email (`SITE_SMTP_URL` + `SITE_MAIL_FROM` to `ALERT_EMAIL_TO`, else `ADMIN_EMAILS`).
+  History is kept either way.
 
 ## Settings (environment variables)
 
@@ -210,7 +233,9 @@ Sessions: random 256-bit id, `HttpOnly`, `SameSite=Strict`, `Path=/admin`, 12 ho
 | `PORT` / `HOST` / `TRUST_PROXY` | `4500` / `127.0.0.1` / `0` | `TRUST_PROXY=1` behind Caddy |
 | `ADMIN_EMAILS`, `ADMIN_PASSWORD_HASH` | | /admin sign-in (escape each `$` as `$$` in a compose `.env`) |
 | `DEMO_APP_URL`, `DEMO_ADMIN_EMAIL`, `DEMO_ADMIN_PASSWORD` | | Turns on /admin's **Start a test run**: a test buyer whose wizard accepts pretend accounts (no provider is called) and ends on a real branded agency on our team demo app (public `DEMO_APP_URL`, its platform admin sign-in). Unset = no button |
-| `SITE_SMTP_URL`, `SITE_MAIL_FROM` | | Our own mail sender, for welcome emails |
+| `SITE_SMTP_URL`, `SITE_MAIL_FROM` | | Our own mail sender, for welcome emails and alert emails |
+| `ALERT_WEBHOOK_URL` | | https address that gets a JSON POST (`text`, `content`) for each alert: a Slack or Discord incoming webhook works as is |
+| `ALERT_EMAIL_TO` | `ADMIN_EMAILS` | Who gets alert emails (comma separated; needs `SITE_SMTP_URL` and `SITE_MAIL_FROM`) |
 | `OPENROUTER_API_KEY`, `SETUP_CHAT_MODEL` | (off), `anthropic/claude-sonnet-5.5` | Turns on the **Need help?** chat bubble on every wizard page and /guide (not /admin). Without the key the bubble is hidden and `/chat` answers 404. See "Help chat" |
 | `LOOKUPS_PER_MINUTE`, `REQUESTS_PER_MINUTE`, `CHECKS_PER_10_MIN`, `TEST_EMAILS_PER_HOUR`, `SECRETS_IDLE_DAYS` | 20, 600, 20, 3, 14 | |
 | `DNS_SERVERS` | `1.1.1.1,8.8.8.8` | Public resolvers to ask |
@@ -230,6 +255,10 @@ as the wizard's forms; `/guide` uses `POST /chat` (same-origin only, no setup co
 question, 15 questions per setup code and 30 per IP every 10 minutes, 3000 a day for the whole site. In production set the two
 variables in SSM (`/setupsite/env/OPENROUTER_API_KEY`, `/setupsite/env/SETUP_CHAT_MODEL`) or pass them to `deploy/aws/deploy.sh`.
 Tests: `download-site/test/chat.test.ts` (fake OpenRouter, nothing real is called).
+
+Alerts use two more SSM parameters, both optional: `/setupsite/env/ALERT_WEBHOOK_URL` (a Slack or Discord incoming-webhook
+address) and `/setupsite/env/ALERT_EMAIL_TO` (who gets alert emails; they also need `SITE_SMTP_URL` and `SITE_MAIL_FROM`). Both
+are in the list `deploy/aws/remote-deploy.sh` reads. With neither set, alerts are only recorded in /admin/alerts.
 
 ## Command-line admin
 

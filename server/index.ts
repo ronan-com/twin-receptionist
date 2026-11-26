@@ -43,6 +43,8 @@ import { callDetail, listCalls } from "./calls";
 import { startCallSync } from "./callsync";
 import { industryKeyOf, workspaceBusinesses } from "./answered";
 import { audit } from "./audit";
+import { supportSeller } from "./supportAccess";
+import { describeChange, readOnlyView, supportMayChange } from "./supportChanges";
 import { startSupportSync, supportPublicRoutes, supportSettingsRoute } from "./supportSync";
 import { OTHER_BRAND, UI_PRODUCT, brandedIndex } from "./product";
 import { agencySnapshot, consoleRoutes, isClientPaused } from "./routes/console";
@@ -102,6 +104,9 @@ import { vapiEvents, vapiToolHook } from "./voice/vapiWebhook";
 const PORT = Number(process.env.API_PORT ?? 8791);
 // The voices on offer: the agency's voice engine's list (Telnyx's Australian voices, or Vapi's).
 async function loadVoices(): Promise<Voice[]> {
+// The last 200 log lines (scrubbed) and a problem list for the support heartbeat (server/problems.ts).
+installLogCapture();
+
   return (await voiceForOrg()).voices();
 }
 
@@ -572,9 +577,14 @@ async function route(req: Request, server?: { requestIP(r: Request): { address: 
   const ctx = await sessionFrom(req);
   if (!ctx) return json({ error: "Please sign in." }, 401);
 
-  // A support sign-in (the setup provider's person, with the owner's permission) can look, never change.
+  // A support sign-in (the setup provider's person, with the owner's permission) looks, and (unless the owner
+  // switched "Support can make changes" off) can fix things, but never keys, billing, the owner or exports
+  // (server/supportChanges.ts). Every change is written to the owner's audit log.
   if (ctx.viewing?.support && method !== "GET" && method !== "HEAD" && path !== "/api/admin/view-as" && path !== "/api/logout") {
-    return json({ error: "This is a read-only support session. Nothing can be changed." }, 403);
+    if (!ctx.viewing.canEdit) return json({ error: "This is a read-only support session. Nothing can be changed." }, 403);
+    const allowed = supportMayChange(method, path);
+    if (!allowed.ok) return json({ error: `Support can't change that (${allowed.why}). Ask the owner to do it.` }, 403);
+    await audit(ctx, "support.change", { summary: `By support (${supportSeller()}): ${describeChange(method, path)}` });
   }
   // Settings, "Support": the owner's switches for sharing stats and Support access.
   if (path === "/api/support/settings") return supportSettingsRoute(req, method, ctx);
@@ -694,8 +704,8 @@ async function route(req: Request, server?: { requestIP(r: Request): { address: 
   }
 
   // Viewing as an agency or customer is look-only.
-  if (ctx.viewing && method !== "GET" && method !== "HEAD") {
-    return json({ error: `You're viewing ${ctx.viewing.org} (read-only). Exit the view to make changes.` }, 403);
+  if (readOnlyView(ctx) && method !== "GET" && method !== "HEAD") {
+    return json({ error: `You're viewing ${ctx.viewing!.org} (read-only). Exit the view to make changes.` }, 403);
   }
 
   if (!ctx.org) return json({ error: "You're not in a team yet. Ask the platform team for an invite." }, 403);

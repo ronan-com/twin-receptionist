@@ -29,6 +29,8 @@ import { DEMO, DEMO_KEY, DemoOffline, demoBuyer, demoDashboard } from "./demo";
 if ((process.env.PREVIEW_JUMP || "").trim() === "1" && !ANY_MOCK) {
   console.error("PREVIEW_JUMP=1 is for test sites only and needs a MOCK_* switch on too. Refusing to start.");
   process.exit(1);
+import { appSource, bundleSignatureOk, latestRelease, signBundleUrl } from "./releases";
+import { startAlerts } from "./alerts";
 }
 { const g = productionGuard(); if (g) { console.error(g); process.exit(1); } }
 for (const w of siteUrlWarnings()) console.warn(`WARNING: ${w}`);
@@ -359,3 +361,4 @@ startTicker();
 
 console.log(`Setup site for ${CONFIG.productName} (${CONFIG.sellerName}) on http://${server.hostname}:${server.port}${CONFIG.extraListen ? ` and ${CONFIG.extraListen}` : ""}  data: ${CONFIG.dataDir}`);
 if (ANY_MOCK) console.log(`TEST MODE: ${Object.entries({ PREVIEW_JUMP: CONFIG.previewJump, MOCK_RAILWAY: CONFIG.mockRailway, MOCK_DO: CONFIG.mockDO, MOCK_CF: CONFIG.mockCF, MOCK_RESEND: CONFIG.mockResend, MOCK_TELNYX: CONFIG.mockTelnyx, MOCK_OAUTH: CONFIG.mockOAuth }).filter(([, v]) => v).map(([k]) => k).join(" ")} (fake providers; nothing real is called)`);
+startAlerts();

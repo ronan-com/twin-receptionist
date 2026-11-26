@@ -12,8 +12,10 @@ import { ValidationError } from "./prompt";
 import { json, readBody } from "./routes/http";
 import { hasKey } from "./telnyx";
 import { installProvider } from "./voice/config";
-import { ACCESS_KEY, DURATIONS, SYNC_KEY, accessOpen, readAccess, readSync, supportSeller, syncAllowed, syncEnabled, type AccessSetting, type Duration, type SyncSetting } from "./supportAccess";
+import { ACCESS_KEY, DURATIONS, EDIT_KEY, SYNC_KEY, accessOpen, editAllowed, readAccess, readEdit, readSync, supportSeller, syncAllowed, syncEnabled, type AccessSetting, type Duration, type EditSetting, type SyncSetting } from "./supportAccess";
 import { putSetting } from "./store";
+import { checkAndUpdate, updatesStatus } from "./autoUpdate";
+import { collectProblems, recentLogs } from "./problems";
 
 // Two things a buyer's copy of the app can do with the setup provider that installed it. Both are
 // disclosed to the owner in Settings, "Support", and both are the owner's choice.
@@ -39,9 +41,11 @@ export const SUPPORT_EMAIL = "support@support.invalid"; // never receives mail; 
 // The whitelist
 // ---------------------------------------------------------------------------------------------
 
-type Field = "number" | "boolean" | "string" | "string?" | { [k: string]: Field };
+type Shape = { [k: string]: Field };
+type Field = "number" | "boolean" | "string" | "string?" | Shape | { $array: Shape; max: number };
+const isArray = (f: Field): f is { $array: Shape; max: number } => typeof f === "object" && "$array" in f && typeof (f as any).max === "number";
 /** Every field the heartbeat may carry. Anything not listed here is dropped (and fails the tests). */
-export const SHAPE: { [k: string]: Field } = {
+export const SHAPE: Shape = {
   v: "number",
   sentAt: "string",
   appVersion: "string",
@@ -51,7 +55,9 @@ export const SHAPE: { [k: string]: Field } = {
   lastCallAt: "string?",
   brand: { name: "string", logoUrl: "string" },
   extras: { email: "boolean", domain: "boolean", openRouter: "boolean" },
-  support: { sharing: "boolean", access: "boolean", accessUntil: "string?" },
+  support: { sharing: "boolean", access: "boolean", accessUntil: "string?", edit: "boolean" },
+  updates: { available: "boolean", enabled: "boolean", mode: "string", latest: "string", lastResult: "string", lastError: "string", lastAt: "string?" },
+  problems: { $array: { kind: "string", msg: "string", count: "number", last: "string" }, max: 50 },
 };
 /** Text fields that must have an exact format (so they can't carry anything else), and the one free-text field (the brand's name), which is checked for personal details. */
 const ISO = (s: string) => /^\d{4}-\d\d-\d\dT[\d:.]+Z$/.test(s);
@@ -60,10 +66,16 @@ const FORMAT: Record<string, (s: string) => boolean> = {
   sentAt: ISO,
   lastCallAt: ISO,
   accessUntil: ISO,
+  lastAt: ISO,
+  last: ISO,
+  kind: (s) => /^[a-z0-9_.:-]{1,40}$/.test(s),
+  mode: (s) => s === "overnight" || s === "asap",
+  latest: (s) => /^[A-Za-z0-9._+-]{1,40}$/.test(s),
+  lastResult: (s) => s === "ok" || s === "failed",
   publicUrl: (s) => /^https?:\/\/[^\s"'<>\\]{1,300}$/.test(s),
   logoUrl: (s) => /^https?:\/\/[^\s"'<>\\]{1,400}$/.test(s),
 };
-const MAX_LEN: Record<string, number> = { name: 80 };
+const MAX_LEN: Record<string, number> = { name: 80, msg: 200, lastError: 200 };
 
 const looksPersonal = (s: string) => /[^\s@]+@[^\s@]+\.[^\s@]+/.test(s) || /(?:\+|\b)\d[\d\s().-]{7,}\d/.test(s);
 /** Is this text acceptable for this field? Empty is always fine. */
@@ -71,11 +83,12 @@ const textOk = (k: string, s: string) => !s || (FORMAT[k] ? FORMAT[k](s) : !look
 
 /** Keeps only what SHAPE allows, with the right types. Null when the basics are missing. */
 export function cleanSnapshot(raw: unknown): Record<string, any> | null {
-  const walk = (shape: { [k: string]: Field }, v: any): any => {
+  const walk = (shape: Shape, v: any): any => {
     const out: Record<string, any> = {};
     for (const [k, f] of Object.entries(shape)) {
       const x = v && typeof v === "object" ? v[k] : undefined;
-      if (typeof f === "object") out[k] = walk(f, x);
+      if (isArray(f)) out[k] = (Array.isArray(x) ? x.slice(0, f.max) : []).map((item) => walk(f.$array, item));
+      else if (typeof f === "object") out[k] = walk(f, x);
       else if (f === "number") out[k] = typeof x === "number" && Number.isFinite(x) && x >= 0 ? Math.round(x) : 0;
       else if (f === "boolean") out[k] = x === true;
       else {
@@ -91,12 +104,16 @@ export function cleanSnapshot(raw: unknown): Record<string, any> | null {
 
 /** For the tests: throws if a payload has a field the shape doesn't list, or a personal detail in a string. */
 export function assertWhitelisted(payload: unknown): void {
-  const walk = (shape: { [k: string]: Field }, v: any, path: string) => {
+  const walk = (shape: Shape, v: any, path: string) => {
     if (!v || typeof v !== "object") throw new Error(`${path || "payload"} is not an object`);
     for (const k of Object.keys(v)) if (!(k in shape)) throw new Error(`${path}${k} is not on the whitelist`);
     for (const [k, f] of Object.entries(shape)) {
       const x = v[k];
-      if (typeof f === "object") walk(f, x, `${path}${k}.`);
+      if (isArray(f)) {
+        if (!Array.isArray(x)) throw new Error(`${path}${k} must be a list`);
+        if (x.length > f.max) throw new Error(`${path}${k} has more than ${f.max} items`);
+        x.forEach((item, i) => walk(f.$array, item, `${path}${k}[${i}].`));
+      } else if (typeof f === "object") walk(f, x, `${path}${k}.`);
       else if (f === "string" || f === "string?") {
         if (x === null && f === "string?") continue;
         if (typeof x !== "string") throw new Error(`${path}${k} must be text`);
@@ -115,7 +132,9 @@ export const SENT_LIST = [
   "When the last call came in",
   "Your brand's name and logo address",
   "Yes or no for the optional extras: email, your own domain, AI help",
-  "Whether sharing and Support access are on",
+  "Whether sharing, Support access and \"Support can make changes\" are on",
+  "What went wrong in the last 24 hours: a short kind, a one-line description with numbers, email addresses and anything in quotes masked, how many times, and when (at most 50)",
+  "Whether automatic updates are on, which version is newest, and how the last update went",
 ];
 export const NEVER_SENT = "Never caller names or numbers, messages, transcripts, recordings, customer details, passwords or keys.";
 
@@ -180,6 +199,7 @@ export async function buildSnapshot(): Promise<Record<string, any>> {
   const brandName = UI_PRODUCT;
   let logoUrl = "";
   let access: AccessSetting | null = null;
+  let edit: EditSetting | null = null;
   try {
     [c] = await sql`
       select
@@ -198,6 +218,7 @@ export async function buildSnapshot(): Promise<Record<string, any>> {
     const [o] = await sql`select id from orgs where not sandbox order by created_at limit 1`;
     if (o) logoUrl = (await resolveBrand(o.id)).logo;
     access = await readAccess();
+    edit = await readEdit();
   } catch (err) {
     dbOk = false;
     console.error("[support sync] snapshot", (err as Error).message);
@@ -216,7 +237,9 @@ export async function buildSnapshot(): Promise<Record<string, any>> {
     lastCallAt: c.last_call ? new Date(c.last_call).toISOString() : null,
     brand: { name: brandName, logoUrl: logoUrl ? (logoUrl.startsWith("/") ? base + logoUrl : logoUrl) : "" },
     extras: { email: Boolean(mailConfig().smtpUrl), domain: ownDomain(base), openRouter: assistantConfigured() },
-    support: { sharing, access: accessOpen(access), accessUntil: accessOpen(access) ? access?.until ?? null : null },
+    support: { sharing, access: accessOpen(access), accessUntil: accessOpen(access) ? access?.until ?? null : null, edit: editAllowed(edit) },
+    updates: await updatesStatus().then(({ available, enabled, mode, latest, lastResult, lastError, lastAt }) => ({ available, enabled, mode, latest, lastResult, lastError, lastAt })).catch(() => ({ available: false, enabled: true, mode: "overnight", latest: "", lastResult: "", lastError: "", lastAt: null })),
+    problems: await collectProblems(),
   };
   return cleanSnapshot(raw)!;
 }
@@ -227,7 +250,7 @@ export async function buildSnapshot(): Promise<Record<string, any>> {
 
 export const heartbeatStatus: { lastSentAt: string | null; lastOk: boolean | null; lastError: string } = { lastSentAt: null, lastOk: null, lastError: "" };
 
-export type SendResult = { sent: boolean; reason?: "not-configured" | "off" | "failed" };
+export type SendResult = { sent: boolean; reason?: "not-configured" | "off" | "failed"; updateNow?: boolean };
 
 /** Sends one heartbeat, unless sharing is off (then nothing leaves the server at all). */
 export async function sendHeartbeat(doFetch: typeof fetch = fetch): Promise<SendResult> {
@@ -248,7 +271,13 @@ export async function sendHeartbeat(doFetch: typeof fetch = fetch): Promise<Send
     heartbeatStatus.lastSentAt = new Date().toISOString();
     heartbeatStatus.lastOk = res.ok;
     heartbeatStatus.lastError = res.ok ? "" : `The setup site answered ${res.status}.`;
-    return { sent: res.ok, ...(res.ok ? {} : { reason: "failed" as const }) };
+    if (!res.ok) return { sent: false, reason: "failed" };
+    // The setup site can ask this copy to update now ("Push update now"). It still only happens if the owner's
+    // automatic-updates switch is on; the overnight wait is skipped.
+    const answer: any = await res.json().catch(() => null);
+    const updateNow = answer?.updateNow === true;
+    if (updateNow) void checkAndUpdate({ force: true }).catch((err) => console.error("[update]", (err as Error).message));
+    return { sent: true, ...(updateNow ? { updateNow } : {}) };
   } catch (err) {
     heartbeatStatus.lastOk = false;
     heartbeatStatus.lastError = "Couldn't reach the setup site.";
@@ -373,10 +402,22 @@ async function ownerResetRoute(req: Request): Promise<Response> {
   return reply({ ok: true, url: r.url, expiresInMinutes: r.expiresInMinutes });
 }
 
+/** "Fetch recent logs": the in-memory ring of the last 200 lines, scrubbed. Only while the owner has Support access on; audited. */
+async function logsRoute(): Promise<Response> {
+  const org = await agencyOrg();
+  if (!accessOpen(await readAccess())) {
+    await audit(null, "support.logs_refused", { summary: `${supportSeller()} asked for recent logs, but Support access is off` }, { orgId: org?.id });
+    return reply({ ok: false, error: "access_off", message: "The owner hasn't turned on Support access." }, 403);
+  }
+  await audit(null, "support.logs", { summary: `${supportSeller()} fetched the last ${recentLogs().length} log lines (numbers, emails and names masked)` }, { orgId: org?.id });
+  return reply({ ok: true, lines: recentLogs() });
+}
+
 /**
  * No session: the setup site calls these with the shared token, or a browser opens a one-time link.
  *   POST /api/support/ping         "Sync now": the snapshot, straight back (or {sharing:false})
  *   POST /api/support/login-link   a one-time link, only while Support access is on
+ *   POST /api/support/logs        the last 200 log lines (scrubbed), only while Support access is on
  *   POST /api/support/owner-reset-link   a 15-minute, one-time password-reset link for the owner (no Support access needed)
  *   GET  /api/support/in/<token>   spends the link, signs in as support, goes to the dashboard
  */
@@ -391,7 +432,7 @@ export async function supportPublicRoutes(req: Request, path: string, method: st
     }
     return new Response(null, { status: 302, headers: { ...noStore, location: "/admin", "set-cookie": sessionCookie(req, session) } });
   }
-  if (path !== "/api/support/ping" && path !== "/api/support/login-link" && path !== "/api/support/owner-reset-link") return null;
+  if (path !== "/api/support/ping" && path !== "/api/support/login-link" && path !== "/api/support/owner-reset-link" && path !== "/api/support/logs") return null;
   if (method !== "POST") return reply({ error: "Not found" }, 404);
   if (tooManyFailures()) return reply({ error: "Too many tries." }, 429);
   if (!tokenOk(req)) {
@@ -399,6 +440,7 @@ export async function supportPublicRoutes(req: Request, path: string, method: st
     return reply({ error: "Not allowed." }, 401);
   }
   if (path === "/api/support/owner-reset-link") return ownerResetRoute(req);
+  if (path === "/api/support/logs") return logsRoute();
   if (path === "/api/support/ping") {
     if (!(await syncEnabled())) return reply({ ok: true, sharing: false });
     return reply({ ok: true, sharing: true, snapshot: await buildSnapshot() });
@@ -420,13 +462,14 @@ export async function supportSettings(ctx: Ctx) {
   const recent = ctx.org
     ? await sql`
         select action, detail, created_at from audit_log
-        where org_id = ${ctx.org.id} and action like 'support.%' order by created_at desc limit 20`
+        where org_id = ${ctx.org.id} and action like 'support.%' order by created_at desc limit 30`
     : [];
   return {
     configured,
     seller: supportSeller(),
     sync: { enabled: syncAllowed(sync), ...heartbeatStatus },
-    access: { enabled: accessOpen(access), until: accessOpen(access) ? access?.until ?? null : null, grantedAt: access?.grantedAt ?? null },
+    access: { enabled: accessOpen(access), until: accessOpen(access) ? access?.until ?? null : null, grantedAt: access?.grantedAt ?? null, isDefault: access?.isDefault === true },
+    edit: { enabled: editAllowed(await readEdit()) },
     sends: SENT_LIST,
     neverSent: NEVER_SENT,
     recent: recent.map((r: any) => ({ action: r.action, summary: String(r.detail?.summary ?? ""), at: new Date(r.created_at).toISOString() })),
@@ -450,6 +493,12 @@ export async function supportSettingsRoute(req: Request, method: string, ctx: Ct
       await audit(ctx, input.sync ? "support.sharing_on" : "support.sharing_off", { summary: input.sync ? `Turned on sharing health and usage stats with ${supportSeller()}` : `Turned off sharing health and usage stats with ${supportSeller()}` });
     }
     if (input.sync) void sendHeartbeat().catch(() => {});
+  }
+  if (typeof input?.edit === "boolean") {
+    const was = editAllowed(await readEdit());
+    await putSetting(EDIT_KEY, { enabled: input.edit, changedAt: now, by: who } satisfies EditSetting);
+    if (was !== input.edit) await audit(ctx, input.edit ? "support.edit_on" : "support.edit_off", { summary: input.edit ? `Allowed ${supportSeller()} support to make changes (never keys, billing, the owner or exports)` : `Support is read-only again: ${supportSeller()} can look but not change anything` });
+    // Anyone signed in as support picks the new rule up on their next request.
   }
   if (input?.access && typeof input.access.enabled === "boolean") {
     if (input.access.enabled) {

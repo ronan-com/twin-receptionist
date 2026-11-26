@@ -323,6 +323,7 @@ const RW_OK = "mock-rail-token-ok", RW_NOCARD = "mock-rail-token-nocard";
 const [PORT_LO, PORT_HI] = (process.env.MOCK_APP_PORTS || `${BASE + 30}-${BASE + 39}`).split("-").map(Number);
 const usedPorts = new Set<number>();
 const rProjects = new Map<string, any>();
+const rProjectTokens = new Map<string, string>(); // project token -> project id
 const rDeps = new Map<string, any>();
 let railFailNext: string | null = null;
 const RAIL_TMP = join(process.env.TMPDIR || "/tmp", `wiz-test-rail-${BASE}`);
@@ -442,7 +443,12 @@ Bun.serve({
   port: P.rail, hostname: "127.0.0.1", maxRequestBodySize: 200 * 1024 * 1024,
   async fetch(req) {
     const u = new URL(req.url);
-    const tok = (req.headers.get("authorization") || "").replace(/^Bearer /, "");
+    let tok = (req.headers.get("authorization") || "").replace(/^Bearer /, "");
+    // A project token (Project-Access-Token): good for that one project's uploads and variables, nothing else.
+    const ptok = req.headers.get("project-access-token") || "";
+    const ptokProject = ptok ? rProjectTokens.get(ptok) : undefined;
+    if (ptok && !ptokProject) return json(401, { message: "Not Authorized" });
+    if (ptokProject) tok = RW_OK;
     const up = u.pathname.match(/^\/project\/([^/]+)\/environment\/([^/]+)\/up$/);
     if (up && req.method === "POST") {
       if (tok !== RW_OK && tok !== RW_NOCARD) return json(401, { message: "Unauthorized" });
@@ -466,6 +472,13 @@ Bun.serve({
     if (has("me")) {
       if (/\bplan\b/.test(query)) return json(200, { data: { me: { workspaces: [{ id: "ws-1", plan: tok === RW_NOCARD ? "FREE" : "HOBBY", customer: { isTrialing: tok === RW_NOCARD, defaultPaymentMethodId: tok === RW_NOCARD ? null : "pm_mock" } }] } } });
       return json(200, { data: { me: { email: "owner@example.com", workspaces: [{ id: "ws-1", name: "Owner's Projects" }] } } });
+    }
+    if (has("projectTokenCreate")) {
+      if (ptokProject) return gqlErr("Not Authorized");
+      const p = rProjects.get(input.projectId); if (!p || p.envId !== input.environmentId) return gqlErr("Project not found");
+      const t = `fake-project-token-${rid("t")}`;
+      rProjectTokens.set(t, p.id); log(`railway: project token for ${p.id}`);
+      return json(200, { data: { projectTokenCreate: t } });
     }
     if (has("projectCreate")) {
       if (tok === RW_NOCARD) return gqlErr("You must upgrade your plan to create more projects");

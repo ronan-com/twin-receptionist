@@ -13,10 +13,18 @@ tar -xzf bundle.tgz -C src.new && rm bundle.tgz
 rm -rf src.old; [ -d src ] && mv src src.old; mv src.new src
 cp src/deploy/aws/docker-compose.yml .
 
-# Settings: every /setupsite/env/<NAME> parameter, plus the ones this script owns.
+# Settings: the /setupsite/env/<NAME> parameters listed here, plus the ones this script owns.
+# Fetched by name (10 per call): the server's role can't list /setupsite/env/ by path.
+# Values are single-quoted so compose takes "$" (password hashes) and "#" literally.
 umask 077
-aws ssm get-parameters-by-path --region "$R" --path /setupsite/env/ --with-decryption \
-  --query 'Parameters[].[Name,Value]' --output text | sed -E "s#^/setupsite/env/([A-Z0-9_]+)\t#\1=#" > .env.new
+names=(SETUP_SECRET_KEY ADMIN_EMAILS ADMIN_PASSWORD_HASH SUPPORT_EMAIL SELLER_NAME PRODUCT_NAME SITE_SMTP_URL SITE_MAIL_FROM
+  HOSTING PROVISION_URL LOOKUPS_PER_MINUTE REQUESTS_PER_MINUTE CHECKS_PER_10_MIN TEST_EMAILS_PER_HOUR SECRETS_IDLE_DAYS DNS_SERVERS)
+names=("${names[@]/#//setupsite/env/}")
+q="'"
+for ((i = 0; i < ${#names[@]}; i += 10)); do
+  aws ssm get-parameters --region "$R" --names "${names[@]:i:10}" --with-decryption \
+    --query 'Parameters[].[Name,Value]' --output text
+done | sed -n -E -e "s/$q/\\\\$q/g" -e "s#^/setupsite/env/([A-Z0-9_]+)\t(.*)\$#\1=$q\2$q#p" > .env.new
 grep -q '^SETUP_SECRET_KEY=.' .env.new || { echo "SSM /setupsite/env/SETUP_SECRET_KEY is missing: refusing to start without it"; rm -f .env.new; exit 1; }
 # Test switches never reach production (the site would also refuse to start with them).
 if grep -Eq '^(MOCK_[A-Z_]+|PREVIEW_JUMP|TEST_SITE|[A-Z]+_API_BASE|EXTRA_LISTEN)=' .env.new; then
@@ -54,8 +62,12 @@ docker exec twin-caddy-1 caddy reload --config /etc/caddy/Caddyfile --adapter ca
 # buyers' encrypted keys; SETUP_SECRET_KEY lives only in SSM, never next to them.
 install -m 755 src/deploy/aws/backup.sh /opt/setupsite/backup.sh
 echo "BUCKET=$BUCKET R=$R" > /opt/setupsite/backup.env
-echo "40 3 * * * root /bin/bash /opt/setupsite/backup.sh >> /var/log/setupsite-backup.log 2>&1" > /etc/cron.d/setupsite-backup
-chmod 644 /etc/cron.d/setupsite-backup
+if [ -d /etc/cron.d ]; then
+  echo "40 3 * * * root /bin/bash /opt/setupsite/backup.sh >> /var/log/setupsite-backup.log 2>&1" > /etc/cron.d/setupsite-backup
+  chmod 644 /etc/cron.d/setupsite-backup
+else
+  echo "WARNING: this server has no cron (/etc/cron.d is missing): the nightly backup is NOT scheduled"
+fi
 
 docker compose ps
 echo "setup-site healthy at https://$DOMAIN"

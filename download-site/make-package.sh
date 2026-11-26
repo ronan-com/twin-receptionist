@@ -6,7 +6,8 @@ set -euo pipefail
 HERE=$(cd "$(dirname "$0")" && pwd)
 REPO=$(cd "$HERE/.." && pwd)
 VERSION=${1:?usage: make-package.sh <version>}
-bash "$REPO/deploy/selfhost/make-bundle.sh"
+# Buyers get this bundle: leave out this site's own database and earlier builds.
+TAR_OPTIONS="--exclude=./download-site/data --exclude=./download-site/out" bash "$REPO/deploy/selfhost/make-bundle.sh"
 mkdir -p "$HERE/out"
 cp "$REPO/deploy/selfhost/out/selfhost-bundle.tgz" "$HERE/out/selfhost-bundle-$VERSION.tgz"
 echo "Now publish it:  bun download-site/admin.ts publish download-site/out/selfhost-bundle-$VERSION.tgz $VERSION"

@@ -33,6 +33,7 @@ import {
 import { isLocal } from "./auth";
 import { migrate, sql } from "./db";
 import { checkEmail, connectEmail, connectedClientIds, disconnectEmail, emailStatus } from "./email";
+import { SAMPLE_OWNED, attachNumber, detachNumber, ownedUnassigned, sampleOwned } from "./ownNumbers";
 import { availableNumbers, buyNumber, callSummary, checkBuyable, connectedNumbers, openOrders, sampleNumbers, searchFor, voiceAppFor } from "./numbers";
 import { ValidationError, buildInstructions, greetingOf, knowledgeFor, normaliseSettings } from "./prompt";
 import { clientsWithBooking, getClient, getOrgClient, insertClient, listClients, orgOfClient, removeClient, saveClient } from "./store";
@@ -48,14 +49,14 @@ import { assistantRoute } from "./assistant";
 import { manageRoutes, setManageDeps } from "./routes/manage";
 import { signupRoutes } from "./routes/signup";
 import { automationHooks, automationRoutes } from "./routes/automations";
-import { bookingBlocked, startAutomations, withAutomations } from "./automations";
+import { applyAutomations, bookingBlocked, startAutomations, withAutomations } from "./automations";
 import { workspaceRoutes } from "./routes/workspace";
 import type { ClientAccess, RouteArgs } from "./routes/http";
 import { changeBrand, ownBrand, serveAsset, uploadAsset } from "./brand";
 import { accessibleClients, customerClientId, setFollowUpStage, customersFor, inviteCustomer, removeCustomer, revokeCustomerInvite } from "./customers";
 import { createRequest, declineRequest, listRequests, markDone, pendingCount, pendingRequest, requestsForClient, settleRequests } from "./numberRequests";
 import { createAgency, exitView, inviteAgencyOwner, viewAs, isSuspended, listAgencies, telnyxSettings, updateAgency } from "./agencies";
-import { canBuyNumbers, checkKey, connectPhoneAccount, countCheck, disconnectPhoneAccount, phoneAccount, pretendAccount, requirePhoneAccount } from "./phoneAccount";
+import { canBuyNumbers, canUseOwnNumbers, checkKey, connectPhoneAccount, countCheck, disconnectPhoneAccount, phoneAccount, pretendAccount, requirePhoneAccount } from "./phoneAccount";
 import { previewEmail, sendSimText, startTextSim } from "./simulator";
 import {
   connectFromLink,
@@ -399,7 +400,7 @@ async function numberState(ctx: Ctx, client: Business): Promise<NumberState> {
   // The demo receptionist never asks the carrier.
   if (isDemo(client.assistantId)) {
     const recorded = (client.phoneNumbers ?? []).map((n) => ({ id: n, phoneNumber: n, status: "active", type: typeOfNumber(n) }));
-    return { numbers: recorded, pending: [], balance: null, canBuy: await canBuyNumbers(ctx), requests: await requestsForClient(client.id) };
+    return { numbers: recorded, pending: [], balance: null, canBuy: await canBuyNumbers(ctx), canUseOwn: await canUseOwnNumbers(ctx), requests: await requestsForClient(client.id) };
   }
   const voiceApp = await voiceAppFor(client.assistantId);
   const [numbers, pending, balance] = await Promise.all([
@@ -414,7 +415,42 @@ async function numberState(ctx: Ctx, client: Business): Promise<NumberState> {
   if (JSON.stringify(current) !== JSON.stringify(client.phoneNumbers ?? [])) {
     await saveClient({ ...client, phoneNumbers: current });
   }
-  return { numbers, pending, balance, canBuy: await canBuyNumbers(ctx), requests: await requestsForClient(client.id) };
+  return { numbers, pending, balance, canBuy: await canBuyNumbers(ctx), canUseOwn: await canUseOwnNumbers(ctx), requests: await requestsForClient(client.id) };
+}
+
+// Numbers on the agency's own Telnyx account that none of its receptionists answers.
+async function ownedNumbers(ctx: Ctx, orgId: string) {
+  if (!(await canUseOwnNumbers(ctx))) throw new AuthError("Only an owner or admin of an agency on its own Telnyx account can use numbers it already owns.", 403);
+  if (await pretendAccount(orgId)) return sampleOwned(await listClients(orgId));
+  return ownedUnassigned(await listClients(orgId));
+}
+
+// Connects or releases a number the agency already owns, then refreshes the receptionist's
+// script and tools (the transfer and greeting lines mention its number).
+async function changeOwnNumber(ctx: Ctx, orgId: string, client: Business, action: "attach" | "detach", input: any) {
+  if (!(await canUseOwnNumbers(ctx))) throw new AuthError("Only an owner or admin of an agency on its own Telnyx account can use numbers it already owns.", 403);
+  requireRole(ctx, "admin");
+  let movedFrom = "";
+  if (isDemo(client.assistantId)) {
+    // A demo receptionist (local test servers): the number is only recorded.
+    const sample = SAMPLE_OWNED.find((n) => n.id === String(input?.numberId));
+    const number = sample?.phoneNumber ?? client.phoneNumbers?.find((n) => n === String(input?.numberId));
+    if (!number) throw new ValidationError("Choose one of your numbers from the list.");
+    const numbers = action === "attach" ? [...new Set([...(client.phoneNumbers ?? []), number])] : (client.phoneNumbers ?? []).filter((n) => n !== number);
+    await saveClient({ ...client, phoneNumbers: numbers, updatedAt: new Date().toISOString() });
+    await audit(ctx, `number.${action}`, { number, demo: true }, { clientId: client.id });
+  } else if (action === "attach") {
+    const res = await attachNumber(await listClients(orgId), client, input);
+    movedFrom = res.movedFrom;
+    await audit(ctx, "number.attach", { number: res.number.phoneNumber, movedFrom }, { clientId: client.id });
+  } else {
+    const num = await detachNumber(client, input);
+    await audit(ctx, "number.detach", { number: num.phoneNumber }, { clientId: client.id });
+  }
+  const state = await numberState(ctx, client);
+  const fresh = (await getClient(client.id)) ?? client;
+  const automationsError = await applyAutomations(fresh, { syncAssistant });
+  return { ...state, movedFrom, ...(automationsError ? { automationsError } : {}) };
 }
 
 // The workspace's manage side (server/routes/manage.ts) uses the same receptionist plumbing.
@@ -914,6 +950,9 @@ async function route(req: Request, server?: { requestIP(r: Request): { address: 
     if (method === "GET") return json({ clients: await listClients(orgId) });
     if (method === "POST") {
       const input = await req.json();
+  // Numbers the agency already owns on its Telnyx account (not answering for any receptionist yet).
+  if (path === "/api/numbers/owned" && method === "GET") return json({ numbers: await ownedNumbers(ctx, orgId) });
+
       const created = await createClient(orgId, input, { quick: input?.defaultVoice === true });
       await audit(ctx, "receptionist.create", { business: created.settings.businessName }, { clientId: created.id });
       return json({ client: created }, 201);
@@ -941,7 +980,7 @@ async function route(req: Request, server?: { requestIP(r: Request): { address: 
   }
 
   const match = path.match(
-    /^\/api\/clients\/([a-f0-9-]{36})(\/calls(?:\/([^/]+)\/messages)?|\/numbers|\/number-requests|\/email|\/email\/check|\/texting|\/texting\/numbers|\/texting\/test|\/simulator\/texts|\/simulator\/texts\/send|\/simulator\/email|\/booking|\/booking\/test|\/booking\/events\/[a-f0-9-]{36}|\/calendar|\/calendar\/signin\/(?:google|microsoft)|\/connect-link)?$/,
+    /^\/api\/clients\/([a-f0-9-]{36})(\/calls(?:\/([^/]+)\/messages)?|\/numbers|\/numbers\/(?:owned|attach|detach)|\/number-requests|\/email|\/email\/check|\/texting|\/texting\/numbers|\/texting\/test|\/simulator\/texts|\/simulator\/texts\/send|\/simulator\/email|\/booking|\/booking\/test|\/booking\/events\/[a-f0-9-]{36}|\/calendar|\/calendar\/signin\/(?:google|microsoft)|\/connect-link)?$/,
   );
   if (match) {
     // Another organisation's receptionist looks exactly like one that doesn't exist.
@@ -1045,6 +1084,10 @@ async function route(req: Request, server?: { requestIP(r: Request): { address: 
       if (method === "GET") return json(await numberState(ctx, client));
       if (method === "POST") {
         // Numbers cost money every month. On the platform's account, agencies ask
+    } else if (match[2] === "/numbers/owned") {
+      if (method === "GET") return json({ numbers: await ownedNumbers(ctx, orgId) });
+    } else if (match[2] === "/numbers/attach" || match[2] === "/numbers/detach") {
+      if (method === "POST") return json(await changeOwnNumber(ctx, orgId, client, match[2] === "/numbers/attach" ? "attach" : "detach", await req.json()));
         // (number-requests) and the platform team buys; on its own account an agency buys.
         if (!(await canBuyNumbers(ctx))) throw new AuthError("Request a number and we'll set it up.", 403);
         requireRole(ctx, "admin");

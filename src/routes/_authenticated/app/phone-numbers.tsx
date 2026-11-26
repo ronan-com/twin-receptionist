@@ -15,6 +15,7 @@ import { agentsQuery, phoneNumbersQuery } from "@/lib/app/queries";
 import { requestNumber } from "@/lib/api/manage";
 import { useWorkspace } from "@/lib/app/workspace";
 import { PRODUCT } from "@/lib/app/product";
+import { PENDING_NOTE } from "@/lib/ownNumbers";
 
 export const Route = createFileRoute("/_authenticated/app/phone-numbers")({
   head: () => ({ meta: [{ title: `Call handling — ${PRODUCT}` }] }),
@@ -44,6 +45,9 @@ function PhoneNumbersPage() {
   const all = numbersQ.data ?? [];
   const numbers = all.filter((n) => n.status !== "pending");
   const pending = all.filter((n) => n.status === "pending");
+  // A bought number the carrier is still approving has its digits; a request we haven't filled doesn't.
+  const approving = pending.filter((n) => n.e164);
+  const requested = pending.filter((n) => !n.e164);
   const agent = agentsQ.data?.[0] ?? null;
   const main = numbers[0]?.e164 ?? null;
   const unhealthy = numbers.filter((n) => n.health !== "healthy");
@@ -80,9 +84,16 @@ function PhoneNumbersPage() {
 
       {numbersQ.error ? <ErrorState message={numbersQ.error.message} onRetry={() => void numbersQ.refetch()} /> : null}
       {!canManage ? <Notice tone="neutral">{ws.access.readOnlyReason ?? "Only managers can request numbers."}</Notice> : null}
-      {pending.length > 0 ? (
-        <Notice tone="info" title={pending.length === 1 ? "A number is on its way" : `${pending.length} numbers are on their way`}>
-          {pending.map((p) => `${p.friendly_name}${p.notes ? ` (${p.notes})` : ""}, requested ${fmtRelative(p.created_at)}`).join(" · ")}. We'll connect it to your receptionist and it will show here once it's live.
+      {approving.length > 0 ? (
+        <div data-notice="number-approval">
+          <Notice tone="warning" title={numbers.length === 0 ? "Your receptionist can't take calls yet" : approving.length === 1 ? "A number is waiting for approval" : `${approving.length} numbers are waiting for approval`}>
+            {approving.map((p) => p.friendly_name).join(" · ")}: {PENDING_NOTE}
+          </Notice>
+        </div>
+      ) : null}
+      {requested.length > 0 ? (
+        <Notice tone="info" title={requested.length === 1 ? "A number is on its way" : `${requested.length} numbers are on their way`}>
+          {requested.map((p) => `${p.friendly_name}${p.notes ? ` (${p.notes})` : ""}, requested ${fmtRelative(p.created_at)}`).join(" · ")}. We'll connect it to your receptionist and it will show here once it's live.
         </Notice>
       ) : null}
 

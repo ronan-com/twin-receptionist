@@ -83,6 +83,19 @@ export async function canBuyNumbers(ctx: Ctx): Promise<boolean> {
   return mode === "own";
 }
 
+/**
+ * Using numbers the agency already owns on its Telnyx account: only its owners and admins,
+ * and only on its own account (or the one server key of a SINGLE_AGENCY install). On the
+ * platform's key the account holds every agency's numbers, so this is off there.
+ */
+export const ownNumbersAllowed = (ctx: Pick<Ctx, "org" | "viewing" | "role">, mode: PhoneAccount["mode"], single: boolean): boolean =>
+  Boolean(ctx.org) && !ctx.viewing && (ctx.role === "owner" || ctx.role === "admin") && (single ? mode !== "none" : mode === "own");
+
+export async function canUseOwnNumbers(ctx: Ctx): Promise<boolean> {
+  if (!ctx.org) return false;
+  return ownNumbersAllowed(ctx, (await modeOf(ctx.org.id)).mode, singleAgency());
+}
+
 export async function phoneAccount(ctx: Ctx): Promise<PhoneAccount> {
   const orgId = ctx.org!.id;
   const { mode, row } = await modeOf(orgId);

@@ -296,6 +296,8 @@ export type NumberState = {
   balance: { amount: number; currency: string } | null;
   // Only the platform team buys numbers. Everyone else asks for one.
   canBuy: boolean;
+  // An agency on its own phone account can also connect numbers it already owns.
+  canUseOwn?: boolean;
   requests: NumberRequest[];
 };
 

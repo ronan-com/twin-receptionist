@@ -9,6 +9,7 @@
 //   GET  /p/<attempt token>/bundle  one-time app download for that install attempt
 //   POST /p/<attempt token>/log     install output, in order (?offset=<bytes already sent>)
 //   POST /p/<attempt token>/exit    install.sh finished (?code=<exit code>)
+//   POST /api/sync                  the buyer's app sends its health snapshot (Bearer sync token; sync.ts)
 //   GET  /guide /styles.css /favicon.svg /wizard.js /healthz
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -19,6 +20,7 @@ import { actions, allow, canView, firstOpen, pBundle, pExit, pLog, pNext, startT
 import { STEPS, csrfOk, getSetup, logRead, newSessionId, siteKey, updateSetup, type StepId } from "./store";
 import { statusRev, wizardPage } from "./wizard";
 import { adminRoute } from "./admin-web";
+import { MAX_SYNC_BODY, bearerOf, buyerBySyncToken, receive } from "./sync";
 import { DEMO, DEMO_KEY, DemoOffline, demoBuyer, demoDashboard } from "./demo";
 
 if ((process.env.PREVIEW_JUMP || "").trim() === "1" && !ANY_MOCK) {
@@ -181,6 +183,23 @@ async function handle(req: Request, srv: Bun.Server): Promise<Response> {
       if (e instanceof DemoOffline) return html(demoOfflinePage(`/setup/${dm[1]}`), 503);
       throw e;
     }
+  }
+
+  // ---- the buyer's app reporting its health: counts only, token auth, rate-limited ----
+  if (path === "/api/sync") {
+    const json = (o: unknown, status = 200, h: Record<string, string> = {}) => respond(JSON.stringify(o), status, { "Content-Type": "application/json", "Cache-Control": "no-store", ...h });
+    if (method !== "POST") return json({ error: "POST only" }, 405, { Allow: "POST" });
+    const tok = bearerOf(req);
+    const buyerId = buyerBySyncToken(tok);
+    if (buyerId == null) {
+      const retry = allow(`syncbad:${ip}`, 30, 10 * 60_000);
+      return retry ? json({ error: "too many tries" }, 429, { "Retry-After": String(retry) }) : json({ error: "unauthorised" }, 401);
+    }
+    const retry = allow(`sync:${buyerId}`, 20, 15 * 60_000);
+    if (retry) return json({ error: "too many requests" }, 429, { "Retry-After": String(retry) });
+    if (Number(req.headers.get("content-length") || 0) > MAX_SYNC_BODY) return json({ error: "too large" }, 413);
+    const r = receive(tok, (await req.text()).slice(0, MAX_SYNC_BODY + 1));
+    return json(r.body, r.status);
   }
 
   // ---- our admin dashboard ----

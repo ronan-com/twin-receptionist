@@ -1,18 +1,13 @@
-import { useMemo } from "react";
 import { createFileRoute, Outlet, redirect } from "@tanstack/react-router";
-import { useQuery } from "@tanstack/react-query";
-import { AppShell } from "@/components/app/AppShell";
-import { WorkspaceSwitcher } from "@/components/app/WorkspaceSwitcher";
-import { DateRangeSelect } from "@/components/app/DateRangeSelect";
+import { ClientShell } from "@/components/app/ClientShell";
 import { Notice, ErrorState } from "@/components/app/primitives";
 import { SetupPrompt } from "@/components/app/SetupPrompt";
-import { WorkspaceBrand, WorkspaceLogo } from "@/components/app/WorkspaceBrand";
+import { WorkspaceBrand } from "@/components/app/WorkspaceBrand";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { CLIENT_NAV } from "@/lib/app/constants";
-import { integrationsQuery, phoneNumbersQuery, unansweredQuery } from "@/lib/app/queries";
 import { useWorkspace } from "@/lib/app/workspace";
-import { PRODUCT } from "@/lib/app/product";
+import { OTHER_BRAND, PRODUCT } from "@/lib/app/product";
 
 // The business workspace. Business users (managers and viewers) live here; the
 // platform team gets here only while viewing as a business. Agency staff and the
@@ -22,7 +17,7 @@ export const Route = createFileRoute("/_authenticated/app")({
     if (context.session.console) throw redirect({ to: "/admin", replace: true });
   },
   head: () => ({
-    meta: [{ title: `Workspace — ${PRODUCT}` }, { name: "robots", content: "noindex" }],
+    meta: [{ title: OTHER_BRAND ? PRODUCT : "Your receptionist" }, { name: "robots", content: "noindex" }],
   }),
   component: ClientAppLayout,
 });
@@ -49,30 +44,6 @@ function ShellSkeleton() {
 
 function ClientAppLayout() {
   const ws = useWorkspace();
-  const unansweredQ = useQuery({ ...unansweredQuery(ws.businessId), staleTime: 60_000 });
-  const integrationsQ = useQuery({ ...integrationsQuery(ws.businessId), staleTime: 60_000 });
-  const numbersQ = useQuery({ ...phoneNumbersQuery(ws.businessId), staleTime: 60_000 });
-
-  const notifications = useMemo(() => {
-    const out: { title: string; description?: string; tone?: "info" | "warning" | "danger"; to?: string }[] = [];
-    const open = (unansweredQ.data ?? []).filter((u) => u.status === "open");
-    if (open.length > 0)
-      out.push({
-        title: `${open.length} question${open.length === 1 ? "" : "s"} your receptionist couldn't answer`,
-        description: "Add answers so callers get helped next time.",
-        tone: "warning",
-        to: "/app/knowledge",
-      });
-    for (const i of integrationsQ.data ?? []) {
-      if (i.status === "error") out.push({ title: `${i.display_name ?? i.provider} needs attention`, description: i.last_error ?? "Sync failed", tone: "danger", to: "/app/integrations" });
-    }
-    for (const n of numbersQ.data ?? []) {
-      if (n.health && n.health !== "healthy")
-        out.push({ title: `${n.friendly_name ?? n.e164} is ${n.health}`, description: "Calls to this number may not connect.", tone: "danger", to: "/app/phone-numbers" });
-    }
-    return out;
-  }, [unansweredQ.data, integrationsQ.data, numbersQ.data]);
-
   if (ws.loading) return <ShellSkeleton />;
   if (ws.error) {
     return (
@@ -89,7 +60,7 @@ function ClientAppLayout() {
         <div className="border-b border-[#dcdaff] bg-[#f4f3ff] px-4 py-2 text-[12.5px] text-[#4338ca]">
           <div className="mx-auto flex max-w-[1400px] flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
             <span>
-              <span className="font-semibold">Staff view.</span> You're viewing <span className="font-medium">{ws.business.name}</span> as {ws.isPlatformAdmin ? "the platform team" : "their agency"}. This is read only.
+              <span className="font-semibold">Staff view.</span> You're viewing <span className="font-medium">{ws.business.name}</span> as {ws.viewing?.support ? `support (${ws.viewing.by || "your setup provider"})` : ws.isPlatformAdmin ? "the platform team" : "their agency"}. This is read only.
             </span>
             <button type="button" onClick={() => void ws.exitView()} className="self-start font-medium underline-offset-2 hover:underline sm:self-auto">
               Exit view
@@ -118,20 +89,7 @@ function ClientAppLayout() {
   })();
 
   return (
-    <AppShell
-      nav={CLIENT_NAV}
-      variant="client"
-      brandTo="/app"
-      sidebarHeader={
-        <>
-          <WorkspaceLogo />
-          <WorkspaceSwitcher />
-        </>
-      }
-      topbarRight={<DateRangeSelect value={ws.rangePreset} onChange={ws.setRangePreset} />}
-      banner={banner}
-      notifications={notifications}
-    >
+    <ClientShell nav={CLIENT_NAV} banner={banner}>
       {ws.business ? (
         <>
           <WorkspaceBrand />
@@ -145,6 +103,6 @@ function ClientAppLayout() {
           </Notice>
         </div>
       )}
-    </AppShell>
+    </ClientShell>
   );
 }

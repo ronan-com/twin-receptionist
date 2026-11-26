@@ -8,6 +8,7 @@ import { importLegacyData } from "./legacy";
 import { mailerReady, sendAccountEmail } from "./mailer";
 import { ValidationError } from "./prompt";
 import { UI_PRODUCT } from "./product";
+import { supportAccessOpen, supportSeller } from "./supportAccess";
 
 // People sign in with an email and password. Each person belongs to one or more
 // organisations (an agency, the sales team, or a single business), with a role:
@@ -18,7 +19,8 @@ import { UI_PRODUCT } from "./product";
 
 export type Ctx = {
   // Set while the platform team is viewing as an agency or a customer (read-only).
-  viewing?: { org: string; client: string | null; business: string };
+  // `support` marks a sign-in by the setup provider's support person (Settings, "Support access").
+  viewing?: { org: string; client: string | null; business: string; support?: boolean; by?: string };
   tokenHash: string;
   user: { id: string; email: string; name: string; platformAdmin: boolean };
   org: { id: string; name: string } | null;
@@ -32,7 +34,7 @@ const SESSION_DAYS = 30;
 const INVITE_DAYS = 7;
 const RESET_MINUTES = 60;
 
-const hashToken = (token: string) => createHash("sha256").update(token).digest("hex");
+export const hashToken = (token: string) => createHash("sha256").update(token).digest("hex");
 const newToken = () => randomBytes(32).toString("base64url");
 const RANK: Record<OrgRole, number> = { customer: 0, member: 1, admin: 2, owner: 3 };
 
@@ -122,12 +124,37 @@ export async function sessionFrom(req: Request): Promise<Ctx | null> {
   if (!token || token.length > 100) return null;
   const tokenHash = hashToken(token);
   const [s] = await sql`
-    select s.org_id, s.view_org_id, s.view_client_id, u.id, u.email, u.name, u.platform_admin
+    select s.org_id, s.view_org_id, s.view_client_id, s.support, u.id, u.email, u.name, u.platform_admin
     from sessions s join users u on u.id = s.user_id
     where s.token_hash = ${tokenHash} and s.expires_at > now()`;
   if (!s) return null;
   // With SINGLE_AGENCY there's no platform team: the first account is the agency's owner.
   const user = { id: s.id, email: s.email, name: s.name, platformAdmin: Boolean(s.platform_admin) && !singleAgency() };
+  // The setup provider's support person: the agency's console, read-only, and only while the owner has
+  // Support access on (turning it off or letting it expire ends the session on its next request).
+  if (s.support) {
+    const [o] = s.org_id ? await sql`select id, name from orgs where id = ${s.org_id}` : [];
+    if (!o || !(await supportAccessOpen())) {
+      await sql`delete from sessions where token_hash = ${tokenHash}`;
+      return null;
+    }
+    let client: string | null = null;
+    let business = "";
+    if (s.view_client_id) {
+      const [c] = await sql`select id, data->'settings'->>'businessName' as business from clients where id = ${s.view_client_id} and org_id = ${o.id}`;
+      if (c) {
+        client = c.id;
+        business = c.business ?? "";
+      }
+    }
+    return {
+      tokenHash,
+      user: { ...user, platformAdmin: false },
+      org: { id: o.id, name: o.name },
+      role: client ? "customer" : "admin",
+      viewing: { org: o.name, client, business, support: true, by: supportSeller() },
+    };
+  }
   // The platform team stepping into an agency (or a business's customer view), read-only.
   if (user.platformAdmin && s.view_org_id) {
     const [o] = await sql`select id, name from orgs where id = ${s.view_org_id}`;
@@ -290,7 +317,7 @@ export async function signIn(input: any): Promise<string> {
   if (recentFailures(email).length >= 8 || recentFailures("*").length >= 200) {
     throw new AuthError("Too many tries. Wait 15 minutes, or reset your password.", 429);
   }
-  const [user] = await sql`select id, password_hash from users where email = ${email}`;
+  const [user] = await sql`select id, password_hash from users where email = ${email} and not support`;
   const ok = await Bun.password.verify(password, user?.password_hash ?? DUMMY_HASH);
   if (!user || !ok) {
     recentFailures(email).push(Date.now());
@@ -538,7 +565,7 @@ export async function requestReset(input: any, base: string): Promise<{ emailsSe
   const email = String(input?.email ?? "").trim().toLowerCase().slice(0, 254);
   if (recentFailures(`reset:${email}`).length >= 3) return { emailsSetUp };
   recentFailures(`reset:${email}`).push(Date.now());
-  const [u] = await sql`select id from users where email = ${email}`;
+  const [u] = await sql`select id from users where email = ${email} and not support`;
   if (!u) return { emailsSetUp };
   await makeReset(u.id, email, base);
   return { emailsSetUp };

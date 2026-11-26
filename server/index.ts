@@ -43,6 +43,7 @@ import { callDetail, listCalls } from "./calls";
 import { startCallSync } from "./callsync";
 import { industryKeyOf, workspaceBusinesses } from "./answered";
 import { audit } from "./audit";
+import { startSupportSync, supportPublicRoutes, supportSettingsRoute } from "./supportSync";
 import { OTHER_BRAND, UI_PRODUCT, brandedIndex } from "./product";
 import { agencySnapshot, consoleRoutes, isClientPaused } from "./routes/console";
 import { assistantRoute } from "./assistant";
@@ -574,6 +575,9 @@ async function route(req: Request, server?: { requestIP(r: Request): { address: 
 
   if (path === "/api/health") return json({ ok: true });
 
+  // The setup provider's side of the heartbeat and Support access: a shared token, or a one-time link (server/supportSync.ts).
+  if (path.startsWith("/api/support/") && path !== "/api/support/settings") return (await supportPublicRoutes(req, path, method)) ?? json({ error: "Not found" }, 404);
+
   // ---- Signing in and out (no session needed) ----
   if (path === "/api/session" && method === "GET") {
     const ctx = await sessionFrom(req);
@@ -642,6 +646,13 @@ async function route(req: Request, server?: { requestIP(r: Request): { address: 
   // ---- Everything below needs a signed-in person ----
   const ctx = await sessionFrom(req);
   if (!ctx) return json({ error: "Please sign in." }, 401);
+
+  // A support sign-in (the setup provider's person, with the owner's permission) can look, never change.
+  if (ctx.viewing?.support && method !== "GET" && method !== "HEAD" && path !== "/api/admin/view-as" && path !== "/api/logout") {
+    return json({ error: "This is a read-only support session. Nothing can be changed." }, 403);
+  }
+  // Settings, "Support": the owner's switches for sharing stats and Support access.
+  if (path === "/api/support/settings") return supportSettingsRoute(req, method, ctx);
 
   // The Answered workspace: the businesses this person works with, in Answered's shapes.
   if (path === "/api/session/businesses" && method === "GET") return json(await workspaceBusinesses(ctx));
@@ -1175,6 +1186,8 @@ Bun.serve({
 startCallSync();
 // Text-back after calls (server/automations.ts).
 startAutomations();
+// Health and usage counts to the setup provider, unless the owner turned it off (server/supportSync.ts).
+startSupportSync();
 
 // Check every connected mailbox once a minute. One at a time, so a slow mail
 // server can't pile up connections.

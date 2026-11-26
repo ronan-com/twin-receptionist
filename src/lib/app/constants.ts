@@ -2,7 +2,6 @@ import type { LucideIcon } from "lucide-react";
 import {
   Activity,
   AudioLines,
-  BarChart3,
   Bot,
   Briefcase,
   Building2,
@@ -10,6 +9,7 @@ import {
   ClipboardCheck,
   CreditCard,
   FlaskConical,
+  Home,
   LayoutDashboard,
   Palette,
   Phone,
@@ -19,7 +19,6 @@ import {
   ScrollText,
   Settings,
   ShieldCheck,
-  UserRound,
 } from "lucide-react";
 import type {
   CallOutcome,
@@ -48,40 +47,27 @@ export interface NavItem {
 }
 
 /**
- * Seven top-level destinations. Older URLs still work: knowledge and phone
- * numbers live under Receptionist, team and integrations under Settings.
+ * Four top-level destinations for a business owner. Older URLs still work: the
+ * receptionist, knowledge, numbers, automations, reports, team and connected apps
+ * are reached from Settings (and link back to it); follow-ups from Home.
  */
 export const CLIENT_NAV: NavItem[] = [
-  { to: "/app", label: "Dashboard", icon: LayoutDashboard, exact: true },
+  { to: "/app", label: "Home", icon: Home, exact: true },
   { to: "/app/calls", label: "Calls", icon: PhoneCall },
   { to: "/app/bookings", label: "Bookings", icon: CalendarDays },
-  { to: "/app/leads", label: "Follow-ups", icon: UserRound },
-  { to: "/app/receptionist", label: "Receptionist", icon: Bot, match: ["/app/knowledge", "/app/phone-numbers", "/app/automations"] },
-  { to: "/app/analytics", label: "Reports", icon: BarChart3 },
-  { to: "/app/settings", label: "Settings", icon: Settings, match: ["/app/team", "/app/integrations"] },
-];
-
-/** Contextual sub-navigation shown under the top bar for grouped sections. */
-export const CLIENT_SUBNAV: { group: string; items: { to: string; label: string }[] }[] = [
   {
-    group: "/app/receptionist",
-    items: [
-      { to: "/app/receptionist", label: "Receptionist" },
-      { to: "/app/knowledge", label: "Business knowledge" },
-      { to: "/app/phone-numbers", label: "Call handling" },
-      { to: "/app/automations", label: "Automations" },
-    ],
-  },
-  {
-    group: "/app/settings",
-    items: [
-      { to: "/app/settings", label: "Business profile" },
-      { to: "/app/team", label: "Team" },
-      { to: "/app/integrations", label: "Integrations" },
-    ],
+    to: "/app/settings",
+    label: "Settings",
+    icon: Settings,
+    match: ["/app/receptionist", "/app/knowledge", "/app/phone-numbers", "/app/automations", "/app/analytics", "/app/team", "/app/integrations"],
   },
 ];
 
+/** Pages without a tab of their own: where "Back" on them goes. */
+export const CLIENT_BACKLINKS: { to: string; label: string; from: string[] }[] = [
+  { to: "/app/settings", label: "Settings", from: ["/app/receptionist", "/app/knowledge", "/app/phone-numbers", "/app/automations", "/app/analytics", "/app/team", "/app/integrations"] },
+  { to: "/app", label: "Home", from: ["/app/leads"] },
+];
 
 // The console (/admin). The platform team sees every item; agency staff see the
 // ones without platformOnly, scoped to their own agency.

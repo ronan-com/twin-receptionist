@@ -132,6 +132,8 @@ export interface Pkg {
   size: number;
   sha256: string;
   published_at: string;
+  /** What's new in this version, one change per line (shown to buyers on the Update screen). */
+  notes: string | null;
 }
 
 let _db: Database | null = null;
@@ -188,9 +190,39 @@ export function db(): Database {
       updated_at TEXT NOT NULL,
       PRIMARY KEY (buyer_id, name)
     );
+    -- The heartbeat (sync.ts). The token's hash only; the latest snapshot; a short history of counts.
+    CREATE TABLE IF NOT EXISTS sync_tokens (
+      buyer_id INTEGER PRIMARY KEY REFERENCES buyers(id),
+      token_hash BLOB NOT NULL UNIQUE,
+      created_at TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS sync_snapshots (
+      buyer_id INTEGER PRIMARY KEY REFERENCES buyers(id),
+      data TEXT NOT NULL,
+      received_at TEXT NOT NULL,
+      source TEXT NOT NULL DEFAULT 'heartbeat'
+    );
+    CREATE TABLE IF NOT EXISTS sync_history (
+      id INTEGER PRIMARY KEY,
+      buyer_id INTEGER NOT NULL REFERENCES buyers(id),
+      at TEXT NOT NULL,
+      data TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS sync_history_buyer ON sync_history (buyer_id, id DESC);
+    -- Our staff's "Sync now" and "View as" clicks. No foreign key: it outlives a deleted buyer.
+    CREATE TABLE IF NOT EXISTS support_log (
+      id INTEGER PRIMARY KEY,
+      buyer_id INTEGER NOT NULL,
+      admin_email TEXT NOT NULL,
+      action TEXT NOT NULL,
+      note TEXT NOT NULL DEFAULT '',
+      at TEXT NOT NULL
+    );
   `);
   // Older databases (the live one) have no demo column: add it, off for everyone already there.
   if (!(d.query("PRAGMA table_info(buyers)").all() as { name: string }[]).some((c) => c.name === "demo")) d.exec("ALTER TABLE buyers ADD COLUMN demo INTEGER NOT NULL DEFAULT 0");
+  // Same for release notes (the live database has no notes column on packages).
+  if (!(d.query("PRAGMA table_info(packages)").all() as { name: string }[]).some((c) => c.name === "notes")) d.exec("ALTER TABLE packages ADD COLUMN notes TEXT");
   _db = d;
   return d;
 }
@@ -222,9 +254,10 @@ export const restoreBuyer = (id: number) => db().query("UPDATE buyers SET revoke
 // Published server bundles (selfhost-bundle.tgz). The newest is what new installs get.
 export const currentPackage = () => db().query("SELECT * FROM packages WHERE file LIKE '%.tgz' ORDER BY id DESC LIMIT 1").get() as Pkg | null;
 export const listPackages = () => db().query("SELECT * FROM packages ORDER BY id").all() as Pkg[];
-export function recordPackage(p: Omit<Pkg, "id" | "published_at">) {
-  db().query("INSERT INTO packages (version, file, size, sha256, published_at) VALUES (?, ?, ?, ?, ?)").run(p.version, p.file, p.size, p.sha256, now());
+export function recordPackage(p: Omit<Pkg, "id" | "published_at" | "notes"> & { notes?: string | null }) {
+  db().query("INSERT INTO packages (version, file, size, sha256, published_at, notes) VALUES (?, ?, ?, ?, ?, ?)").run(p.version, p.file, p.size, p.sha256, now(), p.notes?.trim() || null);
 }
+export const setPackageNotes = (version: string, notes: string) => db().query("UPDATE packages SET notes = ? WHERE version = ?").run(notes.trim() || null, version).changes;
 
 // ---------------- formatting ----------------
 export function humanSize(n: number) {

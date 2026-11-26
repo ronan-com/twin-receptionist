@@ -37,15 +37,16 @@ function AdminCallsPage() {
   const inRange = useMemo(() => (q.data ?? []).filter((c) => isInRange(c.started_at, range.from, range.to) && (includeDemo || !c.business?.is_demo)), [q.data, range, includeDemo]);
   const kpis = useMemo(() => computeKpis(inRange, {}), [inRange]);
   const failed = inRange.filter((c) => c.status === "failed");
-  const texts = inRange.filter((c) => c.channel && c.channel !== "call").length;
+  const isVoice = (c: ConsoleCall) => c.channel === "call" || c.channel === "web";
+  const texts = inRange.filter((c) => c.channel && !isVoice(c)).length;
 
   const rows = useMemo(() => {
     const s = search.trim().toLowerCase();
     return inRange.filter((c) => {
       if (status !== "all" && c.status !== status) return false;
       if (outcome !== "all" && c.outcome !== outcome) return false;
-      if (channel === "call" && c.channel !== "call") return false;
-      if (channel === "text" && c.channel === "call") return false;
+      if (channel === "call" && !isVoice(c)) return false;
+      if (channel === "text" && isVoice(c)) return false;
       if (!s) return true;
       return [c.business?.name, c.business?.org_name, c.from_number, c.to_number, c.summary].some((v) => v?.toLowerCase().includes(s));
     });
@@ -58,8 +59,8 @@ function AdminCallsPage() {
       header: "Caller",
       cell: (c) => (
         <div className="min-w-0">
-          <div className="truncate tabular-nums text-ink">{fmtPhone(c.from_number) || "Unknown"}</div>
-          <div className="truncate text-[11.5px] text-ink-muted">{c.channel === "call" ? "Call" : "Text"}</div>
+          <div className="truncate tabular-nums text-ink">{fmtPhone(c.from_number) || (c.channel === "web" ? "Browser" : "Unknown")}</div>
+          <div className="truncate text-[11.5px] text-ink-muted">{c.channel === "web" ? "Test call" : c.channel === "call" ? "Call" : "Text"}</div>
         </div>
       ),
     },
@@ -156,7 +157,7 @@ function AdminCallsPage() {
         />
       </Panel>
       <p className="text-[11.5px] text-ink-muted">
-        <StatusBadge tone="danger">Failed</StatusBadge> rows are calls the phone provider reported as failed. Browser test calls aren't listed.
+        <StatusBadge tone="danger">Failed</StatusBadge> rows are calls the phone provider reported as failed. Browser test calls are listed as Test call; they don't count towards Usage.
       </p>
 
       <CallSheet callId={openCall} onClose={() => setOpenCall(null)} />

@@ -6,7 +6,7 @@ import { CONFIG, RAILWAY, type Buyer } from "./lib";
 import { DEMO, demoSample, isDemo } from "./demo";
 import { esc } from "./pages";
 import { howTo } from "./content";
-import { agencyUrl, canView, hostOf, locked, oauthRedirect, stepDone, webUrl, zoneOf } from "./setup";
+import { agencyUrl, canView, hostOf, locked, oauthRedirect, stepDone, updateInfo, webUrl, zoneOf } from "./setup";
 import { DEFAULT_REGION, DEFAULT_SIZE } from "./providers";
 import { STEPS, csrfToken, isOptional, logRead, secretHint, type DnsRecord, type SetupData, type StepId } from "./store";
 
@@ -102,7 +102,7 @@ const P = (c: Ctx) => esc(c.s.brand?.productName || CONFIG.productName);
 function welcome(c: Ctx) {
   return `${head(c, "Let's set up your AI receptionist agency", RAILWAY ? "By the end your agency is live under your brand, on your own Railway account. You only need two accounts: Railway and Telnyx." : "By the end your agency runs at app.your-domain, under your brand, on a server you own.")}
 <div class="tiles">
-  <div class="tile indigo"><div class="ti">${icon("home")}</div><b>Yours to keep</b><span>Your brand, ${RAILWAY ? "hosting" : "server"}, accounts and clients. We keep no access.</span></div>
+  <div class="tile indigo"><div class="ti">${icon("home")}</div><b>Yours to keep</b><span>Your brand, ${RAILWAY ? "hosting" : "server"}, accounts and clients. We have no login to them.</span></div>
   <div class="tile magenta"><div class="ti">${icon("clock")}</div><b>About ${RAILWAY ? "15" : "20"} minutes</b><span>Close the page any time; this link picks up where you left off.</span></div>
   <div class="tile coral"><div class="ti">${icon("key")}</div><b>Have these ready</b><span>${RAILWAY ? "Railway (hosting) and Telnyx (phones). Email and your own domain are optional extras you can add now or later." : "Your domain, DigitalOcean, Telnyx and Resend accounts."}</span></div>
 </div>
@@ -485,7 +485,7 @@ function done(c: Ctx) {
   <div>${icon("check")}<span>Keep your ${s.email?.mode === "resend" ? "Resend key" : "email login"}: your server sends email with it.</span></div>
   <div>${icon("check")}<span>${s.sshKeyAdded ? `Log in to the server with your SSH key: <code>ssh root@${esc(s.ip || "")}</code>` : "Server login: DigitalOcean emailed you its root password, or use the droplet's Console."}</span></div>
 </div>
-${notice("info", "We've deleted every key you gave us. We keep no access to your server or accounts.")}
+${notice("info", "We've deleted every key you gave us. We have no login to your server or accounts. Your agency shares health and usage counts with us (never calls or customer details). That is on by default and you can switch it off in your dashboard, under Settings, then Support. Support access, which would let us sign in to help you, is off unless you turn it on there.")}
 <details class="log"><summary>Show details</summary><pre id="log" data-next="${next}">${esc(text.slice(-60000))}</pre></details>
 ${nav(c, `<a class="btn p" href="${esc(url)}" target="_blank" rel="noopener noreferrer">Open your dashboard ${icon("ext")}</a>`, { back: false })}`;
 }
@@ -522,10 +522,65 @@ function laterCards(c: Ctx, url: string): string {
   return cards.length ? `<h3 class="extras-head">Optional extras: add them whenever you like</h3><div class="xcards">${cards.join("")}</div>` : "";
 }
 
+// ---------------- Update your agency (after Done) ----------------
+const verText = (v: string) => (v ? `version ${esc(v)}` : "an earlier version");
+const notesHtml = (notes: { version: string; lines: string[] }[]) =>
+  notes.length ? `<div class="whatsnew"><b>What's new</b>${notes.map((n) => `<div class="nv"><span>${notes.length > 1 ? `Version ${esc(n.version)}` : ""}</span><ul>${n.lines.map((l) => `<li>${esc(l)}</li>`).join("")}</ul></div>`).join("")}</div>` : "";
+
+/** The small banner on the Done screen: which version they're on, and "Update now" when there's a newer one. */
+function updateBanner(c: Ctx): string {
+  const info = updateInfo(c.b, c.s);
+  if (!info) return "";
+  if (!info.available) return `<p class="hint verline">Your agency is on ${verText(info.installed)}, the latest.</p>`;
+  return `<div class="notice info updatebar">${icon("rocket")}<div><b>Your agency is on ${verText(info.installed)}. Version ${esc(info.latest)} is available.</b>${notesHtml(info.notes)}
+${mini(c, "update-open", `Update now ${icon("right")}`, "btn p")}</div></div>`;
+}
+
+/** The three update screens: paste a token, watch it run, or it stopped (nothing lost). */
+function updateScreen(c: Ctx): string {
+  const s = c.s, u = s.update!;
+  const info = updateInfo(c.b, s);
+  const from = u.from ?? info?.installed ?? "", to = u.to ?? info?.latest ?? "";
+  if (u.phase === "ask") {
+    const saved = secretHint(c.b.id, "railway_token");
+    return `${head(c, "Update your agency", `${P(c)} goes from ${verText(from)} to version ${esc(to)}. Same Railway project, same database, same settings: only the app changes. About 5 minutes.`)}
+<div class="body">${info ? notesHtml(info.notes) : ""}${mainForm(c, "update-start", `
+  ${secretIn("token", "Paste your Railway token", saved, "Railway account token")}
+  <p class="hint">The same kind of token as when you set up: make it under Account Settings, Tokens, with <b>No workspace</b>. We use it for this update only, then delete it.</p>
+  ${showMeHow(["railway-token"])}`)}</div>
+${nav(c, `${mini(c, "update-cancel", "Not now", "btn o")}${primary("Check and update")}`, { back: false })}`;
+  }
+  const rw = u;
+  const stages = ["Finding your agency in Railway", "Adding any new settings", "Sending the new version to Railway", "Building the app (the longest step)", "Starting the app", "Checking it answers"];
+  const at = !rw.appId ? 0 : !rw.varsSet ? 1 : !rw.deploymentId ? 2 : rw.deployStatus === "SUCCESS" ? 5 : rw.deployStatus === "DEPLOYING" ? 4 : 3;
+  const bad = u.phase === "failed";
+  const list = `<ul class="stages">${stages.map((t, i) => {
+    const cls = i < at ? "ok" : i === at ? (bad ? "bad" : "run") : "";
+    return `<li class="${cls}"><i>${cls === "ok" ? icon("check") : cls === "bad" ? icon("x") : ""}</i>${esc(t)}</li>`;
+  }).join("")}</ul>`;
+  const { text, next } = logRead(c.b.id);
+  const log = `<details class="log"><summary>Show details</summary><pre id="log" data-next="${next}">${esc(text.slice(-60000))}</pre></details>`;
+  if (bad) {
+    return `${head(c, "The update stopped", "")}
+${notice("err", esc((u.error || "Something went wrong.").replace(/^./, (x) => x.toUpperCase())))}
+${notice("ok", `Nothing was lost. Your agency is still running ${verText(from)} with all your data, and keeps working while you try again.`)}
+${list}${log}
+${nav(c, `${mini(c, "update-cancel", "Not now", "btn o")}${mini(c, "update-retry", `Try again ${icon("right")}`, "btn p")}`, { back: false })}`;
+  }
+  const status = at <= 2 ? "Getting the update ready." : at === 3 ? "Railway is building the new version. Usually 3 to 6 minutes." : at === 4 ? "Starting the new version." : "Almost there.";
+  return `${head(c, `Updating ${P(c)}`, `To version ${esc(to)}. Your agency keeps working while this runs. You can close this page; your link picks up where you left off.`)}
+${list}
+<p class="status"><span class="spin"></span>${status}${u.attempt && u.attempt > 1 ? ` · attempt ${u.attempt}` : ""}</p>
+${log}
+${nav(c, "", { back: false })}`;
+}
+
 function doneRailway(c: Ctx) {
+  if (c.s.update && c.s.update.phase !== "done") return updateScreen(c);
   if (isDemo(c.b)) {
     return `${head(c, "Your agency is live", `${P(c)} is ready. This test uses a temporary address instead of your own domain.`)}
 <div class="live"><div class="dot">● Live</div><p class="hint">Next: create your password and your branded dashboard opens.</p></div>
+${updateBanner(c)}
 ${nav(c, `<a class="btn p" href="${base(c)}/open">Open your dashboard ${icon("ext")}</a>`, { back: false })}`;
   }
   const s = c.s;
@@ -540,6 +595,7 @@ ${nav(c, `<a class="btn p" href="${base(c)}/open">Open your dashboard ${icon("ex
 <div class="live"><div class="dot">● Live</div><a class="url" href="${esc(shown)}" target="_blank" rel="noopener noreferrer">${esc(shown)}</a>
 ${pending ? `<p class="hint">Your temporary address. <b>${esc(hostOf(s))}</b> starts working by itself once the records below are in.</p>` : !own ? `<p class="hint">This is your agency's address from Railway. Bookmark it. You can add your own domain later.</p>` : temp ? `<p class="hint">Also at your Railway address: <a href="${esc(temp)}" target="_blank" rel="noopener noreferrer">${esc(temp.replace(/^https?:\/\//, ""))}</a></p>` : ""}
 <p class="hint"><b>First time in:</b> you'll see <b>Set up your agency</b>. Use <b>${esc(s.brand?.ownerEmail || "your owner email")}</b> and pick a password. Only that address can create the first account.</p></div>
+${updateBanner(c)}
 ${pending && s.finishRecords?.length ? `<div class="recbox"><b>Records for ${esc(hostOf(s))}</b>${recordTable(s.finishRecords, true)}</div>` : ""}
 <div class="checks"><b>Before you go</b>
   <div>${icon("check")}<span>Delete your Railway token. <a href="https://railway.com/account/tokens" target="_blank" rel="noopener noreferrer">Open Railway</a></span></div>
@@ -548,7 +604,7 @@ ${pending && s.finishRecords?.length ? `<div class="recbox"><b>Records for ${esc
   <div>${icon("check")}<span>Turn on backups for the Postgres volume in Railway (its Backups tab).</span></div>
 </div>
 ${laterCards(c, shown)}
-${notice("info", "We've deleted every key you gave us. We keep no access to your Railway project or accounts.")}
+${notice("info", "We've deleted every key you gave us. We have no login to your Railway project or accounts. Your agency shares health and usage counts with us (never calls or customer details). That is on by default and you can switch it off in your dashboard, under Settings, then Support. Support access, which would let us sign in to help you, is off unless you turn it on there.")}
 <details class="log"><summary>Show details</summary><pre id="log" data-next="${next}">${esc(text.slice(-60000))}</pre></details>
 ${nav(c, `<a class="btn p" href="${esc(shown)}" target="_blank" rel="noopener noreferrer">Open your dashboard ${icon("ext")}</a>`, { back: false })}`;
 }
@@ -559,11 +615,12 @@ export function statusRev(c: { b: Buyer; s: SetupData }): string {
   const s = c.s;
   const bits = [s.step, s.phase, (s.progress || []).length, s.installStep, s.error, s.aRecord?.ok, s.dnsChecks && s.dnsChecks >= 3, s.lastSeenAt ? 1 : 0, s.domain?.cf?.status, s.domain?.cf?.canEdit,
     s.email?.resend?.status, s.email?.testSentTo, ...(s.email?.resend?.records || []).map((r) => (r.ok ? 1 : 0)), s.email?.resend?.dmarc?.ok ? 1 : 0, s.attempt, s.dropletId ? 1 : 0, s.ip ? 1 : 0,
-    s.rw?.projectId ? 1 : 0, s.rw?.pgVolume ? 1 : 0, s.rw?.deploymentId, s.rw?.deployStatus, s.rw?.certStatus, s.rw?.healthy ? 1 : 0, ...(s.rw?.records || []).map((r) => `${r.ok ? 1 : 0}${r.seen || ""}`), ...(s.email?.resend?.records || []).map((r) => r.seen || "")];
+    s.rw?.projectId ? 1 : 0, s.rw?.pgVolume ? 1 : 0, s.update?.phase, s.update?.deployStatus, s.update?.appId ? 1 : 0, s.update?.varsSet ? 1 : 0, s.update?.deploymentId, s.rw?.deploymentId, s.rw?.deployStatus, s.rw?.certStatus, s.rw?.healthy ? 1 : 0, ...(s.rw?.records || []).map((r) => `${r.ok ? 1 : 0}${r.seen || ""}`), ...(s.email?.resend?.records || []).map((r) => r.seen || "")];
   return Bun.hash(JSON.stringify(bits)).toString(36);
 }
 const isLive = (c: Ctx) =>
   (c.view === "install" && ["creating", "dns", "starting", "installing", "deploying", "domain"].includes(c.s.phase)) ||
+  (c.view === "done" && c.s.update?.phase === "running") ||
   (c.view === "domain" && RAILWAY && c.s.domain?.mode === "manual" && !!c.s.domain.host && c.s.email?.resend?.status !== "verified" && !!c.s.email?.resend?.records?.length) ||
   (c.view === "domain" && !!c.s.domain?.cf?.zoneId && !!c.s.domain.cf.status && c.s.domain.cf.status !== "active") ||
   (c.view === "email" && !!c.s.email?.resend?.domainId && c.s.email.resend.status !== "verified");

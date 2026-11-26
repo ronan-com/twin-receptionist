@@ -17,8 +17,9 @@ import { BrandEditor } from "./-brand";
 import { LinkBox, READ_ONLY_HINT, useConsole } from "./-shared";
 import { PRODUCT } from "@/lib/app/product";
 import { EmailCalendarsSection } from "./-email-calendars";
+import { SupportSection } from "./-support";
 
-const TABS = ["team", "branding", "account", "platform", "email"] as const;
+const TABS = ["team", "branding", "account", "platform", "email", "support"] as const;
 type Tab = (typeof TABS)[number];
 
 export const Route = createFileRoute("/_authenticated/admin/settings")({
@@ -31,6 +32,8 @@ function AdminSettingsPage() {
   const { ws, platform, orgName } = useConsole();
   // The server's own email sender and Google/Microsoft apps: the platform admin, or (SINGLE_AGENCY) the owner.
   const serverSettings = platform || Boolean(ws.session?.serverSettings);
+  // Sharing stats and Support access: on a self-hosted copy (SINGLE_AGENCY), for its owner (and a support session, read-only).
+  const supportTab = Boolean(ws.session?.singleAgency) && !platform;
   const { tab = "team" } = Route.useSearch();
   const navigate = useNavigate();
   const setTab = (t: string) => void navigate({ to: "/admin/settings", search: t === "team" ? {} : { tab: t as Tab }, replace: true });
@@ -45,6 +48,7 @@ function AdminSettingsPage() {
           <TabsTrigger value="account">Account</TabsTrigger>
           {platform ? <TabsTrigger value="platform">Platform admins</TabsTrigger> : null}
           {serverSettings ? <TabsTrigger value="email">Email and calendars</TabsTrigger> : null}
+          {supportTab ? <TabsTrigger value="support">Support</TabsTrigger> : null}
         </TabsList>
         <TabsContent value="team" className="mt-4">
           <TeamSection />
@@ -63,6 +67,11 @@ function AdminSettingsPage() {
         {serverSettings ? (
           <TabsContent value="email" className="mt-4">
             <EmailCalendarsSection />
+          </TabsContent>
+        ) : null}
+        {supportTab ? (
+          <TabsContent value="support" className="mt-4">
+            <SupportSection />
           </TabsContent>
         ) : null}
       </Tabs>

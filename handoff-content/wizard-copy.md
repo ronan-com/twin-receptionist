@@ -19,7 +19,7 @@ Style: Australian spelling, short sentences, no exclamation marks. Every step ha
 **Body:** By the end your agency runs at app.your-domain, under your brand, on your own Railway account.
 
 **Tiles**
-- **Yours to keep:** Your brand, hosting, accounts and clients. We keep no access.
+- **Yours to keep:** Your brand, hosting, accounts and clients. We have no login to them.
 - **About 20 minutes:** Close the page any time; this link picks up where you left off.
 - **Have these ready:** Your domain, Railway, Telnyx and Resend accounts.
 
@@ -223,7 +223,7 @@ Style: Australian spelling, short sentences, no exclamation marks. Every step ha
 - Keep your Resend account: your agency sends email through it with its own send-only key.
 - Turn on backups for the Postgres volume in Railway (its Backups tab).
 
-**Notice:** We've deleted every key you gave us. We keep no access to your Railway project or accounts.
+**Notice:** We've deleted every key you gave us. We have no login to your Railway project or accounts. Your agency shares health and usage counts with us (never calls or customer details). That is on by default and you can switch it off in your dashboard, under Settings, then Support. Support access, which would let us sign in to help you, is off unless you turn it on there.
 
 **Button:** `Open your dashboard`
 

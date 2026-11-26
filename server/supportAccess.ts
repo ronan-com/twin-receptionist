@@ -1,0 +1,34 @@
+import { sql } from "./db";
+
+// The two choices the agency owner makes in Settings, "Support" (kept in app_settings):
+//   support_sync    share health and usage stats with the setup provider. ON unless the owner turns it off.
+//   support_access  let the setup provider's support person sign in to the dashboard. OFF unless the owner
+//                   turns it on, for 24 hours, 7 days, or until they turn it off.
+// No imports from accounts.ts so it can be used there.
+
+export const SYNC_KEY = "support_sync";
+export const ACCESS_KEY = "support_access";
+
+export type SyncSetting = { enabled: boolean; changedAt?: string; by?: string };
+export type AccessSetting = { enabled: boolean; until: string | null; grantedAt?: string; by?: string };
+
+/** The setup provider's name, shown to the owner ("Let Twin Technologies sign in..."). Set at install. */
+export const supportSeller = () => (process.env.SUPPORT_SELLER_NAME ?? "").trim().slice(0, 80) || "your setup provider";
+
+/** Sharing is on by default: it is off only when the owner switched it off. */
+export const syncAllowed = (v: Partial<SyncSetting> | null | undefined) => v?.enabled !== false;
+
+/** Support access is open only when the owner turned it on and it hasn't run out. */
+export const accessOpen = (v: Partial<AccessSetting> | null | undefined, at = Date.now()) => v?.enabled === true && (!v.until || Date.parse(v.until) > at);
+
+async function read<T>(key: string): Promise<T | null> {
+  const [r] = await sql`select value from app_settings where key = ${key}`;
+  return (r?.value as T) ?? null;
+}
+export const readSync = () => read<SyncSetting>(SYNC_KEY);
+export const readAccess = () => read<AccessSetting>(ACCESS_KEY);
+export const syncEnabled = async () => syncAllowed(await readSync());
+export const supportAccessOpen = async () => accessOpen(await readAccess());
+
+export const DURATIONS = { "24h": 24 * 3600_000, "7d": 7 * 86_400_000, forever: 0 } as const;
+export type Duration = keyof typeof DURATIONS;

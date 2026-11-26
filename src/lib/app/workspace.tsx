@@ -1,6 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 import { queryOptions, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
+import { blockExports } from "@/lib/app/csv";
 import { authApi, type Session, type SignedIn } from "@/lib/api/auth";
 import type { WorkspaceBusiness, WorkspaceMembership } from "@/lib/api/workspace";
 import { STORAGE_KEYS } from "./constants";
@@ -180,7 +181,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         canEdit: false,
         canManage: false,
         isOwner: false,
-        readOnlyReason: `You're viewing ${business.name} as the platform team. This view is read only.`,
+        readOnlyReason: session.viewing.support ? `You're viewing ${business.name} in a support session. This view is read only.` : `You're viewing ${business.name} as the platform team. This view is read only.`,
       };
     }
     const m = memberships.find((x) => x.business_id === business.id);
@@ -236,6 +237,9 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
 
   const loading = sessionQ.isPending || (!!session && businessesQ.isPending);
   const error = sessionQ.error?.message ?? businessesQ.error?.message ?? null;
+
+  // A support session can look but not export.
+  blockExports(Boolean(session?.viewing?.support));
 
   const value: WorkspaceValue = {
     loading,

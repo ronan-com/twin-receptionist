@@ -159,6 +159,17 @@ export interface SetupData {
   extrasDone?: boolean;
   /** Railway: extras the buyer chose to leave for later. */
   skipped?: { email?: boolean; domain?: boolean; calendars?: boolean };
+  /**
+   * "Update your agency" (Railway, after Done): the buyer pastes a Railway token again and we send the newest
+   * app to the same project. ask = token screen, running = deploying, failed = nothing changed, done = last result.
+   */
+  update?: {
+    phase: "ask" | "running" | "failed" | "done";
+    from?: string; to?: string;
+    envId?: string; appId?: string; varsSet?: boolean;
+    deploymentId?: string; deployStatus?: string; uploadedAt?: string; healthSince?: string;
+    error?: string; startedAt?: string; at?: string; attempt?: number;
+  };
   // the install
   phase: Phase;
   progress?: string[];

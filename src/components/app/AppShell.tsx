@@ -5,7 +5,6 @@ import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
 import type { NavItem } from "@/lib/app/constants";
-import { CLIENT_SUBNAV } from "@/lib/app/constants";
 import { BrandMark } from "./BrandMark";
 import { AgencyMark } from "./AgencyMark";
 import { UserMenu } from "./UserMenu";
@@ -32,32 +31,6 @@ export function isNavActive(item: NavItem, pathname: string) {
   if (item.exact) return pathname === item.to;
   if (pathname === item.to || pathname.startsWith(item.to + "/")) return true;
   return (item.match ?? []).some((m) => pathname === m || pathname.startsWith(m + "/"));
-}
-
-function SubNav({ pathname }: { pathname: string }) {
-  const group = CLIENT_SUBNAV.find((g) => g.items.some((i) => pathname === i.to || pathname.startsWith(i.to + "/")));
-  if (!group) return null;
-  return (
-    <div className="border-b border-hairline bg-white">
-      <div className="mx-auto flex w-full max-w-[1400px] gap-1 overflow-x-auto px-3 sm:px-5 lg:px-8">
-        {group.items.map((i) => {
-          const active = pathname === i.to || pathname.startsWith(i.to + "/");
-          return (
-            <Link
-              key={i.to}
-              to={i.to}
-              className={cn(
-                "-mb-px whitespace-nowrap border-b-2 px-2.5 py-2.5 text-[12.5px] font-medium transition-colors",
-                active ? "border-indigo text-indigo" : "border-transparent text-ink-muted hover:text-ink",
-              )}
-            >
-              {i.label}
-            </Link>
-          );
-        })}
-      </div>
-    </div>
-  );
 }
 
 type Notification = NonNullable<AppShellProps["notifications"]>[number];
@@ -274,8 +247,6 @@ export function AppShell({ nav, variant, brandTo, sidebarHeader, topbarRight, ba
             </Popover>
           </div>
         </header>
-
-        {variant === "client" ? <SubNav pathname={pathname} /> : null}
 
         {banner}
 

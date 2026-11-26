@@ -68,7 +68,7 @@ const FOUR = [
   ["Open your private link", "It came in your purchase email and opens your own setup page."],
   ["Connect your accounts", RAILWAY ? "Two accounts, one at a time: Railway (hosting) and Telnyx (phones). Each is checked before you move on. Email and your own domain are optional extras." : "One at a time: domain, server, phones, email. Each is checked before you move on."],
   ["Click Install", RAILWAY ? "We set up your agency and its database in your Railway account. It's live at an https address straight away; your own domain is optional." : "We create a server in your DigitalOcean account and set up your agency on it, with https on your own domain."],
-  ["It's yours", `Your brand, your clients, your ${RAILWAY ? "hosting" : "server"}. We delete every key you gave us and keep no access.`],
+  ["It's yours", `Your brand, your clients, your ${RAILWAY ? "hosting" : "server"}. We delete every key you gave us and have no login to your accounts. Your agency shares health counts with us unless you switch it off, and we can only sign in if you turn Support access on.`],
 ];
 
 export function homePage(error = "", value = "") {
@@ -76,7 +76,7 @@ export function homePage(error = "", value = "") {
 <section class="hero">
   <p class="eyebrow">Your agency, packaged</p>
   <h1>Your own AI receptionist agency, under your brand</h1>
-  <p class="lead">A guided setup page builds your agency in <b>your</b> ${RAILWAY ? "Railway account, with <b>your</b> Telnyx phone account. Email and your own domain are optional extras you can add now or later" : "DigitalOcean account, on <b>your</b> domain, with <b>your</b> phone and email accounts"}. You sell AI receptionists to your clients. Nothing to download, and ${S()} keeps no access.</p>
+  <p class="lead">A guided setup page builds your agency in <b>your</b> ${RAILWAY ? "Railway account, with <b>your</b> Telnyx phone account. Email and your own domain are optional extras you can add now or later" : "DigitalOcean account, on <b>your</b> domain, with <b>your</b> phone and email accounts"}. You sell AI receptionists to your clients. Nothing to download, and ${S()} has no login to your accounts.</p>
   <div class="row"><a class="btn" href="#code">Open my setup</a><a class="btn ghost" href="/guide">Read the guide</a></div>
 </section>
 <section>
@@ -248,6 +248,12 @@ ${ul([
     RAILWAY ? "<b>Telnyx</b>, and any <b>domain, Resend or Google or Microsoft keys</b> you add, are yours, billed to you by each provider." : "<b>Your domain, Telnyx, Resend</b> and any <b>Google or Microsoft keys</b> are yours, billed to you by each provider.",
     `<b>Your data</b> (your clients, their receptionists, calls and settings) lives only on your ${RAILWAY ? "Railway project" : "server"}.`,
   ])}
-<p>${S()} keeps <b>no access</b>. While you set up, your keys are stored encrypted; once the install succeeds we delete every one of them. We never hold a key or password to your server: it downloads the app from us and reports its progress, and that's all. Because of that we can't sign in to fix things for you, so keep your server's login and <code>secrets.env</code> safe.</p>`)}
+<p>${S()} has <b>no login to your accounts</b>. While you set up, your keys are stored encrypted; once the install succeeds we delete every one of them. We never hold a key or password to your ${RAILWAY ? "Railway project" : "server"}.</p>
+<h3>What your agency shares with us, and what it doesn't</h3>
+${ul([
+    "<b>Health and usage stats: on by default, and you can switch it off.</b> Every 15 minutes your agency sends us its version and address, whether it's healthy, counts (clients, receptionists, phone numbers, calls over the last 24 hours, 7 and 30 days, bookings, errors), when the last call came in, your brand name and logo address, and yes or no for email, your own domain and AI help. It never sends caller names or numbers, messages, transcripts, recordings, customer details, passwords or keys. Switch it off in your dashboard: <b>Settings</b>, then <b>Support</b>. When it's off, nothing is sent.",
+    "<b>Support access: off unless you turn it on.</b> In <b>Settings</b>, then <b>Support</b>, you can let " + S() + " sign in to your dashboard to help you, for 24 hours, 7 days or until you turn it off. They sign in through a link that works once, for 60 seconds, as a read-only support person: they can look, not change anything, and can't see your keys or export your data. Every sign-in is recorded in your audit log and shown in Settings. Turn it off and any open support session ends straight away.",
+    "Agencies installed before this existed share nothing and can't be signed in to.",
+  ])}`)}
 </article></div>`, { active: "guide" });
 }

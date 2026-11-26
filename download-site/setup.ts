@@ -6,7 +6,7 @@
 import { randomBytes } from "node:crypto";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { CONFIG, PACKAGES_DIR, RAILWAY, currentPackage, db, now, slug, type Buyer } from "./lib";
+import { CONFIG, PACKAGES_DIR, RAILWAY, currentPackage, db, listPackages, now, slug, type Buyer } from "./lib";
 import {
   DEFAULT_REGION, DEFAULT_SIZE, ProviderError, cfCanEdit, cfEnsure, cfFindZone, cfHasDmarc, cfRecords, cfZone, checkCloudflare,
   checkDigitalOcean, checkGoogle, checkMicrosoft, checkRailway, checkResend, checkSmtp, checkTelnyx, doApi, lookup, normalizeDomain,
@@ -18,6 +18,7 @@ import {
   activeSetups, deleteSecret, staleSecretBuyers, type DnsRecord, type SetupData, type StepId,
 } from "./store";
 import { USER_DATA_LIMIT, buildEnv, buildUserData } from "./userdata";
+import { SYNC_URL, newSyncToken } from "./sync";
 
 const MIN = 60_000;
 const ago = (iso?: string) => (iso ? Date.now() - Date.parse(iso) : Infinity);
@@ -621,10 +622,12 @@ async function tickOne(id: number) {
   const s = getSetup(id);
   const wantsEmail = s.email?.mode === "resend" && s.email.resend && s.email.resend.status !== "verified" && !!s.email.resend.records?.length && hasSecret(id, "resend_key");
   const wantsDomain = s.step === "domain" && s.domain?.mode === "cloudflare" && s.domain.cf?.zoneId && ["pending", "initializing"].includes(s.domain.cf.status || "");
-  if (!["creating", "dns", "starting", "installing", "deploying", "domain"].includes(s.phase) && !wantsEmail && !wantsDomain) return;
+  const updating = s.update?.phase === "running";
+  if (!["creating", "dns", "starting", "installing", "deploying", "domain"].includes(s.phase) && !wantsEmail && !wantsDomain && !updating) return;
   busy.add(id);
   try {
-    if (isDemoBuyer(id)) { if (["creating", "deploying"].includes(s.phase)) await tickDemoInstall(id); }
+    if (updating) await tickUpdate(id);
+    else if (isDemoBuyer(id)) { if (["creating", "deploying"].includes(s.phase)) await tickDemoInstall(id); }
     else if (RAILWAY && s.phase === "creating") await tickRailCreate(id);
     else if (s.phase === "deploying") await tickRailDeploy(id);
     else if (s.phase === "domain") await tickRailDomain(id);
@@ -670,6 +673,17 @@ function brandSettings(s: SetupData): Record<string, string> {
   return v;
 }
 
+/**
+ * Settings for the health heartbeat and Support access (sync.ts). The app sends counts and health to us
+ * with SUPPORT_SYNC_TOKEN (we keep only its hash), and we call it with SUPPORT_CALL_TOKEN. The buyer sees
+ * and controls both in their app's Settings, "Support": sharing is on until they switch it off, Support access is off
+ * until they switch it on.
+ */
+function supportSettings(id: number): Record<string, string> {
+  const { token, callToken } = newSyncToken(id);
+  return { SUPPORT_SYNC_URL: SYNC_URL(), SUPPORT_SYNC_TOKEN: token, SUPPORT_CALL_TOKEN: callToken, SUPPORT_SELLER_NAME: CONFIG.sellerName, APP_VERSION: currentPackage()?.version || "" };
+}
+
 function buildSettings(id: number, s: SetupData): string {
   const resendKey = getSecret(id, "resend_key");
   const smtp = s.email?.mode === "resend" ? `smtps://resend:${resendKey}@smtp.resend.com:465` : smtpUrl(s.email!.smtp!.host, s.email!.smtp!.port, s.email!.smtp!.user, getSecret(id, "smtp_password") || "");
@@ -679,6 +693,7 @@ function buildSettings(id: number, s: SetupData): string {
     FIRST_ADMIN_EMAIL: s.brand!.ownerEmail,
     TELNYX_API_KEY: getSecret(id, "telnyx_key") || "",
     ...brandSettings(s),
+    ...supportSettings(id),
     OWN_PHONE_ACCOUNT: "", // the buyer is the agency: every client runs on their Telnyx key
     SMTP_URL: smtp,
     MAIL_FROM: s.email!.from || "",
@@ -1085,6 +1100,7 @@ async function railwayVars(id: number, s: SetupData, token: string): Promise<Rec
     MAILBOX_KEY: randomBytes(32).toString("base64"),
     SINGLE_AGENCY: "1",
     ...brandSettings(s),
+    ...supportSettings(id),
     HOST: "0.0.0.0",
     API_PORT: String(APP_PORT),
     PORT: String(APP_PORT),
@@ -1264,4 +1280,199 @@ async function tickRailDomain(id: number) {
     progress(id, `https://${hostOf(s)} is ready`);
     finish(id, `https://${hostOf(s)}`);
   }
+}
+
+// ======================= Update your agency (Railway) =======================
+// The buyer's setup link keeps working after Done. When we publish a newer bundle it shows "Update available";
+// "Update now" asks for a Railway token again, sends the newest app source to the SAME project and service (the
+// database and every existing variable stay as they are; only variables the new version needs are added), waits
+// for the build and for /api/health, records the new version, then deletes the token. If anything fails, Railway
+// keeps the previous deployment running, so nothing is lost and the buyer can press Try again.
+export interface UpdateInfo { installed: string; latest: string; available: boolean; notes: { version: string; lines: string[] }[] }
+const notesLines = (n: string | null | undefined) => String(n || "").split("\n").map((l) => l.replace(/^\s*[-*•]\s*/, "").trim()).filter(Boolean).slice(0, 40);
+
+/** What version this agency is on, what's newest, and what changed in between. null when updating isn't possible (not a finished Railway install). */
+export function updateInfo(b: { demo: number }, s: SetupData): UpdateInfo | null {
+  if (s.phase !== "done" || !RAILWAY) return null;
+  const demo = b.demo === 1;
+  if (!demo && !s.rw?.projectId) return null;
+  const pkgs = listPackages().filter((p) => p.file.endsWith(".tgz"));
+  const cur = currentPackage();
+  // A test run pretends to be one version behind (or, with nothing published, on 0.9.0), so it always shows the banner.
+  const latest = cur?.version || (demo ? "1.0.0" : "");
+  if (!latest) return null;
+  const installed = s.attemptVersion || (demo ? (pkgs.length > 1 ? pkgs[pkgs.length - 2].version : "0.9.0") : "");
+  const at = pkgs.findIndex((p) => p.version === installed);
+  let notes = (at >= 0 ? pkgs.slice(at + 1) : cur ? [cur] : []).filter((p) => p.notes).map((p) => ({ version: p.version, lines: notesLines(p.notes) }));
+  if (demo && !notes.length && installed !== latest) notes = [{ version: latest, lines: ["A faster, smoother dashboard.", "Small fixes and improvements."] }];
+  return { installed, latest, available: installed !== latest, notes };
+}
+
+/** Other code (support sync, ...) can give an update the variables a newer version needs. Only added when the agency doesn't already have them. */
+export const updateVarHooks: ((buyerId: number, existing: Record<string, string>) => Record<string, string>)[] = [];
+
+const UPDATE_TOKEN_MSG = "That token can't see your agency's project. Paste the token from the Railway account you installed with (workspace set to No workspace).";
+async function locateAgency(token: string, projectId: string): Promise<{ envId: string; appId: string }> {
+  let p: any;
+  try {
+    p = (await railway(token, "query($id: String!) { project(id: $id) { id environments { edges { node { id name } } } services { edges { node { id name } } } } }", { id: projectId })).project;
+  } catch (e) {
+    if (e instanceof ProviderError && (e.status === 401 || /not found|not authorized|permission/i.test(e.message))) throw new ProviderError(UPDATE_TOKEN_MSG, e.status);
+    throw e;
+  }
+  const envs = (p?.environments?.edges || []).map((x: any) => x.node);
+  const svcs = (p?.services?.edges || []).map((x: any) => x.node);
+  const env = envs.find((e: any) => e.name === "production") || envs[0];
+  const app = svcs.find((x: any) => x.name === "app");
+  if (!env || !app) throw new ProviderError("We couldn't find your agency in that Railway project (its app service may have been renamed or deleted). Contact support.");
+  return { envId: String(env.id), appId: String(app.id) };
+}
+
+const setUpdate = (id: number, fn: (u: NonNullable<SetupData["update"]>, s: SetupData) => void) => updateSetup(id, (s) => { if (s.update) fn(s.update, s); });
+const failUpdate = (id: number, msg: string) => setUpdate(id, (u, s) => { u.phase = "failed"; u.error = msg; s.progress = [...(s.progress || []), "The update stopped. Your agency is still running as before."]; });
+const runUpdate = (id: number) => { setUpdate(id, (u) => { u.phase = "running"; u.error = undefined; u.startedAt = now(); u.attempt = (u.attempt || 0) + 1; }); kick(id); };
+
+actions["update-open"] = (b) => {
+  const s = getSetup(b.id);
+  const info = updateInfo(b, s);
+  if (!info?.available || s.update?.phase === "running") return null;
+  updateSetup(b.id, (s) => { s.update = { phase: "ask", from: info.installed, to: info.latest }; });
+  return null;
+};
+actions["update-cancel"] = (b) => {
+  const s = getSetup(b.id);
+  if (!s.update || s.update.phase === "running") return null;
+  if (b.demo !== 1) deleteSecret(b.id, "railway_token");
+  updateSetup(b.id, (s) => { delete s.update; });
+  return null;
+};
+actions["update-start"] = async (b, f) => {
+  const s = getSetup(b.id);
+  const info = updateInfo(b, s);
+  if (!info?.available || !s.update || !["ask", "failed"].includes(s.update.phase)) return null;
+  const wait = allow(`update:${b.id}`, 6, 10 * MIN); if (wait) return tooMany(wait);
+  let loc = { envId: "", appId: "" };
+  if (b.demo !== 1) {
+    // The same check as the Railway step, then: can this token see this agency's project?
+    const token = str(f.token, 300) || getSecret(b.id, "railway_token") || "";
+    if (!token) return err("Paste your Railway token.");
+    const r = await checkRailway(token);
+    if (!r.ok) return err(r.message);
+    try { loc = await locateAgency(token, s.rw!.projectId!); } catch (e) { return err(errMsg(e)); }
+    putSecret(b.id, "railway_token", token);
+  }
+  updateSetup(b.id, (s) => {
+    s.update = { phase: "ask", from: info.installed, to: info.latest, envId: loc.envId || undefined, appId: loc.appId || undefined, attempt: s.update?.attempt };
+    s.progress = []; delete s.flash;
+  });
+  logClear(b.id);
+  runUpdate(b.id);
+  return null;
+};
+actions["update-retry"] = (b) => {
+  const s = getSetup(b.id);
+  if (s.update?.phase !== "failed") return null;
+  if (b.demo !== 1 && !hasSecret(b.id, "railway_token")) { setUpdate(b.id, (u) => { u.phase = "ask"; }); return err("Paste your Railway token again to carry on."); }
+  const wait = allow(`update:${b.id}`, 6, 10 * MIN); if (wait) return tooMany(wait);
+  // A build that already succeeded is kept (we only check it answers); a failed one is sent again.
+  setUpdate(b.id, (u) => { if (u.deployStatus !== "SUCCESS") { delete u.deploymentId; delete u.deployStatus; delete u.uploadedAt; } delete u.healthSince; });
+  runUpdate(b.id);
+  return { kind: "info", text: "Trying the update again. Your agency keeps running as it is until the new version is ready." };
+};
+
+/** One step of the update per tick, like tickRailCreate: each piece is saved as it's done, so a retry carries on. */
+async function tickUpdate(id: number) {
+  const s = getSetup(id);
+  const u = s.update;
+  if (!u || u.phase !== "running") return;
+  if (isDemoBuyer(id)) return tickDemoUpdate(id);
+  const token = getSecret(id, "railway_token");
+  if (!token || !s.rw?.projectId) return failUpdate(id, "We don't have your Railway token any more. Press Try again and paste it.");
+  const projectId = s.rw.projectId;
+  try {
+    if (!u.envId || !u.appId) {
+      progress(id, "Finding your agency in Railway");
+      const loc = await locateAgency(token, projectId);
+      setUpdate(id, (u) => { u.envId = loc.envId; u.appId = loc.appId; });
+      return;
+    }
+    const base = { projectId, environmentId: u.envId };
+    if (!u.varsSet) {
+      progress(id, "Adding any new settings (your existing ones stay as they are)");
+      const have = ((await railway(token, "query($p: String!, $e: String!, $s: String!) { variables(projectId: $p, environmentId: $e, serviceId: $s) }", { p: projectId, e: u.envId, s: u.appId })).variables || {}) as Record<string, string>;
+      const to = currentPackage()?.version || u.to || "";
+      const add: Record<string, string> = {};
+      for (const h of updateVarHooks) for (const [k, v] of Object.entries(h(id, have))) if (!(k in have) && !(k in add)) add[k] = v;
+      add.APP_VERSION = to; // ours: says which version this agency is
+      await railway(token, "mutation($input: VariableCollectionUpsertInput!) { variableCollectionUpsert(input: $input) }", { input: { ...base, serviceId: u.appId, variables: add, skipDeploys: true } });
+      setUpdate(id, (u) => { u.varsSet = true; u.to = to; });
+      return;
+    }
+    if (!u.deploymentId) {
+      progress(id, u.attempt && u.attempt > 1 ? `Sending version ${u.to} to Railway again` : `Sending version ${u.to} to Railway to build`);
+      const src = await appSource();
+      const up = await railwayUpload(token, projectId, u.envId, u.appId, src, `${s.brand?.productName || "Agency"} ${u.to || ""}`.trim());
+      setUpdate(id, (u) => { u.deploymentId = up.deploymentId; u.deployStatus = "QUEUED"; u.uploadedAt = now(); });
+      logClear(id);
+      return;
+    }
+    if (u.deployStatus !== "SUCCESS") {
+      if (!due(`up-dep:${id}`, fast ? 2000 : 6000)) return;
+      const d = (await railway(token, "query($id: String!) { deployment(id: $id) { id status } }", { id: u.deploymentId })).deployment;
+      const st = String(d.status);
+      if (st !== u.deployStatus) setUpdate(id, (u) => { u.deployStatus = st; });
+      if (due(`up-log:${id}`, fast ? 3000 : 12_000) || ["SUCCESS", "FAILED", "CRASHED"].includes(st)) await railLogs(id, token, u.deploymentId, st !== "BUILDING" && st !== "QUEUED");
+      if (st === "SUCCESS") { setUpdate(id, (u, s) => { u.healthSince = now(); s.progress = [...(s.progress || []), "The new version is running on Railway"]; }); kick(id); }
+      else if (["FAILED", "CRASHED", "REMOVED", "SKIPPED"].includes(st)) {
+        const { text } = logRead(id);
+        const why = text.split("\n").reverse().find((l) => /error|failed|exit code/i.test(l))?.trim().slice(0, 200);
+        failUpdate(id, `${st === "CRASHED" ? "The new version started but then stopped" : "Railway couldn't build the new version"}${why ? `: ${why}` : ""}. Your agency is still running version ${u.from || "as before"}, with all your data.`);
+      } else if (ago(u.uploadedAt) > 45 * MIN) failUpdate(id, `The build is taking far longer than usual. Your agency is still running version ${u.from || "as before"}. Press Try again, or check the project in Railway.`);
+      return;
+    }
+    // Built and running on Railway: wait until the live address answers.
+    if (!due(`up-health:${id}`, fast ? 1500 : 5000)) return;
+    const urls = [...new Set([s.domainPending && s.tempUrl ? s.tempUrl : agencyUrl(s), s.tempUrl].filter(Boolean) as string[])];
+    let healthy = false;
+    for (const url of urls) if (await fetch(`${url}/api/health`, { signal: AbortSignal.timeout(8000) }).then((r) => r.ok).catch(() => false)) { healthy = true; break; }
+    if (healthy) return finishUpdate(id);
+    if (ago(u.healthSince) > 5 * MIN) failUpdate(id, `The new version was built but isn't answering at ${urls[0] || "your address"} yet. Wait a minute and press Try again.`);
+  } catch (e) {
+    safeLog("update", e);
+    if (e instanceof ProviderError && e.status !== 429 && e.status < 500) failUpdate(id, errMsg(e));
+    else if (!(e instanceof ProviderError)) failUpdate(id, errMsg(e));
+  }
+}
+
+/** The new version is live: record it, forget the token again. */
+function finishUpdate(id: number) {
+  const removed = deleteSecret(id, "railway_token").changes;
+  const s = getSetup(id);
+  const u = s.update!;
+  updateSetup(id, (s) => {
+    s.attemptVersion = u.to; s.update = { phase: "done", from: u.from, to: u.to, at: now() };
+    s.progress = [...(s.progress || []), `Your agency is now on version ${u.to}`];
+    s.flash = { kind: "ok", text: `Your agency is now on version ${u.to}.` };
+  });
+  console.log(`[setup] buyer ${id}: updated ${u.from || "?"} -> ${u.to}; ${removed} token deleted`);
+}
+
+/** Test runs: the same stages tick by, nothing is called, no token is kept. */
+async function tickDemoUpdate(id: number) {
+  const still = () => getSetup(id).update?.phase === "running" && !!db().query("SELECT 1 FROM buyers WHERE id = ?").get(id);
+  const stages: [string, (u: NonNullable<SetupData["update"]>) => void][] = [
+    ["Finding your agency in Railway", (u) => { u.envId = "demo"; u.appId = "demo"; }],
+    ["Adding any new settings (your existing ones stay as they are)", (u) => { u.varsSet = true; }],
+    ["Sending the new version to Railway to build", (u) => { u.deploymentId = "demo"; u.deployStatus = "BUILDING"; }],
+    ["Building the app", (u) => { u.deployStatus = "DEPLOYING"; }],
+    ["The new version is running on Railway", (u) => { u.deployStatus = "SUCCESS"; }],
+  ];
+  for (const [msg, fn] of stages) {
+    if (!still()) return;
+    await sleep(1000);
+    if (!still()) return;
+    updateSetup(id, (s) => { fn(s.update!); s.progress = [...(s.progress || []), msg]; });
+  }
+  await sleep(800);
+  if (still()) finishUpdate(id);
 }

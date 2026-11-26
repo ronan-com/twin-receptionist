@@ -801,7 +801,19 @@ export type Brand = {
   sidebarColor?: string;
 };
 
-export type Viewing = { org: string; client: string | null; business: string };
+// `support` is set for a sign-in by the setup provider's support person (Settings, "Support"); `by` is who.
+export type Viewing = { org: string; client: string | null; business: string; support?: boolean; by?: string };
+
+// Settings, "Support" (server/supportSync.ts).
+export type SupportSettings = {
+  configured: boolean;
+  seller: string;
+  sync: { enabled: boolean; lastSentAt: string | null; lastOk: boolean | null; lastError: string };
+  access: { enabled: boolean; until: string | null; grantedAt: string | null };
+  sends: string[];
+  neverSent: string;
+  recent: { action: string; summary: string; at: string }[];
+};
 
 export type Account = {
   user: { id: string; email: string; name: string; platformAdmin: boolean };

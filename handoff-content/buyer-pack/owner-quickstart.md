@@ -162,6 +162,8 @@ Your agency works without these. Your setup link keeps listing whichever you ski
 
 - **AI help for your team.** Your dashboard can have an **Ask for help** button at the bottom right: owners and admins ask how to do things and get step-by-step answers that know how far along your agency is. To switch it on, paste an OpenRouter key in Railway variables: make an account at openrouter.ai, create an API key, add a few dollars of credit, then in Railway open the **app** service, **Variables**, add `OPENROUTER_API_KEY` with the key. Railway restarts the app. (Optional: `OPENROUTER_MODEL` picks a different model.) Without the key the button simply isn't shown.
 
+- **Sharing and support (Settings, Support).** Two switches, both yours. **Share health and usage stats with your setup provider** is on by default: every 15 minutes your agency sends counts and health (never callers, messages, recordings or keys), and you can turn it off. **Support access** is off unless you turn it on: it lets your setup provider sign in, read-only, to help you, for 24 hours, 7 days or until you turn it off. Every support sign-in is in your audit log and listed on that page.
+
 Backups, logs, costs and settings are in the operating guide (operating-guide.md). What you own and how to keep access is in the ownership checklist (ownership-checklist.md).
 
 ## Every day and week

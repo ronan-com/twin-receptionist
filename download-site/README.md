@@ -3,7 +3,9 @@
 The one thing we host for the packaged AI receptionist agency. A buyer (the agency) opens their
 private link, connects their own accounts, clicks **Install**, and the wizard sets their agency
 up in **their** accounts. Nothing to download and nothing to run on the buyer's computer. After
-a successful install we delete every key they gave us and keep no access.
+a successful install we delete every key they gave us and have no login to their accounts. Their
+app sends us a health heartbeat (counts only; on by default, the buyer can switch it off) and we can
+"View as" them only while the buyer has switched on Support access in their app (sync.ts).
 
 Two hosting options, chosen for the whole site with `HOSTING`:
 
@@ -185,7 +187,13 @@ Sessions: random 256-bit id, `HttpOnly`, `SameSite=Strict`, `Path=/admin`, 12 ho
 - **Per buyer**: the link again, which step they're on, which keys we hold (name and last 4 only,
   and only until the install finishes), the redacted install log, their setup **read-only**,
   turn the link off/on, reset their setup, delete the buyer.
-- There is no "log in as buyer": once their agency is live we have no access to it.
+- **Health and View as.** Install sets `SUPPORT_SYNC_URL`, `SUPPORT_SYNC_TOKEN` (we keep its hash), `SUPPORT_CALL_TOKEN`
+  (worked out from the site key, so nothing extra is stored) and `SUPPORT_SELLER_NAME` on the buyer's app. The app POSTs a
+  fixed whitelist of counts and health to `/api/sync` every 15 minutes (token auth, rate limited); the buyers list shows
+  Live/last seen, version, calls 7d and receptionists, and the buyer page has the snapshot, **Sync now** and **View as**.
+  View as asks the app for a one-time link (60 seconds, single use); the app refuses unless the buyer turned Support access
+  on, and writes every link and sign-in to the buyer's audit log. Our clicks are in `support_log`. Agencies installed
+  before this have no token: they sync nothing and can't be viewed.
 
 ## Settings (environment variables)
 

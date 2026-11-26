@@ -6,7 +6,7 @@ import { Panel } from "@/components/app/primitives";
 import { StatusBadge } from "@/components/app/StatusBadge";
 import { Bubble } from "@/components/app/SampleCall";
 import type { AutomationSettings } from "@/lib/api/automations";
-import { defaultGreeting, formatNumber } from "@/lib/shared";
+import { defaultGreeting, formatNumber, withoutRecordingLine } from "@/lib/shared";
 import { cn } from "@/lib/utils";
 import { COLLECT_OPTIONS, DIALECT_OPTIONS, TONE_OPTIONS, type CollectKey, type DialectKey, type ToneKey } from "./model";
 
@@ -45,7 +45,7 @@ export function callScript(f: PreviewSettings, auto: AutomationSettings | null, 
   const greeting =
     afterHours && auto?.hoursMode.enabled
       ? auto.hoursMode.greeting.replace(/\{business\}/g, f.business_name || "us")
-      : f.greeting.trim() || defaultGreeting(f.business_name, f.name);
+      : withoutRecordingLine(f.greeting.trim() || defaultGreeting(f.business_name, f.name));
   const service = f.services[0] ?? "an appointment";
   const lines: Line[] = [{ who: "agent", text: `${greeting}${notice}` }, { who: "caller", text: `Hi, I'd like to book ${service.toLowerCase()} please.` }];
   const closedNoBooking = afterHours && auto?.hoursMode.enabled && auto.hoursMode.mode === "message_only";

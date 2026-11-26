@@ -153,6 +153,16 @@ describe("3. recording", () => {
     const out = overlayPayload(client(), a, { greeting: "Hi, Alpha Plumbing." }, opts);
     expect(out.greeting).toBe("Hi, Alpha Plumbing. This call is recorded.");
   });
+  test("old greetings that say 'this call is recorded' follow the setting", () => {
+    const old = "Hi, you've reached Alpha Plumbing. I'm Chloe, the AI assistant here, and this call is recorded. How can I help?";
+    const off = overlayPayload(client(), defaultAutomations(), { greeting: old }, opts).greeting;
+    expect(off).toBe("Hi, you've reached Alpha Plumbing. I'm Chloe, the AI assistant here. How can I help?");
+    expect(off).not.toContain("recorded");
+    const a = withSection("recording", { enabled: true, notice: "This call is recorded." });
+    const on = overlayPayload(client(), a, { greeting: old }, opts).greeting;
+    expect(on).toBe("Hi, you've reached Alpha Plumbing. I'm Chloe, the AI assistant here. How can I help? This call is recorded.");
+    expect(on?.match(/recorded/g)?.length).toBe(1);
+  });
   test("off: recording is switched off explicitly (Telnyx records by default)", () => {
     expect(telephonyPayload(defaultAutomations()).telephony_settings.recording_settings.enabled).toBe(false);
     expect(overlayPayload(client(), defaultAutomations(), { greeting: "Hi." }, opts).greeting).toBe("Hi.");

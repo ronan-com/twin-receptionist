@@ -1,6 +1,6 @@
 import { timingSafeEqual } from "node:crypto";
 import type { Business, Hours, Settings } from "../src/lib/shared";
-import { DAYS } from "../src/lib/shared";
+import { DAYS, withoutRecordingLine } from "../src/lib/shared";
 import { publicUrl } from "./booking";
 import { sql } from "./db";
 import { recordIncident, resolveIncidents } from "./incidents";
@@ -276,9 +276,14 @@ export function automationInstructions(client: Business, a: AutomationSettings):
   return lines.length ? `\n\nAutomations (these take priority over anything above)\n${lines.join("\n")}` : "";
 }
 
-/** The greeting callers hear: the normal one, plus the recording notice. */
+/**
+ * The greeting callers hear: the normal one, plus the recording notice only when recording
+ * is on. Any "this call is recorded" in the stored greeting is dropped first, so the spoken
+ * greeting follows the Call recording setting.
+ */
 export function greetingFor(base: string, a: AutomationSettings): string {
-  return a.recording.enabled ? `${base} ${a.recording.notice}`.trim() : base;
+  const g = withoutRecordingLine(base);
+  return a.recording.enabled ? `${g} ${a.recording.notice}`.trim() : g;
 }
 
 export function afterHoursGreeting(client: Business, a: AutomationSettings): string {

@@ -5,6 +5,7 @@ import {
   article,
   businessNoun,
   defaultGreeting,
+  withoutRecordingLine,
   defaultHours,
   describeHours,
   industry,
@@ -144,7 +145,7 @@ export function cleanClosures(value: unknown): string {
 
 /** What callers hear first: the greeting, or the pause message while paused. */
 export function greetingOf(s: Settings): string {
-  return s.paused ? s.paused.message : s.greeting;
+  return s.paused ? s.paused.message : withoutRecordingLine(s.greeting);
 }
 
 export function normaliseSettings(input: unknown, voiceNames: Map<string, string>, current: Partial<Settings> = {}): Settings {

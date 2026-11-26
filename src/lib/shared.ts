@@ -650,7 +650,21 @@ export function defaultGreeting(businessName: string, receptionistName: string):
   const biz = businessName.trim() || "our office";
   const who = receptionistName.trim();
   const intro = who ? `I'm ${who}, the AI assistant here` : "I'm the AI assistant here";
-  return `Hi, you've reached ${biz}. ${intro}, and this call is recorded. How can I help?`;
+  return `Hi, you've reached ${biz}. ${intro}. How can I help?`;
+}
+
+/**
+ * Greetings never promise a recording: whether calls are recorded is the Call recording
+ * setting, and the server adds its notice to the spoken greeting only when it's on
+ * (server/automations.ts greetingFor). This drops a "this call is recorded" clause
+ * from greetings written before that, so a receptionist that isn't recording doesn't say it.
+ */
+export function withoutRecordingLine(greeting: string): string {
+  return greeting
+    .replace(/,?\s+and this call is (?:being )?recorded(?=\s*[.,!?]|$)/gi, "")
+    .replace(/\s*\b(?:just so you know, )?this call (?:is|may be|will be) (?:being )?recorded[^.!?]*[.!?]/gi, "")
+    .replace(/\s{2,}/g, " ")
+    .trim();
 }
 
 /** "a" or "an" before a word. */
@@ -674,8 +688,8 @@ const EMERGENCY_LINE: Partial<Record<IndustryKey, string>> = {
 };
 
 /**
- * Ready-made greetings for the setup wizard. Each one says it's an AI and that the
- * call is recorded, like defaultGreeting.
+ * Ready-made greetings for the setup wizard. Each one says it's an AI, like
+ * defaultGreeting. None says the call is recorded: that's added only when recording is on.
  */
 export function greetingsFor(key: IndustryKey, businessName: string, receptionistName: string): { label: string; text: string }[] {
   const biz = businessName.trim() || "our office";
@@ -687,14 +701,14 @@ export function greetingsFor(key: IndustryKey, businessName: string, receptionis
     const me = who ? `I'm ${who}, the centre's AI receptionist` : "I'm the centre's AI receptionist";
     out.unshift({
       label: "Childcare centre",
-      text: `Thanks for calling ${biz}. ${me}, and this call is recorded. I can help with enrolments, tours and general questions. If you'd prefer to speak with the team, just let me know.`,
+      text: `Thanks for calling ${biz}. ${me}. I can help with enrolments, tours and general questions. If you'd prefer to speak with the team, just let me know.`,
     });
   }
   const emergency = EMERGENCY_LINE[key];
-  if (emergency) out.push({ label: "Urgent calls first", text: `Hi, you've reached ${biz}. ${intro}, and this call is recorded. ${emergency} Otherwise, how can I help?` });
+  if (emergency) out.push({ label: "Urgent calls first", text: `Hi, you've reached ${biz}. ${intro}. ${emergency} Otherwise, how can I help?` });
   out.push({
     label: "Bookings first",
-    text: `Hi, you've reached ${biz}. ${intro}, and this call is recorded. I can help with ${article(preset.booking)} ${preset.booking} or answer any questions. What can I do for you?`,
+    text: `Hi, you've reached ${biz}. ${intro}. I can help with ${article(preset.booking)} ${preset.booking} or answer any questions. What can I do for you?`,
   });
   return out;
 }

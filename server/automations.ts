@@ -479,7 +479,7 @@ export function statusFor(client: Business, a: AutomationSettings, i: StatusInpu
     if (!a.transfer.enabled) return off();
     if (!a.transfer.number) return { state: "needs_setup", label: "Needs a number", detail: "Add the number to put callers through to." };
     if (!i.demo && !transferFrom(client)) {
-      return { state: "needs_setup", label: "Needs a phone number", detail: "Transfers are made from the receptionist's own number. Connect one under Call handling first." };
+      return { state: "needs_setup", label: "Needs a phone number", detail: "Transfers start once this receptionist has a phone number. Connect one under Call handling." };
     }
     const when = a.transfer.when === "hours" ? "during opening hours" : "any time";
     return { state: "on", label: `On · to ${say(a.transfer.number)}`, detail: `Callers are put through ${when}${demoNote}.` };

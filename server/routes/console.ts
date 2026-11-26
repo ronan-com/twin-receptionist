@@ -272,6 +272,7 @@ function requestRows(rows: any[], byId: Map<string, ClientRow>) {
     const business = c ? { id: c.id, name: c.data.settings?.businessName ?? "", is_demo: Boolean(c.sandbox) } : null;
     const at = d.at || iso(r.created_at);
     if (d.kind === "booking") {
+      if (d.status === "failed") continue; // a refused slot isn't an appointment
       appointments.push({
         id: String(d.id ?? r.id),
         business_id: r.client_id,
@@ -596,7 +597,7 @@ async function businessDetail(ctx: Ctx, id: string) {
   const [counts] = await sql`
     select
       (select count(*)::int from knowledge_items where client_id = ${id}) as knowledge,
-      (select count(*)::int from booking_requests where client_id = ${id} and data->>'kind' = 'booking') as appointments,
+      (select count(*)::int from booking_requests where client_id = ${id} and data->>'kind' = 'booking' and coalesce(data->>'status', '') <> 'failed') as appointments,
       (select count(*)::int from booking_requests where client_id = ${id} and data->>'kind' = 'callback') as leads,
       (select count(*)::int from call_log where client_id = ${id} and channel <> 'web') as calls`;
   const recentCalls = await sql`select * from call_log where client_id = ${id} and channel <> 'web' order by started_at desc limit 15`;
@@ -1039,7 +1040,7 @@ async function companyDetail(ctx: Ctx, id: string) {
     : await sql`
         select
           (select count(*)::int from knowledge_items where client_id = any(${pgArr(ids)}::uuid[])) as knowledge,
-          (select count(*)::int from booking_requests where client_id = any(${pgArr(ids)}::uuid[]) and data->>'kind' = 'booking') as appointments,
+          (select count(*)::int from booking_requests where client_id = any(${pgArr(ids)}::uuid[]) and data->>'kind' = 'booking' and coalesce(data->>'status', '') <> 'failed') as appointments,
           (select count(*)::int from booking_requests where client_id = any(${pgArr(ids)}::uuid[]) and data->>'kind' = 'callback') as leads,
           (select count(*)::int from call_log where client_id = any(${pgArr(ids)}::uuid[]) and channel <> 'web') as calls`;
   const { appointments, leads } = requestRows(requests, byId);

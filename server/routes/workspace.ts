@@ -49,6 +49,14 @@ type StoredRequest = BookingRequest & {
   stage?: string;
 };
 
+/**
+ * A booking the caller tried for a slot that was already taken. It's kept (it shows up in the call's
+ * events), but it isn't an appointment: it must not be listed next to the real booking.
+ */
+export function isRefusedBooking(r: { kind?: string; status?: string }): boolean {
+  return r.kind === "booking" && r.status === "failed";
+}
+
 async function requestsOf(clientId: string): Promise<StoredRequest[]> {
   const rows = await sql`select data from booking_requests where client_id = ${clientId} order by id desc limit ${MAX_REQUESTS}`;
   return rows.map((r: any) => r.data as StoredRequest);
@@ -310,7 +318,7 @@ async function callsNear(clientId: string, requests: StoredRequest[]): Promise<C
 }
 
 async function appointmentsFor(client: Business): Promise<any[]> {
-  const requests = (await requestsOf(client.id)).filter((r) => r.kind === "booking");
+  const requests = (await requestsOf(client.id)).filter((r) => r.kind === "booking" && !isRefusedBooking(r));
   const [cal, calls, events] = await Promise.all([
     calendarInfo(client),
     callsNear(client.id, requests),
@@ -524,7 +532,7 @@ export async function answeredCallDetail(client: Business, orgId: string, callId
   if (transcriptError) events.push(event("transcript", "transcript.unavailable", new Date().toISOString(), "warning", "The transcript couldn't be loaded from the phone provider."));
 
   const appointments = matched
-    .filter((r) => r.kind === "booking")
+    .filter((r) => r.kind === "booking" && !isRefusedBooking(r))
     .map((r) => {
       const a = answeredAppointment(r, client.id, cal, row.id);
       return { id: a.id, starts_at: a.starts_at, ends_at: a.ends_at, service: a.service, status: a.status, customer_name: a.customer_name, staff_name: null, location: null, integration_id: a.integration_id, sync_status: a.sync_status };

@@ -300,14 +300,14 @@ async function adminStage(page) {
   let link = "", st = loadState();
   await step("admin: sign in", async () => {
     await page.goto(`${SITE}/admin`, { waitUntil: "load" });
-    if ((await screen(page)).h1 !== "Buyers") {
+    if ((await screen(page)).h1 !== "Buyers" && (await screen(page)).h1 !== "Agencies") {
       await page.type("#email", ADMIN_EMAIL);
       await page.type("#password", pwAdmin());
       await Promise.all([page.waitForNavigation({ waitUntil: "load" }), page.click("button[type=submit]")]);
     }
     const h = await text(page, "h1");
     await shot(page, "admin-buyers");
-    if (h !== "Buyers") throw new Error(`admin sign-in failed: ${(await text(page, ".notice.err")) || h}`);
+    if (h !== "Buyers" && h !== "Agencies") throw new Error(`admin sign-in failed: ${(await text(page, ".notice.err")) || h}`);
     return `signed in as ${ADMIN_EMAIL}`;
   });
   await step("admin: buyer and setup link", async () => {

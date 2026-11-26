@@ -18,7 +18,11 @@ import {
   activeSetups, deleteSecret, staleSecretBuyers, type DnsRecord, type SetupData, type StepId,
 } from "./store";
 import { USER_DATA_LIMIT, buildEnv, buildUserData } from "./userdata";
-import { SYNC_URL, newSyncToken } from "./sync";
+import { SYNC_URL, latestSnapshot, newSyncToken } from "./sync";
+import { appSource } from "./releases";
+import { createProjectToken, RailwayError } from "./railwayUp";
+import { asAdmin } from "./ctx";
+import { checkGoDaddy, cloudflareWriter, dnsKeyMissing, godaddyExisting, godaddyWriter, writerFor, type DnsWriter } from "./dns";
 
 const MIN = 60_000;
 const ago = (iso?: string) => (iso ? Date.now() - Date.parse(iso) : Infinity);
@@ -43,7 +47,7 @@ export function allow(key: string, max: number, windowMs: number): number {
   return 0;
 }
 const tooMany = (secs: number) => err(`You've tried that a lot in a short time. Please wait ${secs > 90 ? `${Math.ceil(secs / 60)} minutes` : `${secs} seconds`} and try again.`);
-const checkLimit = (b: Buyer) => allow(`check:${b.id}`, CONFIG.checksPer10Min, 10 * MIN);
+const checkLimit = (b: Buyer) => (asAdmin.getStore() ? 0 : allow(`check:${b.id}`, CONFIG.checksPer10Min, 10 * MIN)); // our admin has their own limit (assist.ts)
 
 // ---------------- steps ----------------
 export function stepDone(b: Buyer, s: SetupData, id: StepId): boolean {
@@ -112,7 +116,7 @@ function guard(b: Buyer, step: StepId): Flash | null {
   const s = getSetup(b.id);
   if (s.phase === "done") return err("Your install is finished.");
   if (step !== "install" && locked(s)) return err(LOCKED_MSG);
-  if (!canView(b, s, step)) return err("Finish the earlier steps first.");
+  if (!canView(b, s, step) && !asAdmin.getStore()) return err("Finish the earlier steps first.");
   return null;
 }
 const go = (b: Buyer, from: StepId) => updateSetup(b.id, (s) => nextStep(b, s, from));
@@ -350,17 +354,17 @@ export const actions: Record<string, Action> = {
       const d = await resendDomain(key, sendingDomain, zone);
       const dmarc: DnsRecord = { key: "dmarc", purpose: "Spoofing protection (DMARC)", type: "TXT", name: `_dmarc.${zone}`, value: "v=DMARC1; p=none;", ttl: "Auto" };
       let needDmarc = true;
-      if (s.domain?.mode === "cloudflare") {
-        const cfTok = getSecret(b.id, "cf_token")!;
-        needDmarc = !(await cfHasDmarc(cfTok, s.domain.cf!.zoneId!, zone));
-        for (const rec of d.records) rec.cfId = await cfEnsure(cfTok, s.domain.cf!.zoneId!, rec);
-        if (needDmarc) dmarc.cfId = await cfEnsure(cfTok, s.domain.cf!.zoneId!, dmarc);
+      const writer = writerFor(b.id, s);
+      if (writer) {
+        needDmarc = !(await writer.hasDmarc(zone));
+        for (const rec of d.records) rec.cfId = await writer.ensure(rec);
+        if (needDmarc) dmarc.cfId = await writer.ensure(dmarc);
       } else {
         needDmarc = !(await lookup("TXT", dmarc.name, zone)).some((v) => /^v=DMARC1/i.test(v));
       }
       if (d.status !== "verified") await resendVerify(key, d.id).catch(() => {});
       updateSetup(b.id, (s) => {
-        s.email = { mode: "resend", address, sendingDomain, from: `${s.brand!.productName} <${address}>`, checked: true, resend: { domainId: d.id, status: d.status === "verified" ? "verified" : "pending", records: d.records, dmarc: needDmarc ? dmarc : null, written: s.domain?.mode === "cloudflare", verifyAt: now(), lastCheck: undefined } };
+        s.email = { mode: "resend", address, sendingDomain, from: `${s.brand!.productName} <${address}>`, checked: true, resend: { domainId: d.id, status: d.status === "verified" ? "verified" : "pending", records: d.records, dmarc: needDmarc ? dmarc : null, written: !!writer, verifyAt: now(), lastCheck: undefined } };
       });
       return null;
     } catch (e) { safeLog("email", e); return err(errMsg(e), f); }
@@ -1040,6 +1044,7 @@ function finish(id: number, url: string) {
     phones: { confirmed: true, provider: useVapi(s) ? "vapi" : "telnyx" }, email: s.email ? { mode: s.email.mode, address: s.email.address, from: s.email.from, confirmed: true, resend: s.email.resend ? { status: s.email.resend.status } : undefined } : undefined,
     calendars: s.calendars ? { google: s.calendars.google, microsoft: s.calendars.microsoft, done: true } : undefined,
     skipped: s.skipped, extrasDone: s.extrasDone,
+    assist: s.assist ? { steps: s.assist.steps, keepDns: s.assist.keepDns, dnsBy: s.assist.dnsBy, installBy: s.assist.installBy, openrouter: s.assist.openrouter } : undefined,
     dropletId: s.dropletId, ip: s.ip, attempt: s.attempt, attemptVersion: s.attemptVersion,
     serverCreatedAt: s.serverCreatedAt, installedAt: now(), purgedAt: now(), resultUrl: url, sshKeyAdded: s.sshKeyAdded,
     railway: s.railway ? { workspaceName: s.railway.workspaceName, confirmed: true } : undefined,
@@ -1084,7 +1089,7 @@ async function emailBeforeDomain(b: Buyer, f: Form): Promise<Flash | null> {
 const guessZone = (d: string) => (d.split(".").length > 2 && /^(mail|send|email|mg|mx|news)\./.test(d) ? d.slice(d.indexOf(".") + 1) : d);
 
 /** Resend's records (and DMARC if missing) for `zone`: written to Cloudflare, or kept to show. */
-async function emailDns(id: number, zone: string, cfTok?: string, zoneId?: string) {
+export async function emailDns(id: number, zone: string, writer?: DnsWriter | null) {
   const s = getSetup(id);
   if (s.email?.mode !== "resend" || !s.email.sendingDomain) return;
   const key = getSecret(id, "resend_key");
@@ -1092,16 +1097,16 @@ async function emailDns(id: number, zone: string, cfTok?: string, zoneId?: strin
   const d = await resendDomain(key, s.email.sendingDomain, zone);
   const dmarc: DnsRecord = { key: "dmarc", purpose: "Spoofing protection (DMARC)", type: "TXT", name: `_dmarc.${zone}`, value: "v=DMARC1; p=none;", ttl: "Auto" };
   let needDmarc: boolean;
-  if (cfTok && zoneId) {
-    needDmarc = !(await cfHasDmarc(cfTok, zoneId, zone));
-    for (const rec of d.records) rec.cfId = await cfEnsure(cfTok, zoneId, rec);
-    if (needDmarc) dmarc.cfId = await cfEnsure(cfTok, zoneId, dmarc);
+  if (writer) {
+    needDmarc = !(await writer.hasDmarc(zone));
+    for (const rec of d.records) rec.cfId = await writer.ensure(rec);
+    if (needDmarc) dmarc.cfId = await writer.ensure(dmarc);
   } else {
     needDmarc = !(await lookup("TXT", dmarc.name, zone)).some((v) => /^v=DMARC1/i.test(v));
   }
   if (d.status !== "verified") await resendVerify(key, d.id).catch(() => {});
   updateSetup(id, (s) => {
-    s.email!.resend = { domainId: d.id, status: d.status === "verified" ? "verified" : "pending", records: d.records, dmarc: needDmarc ? dmarc : null, written: !!cfTok, verifyAt: now() };
+    s.email!.resend = { domainId: d.id, status: d.status === "verified" ? "verified" : "pending", records: d.records, dmarc: needDmarc ? dmarc : null, written: !!writer, verifyAt: now() };
   });
 }
 
@@ -1109,16 +1114,38 @@ async function emailDns(id: number, zone: string, cfTok?: string, zoneId?: strin
 async function domainRailway(b: Buyer, f: Form): Promise<Flash | null> {
   const s = getSetup(b.id);
   const domain = normalizeDomain(str(f.domain, 253) || s.domain?.zone || "");
-  const mode = f.mode === "manual" ? "manual" : "cloudflare";
+  const mode = f.mode === "manual" ? "manual" : f.mode === "godaddy" ? "godaddy" : "cloudflare";
   if (!domain) return err("Type your domain, like yourbusiness.com.", f);
   const sd = s.email?.mode === "resend" ? s.email.sendingDomain || "" : "";
   if (sd && sd !== domain && !sd.endsWith("." + domain)) return err(`Your email address is on ${sd}. Use that domain here, or go back to Email and change the address.`, { domain, mode });
   const sub = "app";
   if (mode === "manual") {
-    deleteSecret(b.id, "cf_token");
+    deleteSecret(b.id, "cf_token"); deleteSecret(b.id, "godaddy_key"); deleteSecret(b.id, "godaddy_secret");
     updateSetup(b.id, (s) => { s.domain = { mode: "manual", zone: domain, sub, host: `${sub}.${domain}`, confirmed: false }; });
     try { await emailDns(b.id, domain); } catch (e) { safeLog("email dns", e); return err(errMsg(e)); }
     return null; // the screen now lists the email records, with Continue
+  }
+  if (mode === "godaddy") {
+    // GoDaddy's own DNS API (key + secret). Same shape as Cloudflare: check, write email records now, the app's at Install.
+    const gk = str(f.gdKey, 200) || (s.domain?.mode === "godaddy" ? getSecret(b.id, "godaddy_key") : null) || "";
+    const gs = str(f.gdSecret, 200) || (s.domain?.mode === "godaddy" ? getSecret(b.id, "godaddy_secret") : null) || "";
+    if (!gk || !gs) return err("Paste your GoDaddy API key and secret.", { domain, mode });
+    const wait = checkLimit(b); if (wait) return tooMany(wait);
+    const r = await checkGoDaddy(gk, gs, domain);
+    if (!r.ok) return err(r.message, { domain, mode });
+    if (sd && sd !== r.zone && !sd.endsWith("." + r.zone)) return err(`Your email address is on ${sd}, which isn't part of ${r.zone}.`, { domain, mode });
+    const replace = f.replace === "1" || (s.domain?.mode === "godaddy" && !!s.domain.replace);
+    const host = `${sub}.${r.zone}`;
+    try {
+      const existing = await godaddyExisting(gk, gs, r.zone, host);
+      if (existing && !replace) return err(`${host} already points somewhere else (${existing}). Tick "Replace it" to point it at the new agency.`, { domain, mode });
+    } catch (e) { safeLog("godaddy", e); return err(errMsg(e), { domain, mode }); }
+    deleteSecret(b.id, "cf_token");
+    putSecret(b.id, "godaddy_key", gk); putSecret(b.id, "godaddy_secret", gs);
+    updateSetup(b.id, (s) => { s.domain = { mode: "godaddy", zone: r.zone, sub, host, replace }; });
+    try { await emailDns(b.id, r.zone, godaddyWriter(gk, gs, r.zone, { replace })); } catch (e) { safeLog("email dns", e); return err(errMsg(e), { domain, mode }); }
+    updateSetup(b.id, (s) => { s.domain!.confirmed = true; nextStep(b, s, "domain"); });
+    return null;
   }
   const token = str(f.token, 300) || (s.domain?.mode === "cloudflare" ? getSecret(b.id, "cf_token") : null) || "";
   if (!token) return err("Paste your Cloudflare token.", { domain, mode });
@@ -1134,7 +1161,7 @@ async function domainRailway(b: Buyer, f: Form): Promise<Flash | null> {
   const res = await applyZone(b.id, zone.id, sub, replace);
   const d = getSetup(b.id).domain!;
   if (d.cf?.status === "active" && d.cf.canEdit && (!d.cf.existing || d.cf.replace)) {
-    try { await emailDns(b.id, zone.name, token, zone.id); } catch (e) { safeLog("email dns", e); return err(errMsg(e)); }
+    try { await emailDns(b.id, zone.name, cloudflareWriter(token, zone.id)); } catch (e) { safeLog("email dns", e); return err(errMsg(e)); }
     updateSetup(b.id, (s) => { s.domain!.confirmed = true; nextStep(b, s, "domain"); });
     return null;
   }
@@ -1218,6 +1245,23 @@ async function railwayVars(id: number, s: SetupData, token: string): Promise<Rec
   return v;
 }
 
+/**
+ * The app's own Railway PROJECT token, so it can update itself without us holding anyone's access: scoped to this one
+ * project and environment, made with the account token the buyer just gave us, and handed straight to the app (we keep
+ * nothing). Best effort: if Railway won't make one the agency still installs, and the admin shows "Auto-update
+ * unavailable: buyer must press Update". Returns the variables to set, or none.
+ */
+export async function autoUpdateVars(id: number, accountToken: string, ids: { projectId?: string; environmentId?: string; serviceId?: string }): Promise<Record<string, string>> {
+  if (!ids.projectId || !ids.environmentId || !ids.serviceId) return {};
+  try {
+    const t = await createProjectToken(accountToken, ids.projectId, ids.environmentId, "Automatic updates", { base: RAILWAY_API });
+    return { RAILWAY_PROJECT_TOKEN: t, AUTOUPDATE_PROJECT_ID: ids.projectId, AUTOUPDATE_ENVIRONMENT_ID: ids.environmentId, AUTOUPDATE_SERVICE_ID: ids.serviceId };
+  } catch (e) {
+    console.log(`[setup] buyer ${id}: no project token for automatic updates (${e instanceof RailwayError ? e.code : "error"})`);
+    return {};
+  }
+}
+
 function setRw(id: number, fn: (rw: NonNullable<SetupData["rw"]>, s: SetupData) => void) {
   return updateSetup(id, (s) => { s.rw = s.rw || {}; fn(s.rw, s); });
 }
@@ -1245,23 +1289,6 @@ async function tickRailCreate(id: number) {
     }
     const base = { projectId: rw.projectId, environmentId: rw.environmentId };
     if (!rw.pgId) {
-/**
- * The app's own Railway PROJECT token, so it can update itself without us holding anyone's access: scoped to this one
- * project and environment, made with the account token the buyer just gave us, and handed straight to the app (we keep
- * nothing). Best effort: if Railway won't make one the agency still installs, and the admin shows "Auto-update
- * unavailable: buyer must press Update". Returns the variables to set, or none.
- */
-export async function autoUpdateVars(id: number, accountToken: string, ids: { projectId?: string; environmentId?: string; serviceId?: string }): Promise<Record<string, string>> {
-  if (!ids.projectId || !ids.environmentId || !ids.serviceId) return {};
-  try {
-    const t = await createProjectToken(accountToken, ids.projectId, ids.environmentId, "Automatic updates", { base: RAILWAY_API });
-    return { RAILWAY_PROJECT_TOKEN: t, AUTOUPDATE_PROJECT_ID: ids.projectId, AUTOUPDATE_ENVIRONMENT_ID: ids.environmentId, AUTOUPDATE_SERVICE_ID: ids.serviceId };
-  } catch (e) {
-    console.log(`[setup] buyer ${id}: no project token for automatic updates (${e instanceof RailwayError ? e.code : "error"})`);
-    return {};
-  }
-}
-
       progress(id, "Adding your database (Postgres)");
       const pw = randomBytes(24).toString("hex");
       const svc = (await railway(token, "mutation($input: ServiceCreateInput!) { serviceCreate(input: $input) { id } }", {
@@ -1309,13 +1336,13 @@ export async function autoUpdateVars(id: number, accountToken: string, ids: { pr
       setRw(id, (r) => { r.customDomainId = String(cd.id); r.records = railRecords(cd, hostOf(s), zoneOf(s)); });
       return;
     }
-    if (hostOf(s) && s.domain?.mode === "cloudflare" && !rw.cfWritten && rw.records?.length) {
-      const cfTok = getSecret(id, "cf_token");
-      if (!cfTok) return fail(id, "create_failed", "Your Cloudflare token is missing. Check it again on the Domain step.");
+    if (hostOf(s) && (s.domain?.mode === "cloudflare" || s.domain?.mode === "godaddy") && !rw.cfWritten && rw.records?.length) {
+      const writer = writerFor(id, s);
+      if (!writer) return fail(id, "create_failed", dnsKeyMissing(s));
       const recs = rw.records.map((r) => ({ ...r }));
-      for (const r of recs) r.cfId = await cfEnsure(cfTok, s.domain.cf!.zoneId!, r);
+      for (const r of recs) r.cfId = await writer.ensure(r);
       setRw(id, (r) => { r.records = recs; r.cfWritten = true; });
-      progress(id, `Added ${hostOf(s)}'s records to Cloudflare`);
+      progress(id, `Added ${hostOf(s)}'s records to ${writer.kind === "godaddy" ? "GoDaddy" : "Cloudflare"}`);
       return;
     }
     if (!rw.deploymentId) {
@@ -1528,6 +1555,10 @@ async function tickUpdate(id: number) {
       const add: Record<string, string> = {};
       for (const h of updateVarHooks) for (const [k, v] of Object.entries(h(id, have))) if (!(k in have) && !(k in add)) add[k] = v;
       add.APP_VERSION = to; // ours: says which version this agency is
+      // Automatic updates: a project token for the app, if it has none yet (or its last automatic update failed). Not kept by us.
+      if (!("RAILWAY_PROJECT_TOKEN" in have) || latestSnapshot(id)?.snap.updates.lastResult === "failed") {
+        Object.assign(add, await autoUpdateVars(id, token, { projectId, environmentId: u.envId, serviceId: u.appId }));
+      }
       await railway(token, "mutation($input: VariableCollectionUpsertInput!) { variableCollectionUpsert(input: $input) }", { input: { ...base, serviceId: u.appId, variables: add, skipDeploys: true } });
       setUpdate(id, (u) => { u.varsSet = true; u.to = to; });
       return;
@@ -1555,10 +1586,6 @@ async function tickUpdate(id: number) {
       return;
     }
     // Built and running on Railway: wait until the live address answers.
-      // Automatic updates: a project token for the app, if it has none yet (or its last automatic update failed). Not kept by us.
-      if (!("RAILWAY_PROJECT_TOKEN" in have) || latestSnapshot(id)?.snap.updates.lastResult === "failed") {
-        Object.assign(add, await autoUpdateVars(id, token, { projectId, environmentId: u.envId, serviceId: u.appId }));
-      }
     if (!due(`up-health:${id}`, fast ? 1500 : 5000)) return;
     const urls = [...new Set([s.domainPending && s.tempUrl ? s.tempUrl : agencyUrl(s), s.tempUrl].filter(Boolean) as string[])];
     let healthy = false;

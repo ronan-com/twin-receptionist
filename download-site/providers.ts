@@ -563,3 +563,15 @@ export function normalizeDomain(v: string): string | null {
   if (!/^(?=.{4,253}$)([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/.test(d)) return null;
   return d;
 }
+
+// ======================= OpenRouter (optional: "Ask for help" inside the agency's dashboard) =======================
+const OPENROUTER_API = () => (process.env.OPENROUTER_API_BASE || "https://openrouter.ai/api/v1").trim().replace(/\/$/, "");
+export async function checkOpenRouter(key: string): Promise<Check> {
+  if (!key) return { ok: false, message: "Paste the OpenRouter API key first." };
+  if (hasSpace(key)) return { ok: false, message: "That key has spaces in it: copy just the key." };
+  const { status } = await call("OpenRouter", `${OPENROUTER_API()}/auth/key`, { headers: { Authorization: `Bearer ${key}`, "User-Agent": UA } }).catch((e) => ({ status: -1, json: { e } as any }));
+  if (status === -1) return { ok: false, message: "We couldn't reach OpenRouter just now. Try again in a minute." };
+  if (status === 401 || status === 403) return { ok: false, message: "OpenRouter didn't accept that key: copy it again, or make a new one." };
+  if (status !== 200) return { ok: false, message: `OpenRouter had a problem (error ${status}). Wait a minute and try again.` };
+  return { ok: true, message: "OpenRouter key works." };
+}

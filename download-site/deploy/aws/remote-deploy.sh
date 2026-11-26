@@ -56,6 +56,9 @@ if [ -n "$APPKEY" ]; then
   docker exec setup-site bun admin.ts publish "/incoming/$f" "$APPVER"
 fi
 
+# Buyers can have their setup link on their own domain: Caddy needs its global on_demand_tls option for that (added once, checked, rolled back if rejected).
+bash src/deploy/aws/ensure-ondemand-tls.sh
+
 # Route the address through the main Caddy (https certificate is automatic).
 sed "s/__DOMAIN__/$DOMAIN/" src/deploy/aws/setupsite.caddy.tmpl > /opt/twin/sites/setupsite.caddy
 docker exec twin-caddy-1 caddy reload --config /etc/caddy/Caddyfile --adapter caddyfile

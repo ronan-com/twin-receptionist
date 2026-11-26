@@ -1,0 +1,28 @@
+# Permanent "test dashboard" copy (branch: own-phone-account) that the setup site's
+# "Start a test run" can point at, so test runs don't depend on the ThinkCentre.
+# Runs next to the main Twin stack with its own container and database (chloe_test).
+# The main Caddy reaches it over the main stack's network as chloe-test:8791.
+name: chloetest
+services:
+  app:
+    build: { context: ./src, dockerfile: deploy/Dockerfile }
+    image: chloe-test-app:latest
+    container_name: chloe-test
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      HOST: 0.0.0.0
+      API_PORT: "8791"
+    volumes:
+      - app-data:/app/data
+      - /opt/twin/rds-ca.pem:/etc/ssl/rds-ca.pem:ro
+    networks: [twin]
+    logging: { driver: json-file, options: { max-size: 20m, max-file: "5" } }
+
+networks:
+  twin:
+    external: true
+    name: twin_default
+
+volumes:
+  app-data:

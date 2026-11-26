@@ -4,7 +4,7 @@ import { describe, expect, test } from "bun:test";
 import { alwaysOpen, blankSettings, defaultHours, describeHours, greetingsFor, INDUSTRIES, withoutRecordingLine } from "../src/lib/shared";
 import { openNow } from "./automations";
 import { industryKeyOf, industryLabelOf } from "./answered";
-import { DEFAULT_PAUSE_MESSAGE, buildInstructions, greetingOf, normaliseSettings } from "./prompt";
+import { DEFAULT_PAUSE_MESSAGE, buildInstructions, cleanProfile, greetingOf, normaliseSettings } from "./prompt";
 
 const voices = new Map([["v1", "Grace"]]);
 const base = { ...blankSettings(), businessName: "Alpha Plumbing", voiceId: "v1", services: ["Blocked drain"] };
@@ -143,5 +143,189 @@ describe("setup wizard fields", () => {
     expect(withoutRecordingLine("Hi, Paws. I'm the AI assistant. How can I help?")).toBe("Hi, Paws. I'm the AI assistant. How can I help?");
     expect(greetingsFor("vet", "Paws", "").some((g) => g.label === "Urgent calls first")).toBe(true);
     expect(greetingsFor("legal", "Smith Law", "").some((g) => g.label === "Urgent calls first")).toBe(false);
+  });
+});
+
+describe("receptionist profile", () => {
+  const withProfile = (profile: unknown) => normaliseSettings({ ...base, profile }, voices);
+  const script = (profile: unknown, booking: { minutes: number } | null = null) => buildInstructions(withProfile(profile), booking);
+
+  test("the cleaner rejects junk and keeps good values", () => {
+    expect(cleanProfile(null)).toEqual({});
+    expect(cleanProfile("nope")).toEqual({});
+    expect(cleanProfile([1, 2])).toEqual({});
+    expect(
+      cleanProfile({
+        template: "Dental General!!",
+        tone: "sarcastic",
+        bookingMode: "teleport",
+        appointmentMinutes: "abc",
+        bufferMinutes: null,
+        bookingNotice: "yesterday",
+        bookingWindowDays: {},
+        priceAnswers: "free",
+        newCustomers: "x",
+        emergencies: "panic",
+        callerFields: ["name", "ssn", "phone", "name"],
+        serviceDetails: [{ name: " " }, "junk", { name: "Clean", minutes: "x", price: "  " }],
+        faqs: [{ q: "Q", a: "" }, { q: "", a: "A" }],
+        paymentMethods: [" ", "Card", "card"],
+        alwaysDo: [],
+      }),
+    ).toEqual({ callerFields: ["name", "phone"], serviceDetails: [{ name: "Clean" }], paymentMethods: ["Card"] });
+    const good = cleanProfile({
+      template: "dental-general",
+      tone: "calm",
+      bookingMode: "request",
+      appointmentMinutes: 44,
+      bufferMinutes: 0,
+      bookingNotice: "24h",
+      bookingWindowDays: 100,
+      serviceDetails: [{ name: "Check-up", minutes: 30.4, price: "$90", notes: "Includes x-rays" }],
+      priceAnswers: "from_price",
+      newCustomers: "waitlist",
+      emergencies: "advise_000",
+      faqs: [{ q: "Parking?", a: "Out the back." }],
+    });
+    expect(good).toMatchObject({ template: "dental-general", tone: "calm", bookingMode: "request", appointmentMinutes: 45, bufferMinutes: 0, bookingNotice: "24h", bookingWindowDays: 90, priceAnswers: "from_price" });
+    expect(good.serviceDetails).toEqual([{ name: "Check-up", minutes: 30, price: "$90", notes: "Includes x-rays" }]);
+    expect(good.faqs).toEqual([{ q: "Parking?", a: "Out the back." }]);
+  });
+
+  test("the cleaner trims, strips template braces and caps lengths and counts", () => {
+    const p = cleanProfile({
+      cancellationPolicy: `  24 hours {{telnyx}}\n notice ${"x".repeat(900)}`,
+      serviceDetails: Array.from({ length: 50 }, (_, i) => ({ name: `S${i}`, minutes: 9999 })),
+      alwaysDo: Array.from({ length: 30 }, (_, i) => `Do ${i}`),
+    });
+    expect(p.cancellationPolicy!.length).toBeLessThanOrEqual(400);
+    expect(p.cancellationPolicy).not.toContain("{");
+    expect(p.cancellationPolicy).not.toContain("\n");
+    expect(p.serviceDetails).toHaveLength(30);
+    expect(p.serviceDetails![0].minutes).toBe(480);
+    expect(p.alwaysDo).toHaveLength(10);
+  });
+
+  test("normaliseSettings stores it, keeps it when left out and clears it when empty", () => {
+    const s = withProfile({ tone: "calm", bogus: 1 });
+    expect(s.profile).toEqual({ tone: "calm" });
+    expect(normaliseSettings({ ...base }, voices, s).profile).toEqual({ tone: "calm" });
+    expect(normaliseSettings({ ...base, profile: {} }, voices, s).profile).toBeUndefined();
+    expect(normaliseSettings({ ...base, profile: null }, voices, s).profile).toBeUndefined();
+    expect(withProfile("junk").profile).toBeUndefined();
+  });
+
+  test("an empty profile leaves the script exactly as it was", () => {
+    expect(script({})).toBe(buildInstructions(normaliseSettings(base, voices)));
+  });
+
+  test("each section appears when set and not when empty", () => {
+    const empty = script({ tone: "calm" });
+    for (const heading of ["How bookings work", "Services, lengths", "Price questions", "Details to collect", "New customers", "Emergencies", "Policies and practical", "Always\n", "Never\n"]) {
+      expect(empty).not.toContain(heading);
+    }
+    expect(empty).toContain("Tone for this business");
+    expect(empty).toContain("Calm, patient and reassuring");
+
+    const full = script(
+      {
+        bookingMode: "book",
+        appointmentMinutes: 45,
+        bufferMinutes: 10,
+        bookingNotice: "24h",
+        bookingWindowDays: 30,
+        serviceDetails: [{ name: "Check-up", minutes: 30, price: "$90", notes: "Includes x-rays" }],
+        priceAnswers: "quote",
+        callerFields: ["name", "phone", "health_fund", "dob"],
+        newCustomers: "existing_only",
+        emergencies: "advise_000",
+        emergencyNote: "Swelling or a knocked-out tooth",
+        cancellationPolicy: "24 hours notice",
+        paymentMethods: ["Card", "HICAPS"],
+        parking: "Free out the back",
+        accessibility: "Step-free entry",
+        serviceArea: "Within 20km of Manly",
+        languages: ["English", "Vietnamese"],
+        alwaysDo: ["Confirm the spelling of names"],
+        neverDo: ["Give medical advice"],
+        faqs: [{ q: "Do you do whitening?", a: "Yes, in clinic." }],
+      },
+      { minutes: 30 },
+    );
+    expect(full).toContain("How bookings work");
+    expect(full).toContain("Appointments are 30 minutes"); // the real calendar length wins
+    expect(full).toContain("leaves 10 minutes between bookings");
+    expect(full).toContain("at least 24 hours' notice");
+    expect(full).toContain("up to 30 days ahead");
+    expect(full).toContain("Check-up (about 30 minutes, $90): Includes x-rays");
+    expect(full).toContain("give the exact price");
+    expect(full).toContain("ask for: health fund; date of birth");
+    expect(full).toContain("Only existing customers can book");
+    expect(full).toContain("hang up and call 000");
+    expect(full).toContain("What counts as urgent here: Swelling or a knocked-out tooth.");
+    expect(full).toContain("Cancellations: 24 hours notice.");
+    expect(full).toContain("Payment: Card, HICAPS.");
+    expect(full).toContain("Parking: Free out the back.");
+    expect(full).toContain("Accessibility: Step-free entry.");
+    expect(full).toContain("Service area: Within 20km of Manly.");
+    expect(full).toContain("you may continue in that language");
+    expect(full).toContain("- Confirm the spelling of names");
+    expect(full).toContain("- Give medical advice");
+    // FAQs are published as knowledge items, so the profile doesn't repeat them.
+    expect(full).not.toContain("Do you do whitening?");
+  });
+
+  test("urgent messages are taken when there is no 000 advice", () => {
+    expect(script({ emergencies: "take_urgent_message" }, { minutes: 30 })).toContain("request_callback with the reason starting URGENT");
+    expect(script({ emergencies: "not_applicable", emergencyNote: "ignored" })).not.toContain("Emergencies");
+    expect(script({ emergencies: "advise_000" })).not.toContain("request_callback");
+  });
+
+  test("price modes", () => {
+    const services = [{ name: "Blocked drain", price: "$180" }];
+    expect(script({ serviceDetails: services, priceAnswers: "quote" })).toContain("Blocked drain ($180)");
+    expect(script({ serviceDetails: services, priceAnswers: "quote" })).toContain("give the exact price listed");
+    expect(script({ serviceDetails: services })).toContain("give the exact price listed");
+    expect(script({ serviceDetails: services, priceAnswers: "from_price" })).toContain('say "from"');
+    expect(script({ serviceDetails: services, priceAnswers: "range" })).toContain("rough range");
+    const none = script({ serviceDetails: services, priceAnswers: "no_quote" }, { minutes: 30 });
+    expect(none).not.toContain("$180");
+    expect(none).toContain("Never give or guess a price");
+    expect(none).toContain("request_callback");
+    expect(script({ priceAnswers: "no_quote" })).toContain("offer to pass on a message");
+    // Nothing priced, nothing to quote.
+    expect(script({ serviceDetails: [{ name: "Blocked drain" }], priceAnswers: "quote" })).not.toContain("Price questions");
+  });
+
+  test("booking modes: book uses the calendar, request can't book, message_only offers no times", () => {
+    const live = { minutes: 30 };
+    const book = script({ bookingMode: "book" }, live);
+    expect(book).toContain("check_availability");
+    expect(book).toContain("Call book_appointment");
+
+    const request = script({ bookingMode: "request" }, live);
+    expect(request).toContain("check_availability");
+    expect(request).not.toContain("Call book_appointment");
+    expect(request).toContain("Never say a booking is confirmed");
+    expect(request).toContain("request_callback");
+
+    const message = script({ bookingMode: "message_only", appointmentMinutes: 60, bufferMinutes: 10, bookingNotice: "24h" }, live);
+    expect(message).not.toContain("check_availability");
+    expect(message).not.toContain("book_appointment");
+    expect(message).toContain("You do not make bookings or offer times");
+    expect(message).toContain("request_callback with it");
+    expect(message).not.toContain("minutes between bookings");
+    expect(message).not.toContain("Appointments are");
+
+    // Without a calendar there is no callback tool, in any mode.
+    expect(script({ bookingMode: "message_only" })).not.toContain("request_callback");
+    expect(script({ bookingMode: "request" })).not.toContain("check_availability");
+  });
+
+  test("a paused receptionist ignores the profile", () => {
+    const s = { ...withProfile({ tone: "calm", cancellationPolicy: "24 hours" }), paused: { at: new Date().toISOString(), message: "Back soon." } };
+    const ins = buildInstructions(s);
+    expect(ins).not.toContain("Cancellations");
+    expect(ins).toContain("paused");
   });
 });

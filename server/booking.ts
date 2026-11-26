@@ -123,6 +123,23 @@ type Slot = { start: string; time: string };
 const MAX_SLOTS = 10;
 // Don't offer a time that starts sooner than this.
 const LEAD_MINUTES = 30;
+const NOTICE_MINUTES: Record<string, number> = { none: 0, "1h": 60, "2h": 120, same_day: 60, "24h": 1440, "48h": 2880 };
+
+// The receptionist profile's booking rules (server/prompt.ts cleans them). All optional.
+function rulesOf(client: Business) {
+  const p = client.settings.profile;
+  return {
+    notice: Math.max(LEAD_MINUTES, p?.bookingNotice ? (NOTICE_MINUTES[p.bookingNotice] ?? 0) : 0),
+    buffer: p?.bufferMinutes ?? 0,
+    windowDays: p?.bookingWindowDays ?? 0,
+  };
+}
+
+// The last day callers can book, as YYYY-MM-DD, or "" when there is no limit.
+function lastBookableDate(client: Business): string {
+  const { windowDays } = rulesOf(client);
+  return windowDays ? localDate(Date.now() + windowDays * 86400000, client.settings.timezone) : "";
+}
 
 async function freeSlots(client: Business, date: string): Promise<{ open: boolean; slots: Slot[]; starts: number[] }> {
   const s = client.settings;
@@ -133,14 +150,18 @@ async function freeSlots(client: Business, date: string): Promise<{ open: boolea
   const opens = localToEpoch(date, hours.from, s.timezone);
   const closes = localToEpoch(date, hours.to, s.timezone);
   const length = setup.minutes * 60000;
+  const rules = rulesOf(client);
+  const last = lastBookableDate(client);
+  if (last && date > last) return { open: true, slots: [], starts: [] };
+  const gap = rules.buffer * 60000;
 
-  const taken = (await busyTimes(client, opens, closes)).map((b) => [b.start, b.end] as const);
+  const taken = (await busyTimes(client, opens - gap, closes + gap)).map((b) => [b.start, b.end] as const);
 
-  const earliest = Date.now() + LEAD_MINUTES * 60000;
+  const earliest = Date.now() + rules.notice * 60000;
   const starts: number[] = [];
   for (let t = opens; t + length <= closes; t += length) {
     if (t < earliest) continue;
-    if (taken.some(([a, b]) => t < b && t + length > a)) continue;
+    if (taken.some(([a, b]) => t < b + gap && t + length + gap > a)) continue;
     starts.push(t);
   }
   return {
@@ -162,6 +183,9 @@ export async function availability(client: Business, input: any): Promise<unknow
   }
   const today = localDate(Date.now(), client.settings.timezone);
   if (date < today) return { date, day: sayDay(date), open: false, message: "That date has passed. Ask for another day." };
+
+  const last = lastBookableDate(client);
+  if (last && date > last) return { date, day: sayDay(date), open: true, slots: [], message: `That is further ahead than bookings go (up to ${rulesOf(client).windowDays} days). Offer an earlier day, or take a message.` };
 
   const { open, slots } = await freeSlots(client, date);
   if (!open) return { date, day: sayDay(date), open: false, message: `The business is closed on ${sayDay(date)}. Offer another day.` };

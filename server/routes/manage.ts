@@ -11,7 +11,7 @@ import { checkEmail, connectEmail, disconnectEmail, emailStatus } from "../email
 import { recordIncident } from "../incidents";
 import { webhookSecret } from "../notify";
 import { createRequest, requestsForClient } from "../numberRequests";
-import { COLLECT_FIELDS, DEFAULT_PAUSE_MESSAGE, DIALECTS, TONES, ValidationError, cleanClosures } from "../prompt";
+import { COLLECT_FIELDS, DEFAULT_PAUSE_MESSAGE, DIALECTS, TONES, ValidationError, cleanClosures, cleanProfile } from "../prompt";
 import { isDemo } from "../sandbox";
 import { getClient, orgOfClient, saveClient } from "../store";
 import { json, readBody, type ClientAccess, type ClientRouteArgs } from "./http";
@@ -137,6 +137,8 @@ async function answeredAgent(c: Business, orgSuspended: boolean, voices?: Voice[
     closing_line: s.closing ?? "",
     faq_style: s.faqStyle ?? "brief",
     collect_fields: s.collect ?? [],
+    // The detailed receptionist setup (cleaned by cleanProfile in server/prompt.ts); {} when none.
+    profile: s.profile ?? {},
     phone_numbers: c.phoneNumbers ?? [],
     speaking_speed: 1,
     provider: "telnyx",
@@ -154,8 +156,8 @@ async function answeredAgent(c: Business, orgSuspended: boolean, voices?: Voice[
       configured: Boolean(c.booking),
       services: s.services,
       default_duration_minutes: c.booking?.minutes ?? 30,
-      buffer_minutes: 0,
-      max_days_ahead: 14,
+      buffer_minutes: s.profile?.bufferMinutes ?? 0,
+      max_days_ahead: s.profile?.bookingWindowDays ?? 14,
       allow_new_patients: true,
       provider: c.booking ? providerOf(c) : null,
       lead_webhook: c.booking?.leadWebhook ?? "",
@@ -539,6 +541,14 @@ function applyBusiness(s: Settings, b: any): Settings {
     else if (s.closures) next.closures = "";
     else delete next.closures;
   }
+  // The detailed receptionist profile, replaced as a whole through the same cleaner the
+  // script uses. An empty one clears it (an explicit {} is what tells normaliseSettings to drop it).
+  if (b.profile !== undefined) {
+    const profile = cleanProfile(b.profile);
+    if (Object.keys(profile).length) next.profile = profile;
+    else if (s.profile) next.profile = {};
+    else delete next.profile;
+  }
   return next;
 }
 
@@ -590,7 +600,7 @@ export async function manageRoutes(args: ClientRouteArgs): Promise<Response | nu
       if (body.voice_id !== undefined && body.voice_id !== null) s.voiceId = String(body.voice_id);
       const rules = body.booking_rules && typeof body.booking_rules === "object" ? body.booking_rules : null;
       if (rules && Array.isArray(rules.services)) s.services = rules.services.map((x: unknown) => str(x, 60)).filter(Boolean);
-      s = applyBusiness(s, { ...(body.business ?? {}), ...(body.business_hours !== undefined ? { business_hours: body.business_hours } : {}) });
+      s = applyBusiness(s, { ...(body.business ?? {}), ...(body.business_hours !== undefined ? { business_hours: body.business_hours } : {}), ...(body.profile !== undefined ? { profile: body.profile } : {}) });
 
       const changed = JSON.stringify(s) !== JSON.stringify(client.settings);
       // A fresh receptionist stays "pending" until onboarding is finished or skipped for good.

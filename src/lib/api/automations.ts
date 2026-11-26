@@ -1,3 +1,4 @@
+import type { FollowupSettings } from "../followups";
 import { api } from "./base";
 
 // Per-receptionist automations (area T). Server side: server/routes/automations.ts
@@ -34,7 +35,7 @@ export type AutomationSettings = {
   language: { code: LanguageCode };
   callLimits: { maxMinutes: number; idleSeconds: number };
   hoursMode: { enabled: boolean; greeting: string; mode: AfterHoursMode };
-};
+} & FollowupSettings;
 
 export type AutomationKey = keyof AutomationSettings;
 
@@ -57,6 +58,12 @@ export type AutomationsState = {
   updatedAt: string | null;
   smsNumber: string | null;
   languages: LanguageOption[];
+  /** Reminders, missed-call follow-ups and review requests. */
+  followups: {
+    emailReady: boolean;
+    businessName: string;
+    recent: { at: string; kind: "reminder" | "missed" | "review"; channel: "sms" | "email"; to: string; status: "sending" | "sent" | "skipped" | "failed"; detail: string }[];
+  };
   recentTexts: { at: string; to: string; kind: string; status: string; detail: string }[];
 };
 
@@ -69,3 +76,9 @@ export const saveAutomations = (businessId: string, patch: AutomationsPatch) =>
   api.put<AutomationsState>(`/api/automations/${businessId}`, patch);
 
 export const automationsQueryKey = (businessId: string | null) => ["automations", businessId] as const;
+
+/** "Send me a test": one example to the signed-in person's own email, or to the mobile number they give. */
+export const sendFollowupTest = (
+  businessId: string,
+  body: { kind: "reminder" | "missed" | "review"; channel: "sms" | "email"; phone?: string; settings?: Record<string, unknown> },
+) => api.post<{ sentTo: string }>(`/api/automations/${businessId}/test`, body);

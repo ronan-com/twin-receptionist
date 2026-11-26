@@ -8,6 +8,8 @@ import { ValidationError, greetingOf } from "./prompt";
 import { isDemo } from "./sandbox";
 import { getClient, orgOfClient } from "./store";
 import { runAsOrg, telnyx } from "./telnyx";
+import type { FollowupSettings } from "../src/lib/followups";
+import { defaultFollowups, followupStatuses, normaliseFollowups } from "./followups";
 import { textingState } from "./texting";
 
 // Per-receptionist automations (area T): transfer to a person, text-back after a
@@ -56,10 +58,10 @@ export type AutomationSettings = {
   language: { code: LanguageCode };
   callLimits: { maxMinutes: number; idleSeconds: number };
   hoursMode: { enabled: boolean; greeting: string; mode: "message_only" | "message_and_booking" };
-};
+} & FollowupSettings; // reminders, missedFollowup, reviews: server/followups.ts
 
 export type AutomationKey = keyof AutomationSettings;
-const KEYS: AutomationKey[] = ["transfer", "textBack", "recording", "language", "callLimits", "hoursMode"];
+const KEYS: AutomationKey[] = ["transfer", "textBack", "recording", "language", "callLimits", "hoursMode", "reminders", "missedFollowup", "reviews"];
 
 export const LANGUAGES: { code: LanguageCode; label: string; note?: string }[] = [
   { code: "en-AU", label: "English (Australian)" },
@@ -91,6 +93,7 @@ export function defaultAutomations(): AutomationSettings {
       greeting: "Thanks for calling {business}. We're closed right now, but I can take a message and the team will get back to you.",
       mode: "message_only",
     },
+    ...defaultFollowups(),
   };
 }
 
@@ -178,7 +181,7 @@ export function normaliseAutomations(input: unknown, current: AutomationSettings
     mode: pick(h.mode, ["message_only", "message_and_booking"] as const, "message_only"),
   };
 
-  return { transfer, textBack, recording, language, callLimits, hoursMode };
+  return { transfer, textBack, recording, language, callLimits, hoursMode, ...normaliseFollowups(src, current) };
 }
 
 // Fills {business}, {name}, {time}, {service}; anything else in braces is dropped.
@@ -469,6 +472,8 @@ export type StatusInputs = {
   publicUrl: string;
   /** Whether these settings have ever reached the phone provider. */
   applied: boolean;
+  /** Whether this server can send email (for reminders and review requests). */
+  emailReady?: boolean;
 };
 
 export function statusFor(client: Business, a: AutomationSettings, i: StatusInputs): Record<AutomationKey, AutomationStatus> {
@@ -527,10 +532,10 @@ export function statusFor(client: Business, a: AutomationSettings, i: StatusInpu
     return { state: "on", label: openNow(client.settings) ? "On · open now" : "On · closed now", detail: `${what} ${how}` };
   })();
 
-  return { transfer, textBack, recording, language, callLimits, hoursMode };
+  return { transfer, textBack, recording, language, callLimits, hoursMode, ...followupStatuses(client, a, { demo: i.demo, smsNumber: i.smsNumber, emailReady: Boolean(i.emailReady) }) };
 }
 
-async function smsNumberOf(client: Business): Promise<string | null | undefined> {
+export async function smsNumberOf(client: Business): Promise<string | null | undefined> {
   if (isDemo(client.assistantId)) return null;
   try {
     const t = await textingState(client);
@@ -544,12 +549,13 @@ export async function automationsState(client: Business, canEdit: boolean) {
   const row = await loadAutomations(client.id);
   const demo = isDemo(client.assistantId);
   const smsNumber = row.settings.textBack.enabled || !demo ? await smsNumberOf(client) : null;
+  const followups = await (await import("./followupsRun")).followupsState(client);
   const texts = await sql`
     select created_at, to_number, kind, status, detail from automation_texts
     where client_id = ${client.id} order by created_at desc limit 10`;
   return {
     settings: row.settings,
-    status: statusFor(client, row.settings, { demo, smsNumber, publicUrl: publicUrl(), applied: Boolean(row.appliedAt) }),
+    status: statusFor(client, row.settings, { demo, smsNumber, publicUrl: publicUrl(), applied: Boolean(row.appliedAt), emailReady: followups.emailReady }),
     canEdit,
     demo,
     appliedAt: row.appliedAt,
@@ -557,6 +563,7 @@ export async function automationsState(client: Business, canEdit: boolean) {
     updatedAt: row.updatedAt,
     smsNumber: smsNumber ?? null,
     languages: LANGUAGES,
+    followups,
     recentTexts: texts.map((t: any) => ({ at: new Date(t.created_at).toISOString(), to: t.to_number ?? "", kind: t.kind, status: t.status, detail: t.detail })),
   };
 }
@@ -716,6 +723,12 @@ export function startAutomations(): void {
       await runTextBack();
     } catch (err) {
       console.error("[text-back]", (err as Error).message);
+    }
+    try {
+      // Reminders, missed-call follow-ups and review requests (server/followupsRun.ts).
+      await (await import("./followupsRun")).runFollowups();
+    } catch (err) {
+      console.error("[followups]", (err as Error).message);
     } finally {
       running = false;
     }

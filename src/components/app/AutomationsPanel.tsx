@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Languages, MessageSquareText, Mic, MoonStar, PhoneForwarded, Timer, type LucideIcon } from "lucide-react";
+import { BellRing, Languages, MessageSquareText, Mic, MoonStar, PhoneCall, PhoneForwarded, Star, Timer, type LucideIcon } from "lucide-react";
 import { toast } from "sonner";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
@@ -19,6 +19,8 @@ import {
   type AutomationsState,
 } from "@/lib/api/automations";
 import { fmtRelative } from "@/lib/app/format";
+import { REMINDER_HOURS } from "@/lib/followups";
+import { RecentFollowups, TemplateField, TestRow } from "./FollowupParts";
 import { cn } from "@/lib/utils";
 import type { Hue } from "./hues";
 
@@ -42,6 +44,9 @@ const AUTOMATION_HUE: Record<AutomationKey, Hue> = {
   language: "cyan",
   callLimits: "amber",
   hoursMode: "indigo",
+  reminders: "sky",
+  missedFollowup: "green",
+  reviews: "amber",
 };
 
 const selectClass =
@@ -163,6 +168,7 @@ export function AutomationsPanel({ businessId, canEdit: canEditProp = true }: { 
   const set = <K extends AutomationKey>(key: K, value: Partial<AutomationSettings[K]>) =>
     setForm((f) => (f ? { ...f, [key]: { ...f[key], ...value } } : f));
   const st = state.status;
+  const fu = state.followups;
 
   return (
     <div className="space-y-4" data-automations-panel>
@@ -331,6 +337,88 @@ export function AutomationsPanel({ businessId, canEdit: canEditProp = true }: { 
             <option value="message_and_booking">Take messages and still offer bookings</option>
           </select>
         </Field>
+      </Card>
+
+      <Card
+        id="reminders"
+        icon={BellRing}
+        title="Appointment reminders"
+        description="Reminds customers about the appointments the receptionist booked, so fewer people forget."
+        status={st.reminders}
+        on={s.reminders.enabled}
+        onToggle={(v) => set("reminders", { enabled: v })}
+        canEdit={canEdit}
+      >
+        <div className="grid gap-2">
+          <Check name="remindSms" label="Send a text" checked={s.reminders.sms} onChange={(v) => set("reminders", { sms: v })} disabled={!canEdit} />
+          <Check name="remindEmail" label="Send an email" hint="When the customer gave an email address." checked={s.reminders.email} onChange={(v) => set("reminders", { email: v })} disabled={!canEdit} />
+        </div>
+        <Field label="Send it" htmlFor="auto-remind-hours" hint="Texts wait until 8am if the time falls between 8pm and 8am. Replies to texts go to the receptionist, so the text tells people to call to change a booking.">
+          <select id="auto-remind-hours" className={selectClass} value={s.reminders.hoursBefore} onChange={(e) => set("reminders", { hoursBefore: Number(e.target.value) as AutomationSettings["reminders"]["hoursBefore"] })} disabled={!canEdit}>
+            {REMINDER_HOURS.map((h) => (
+              <option key={h} value={h}>
+                {h} hours before the appointment
+              </option>
+            ))}
+          </select>
+        </Field>
+        {s.reminders.sms ? <TemplateField id="auto-remind-sms" label="Text" value={s.reminders.smsText} onChange={(v) => set("reminders", { smsText: v })} disabled={!canEdit} businessName={fu.businessName} channel="sms" /> : null}
+        {s.reminders.email ? <TemplateField id="auto-remind-email" label="Email" value={s.reminders.emailText} onChange={(v) => set("reminders", { emailText: v })} disabled={!canEdit} businessName={fu.businessName} channel="email" rows={7} max={1500} /> : null}
+        <TestRow businessId={businessId} kind="reminder" smsOn={s.reminders.sms} emailOn={s.reminders.email} section={s.reminders} disabled={!canEdit} />
+        <RecentFollowups items={fu.recent} kind="reminder" />
+      </Card>
+
+      <Card
+        id="missedFollowup"
+        icon={PhoneCall}
+        title="Missed-call follow-up"
+        description="Texts the caller when they hung up before the receptionist finished, or when a callback they asked for hasn't happened."
+        status={st.missedFollowup}
+        on={s.missedFollowup.enabled}
+        onToggle={(v) => set("missedFollowup", { enabled: v })}
+        canEdit={canEdit}
+      >
+        <div className="grid gap-2">
+          <Check name="shortCall" label="After a very short call" hint="When the caller hangs up within 10 seconds." checked={s.missedFollowup.shortCall} onChange={(v) => set("missedFollowup", { shortCall: v })} disabled={!canEdit} />
+          <Check name="callbackOverdue" label="When a callback hasn't happened" hint="A callback was asked for and it's still marked New." checked={s.missedFollowup.callbackOverdue} onChange={(v) => set("missedFollowup", { callbackOverdue: v })} disabled={!canEdit} />
+        </div>
+        {s.missedFollowup.callbackOverdue ? (
+          <Field label="Hours to wait for a callback" htmlFor="auto-missed-hours" hint="Between 1 and 72. Never to withheld numbers, and at most one text per caller per day.">
+            <Input id="auto-missed-hours" type="number" min={1} max={72} value={s.missedFollowup.overdueHours} onChange={(e) => set("missedFollowup", { overdueHours: Number(e.target.value) })} disabled={!canEdit} />
+          </Field>
+        ) : null}
+        <TemplateField id="auto-missed-text" label="Text" value={s.missedFollowup.text} onChange={(v) => set("missedFollowup", { text: v })} disabled={!canEdit} businessName={fu.businessName} channel="sms" />
+        <TestRow businessId={businessId} kind="missed" smsOn emailOn={false} section={s.missedFollowup} disabled={!canEdit} />
+        <RecentFollowups items={fu.recent} kind="missed" />
+      </Card>
+
+      <Card
+        id="reviews"
+        icon={Star}
+        title="Review requests"
+        description="Asks for a Google review after an appointment. Once per customer every 90 days, and never for a cancelled booking."
+        status={st.reviews}
+        on={s.reviews.enabled}
+        onToggle={(v) => set("reviews", { enabled: v })}
+        canEdit={canEdit}
+      >
+        <Field label="Your review link" htmlFor="auto-review-link" hint="Paste the link customers use to leave a Google review. It must start with https://">
+          <Input id="auto-review-link" type="url" inputMode="url" value={s.reviews.link} onChange={(e) => set("reviews", { link: e.target.value })} disabled={!canEdit} placeholder="https://g.page/r/your-business/review" maxLength={300} />
+        </Field>
+        <Field label="Ask" htmlFor="auto-review-delay">
+          <select id="auto-review-delay" className={selectClass} value={s.reviews.delay} onChange={(e) => set("reviews", { delay: e.target.value as AutomationSettings["reviews"]["delay"] })} disabled={!canEdit}>
+            <option value="2h">2 hours after the appointment ends</option>
+            <option value="next_morning">The next morning (9am)</option>
+          </select>
+        </Field>
+        <div className="grid gap-2">
+          <Check name="reviewSms" label="Send a text" checked={s.reviews.sms} onChange={(v) => set("reviews", { sms: v })} disabled={!canEdit} />
+          <Check name="reviewEmail" label="Send an email" hint="When the customer gave an email address." checked={s.reviews.email} onChange={(v) => set("reviews", { email: v })} disabled={!canEdit} />
+        </div>
+        {s.reviews.sms ? <TemplateField id="auto-review-sms" label="Text" value={s.reviews.smsText} onChange={(v) => set("reviews", { smsText: v })} disabled={!canEdit} businessName={fu.businessName} link={s.reviews.link} channel="sms" /> : null}
+        {s.reviews.email ? <TemplateField id="auto-review-email" label="Email" value={s.reviews.emailText} onChange={(v) => set("reviews", { emailText: v })} disabled={!canEdit} businessName={fu.businessName} link={s.reviews.link} channel="email" rows={7} max={1500} /> : null}
+        <TestRow businessId={businessId} kind="review" smsOn={s.reviews.sms} emailOn={s.reviews.email} section={s.reviews} disabled={!canEdit} />
+        <RecentFollowups items={fu.recent} kind="review" />
       </Card>
 
       {canEdit ? (

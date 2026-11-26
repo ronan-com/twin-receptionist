@@ -79,7 +79,10 @@ function AdminLayout() {
   const label =
     variant === "platform"
       ? { title: "Platform console", sub: "Platform admin" }
-      : { title: ws.org?.name ?? "Agency", sub: role === "owner" ? "Agency owner" : role === "admin" ? "Agency admin" : "Agency team" };
+      : ws.session?.singleAgency
+        ? // A buyer's own copy: the agency IS the brand shown above, so don't repeat a second name.
+          { title: role === "owner" ? "Agency owner" : role === "admin" ? "Agency admin" : "Agency team", sub: ws.session?.user.email ?? "" }
+        : { title: ws.org?.name ?? "Agency", sub: role === "owner" ? "Agency owner" : role === "admin" ? "Agency admin" : "Agency team" };
 
   const navItems = adminNavFor(variant).filter((n) => !(variant === "agency" && (ws.session?.telnyx === "own" || ws.session?.singleAgency) && n.to === "/admin/number-requests"));
   // "Get started" is for the agency's own owners and admins: not the platform admin, not a read-only view.
@@ -115,10 +118,18 @@ function AdminLayout() {
           <div className="border-b border-[#dcdaff] bg-[#f4f3ff] px-4 py-2 text-[12.5px] text-[#4338ca]">
             <div className="mx-auto flex max-w-[1400px] flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
               <span>
-                <span className="font-semibold">Viewing as {ws.viewing.business || ws.viewing.org}.</span> Read only.
+                {ws.viewing.support ? (
+                  <>
+                    <span className="font-semibold">Support session.</span> {ws.viewing.by || "Your setup provider"} is helping you, with your permission. Read only, and every sign-in is in the audit log.
+                  </>
+                ) : (
+                  <>
+                    <span className="font-semibold">Viewing as {ws.viewing.business || ws.viewing.org}.</span> Read only.
+                  </>
+                )}
               </span>
-              <button type="button" onClick={() => void ws.exitView()} className="self-start font-medium underline-offset-2 hover:underline sm:self-auto">
-                Exit view
+              <button type="button" onClick={() => void (ws.viewing?.support && !ws.viewing.client ? ws.signOut() : ws.exitView())} className="self-start font-medium underline-offset-2 hover:underline sm:self-auto">
+                {ws.viewing.support && !ws.viewing.client ? "End support session" : "Exit view"}
               </button>
             </div>
           </div>

@@ -236,7 +236,8 @@ export async function signUp(input: any): Promise<string> {
   const email = emailOf(input?.email);
   const password = passwordOf(input?.password);
   const name = textOf(input?.name, 80);
-  const orgName = textOf(input?.orgName, 80) || (name ? `${name}'s team` : "My team");
+  // A buyer's own copy is one agency, named after its brand.
+  const orgName = singleAgency() ? UI_PRODUCT : textOf(input?.orgName, 80) || (name ? `${name}'s team` : "My team");
   const passwordHash = await hashPassword(password);
   const userId = crypto.randomUUID();
   const orgId = crypto.randomUUID();

@@ -531,10 +531,12 @@ function applyBusiness(s: Settings, b: any): Settings {
   if (b.address_line1 !== undefined) next.address = str(b.address_line1, 140);
   if (b.timezone !== undefined) next.timezone = timezoneOf(b.timezone);
   if (b.business_hours !== undefined) next.hours = hoursFrom(b.business_hours, s.hours);
-  // Closures and public holidays (the setup wizard asks too); empty removes them.
+  // Closures and public holidays (the setup wizard asks too). Empty removes them: an
+  // empty value (not a missing key) tells normaliseSettings to drop the saved ones.
   if (b.closures !== undefined) {
     const closures = cleanClosures(b.closures);
     if (closures) next.closures = closures;
+    else if (s.closures) next.closures = "";
     else delete next.closures;
   }
   return next;

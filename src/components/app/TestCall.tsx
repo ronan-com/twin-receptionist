@@ -59,24 +59,25 @@ export function TestCall({ assistantId }: { assistantId: string }) {
       if (root || ++tries > 40) window.clearInterval(pin);
     }, 100);
 
-    // Start the call once the widget is connected. It ignores a press before then,
-    // so press again if the call hasn't started ringing a few seconds later.
+    // Start the call once the widget is connected. It ignores a press until it has
+    // caught up with its own connection, so press again if no call has begun.
     let calling = false;
     let presses = 0;
     const press = () => {
       if (calling) return;
       const btn = startButton(el);
-      if (btn && presses < 3) {
+      if (btn && presses < 5) {
         presses++;
         btn.click();
-        timers.push(window.setTimeout(press, 3000));
-      } else if (presses >= 3) setPhase("shown");
+        timers.push(window.setTimeout(press, 1000));
+      } else if (presses >= 5) setPhase("shown");
       else timers.push(window.setTimeout(press, 200));
     };
-    const onConnected = () => press();
+    const onConnected = () => timers.push(window.setTimeout(press, 250));
     const onUpdate = (e: Event) => {
       const state = (e as CustomEvent<{ callState?: string }>).detail?.callState;
-      if (state && !["new", "hangup", "destroy"].includes(state)) {
+      // "new" is the call being placed: stop pressing from then on.
+      if (state && !["hangup", "destroy"].includes(state)) {
         calling = true;
         setPhase("shown");
       }

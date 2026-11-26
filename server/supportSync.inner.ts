@@ -2,7 +2,7 @@
 // (made and dropped by that file), so they never touch the dev database.
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from "bun:test";
 import { blankSettings, type Business } from "../src/lib/shared";
-import { AuthError, hashToken, sessionFrom, type Ctx } from "./accounts";
+import { AuthError, hashToken, resetPassword, sessionFrom, type Ctx } from "./accounts";
 import { migrate, sql } from "./db";
 import { insertClient } from "./store";
 import { ACCESS_KEY, SYNC_KEY, accessOpen, syncAllowed } from "./supportAccess";
@@ -332,5 +332,89 @@ describe("Support access", () => {
     await redeemLoginLink((await issueLoginLink("https://app.example.com")).url.split("/").pop()!);
     const { signIn } = await import("./accounts");
     await expect(signIn({ email: SUPPORT_EMAIL, password: "anything at all" })).rejects.toBeInstanceOf(AuthError);
+  });
+});
+
+describe("Owner reset via the setup link", () => {
+  const PATH = "/api/support/owner-reset-link";
+  const call = (h: Record<string, string> = bearer()) => supportPublicRoutes(post(PATH, h), PATH, "POST");
+  const tokenOf = (url: string) => url.split("/").pop()!;
+
+  beforeEach(async () => {
+    // Off, to show the owner reset doesn't need Support access.
+    await setAccess({ enabled: false, until: null });
+    await sql`delete from password_resets where user_id = ${ownerId}`;
+  });
+
+  test("needs the call token (the sync token and no token are refused)", async () => {
+    expect((await call({}))!.status).toBe(401);
+    expect((await call(bearer(TOKEN)))!.status).toBe(401);
+    expect((await call(bearer("sc_wrong_token_0123456789abcdef0123456789")))!.status).toBe(401);
+    expect((await supportPublicRoutes(req(PATH), PATH, "GET"))!.status).toBe(404);
+  });
+
+  test("works with Support access off, is for the owner only, and is audited", async () => {
+    const before = (await auditActions()).filter((a: string) => a === "support.owner_reset").length;
+    const res = await call();
+    expect(res!.status).toBe(200);
+    const body = (await res!.json()) as any;
+    expect(body.ok).toBe(true);
+    expect(body.expiresInMinutes).toBe(15);
+    expect(new URL(body.url).pathname).toMatch(/^\/reset\/[A-Za-z0-9_-]{20,100}$/);
+    const [r] = await sql`select user_id, expires_at from password_resets where token_hash = ${hashToken(tokenOf(body.url))}`;
+    expect(r.user_id).toBe(ownerId);
+    const mins = (new Date(r.expires_at).getTime() - Date.now()) / 60_000;
+    expect(mins).toBeGreaterThan(14);
+    expect(mins).toBeLessThan(15.1);
+    const rows = await sql`select detail from audit_log where org_id = ${orgId} and action = 'support.owner_reset'`;
+    expect(rows.length).toBe(before + 1);
+    expect(String(rows[rows.length - 1].detail.summary)).toBe("Owner password reset via setup link");
+  });
+
+  test("never picks another user, even if one is an admin", async () => {
+    const adminId = crypto.randomUUID();
+    await sql`insert into users (id, email, name, password_hash) values (${adminId}, ${`admin-${adminId}@example.com`}, 'Admin', 'x')`;
+    await sql`insert into memberships (org_id, user_id, role) values (${orgId}, ${adminId}, 'admin')`;
+    try {
+      const body = (await (await call())!.json()) as any;
+      const [r] = await sql`select user_id from password_resets where token_hash = ${hashToken(tokenOf(body.url))}`;
+      expect(r.user_id).toBe(ownerId);
+      expect((await sql`select 1 from password_resets where user_id = ${adminId}`).length).toBe(0);
+    } finally {
+      await sql`delete from users where id = ${adminId}`;
+    }
+  });
+
+  test("the link works once: it sets the password, then is spent", async () => {
+    const body = (await (await call())!.json()) as any;
+    const t = tokenOf(body.url);
+    expect(await resetPassword(t, { password: "a-brand-new-password-1" })).toBeTruthy();
+    const [u] = await sql`select password_hash from users where id = ${ownerId}`;
+    expect(await Bun.password.verify("a-brand-new-password-1", u.password_hash)).toBe(true);
+    await expect(resetPassword(t, { password: "another-new-password-2" })).rejects.toThrow(/expired/);
+  });
+
+  test("a new link replaces the old one, and an expired one is refused", async () => {
+    const a = tokenOf(((await (await call())!.json()) as any).url);
+    const b = tokenOf(((await (await call())!.json()) as any).url);
+    await expect(resetPassword(a, { password: "a-brand-new-password-1" })).rejects.toThrow(/expired/);
+    await sql`update password_resets set expires_at = now() - interval '1 minute' where token_hash = ${hashToken(b)}`;
+    await expect(resetPassword(b, { password: "a-brand-new-password-1" })).rejects.toThrow(/expired/);
+  });
+
+  test("a copy that isn't single-agency refuses", async () => {
+    const was = process.env.SINGLE_AGENCY;
+    process.env.SINGLE_AGENCY = "";
+    try {
+      expect((await call())!.status).toBe(404);
+    } finally {
+      process.env.SINGLE_AGENCY = was;
+    }
+  });
+
+  test("rate-limited after 5 in ten minutes", async () => {
+    let last = 200;
+    for (let i = 0; i < 8 && last === 200; i++) last = (await call())!.status;
+    expect(last).toBe(429);
   });
 });

@@ -83,6 +83,8 @@ export const zoneOf = (s: SetupData) => s.domain?.zone || "";
 export const hostOf = (s: SetupData) => s.domain?.host || "";
 export const oauthRedirect = (s: SetupData, p: "google" | "microsoft") => `https://${hostOf(s) || "app.your-domain"}/api/oauth/${p}/callback`;
 /** Where the finished agency answers: the buyer's own domain if they added one, else Railway's own address. */
+/** The address of their running app, for calling it ("Sync now", "View as", owner reset): their own domain once it works, else Railway's. */
+export const appUrlOf = (s: SetupData) => (s.phase !== "done" ? "" : s.domainPending && s.tempUrl ? s.tempUrl : agencyUrl(s));
 export const agencyUrl = (s: SetupData) => (hostOf(s) ? `https://${hostOf(s)}` : s.resultUrl || s.tempUrl || webUrl(s.rw?.serviceDomain));
 /** Railway's own address for the app: https, except the local fake (localhost:<port>). */
 export const webUrl = (domain?: string) => (!domain ? "" : /^(localhost|127\.)/.test(domain) ? `http://${domain}` : `https://${domain}`);

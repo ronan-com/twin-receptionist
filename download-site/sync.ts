@@ -229,6 +229,34 @@ export async function viewAsLink(buyerId: number, appUrl: string, doFetch: typeo
   return { ok: true, url: link };
 }
 
+export type OwnerReset = { ok: true; url: string; minutes: number } | { ok: false; reason: "outdated" | "unreachable" | "limited" | "error"; message: string };
+
+/**
+ * "Locked out? Reset your owner password" on the buyer's own setup link. We ask their app for a one-time
+ * password-reset link for its owner (15 minutes, single use, never emailed) with the call token. It doesn't need
+ * Support access: it's the owner resetting their own account. Apps from before this existed answer 404 (or have no
+ * call token at all): the buyer is told to update first.
+ */
+export async function ownerResetLink(buyerId: number, appUrl: string, doFetch: typeof fetch = fetch): Promise<OwnerReset> {
+  const outdated: OwnerReset = { ok: false, reason: "outdated", message: "Update your agency first, then try again." };
+  const base = appBase(appUrl);
+  const tok = callToken(buyerId);
+  if (!tok) return outdated;
+  if (!base) return { ok: false, reason: "error", message: "We don't have your agency's address yet." };
+  const r = await callApp(base, "/api/support/owner-reset-link", tok, doFetch);
+  if (!r) return { ok: false, reason: "unreachable", message: "Your agency didn't answer. It may be restarting. Wait a minute and try again." };
+  if (r.status === 429) return { ok: false, reason: "limited", message: "Too many reset requests. Wait a few minutes and try again." };
+  // A 404 that isn't the app's own "not_supported" answer, or a refused token: an older version (or settings that changed since). Update fixes both.
+  if (r.status === 401 || (r.status === 404 && r.json?.error !== "not_supported")) return outdated;
+  const link = typeof r.json?.url === "string" ? r.json.url : "";
+  // The link must be on the app's own address: never offer one that points elsewhere.
+  if (r.status !== 200 || !link.startsWith(`${base}/reset/`) || /[\s"'<>]/.test(link)) {
+    if (r.status === 200 && link) return { ok: false, reason: "error", message: "Your agency gave a link to a different address, so we didn't offer it." };
+    return { ok: false, reason: "error", message: typeof r.json?.message === "string" && r.json.message ? r.json.message.slice(0, 200) : `Your agency answered ${r.status}.` };
+  }
+  return { ok: true, url: link, minutes: Number(r.json?.expiresInMinutes) || 15 };
+}
+
 // ---------------- what we did (our side of the audit trail) ----------------
 export function logSupport(buyerId: number, adminEmail: string, action: string, note = "") {
   db().query("INSERT INTO support_log (buyer_id, admin_email, action, note, at) VALUES (?, ?, ?, ?, ?)").run(buyerId, adminEmail, action, note.slice(0, 300), now());

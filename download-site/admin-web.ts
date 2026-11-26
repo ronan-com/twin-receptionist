@@ -18,7 +18,7 @@ import nodemailer from "nodemailer";
 import { CONFIG, RAILWAY, addBuyer, db, now, setupLink, sha256, type Buyer } from "./lib";
 import { esc } from "./pages";
 import { welcomeEmail } from "./content";
-import { agencyUrl, allow, stepDone, updateInfo } from "./setup";
+import { agencyUrl, allow, appUrlOf, stepDone, updateInfo } from "./setup";
 import { ago, hasSyncToken, allSnapshots, deleteSyncData, dot, history, latestSnapshot, logSupport, seen, supportLog, syncNow, viewAsLink, type Stored } from "./sync";
 import { DEMO_READY } from "./demo";
 import { ALL_SECRETS, STEPS, getSetup, logRead, resetSetup, secretHint, type SetupData } from "./store";
@@ -101,8 +101,6 @@ function rows(): Row[] {
     return { b, s, updated: r.supdated || b.created_at, status: statusOf(b, s), live: s.phase === "done" ? s.domainPending && s.tempUrl ? s.tempUrl : s.resultUrl || "" : "" };
   });
 }
-/** The address of their running app, for calling it ("Sync now", "View as"): their own domain once it works, else Railway's. */
-const appUrlOf = (s: SetupData) => (s.phase !== "done" ? "" : s.domainPending && s.tempUrl ? s.tempUrl : agencyUrl(s));
 const buyerById = (id: number) => db().query("SELECT * FROM buyers WHERE id = ?").get(id) as Buyer | null;
 function deleteBuyer(id: number) {
   db().transaction(() => {

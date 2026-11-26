@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowRight, Loader2, MailCheck } from "lucide-react";
+import { ArrowRight, Loader2, MailCheck, MailX } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -31,7 +31,7 @@ function LoginPage() {
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [info, setInfo] = useState<{ title: string; body: string } | null>(null);
+  const [info, setInfo] = useState<{ title: string; body: string; noMail?: boolean } | null>(null);
   // SINGLE_AGENCY: after the first account, people join by invite, so there's no sign-up link.
   const sessionQ = useQuery(sessionQuery());
   const inviteOnly = sessionQ.data && !sessionQ.data.signedIn ? Boolean(sessionQ.data.singleAgency) && !sessionQ.data.firstRun : false;
@@ -68,8 +68,17 @@ function LoginPage() {
         const s = await queryClient.fetchQuery(sessionQuery());
         navigate({ to: redirectTo ?? homeOf(s), replace: true });
       } else {
-        await authApi.requestReset(email.trim());
-        setInfo({ title: "Reset link sent", body: `If an account exists for ${email.trim()}, a password reset link is on its way. It works for 60 minutes.` });
+        const r = await authApi.requestReset(email.trim());
+        if (r.emailsSetUp === false) {
+          // No email on this dashboard: nothing was sent, so say who can help.
+          setInfo({
+            title: "Email isn't set up for this dashboard yet",
+            body: inviteOnly
+              ? "Email isn't set up for this dashboard yet. Ask your agency owner for a reset link — or, if you're the owner, open your setup link and choose 'Reset your owner password'. Business logins: ask your agency for a reset link."
+              : "Email isn't set up for this dashboard yet. Ask your agency for a reset link.",
+            noMail: true,
+          });
+        } else setInfo({ title: "Reset link sent", body: `If an account exists for ${email.trim()}, a password reset link is on its way. It works for 60 minutes.` });
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Something went wrong");
@@ -105,12 +114,12 @@ function LoginPage() {
       }
     >
       {info ? (
-        <div className="mt-6 rounded-[6px] border border-[#c8eedf] bg-[#f1fbf7] p-4" role="status">
+        <div className={info.noMail ? "mt-6 rounded-[6px] border border-[#f1dfb0] bg-[#fffaf0] p-4" : "mt-6 rounded-[6px] border border-[#c8eedf] bg-[#f1fbf7] p-4"} role="status">
           <div className="flex items-start gap-3">
-            <MailCheck className="mt-0.5 h-5 w-5 text-[#0e6245]" />
+            {info.noMail ? <MailX className="mt-0.5 h-5 w-5 text-[#8a5a00]" /> : <MailCheck className="mt-0.5 h-5 w-5 text-[#0e6245]" />}
             <div>
-              <div className="text-[14px] font-semibold text-[#0e6245]">{info.title}</div>
-              <p className="mt-1 text-[13px] leading-5 text-[#0e6245]/90">{info.body}</p>
+              {info.noMail ? null : <div className="text-[14px] font-semibold text-[#0e6245]">{info.title}</div>}
+              <p className={info.noMail ? "text-[13px] leading-5 text-[#8a5a00]" : "mt-1 text-[13px] leading-5 text-[#0e6245]/90"}>{info.body}</p>
               <button type="button" onClick={() => switchMode("signin")} className="mt-3 text-[13px] font-medium text-indigo hover:underline">
                 Back to sign in
               </button>

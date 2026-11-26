@@ -537,17 +537,19 @@ export async function acceptInvite(token: string, input: any): Promise<string> {
 // ---- Forgotten passwords ----
 
 /** Makes a one-hour reset link for a user and emails it if mail is set up. Returns the link either way. */
-async function makeReset(userId: string, email: string, base: string): Promise<{ url: string; emailed: boolean }> {
+async function makeReset(userId: string, email: string, base: string, opts: { minutes?: number; send?: boolean } = {}): Promise<{ url: string; emailed: boolean }> {
+  const minutes = opts.minutes ?? RESET_MINUTES;
   const token = newToken();
   await sql`delete from password_resets where user_id = ${userId}`;
   await sql`
     insert into password_resets (token_hash, user_id, expires_at)
-    values (${hashToken(token)}, ${userId}, ${new Date(Date.now() + RESET_MINUTES * 60_000)})`;
+    values (${hashToken(token)}, ${userId}, ${new Date(Date.now() + minutes * 60_000)})`;
   const url = `${base}/reset/${token}`;
+  if (opts.send === false) return { url, emailed: false };
   const emailed = await sendAccountEmail(
     email,
     `Reset your ${PRODUCT} password`,
-    `Someone asked to reset the password for this account. If it was you, choose a new one here:\n${url}\n\nThe link works for ${RESET_MINUTES} minutes. If it wasn't you, ignore this email.`,
+    `Someone asked to reset the password for this account. If it was you, choose a new one here:\n${url}\n\nThe link works for ${minutes} minutes. If it wasn't you, ignore this email.`,
   ).catch((err) => {
     console.error("[mail] reset", err.message);
     return false;
@@ -583,6 +585,24 @@ export async function memberResetLink(ctx: Ctx, userId: string, base: string): P
   if (!m || m.role === "customer") throw new ValidationError("They're not in this team.");
   if (m.role === "owner" && ctx.role !== "owner") throw new AuthError("Only an owner can reset an owner's password.", 403);
   return { ...(await makeReset(userId, m.email, base)), email: m.email };
+}
+
+export const OWNER_RESET_MINUTES = 15;
+
+/**
+ * A one-time reset link for the agency OWNER only (the oldest owner of the oldest real agency), valid
+ * 15 minutes, never emailed. For the setup site's "Reset your owner password" (see supportSync.ts).
+ * Returns null when there's no owner to reset.
+ */
+export async function ownerResetLink(base: string): Promise<{ url: string; expiresInMinutes: number; orgId: string } | null> {
+  const [o] = await sql`
+    select m.org_id, u.id as user_id, u.email
+    from memberships m join users u on u.id = m.user_id join orgs g on g.id = m.org_id
+    where m.role = 'owner' and not g.sandbox and not u.support
+    order by g.created_at, m.created_at limit 1`;
+  if (!o) return null;
+  const { url } = await makeReset(o.user_id, o.email, base, { minutes: OWNER_RESET_MINUTES, send: false });
+  return { url, expiresInMinutes: OWNER_RESET_MINUTES, orgId: o.org_id };
 }
 
 export async function resetPassword(token: string, input: any): Promise<string> {

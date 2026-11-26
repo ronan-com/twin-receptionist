@@ -56,6 +56,7 @@ export function SignIn({ signupOpen, firstRun, onSignedIn }: { signupOpen: boole
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [sent, setSent] = useState(false);
+  const [noMail, setNoMail] = useState(false);
   const { busy, error, run } = useAction();
 
   function submit(event: FormEvent) {
@@ -64,7 +65,8 @@ export function SignIn({ signupOpen, firstRun, onSignedIn }: { signupOpen: boole
       if (mode === "signin") await auth.signIn(email, password);
       else if (mode === "signup") await auth.signUp({ name, email, password, orgName });
       else {
-        await auth.forgot(email);
+        const r = await auth.forgot(email);
+        setNoMail(r.emailsSetUp === false);
         setSent(true);
         return;
       }
@@ -77,9 +79,15 @@ export function SignIn({ signupOpen, firstRun, onSignedIn }: { signupOpen: boole
       <AuthFrame title="Reset your password" intro="We'll email you a link to choose a new one.">
         {sent ? (
           <div className="stack">
-            <div className="notice notice-ok" role="status">
-              If there's an account for {email}, a reset link is on its way. It works for an hour.
-            </div>
+            {noMail ? (
+              <div className="notice notice-error" role="status">
+                Email isn't set up for this dashboard yet. Ask your agency owner for a reset link — or, if you're the owner, open your setup link and choose 'Reset your owner password'. Business logins: ask your agency for a reset link.
+              </div>
+            ) : (
+              <div className="notice notice-ok" role="status">
+                If there's an account for {email}, a reset link is on its way. It works for an hour.
+              </div>
+            )}
             <button type="button" className="link" onClick={() => setMode("signin")}>
               Back to sign in
             </button>

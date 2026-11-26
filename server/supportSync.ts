@@ -1,7 +1,7 @@
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { AuthError, hashToken, requireRole, sessionCookie, singleAgency, type Ctx } from "./accounts";
+import { AuthError, hashToken, ownerResetLink, requireRole, sessionCookie, singleAgency, type Ctx } from "./accounts";
 import { assistantConfigured } from "./assistant";
 import { audit } from "./audit";
 import { resolveBrand } from "./brand";
@@ -352,10 +352,32 @@ const tooManyFailures = () => {
 const noStore = { "cache-control": "no-store" };
 const reply = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { ...noStore, "content-type": "application/json" } });
 
+let resets: number[] = [];
+const OWNER_RESET_LIMIT = 5; // per 10 minutes
+/**
+ * The owner's own "locked out" way back in, for copies with no email set up. The buyer opens their private
+ * setup link, the setup site calls this with the call token, and gets a 15-minute, single-use reset link for
+ * the agency OWNER (never anyone else). It does NOT depend on Support access: it is the owner resetting
+ * their own account. Audited, and rate-limited.
+ */
+async function ownerResetRoute(req: Request): Promise<Response> {
+  if (!singleAgency()) return reply({ ok: false, error: "not_supported", message: "Owner reset is only for a single-agency copy." }, 404);
+  const cut = Date.now() - 10 * 60_000;
+  resets = resets.filter((t) => t > cut);
+  if (resets.length >= OWNER_RESET_LIMIT) return reply({ ok: false, error: "rate_limited", message: "Too many reset requests. Wait a few minutes and try again." }, 429);
+  resets.push(Date.now());
+  const base = publicBase() || new URL(req.url).origin;
+  const r = await ownerResetLink(base);
+  if (!r) return reply({ ok: false, error: "not_supported", message: "There's no agency owner to reset yet." }, 404);
+  await audit(null, "support.owner_reset", { summary: "Owner password reset via setup link" }, { orgId: r.orgId });
+  return reply({ ok: true, url: r.url, expiresInMinutes: r.expiresInMinutes });
+}
+
 /**
  * No session: the setup site calls these with the shared token, or a browser opens a one-time link.
  *   POST /api/support/ping         "Sync now": the snapshot, straight back (or {sharing:false})
  *   POST /api/support/login-link   a one-time link, only while Support access is on
+ *   POST /api/support/owner-reset-link   a 15-minute, one-time password-reset link for the owner (no Support access needed)
  *   GET  /api/support/in/<token>   spends the link, signs in as support, goes to the dashboard
  */
 export async function supportPublicRoutes(req: Request, path: string, method: string): Promise<Response | null> {
@@ -369,13 +391,14 @@ export async function supportPublicRoutes(req: Request, path: string, method: st
     }
     return new Response(null, { status: 302, headers: { ...noStore, location: "/admin", "set-cookie": sessionCookie(req, session) } });
   }
-  if (path !== "/api/support/ping" && path !== "/api/support/login-link") return null;
+  if (path !== "/api/support/ping" && path !== "/api/support/login-link" && path !== "/api/support/owner-reset-link") return null;
   if (method !== "POST") return reply({ error: "Not found" }, 404);
   if (tooManyFailures()) return reply({ error: "Too many tries." }, 429);
   if (!tokenOk(req)) {
     failures.push(Date.now());
     return reply({ error: "Not allowed." }, 401);
   }
+  if (path === "/api/support/owner-reset-link") return ownerResetRoute(req);
   if (path === "/api/support/ping") {
     if (!(await syncEnabled())) return reply({ ok: true, sharing: false });
     return reply({ ok: true, sharing: true, snapshot: await buildSnapshot() });

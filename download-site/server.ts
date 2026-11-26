@@ -19,11 +19,11 @@ import { ANY_MOCK, CODE_RE, CONFIG, db, extractCode, findBuyer, productionGuard,
 import { loadContent } from "./content";
 import { chatEnabled, chatReply, parseChatBody } from "./chat";
 import { badCodePage, demoOfflinePage, forbiddenPage, guidePage, homePage, limitedPage, notFoundPage, revokedPage } from "./pages";
-import { actions, allow, canView, firstOpen, pBundle, pExit, pLog, pNext, startTicker } from "./setup";
+import { actions, allow, appUrlOf, canView, firstOpen, pBundle, pExit, pLog, pNext, startTicker } from "./setup";
 import { STEPS, csrfOk, getSetup, logRead, newSessionId, siteKey, updateSetup, type StepId } from "./store";
 import { statusRev, wizardPage } from "./wizard";
 import { adminRoute } from "./admin-web";
-import { MAX_SYNC_BODY, bearerOf, buyerBySyncToken, receive } from "./sync";
+import { MAX_SYNC_BODY, bearerOf, buyerBySyncToken, ownerResetLink, receive } from "./sync";
 import { DEMO, DEMO_KEY, DemoOffline, demoBuyer, demoDashboard } from "./demo";
 
 if ((process.env.PREVIEW_JUMP || "").trim() === "1" && !ANY_MOCK) {
@@ -303,6 +303,19 @@ async function handle(req: Request, srv: Bun.Server): Promise<Response> {
     const f = await readForm(req);
     if (!f) return respond("Too large", 413);
     if (!sameOrigin(req) || !sid || !csrfOk(sid, m[1], f.t || "")) return html(forbiddenPage(), 403);
+    // "Locked out? Reset your owner password": the one-time link is shown on this response only, never saved.
+    if (m[2] === "owner-reset") {
+      const s0 = getSetup(b.id);
+      const wait = allow(`ownerreset:${b.id}`, 5, 10 * 60_000);
+      const r = s0.phase !== "done" ? null : wait ? null : await ownerResetLink(b.id, appUrlOf(s0));
+      const flash = !r
+        ? { kind: "err" as const, text: wait ? `That was a lot of tries. Wait ${Math.ceil(wait / 60)} minutes and try again.` : "Your agency isn't finished yet." }
+        : r.ok
+          ? { kind: "ok" as const, text: `Here is your reset link. It works once and runs out in ${r.minutes} minutes. Your agency records this in its audit log.`, link: r.url }
+          : { kind: "err" as const, text: r.message };
+      console.log(`[owner-reset] buyer ${b.id}: ${r ? (r.ok ? "link issued" : r.reason) : "not allowed"}`);
+      return html(wizardPage(b, getSetup(b.id), m[1], sid, "done", flash));
+    }
     const act = actions[m[2]];
     if (!act) return html(notFoundPage(), 404);
     const before = getSetup(b.id).step;

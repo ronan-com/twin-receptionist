@@ -539,9 +539,17 @@ function done(c: Ctx) {
   <div>${icon("check")}<span>Keep your ${s.email?.mode === "resend" ? "Resend key" : "email login"}: your server sends email with it.</span></div>
   <div>${icon("check")}<span>${s.sshKeyAdded ? `Log in to the server with your SSH key: <code>ssh root@${esc(s.ip || "")}</code>` : "Server login: DigitalOcean emailed you its root password, or use the droplet's Console."}</span></div>
 </div>
+${lockedOut(c)}
 ${notice("info", "We've deleted every key you gave us. We have no login to your server or accounts. Your agency shares health and usage counts with us (never calls or customer details). That is on by default and you can switch it off in your dashboard, under Settings, then Support. Support access, which would let us sign in to help you, is off unless you turn it on there.")}
 <details class="log"><summary>Show details</summary><pre id="log" data-next="${next}">${esc(text.slice(-60000))}</pre></details>
 ${nav(c, `<a class="btn p" href="${esc(url)}" target="_blank" rel="noopener noreferrer">Open your dashboard ${icon("ext")}</a>`, { back: false })}`;
+}
+
+/** Done screen: for owners with no email set up (or who simply forgot). Asks their agency for a one-time reset link; the answer comes back on screen only. */
+function lockedOut(c: Ctx): string {
+  return `<details class="lockedout"><summary>Locked out? Reset your owner password</summary>
+<p class="hint">If you can't sign in and the reset email never arrives (email may not be set up), press the button. Your agency gives us a one-time link to choose a new password for the owner account (<b>${esc(c.s.brand?.ownerEmail || "your owner email")}</b>). It works once and runs out in 15 minutes. Nobody else's password can be reset this way, and your agency records it in its audit log.</p>
+${mini(c, "owner-reset", `Reset your owner password ${icon("right")}`, "btn o", " data-owner-reset")}</details>`;
 }
 
 /** Done screen: what's still optional, with how to add each one later (their same setup link keeps showing this). */
@@ -551,7 +559,7 @@ function laterCards(c: Ctx, url: string): string {
   const cards: string[] = [];
   const late = (ico: string, title: string, text: string, steps: string[]) =>
     `<div class="xcard late"><div class="xh">${icon(ico)}<b>${title}</b><span class="tag">Optional</span></div><p>${text}</p><details><summary>How to add it later</summary><ol>${steps.map((x) => `<li>${x}</li>`).join("")}</ol></details></div>`;
-  if (!have.email) cards.push(late("mail", "Your own email", "Until then, invite links show on screen for you to copy and send yourself. Forgot your own password? The reset link is printed in the app's Logs in Railway.", [
+  if (!have.email) cards.push(late("mail", "Your own email", "Until then, invite links show on screen for you to copy and send yourself. Forgot your own password? Use <b>Locked out? Reset your owner password</b> on this page.", [
     "Make a Resend account and a domain you own (Resend sends from your domain).",
     `Open your dashboard, then <b>Settings</b>, then <b>Email and calendars</b>.`,
     "Paste your mail server address, like <code>smtps://resend:YOUR_RESEND_KEY@smtp.resend.com:465</code>, and the address emails come from. Press <b>Send a test</b>.",
@@ -662,6 +670,7 @@ ${pending && s.finishRecords?.length ? `<div class="recbox"><b>Records for ${esc
   ${have.email ? `<div>${icon("check")}<span>${s.email?.mode === "resend" ? "Keep your Resend account: your agency sends email through it with its own send-only key." : "Keep your email login: your agency sends email with it."}</span></div>` : ""}
   <div>${icon("check")}<span>Turn on backups for the Postgres volume in Railway (its Backups tab).</span></div>
 </div>
+${lockedOut(c)}
 ${laterCards(c, shown)}
 ${notice("info", "We've deleted every key you gave us. We have no login to your Railway project or accounts. Your agency shares health and usage counts with us (never calls or customer details). That is on by default and you can switch it off in your dashboard, under Settings, then Support. Support access, which would let us sign in to help you, is off unless you turn it on there.")}
 <details class="log"><summary>Show details</summary><pre id="log" data-next="${next}">${esc(text.slice(-60000))}</pre></details>
@@ -720,6 +729,9 @@ export function wizardPage(b: Buyer, s: SetupData, code: string, sid: string, vi
   const lockNote = locked(s) && s.phase !== "done" && !["install", "done", "welcome"].includes(view)
     ? notice("info", `Your server is already built with these settings. <a href="/setup/${esc(code)}?step=install">Go to Install</a>`) : "";
   const fl = flash ? notice(flash.kind === "ok" ? "ok" : flash.kind === "err" ? "err" : "info", esc(flash.text)).replace('class="notice ', 'class="notice flash ') : "";
+  // A one-time link (owner password reset): a big button, shown once and never stored.
+  const flLink = flash?.link && /^https?:\/\/[^\s"'<>]+$/.test(flash.link)
+    ? `<p class="resetlink"><a class="btn p big" href="${esc(flash.link)}" target="_blank" rel="noopener noreferrer" data-owner-reset-link>Set a new password ${icon("ext")}</a></p>` : "";
   const title = `${META[view].title} · Set up ${s.brand?.productName || CONFIG.productName}`;
   return `<!doctype html>
 <html lang="en-AU">
@@ -743,7 +755,7 @@ ${live ? `<noscript><meta http-equiv="refresh" content="8"></noscript>` : ""}
 ${rail(c)}
 <main>
   <div class="phonebar"><div class="lab"><span>Step ${i + 1} of ${mainSteps.length}</span><b>${META[view].title}</b></div><progress class="bar" max="${mainSteps.length}" value="${i + 1}">${i + 1} of ${mainSteps.length}</progress></div>
-  <section class="card step-${view}">${b.demo === 1 ? notice("info", "<b>Test run.</b> Every account here is pretend: press Continue on each step. Nothing real is connected.") : ""}${lockNote}${withFlash(screenOf(c), fl)}</section>
+  <section class="card step-${view}">${b.demo === 1 ? notice("info", "<b>Test run.</b> Every account here is pretend: press Continue on each step. Nothing real is connected.") : ""}${lockNote}${(flLink ? fl + flLink + screenOf(c) : withFlash(screenOf(c), fl))}</section>
   <p class="foot">${icon("shield")} Your keys are stored encrypted and deleted once your install is done.</p>
 </main>
 </div>

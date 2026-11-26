@@ -206,7 +206,7 @@ export interface SetupData {
   installedAt?: string;
   purgedAt?: string;
   sshKeyAdded?: boolean;
-  flash?: { kind: "ok" | "err" | "info"; text: string; form?: Record<string, string> };
+  flash?: { kind: "ok" | "err" | "info"; text: string; form?: Record<string, string>; link?: string };
 }
 
 interface Row { buyer_id: number; data: string; log: string; log_bytes: number; created_at: string; updated_at: string }

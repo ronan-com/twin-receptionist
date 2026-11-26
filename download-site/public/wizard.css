@@ -325,3 +325,9 @@ input[type=color] { display: block; width: 64px; height: 40px; padding: 2px; bor
 .whatsnew ul { margin: 4px 0 8px 18px; padding: 0; }
 .whatsnew .nv > span { display: block; font-size: 12px; color: var(--muted); margin-top: 6px; }
 .verline { margin: 12px 0 0; }
+
+.lockedout { margin: 18px 0; border: 1px solid var(--line, #e3e6ee); border-radius: 12px; padding: 12px 16px; background: #fff; }
+.lockedout summary { cursor: pointer; font-weight: 600; }
+.lockedout form { margin-top: 10px; }
+.resetlink { margin: 14px 0 4px; }
+.resetlink .btn.big { width: 100%; min-height: 52px; font-size: 16px; justify-content: center; }

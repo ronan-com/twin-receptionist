@@ -105,7 +105,7 @@ const MODEL = { provider: process.env.VAPI_MODEL_PROVIDER || "openai", model: pr
 export const UNMAPPED = {
   silenceLimit: "Vapi doesn't have a setting for ending a call after silence, so that limit isn't applied.",
   voicemail: "Vapi can't detect voicemail on a transfer, so a transfer that reaches voicemail isn't pulled back.",
-  textBack: "Texting isn't available on Vapi, so texts after calls aren't sent.",
+  textBack: "Vapi has no texting of its own. Texts go out from a Twilio mobile number that this receptionist answers: connect Twilio under Connections, then add a Twilio mobile number under Call handling.",
 };
 
 export function vapiAssistantBody(b: VapiBuild) {

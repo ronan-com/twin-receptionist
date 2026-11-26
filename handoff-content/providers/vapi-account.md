@@ -16,13 +16,15 @@ Vapi is the voice service your receptionists can run on instead of Telnyx. The a
 3. Decide where your phone numbers will come from (see below).
 
 ## About phone numbers
-Vapi gives away free **US** numbers only, and only for inbound calls. It does not sell Australian numbers. For an Australian number, keep one you already have with **Twilio** or **Telnyx**: you connect it to each receptionist from the app, and Vapi answers it. Your number provider keeps billing you for the number itself.
+Vapi gives away free **US** numbers only, and only for inbound calls. It does not sell Australian numbers. For an Australian number, use **Twilio**: add your Twilio Account SID and Auth Token (on the Phones step, or later under Connections), then buy a number or pick one you already have from each receptionist's page. You can also bring a number from **Telnyx**. Your number provider keeps billing you for the number itself. Australian numbers on Twilio need a regulatory bundle (business details and proof of address) approved in the Twilio console first.
 
 ## What's different from Telnyx
-- Texting after calls and the text simulator are Telnyx features, so they're switched off for Vapi receptionists.
+- Texts after calls, reminders and review requests go out through Twilio, from a Twilio mobile number the receptionist answers. Without one they stay off. The text simulator is a Telnyx feature and isn't available.
 - A transfer that reaches voicemail isn't pulled back, and the silence limit isn't applied: Vapi has no setting for either.
 - Email replies still use Telnyx's AI service. Add a Telnyx key on the phones step if you want them.
 
 ## Watch out for
 - Vapi's own voices are American, British, Canadian or Indian. The Australian voices on offer come from Azure, through Vapi.
 - If your credit runs out, receptionists stop answering until you top up.
+
+> **Stuck?** No Australian number from Vapi is normal: connect Twilio (or bring a Telnyx number) and pick the number from each receptionist's page. Twilio says it needs a bundle: finish the regulatory bundle in the Twilio console first.

@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Phone, Search } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -8,9 +8,10 @@ import { PageHeader, Panel, MetricCard, MetricGrid, ErrorState } from "@/compone
 import { DataTable, TableToolbar, type Column } from "@/components/app/DataTable";
 import { StatusBadge } from "@/components/app/StatusBadge";
 import { fmtNumber } from "@/lib/app/format";
-import { adminNumbersQuery, adminBusinessesQuery } from "@/lib/app/queries";
+import { adminAgentsQuery, adminNumbersQuery, adminBusinessesQuery } from "@/lib/app/queries";
 import type { AdminNumberRow } from "@/lib/api/console";
 import { BizCell, useConsole } from "./-shared";
+import { OwnedNumbers } from "./-own-numbers";
 import { PRODUCT } from "@/lib/app/product";
 
 export const Route = createFileRoute("/_authenticated/admin/phone-numbers")({
@@ -19,7 +20,11 @@ export const Route = createFileRoute("/_authenticated/admin/phone-numbers")({
 });
 
 function AdminNumbersPage() {
-  const { platform, single } = useConsole();
+  const { platform, single, canManage, ws } = useConsole();
+  const qc = useQueryClient();
+  // Numbers already on the agency's own Telnyx account can be connected here. (Not on the platform's key: it sees every agency's numbers.)
+  const canUseOwn = canManage && !platform && (ws.session?.telnyx === "own" || single);
+  const agentsQ = useQuery({ ...adminAgentsQuery(), enabled: canUseOwn });
   const q = useQuery(adminNumbersQuery());
   const bizQ = useQuery(adminBusinessesQuery());
   const [search, setSearch] = useState("");
@@ -82,6 +87,16 @@ function AdminNumbersPage() {
         </TableToolbar>
         <DataTable columns={columns} rows={rows} rowKey={(n) => `${n.business_id}:${n.id}`} loading={q.isPending} empty={{ title: "No numbers yet", description: "Open a client and request a number.", icon: Phone }} />
       </Panel>
+      {canUseOwn ? (
+        <Panel title="Numbers already on your Telnyx account" description="Numbers you own in Telnyx that no receptionist answers yet. Connect one to a receptionist to start taking calls on it.">
+          <OwnedNumbers
+            receptionists={(agentsQ.data ?? []).map((a) => ({ id: a.id, name: `${a.name} (${a.business.name})` }))}
+            onChanged={async () => {
+              await Promise.all([q.refetch(), bizQ.refetch(), qc.invalidateQueries({ queryKey: ["admin"] })]);
+            }}
+          />
+        </Panel>
+      ) : null}
       <p className="text-[11.5px] text-ink-muted">Calls to a number always go to the receptionist. Forwarding and voicemail routing aren't available.</p>
     </div>
   );

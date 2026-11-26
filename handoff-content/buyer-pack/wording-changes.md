@@ -1,6 +1,6 @@
 # Wording changes for Jesse to approve
 
-Your materials were written for the Vapi, Supabase and Netlify build, where our team ran the infrastructure. The buyer now sets everything up themselves through a private setup link on setup.chloeeai.co. They connect their own Railway, Telnyx, Resend, domain and (optionally) Google or Microsoft accounts. The wizard installs their dashboard at app.[THEIR DOMAIN], and we keep no access after that.
+Your materials were written for the Vapi, Supabase and Netlify build, where our team ran the infrastructure. The buyer now sets everything up themselves through a private setup link on setup.chloeeai.co. They connect their own Railway, Telnyx, Resend, domain and (optionally) Google or Microsoft accounts. The wizard installs their dashboard at app.[THEIR DOMAIN], and we have no login to their accounts after that. Their app shares health counts with us unless they switch it off, and we can sign in only if they turn Support access on.
 
 Each line below quotes something that's now wrong, then gives the replacement. Tick or change each one.
 
@@ -8,7 +8,7 @@ Each line below quotes something that's now wrong, then gives the replacement. T
 
 | # | Now says | Change to |
 |---|---|---|
-| 1 | "Our team handles the infrastructure." | "The buyer connects their own accounts through a private setup link. Once it's live, we keep no access." |
+| 1 | "Our team handles the infrastructure." | "The buyer connects their own accounts through a private setup link. Once it's live, we have no login to their accounts. Stats sharing is on by default and can be turned off; support access is off unless they turn it on." |
 | 2 | "The buyer should open one owner invitation, set a password and be able to start onboarding centres." | "The buyer opens their setup link, connects their accounts, then creates the owner account at app.[THEIR DOMAIN] and starts adding centres." |
 | 3 | "Connect a Chloe-controlled Vapi assistant and Australian number" | "The buyer buys an Australian number for each centre from their dashboard (Buy a number). It runs on their own Telnyx account." |
 | 4 | "Give the buyer control of the site, forms, hosting, database, phone, calendar, sender, source and recovery." | "Hosting, database, phone, email and calendar are in the buyer's own accounts from the start. Only the website, forms, brand files and business pack need handing over." |
@@ -45,7 +45,7 @@ Each line below quotes something that's now wrong, then gives the replacement. T
 | 20 | "3 Launch the backend: Provision a separate production database and host. Apply migrations, configure authentication and backups, verify email and bootstrap the buyer's owner role." | "3 Run the setup link: connect Railway, Telnyx, Resend, your domain and (optionally) calendars, press Install, then turn on database backups in Railway." |
 | 21 | "Connect the buyer's Vapi workspace, Google tour calendar and verified email sender." | "Buy the centre's number from its page, and connect its Google or Outlook calendar from its Integrations. Email is set up by the wizard." |
 | 22 | "Transfer source and files to a buyer-controlled private folder or repository. Invite the owner to the domain, hosting, database, form and relevant suppliers." | "Put the business pack in a buyer-controlled folder. Hosting, database, phone and email are already in the buyer's name." |
-| 23 | "Agree Jesse's support hours, end date and any continuing access" / "reduce temporary access" | "Agree Jesse's support hours and end date. We keep no software access after install. The buyer deletes the Railway (and Cloudflare, if used) setup tokens." |
+| 23 | "Agree Jesse's support hours, end date and any continuing access" / "reduce temporary access" | "Agree Jesse's support hours and end date. We keep no software access after install except what the buyer chooses: health stats are on by default and can be turned off, and support access is off unless they turn it on. The buyer deletes the Railway (and Cloudflare, if used) setup tokens." |
 | 24 | "The buyer's production URL and login are pending." | "The buyer's dashboard is at app.[THEIR DOMAIN]." |
 
 ## Owner-Operating-Guide.pdf

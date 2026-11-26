@@ -6,6 +6,7 @@ import { greetingOf, ValidationError } from "../prompt";
 import { UI_PRODUCT } from "../product";
 import { currentOrg } from "../telnyx";
 import { VapiError, vapiCredsFor } from "./config";
+import { buyTwilioNumber, ownedTwilioNumbers, parseTwilioInput, requireTwilio, type TwilioCreds } from "../twilio";
 import type { Conversation, VoiceProvider } from "./provider";
 import { toolAllowed } from "./tools";
 import { BOOKING_TOOL_DEFS } from "../booking";
@@ -102,30 +103,52 @@ const toOrder = (n: any): NumberOrder => ({
 
 const E164 = /^\+[1-9]\d{6,14}$/;
 
+/** How Vapi is told to sign in to the agency's Twilio account for an imported number. */
+const twilioImportAuth = (c: TwilioCreds) => (c.kind === "key" ? { twilioApiKey: c.user, twilioApiSecret: c.secret } : { twilioAuthToken: c.secret });
+
 /**
- * Brings a number onto the receptionist. input.source is "twilio" (number, accountSid, authToken),
- * "telnyx" (number, apiKey) or "vapi" (areaCode: a free US number, inbound calls only).
+ * Brings a number onto the receptionist. input.source is
+ *  - "twilio": a number (E.164) on the agency's connected Twilio account, or with accountSid + authToken pasted in;
+ *  - "twilio_buy": buys the picked number (phoneNumber, confirm) on the connected Twilio account, then imports it;
+ *  - "telnyx": number, apiKey;
+ *  - "vapi": areaCode (a free US number, inbound calls only).
  */
 export async function attachNumber(client: Business, input: unknown): Promise<NumberOrder> {
   const b = (input ?? {}) as Record<string, unknown>;
   const str = (v: unknown, max = 200) => String(v ?? "").trim().slice(0, max);
   const assistantId = client.assistantId;
   const name = `${client.settings.businessName}`.slice(0, 40);
-  const source = str(b.source, 10);
+  const source = str(b.source, 12);
   if (source === "vapi") {
     const areaCode = str(b.areaCode, 3);
     if (!/^\d{3}$/.test(areaCode)) throw new ValidationError("Enter a 3-digit US area code.");
     return toOrder(await vapi("POST", "/phone-number", { provider: "vapi", numberDesiredAreaCode: areaCode, assistantId, name }));
   }
+  if (source === "twilio_buy") {
+    const creds = await requireTwilio();
+    const bought = await buyTwilioNumber(creds, b, name);
+    try {
+      return toOrder(await vapi("POST", "/phone-number", { provider: "twilio", number: bought.phoneNumber, twilioAccountSid: creds.accountSid, ...twilioImportAuth(creds), smsEnabled: false, assistantId, name }));
+    } catch (err) {
+      if (err instanceof VapiError) {
+        throw new ValidationError(`${bought.phoneNumber} was bought on your Twilio account, but Vapi couldn't connect it (${err.message}). Choose it from "A number I already have" to try again.`);
+      }
+      throw err;
+    }
+  }
   if (source !== "twilio" && source !== "telnyx") throw new ValidationError("Choose where the number comes from: Twilio, Telnyx, or a free US number.");
   const number = str(b.number, 20).replace(/[\s()-]/g, "");
   if (!E164.test(number)) throw new ValidationError("Enter the number with its country code, like +61412345678.");
   if (source === "twilio") {
-    const sid = str(b.accountSid, 60);
-    const token = str(b.authToken, 80);
-    if (!/^AC[0-9a-f]{32}$/i.test(sid)) throw new ValidationError("That isn't a Twilio Account SID. It starts with AC and is 34 characters.");
-    if (!token) throw new ValidationError("Paste the Twilio auth token.");
-    return toOrder(await vapi("POST", "/phone-number", { provider: "twilio", number, twilioAccountSid: sid, twilioAuthToken: token, assistantId, name }));
+    // The agency's connected Twilio account, or credentials pasted in just for this number.
+    if (!str(b.accountSid) && !str(b.apiKeySid)) {
+      const creds = await requireTwilio();
+      const owned = await ownedTwilioNumbers(creds);
+      if (!owned.some((n) => n.phoneNumber === number)) throw new ValidationError("That number isn't on your connected Twilio account.");
+      return toOrder(await vapi("POST", "/phone-number", { provider: "twilio", number, twilioAccountSid: creds.accountSid, ...twilioImportAuth(creds), smsEnabled: false, assistantId, name }));
+    }
+    const pasted = parseTwilioInput(b);
+    return toOrder(await vapi("POST", "/phone-number", { provider: "twilio", number, twilioAccountSid: pasted.accountSid, ...twilioImportAuth({ ...pasted, own: true }), smsEnabled: false, assistantId, name }));
   }
   // Telnyx
   const apiKey = str(b.apiKey, 300);
@@ -201,7 +224,8 @@ export const vapiProvider: VoiceProvider = {
       provider: "vapi",
       buy: false,
       import: true,
-      note: "Vapi only gives away US numbers. For an Australian number, bring one you already have from Twilio or Telnyx and Vapi will answer it.",
+      twilio: true,
+      note: "Vapi only gives away US numbers. For an Australian number, buy or bring one from Twilio (connect it under Connections), or bring one from Telnyx, and Vapi will answer it.",
     }),
     async state(_ctx, client) {
       const list = await vapi<any[]>("GET", "/phone-number?limit=100");

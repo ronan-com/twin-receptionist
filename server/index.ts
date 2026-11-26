@@ -33,6 +33,7 @@ import {
 import { isLocal } from "./auth";
 import { migrate, sql } from "./db";
 import { checkEmail, connectEmail, connectedClientIds, disconnectEmail, emailStatus } from "./email";
+import { SAMPLE_OWNED, attachNumber, detachNumber, ownedUnassigned, sampleOwned } from "./ownNumbers";
 import { checkBuyable, sampleNumbers, searchFor } from "./numbers";
 import { ValidationError, buildInstructions, greetingOf, knowledgeFor, normaliseSettings } from "./prompt";
 import { clientsWithBooking, getClient, getOrgClient, insertClient, listClients, orgOfClient, removeClient, saveClient } from "./store";
@@ -42,20 +43,23 @@ import { callDetail, listCalls } from "./calls";
 import { startCallSync } from "./callsync";
 import { industryKeyOf, workspaceBusinesses } from "./answered";
 import { audit } from "./audit";
+import { startSupportSync, supportPublicRoutes, supportSettingsRoute } from "./supportSync";
 import { OTHER_BRAND, UI_PRODUCT, brandedIndex } from "./product";
 import { agencySnapshot, consoleRoutes, isClientPaused } from "./routes/console";
 import { assistantRoute } from "./assistant";
+import { webchatAdmin, webchatPublic } from "./webchat";
 import { manageRoutes, setManageDeps } from "./routes/manage";
 import { signupRoutes } from "./routes/signup";
 import { automationHooks, automationRoutes } from "./routes/automations";
-import { bookingBlocked, startAutomations } from "./automations";
+import { applyAutomations, bookingBlocked, startAutomations, withAutomations } from "./automations";
 import { workspaceRoutes } from "./routes/workspace";
 import type { ClientAccess, RouteArgs } from "./routes/http";
 import { changeBrand, ownBrand, serveAsset, uploadAsset } from "./brand";
 import { accessibleClients, customerClientId, setFollowUpStage, customersFor, inviteCustomer, removeCustomer, revokeCustomerInvite } from "./customers";
 import { createRequest, declineRequest, listRequests, markDone, pendingCount, pendingRequest, requestsForClient, settleRequests } from "./numberRequests";
 import { createAgency, exitView, inviteAgencyOwner, viewAs, isSuspended, listAgencies, telnyxSettings, updateAgency } from "./agencies";
-import { canBuyNumbers, checkKey, checkVapiKeys, connectPhoneAccount, countCheck, disconnectPhoneAccount, phoneAccount, pretendAccount, requirePhoneAccount } from "./phoneAccount";
+import { canBuyNumbers, canUseOwnNumbers, canUseTwilio, checkKey, checkVapiKeys, connectPhoneAccount, connectTwilio, countCheck, disconnectPhoneAccount, disconnectTwilio, phoneAccount, pretendAccount, requirePhoneAccount, testTwilio, twilioAccount } from "./phoneAccount";
+import { availableTwilioNumbers, isTestTwilio, requireTwilio, twilioNumbersFor, twilioRegulatory } from "./twilio";
 import { previewEmail, sendSimText, startTextSim } from "./simulator";
 import {
   connectFromLink,
@@ -310,7 +314,7 @@ async function numberState(ctx: Ctx, client: Business): Promise<NumberState> {
   // The demo receptionist never asks the carrier.
   if (isDemo(client.assistantId)) {
     const recorded = (client.phoneNumbers ?? []).map((n) => ({ id: n, phoneNumber: n, status: "active", type: typeOfNumber(n) }));
-    return { numbers: recorded, pending: [], balance: null, canBuy: await canBuyNumbers(ctx), requests: await requestsForClient(client.id) };
+    return { numbers: recorded, pending: [], balance: null, canBuy: await canBuyNumbers(ctx), canUseOwn: await canUseOwnNumbers(ctx), requests: await requestsForClient(client.id) };
   }
   const engine = voiceFor(client);
   const { numbers, pending, balance } = await engine.numbers.state(ctx, client);
@@ -319,7 +323,56 @@ async function numberState(ctx: Ctx, client: Business): Promise<NumberState> {
   if (JSON.stringify(current) !== JSON.stringify(client.phoneNumbers ?? [])) {
     await saveClient({ ...client, phoneNumbers: current });
   }
-  return { provider: engine.id, support: engine.numbers.support(), numbers, pending, balance, canBuy: await canBuyNumbers(ctx), requests: await requestsForClient(client.id) };
+  return { provider: engine.id, support: engine.numbers.support(), numbers, pending, balance, canBuy: await canBuyNumbers(ctx), canUseOwn: engine.id === "telnyx" && (await canUseOwnNumbers(ctx)), requests: await requestsForClient(client.id) };
+}
+
+// Numbers on the agency's own Telnyx account that none of its receptionists answers.
+async function ownedNumbers(ctx: Ctx, orgId: string) {
+  if (!(await canUseOwnNumbers(ctx))) throw new AuthError("Only an owner or admin of an agency on its own Telnyx account can use numbers it already owns.", 403);
+  if (await pretendAccount(orgId)) return sampleOwned(await listClients(orgId));
+  return ownedUnassigned(await listClients(orgId));
+}
+
+// Numbers on the agency's connected Twilio account, with the receptionist that answers each, and
+// where Australian numbers stand with Twilio's regulatory bundle (the "waiting for approval" part).
+async function twilioNumbers(ctx: Ctx, orgId: string) {
+  if (!(await canUseTwilio(ctx))) throw new AuthError("Only an owner or admin of an agency with a Twilio account connected can use its numbers. Connect Twilio under Connections.", 403);
+  const creds = await requireTwilio(orgId);
+  const taken = new Map<string, string>();
+  for (const c of await listClients(orgId)) {
+    for (const n of c.phoneNumbers ?? []) taken.set(n, c.settings.receptionistName || c.settings.businessName || "another receptionist");
+  }
+  const [numbers, reg] = await Promise.all([twilioNumbersFor(creds, taken), twilioRegulatory(creds, "AU")]);
+  return { numbers, regulatory: { approved: reg.approved, inReview: reg.inReview, consoleUrl: reg.consoleUrl }, test: isTestTwilio(creds) };
+}
+
+// Connects or releases a number the agency already owns, then refreshes the receptionist's
+// script and tools (the transfer and greeting lines mention its number).
+async function changeOwnNumber(ctx: Ctx, orgId: string, client: Business, action: "attach" | "detach", input: any) {
+  if (!(await canUseOwnNumbers(ctx))) throw new AuthError("Only an owner or admin of an agency on its own Telnyx account can use numbers it already owns.", 403);
+  requireRole(ctx, "admin");
+  if (providerOfClient(client) !== "telnyx") throw new ValidationError("This receptionist runs on Vapi. Bring a Twilio number under Call handling instead.");
+  let movedFrom = "";
+  if (isDemo(client.assistantId)) {
+    // A demo receptionist (local test servers): the number is only recorded.
+    const sample = SAMPLE_OWNED.find((n) => n.id === String(input?.numberId));
+    const number = sample?.phoneNumber ?? client.phoneNumbers?.find((n) => n === String(input?.numberId));
+    if (!number) throw new ValidationError("Choose one of your numbers from the list.");
+    const numbers = action === "attach" ? [...new Set([...(client.phoneNumbers ?? []), number])] : (client.phoneNumbers ?? []).filter((n) => n !== number);
+    await saveClient({ ...client, phoneNumbers: numbers, updatedAt: new Date().toISOString() });
+    await audit(ctx, `number.${action}`, { number, demo: true }, { clientId: client.id });
+  } else if (action === "attach") {
+    const res = await attachNumber(await listClients(orgId), client, input);
+    movedFrom = res.movedFrom;
+    await audit(ctx, "number.attach", { number: res.number.phoneNumber, movedFrom }, { clientId: client.id });
+  } else {
+    const num = await detachNumber(client, input);
+    await audit(ctx, "number.detach", { number: num.phoneNumber }, { clientId: client.id });
+  }
+  const state = await numberState(ctx, client);
+  const fresh = (await getClient(client.id)) ?? client;
+  const automationsError = await applyAutomations(fresh, { syncAssistant });
+  return { ...state, movedFrom, ...(automationsError ? { automationsError } : {}) };
 }
 
 // The workspace's manage side (server/routes/manage.ts) uses the same receptionist plumbing.
@@ -425,6 +478,8 @@ async function route(req: Request, server?: { requestIP(r: Request): { address: 
   const vapiEvent = path.match(/^\/hooks\/vapi\/([a-f0-9-]{36})$/);
   if (vapiEvent && method === "POST") return vapiEvents(req, vapiEvent[1]);
   if (path.startsWith("/hooks/automations/")) return (await automationHooks(req, path)) ?? json({ error: "Not found" }, 404);
+  // The website chat widget's public API (CORS-limited to the business's own websites).
+  if (path.startsWith("/api/webchat/")) return (await webchatPublic(req, path, undefined, server)) ?? json({ error: "Not found" }, 404);
 
   // Logos and backgrounds: public by random id.
   const brandAsset = path.match(/^\/brand\/([a-f0-9-]{36})$/);
@@ -444,6 +499,9 @@ async function route(req: Request, server?: { requestIP(r: Request): { address: 
   }
 
   if (path === "/api/health") return json({ ok: true });
+
+  // The setup provider's side of the heartbeat and Support access: a shared token, or a one-time link (server/supportSync.ts).
+  if (path.startsWith("/api/support/") && path !== "/api/support/settings") return (await supportPublicRoutes(req, path, method)) ?? json({ error: "Not found" }, 404);
 
   // ---- Signing in and out (no session needed) ----
   if (path === "/api/session" && method === "GET") {
@@ -513,6 +571,13 @@ async function route(req: Request, server?: { requestIP(r: Request): { address: 
   // ---- Everything below needs a signed-in person ----
   const ctx = await sessionFrom(req);
   if (!ctx) return json({ error: "Please sign in." }, 401);
+
+  // A support sign-in (the setup provider's person, with the owner's permission) can look, never change.
+  if (ctx.viewing?.support && method !== "GET" && method !== "HEAD" && path !== "/api/admin/view-as" && path !== "/api/logout") {
+    return json({ error: "This is a read-only support session. Nothing can be changed." }, 403);
+  }
+  // Settings, "Support": the owner's switches for sharing stats and Support access.
+  if (path === "/api/support/settings") return supportSettingsRoute(req, method, ctx);
 
   // The Answered workspace: the businesses this person works with, in Answered's shapes.
   if (path === "/api/session/businesses" && method === "GET") return json(await workspaceBusinesses(ctx));
@@ -641,6 +706,19 @@ async function route(req: Request, server?: { requestIP(r: Request): { address: 
   // Everything below that talks to Telnyx uses this team's own account.
   enterOrg(orgId);
 
+  // The agency's Twilio account (Connections, optional): checked with Twilio before it's saved.
+  if (path === "/api/twilio-account" || path === "/api/twilio-account/test") {
+    if (ctx.role === "customer" && !ctx.user.platformAdmin) return json({ error: "Not allowed." }, 403);
+    if (path.endsWith("/test")) {
+      if (method !== "POST") return json({ error: "Not found" }, 404);
+      return json(await testTwilio(ctx, await body(req)));
+    }
+    if (method === "GET") return json(await twilioAccount(ctx));
+    if (method === "PUT") return json(await connectTwilio(ctx, await body(req)));
+    if (method === "DELETE") return json(await disconnectTwilio(ctx));
+    return json({ error: "Not found" }, 404);
+  }
+
   // The agency's own phone account (Setup and Connections): its Telnyx key, checked
   // against Telnyx before it's saved. Not for business users.
   if (path === "/api/phone-account" || path === "/api/phone-account/test") {
@@ -663,7 +741,6 @@ async function route(req: Request, server?: { requestIP(r: Request): { address: 
     return json({ error: "Not found" }, 404);
   }
 
-  // ---- The Answered UI's route modules (server/routes/*), wired once here ----
   // The agency help assistant (AI answers about the dashboard, streamed from OpenRouter).
   if (path === "/api/assistant") {
     return assistantRoute(req, ctx, {
@@ -675,7 +752,9 @@ async function route(req: Request, server?: { requestIP(r: Request): { address: 
     });
   }
 
+  // ---- The Answered UI's route modules (server/routes/*), wired once here ----
   if (path.startsWith("/api/automations/")) return (await automationRoutes({ req, url, path, method, ctx, orgId, appUrl: appUrl(req) }, { clientAccessFor, syncAssistant })) ?? json({ error: "Not found" }, 404);
+  if (path.startsWith("/api/website-chat/")) return (await webchatAdmin({ req, url, path, method, ctx, orgId, appUrl: appUrl(req) }, { clientAccessFor, publicUrl })) ?? json({ error: "Not found" }, 404);
   const area = path.match(/^\/api\/(workspace|manage|console)(\/.*)?$/);
   if (area) {
     const base: RouteArgs = { req, url, path, method, ctx, orgId, appUrl: appUrl(req) };
@@ -834,6 +913,17 @@ async function route(req: Request, server?: { requestIP(r: Request): { address: 
     return json({ numbers: await (await voiceForOrg(orgId)).numbers.search(type, country) });
   }
 
+  // Numbers the agency already owns on its Telnyx account (not answering for any receptionist yet).
+  if (path === "/api/numbers/owned" && method === "GET") return json({ numbers: await ownedNumbers(ctx, orgId) });
+
+  // Twilio: the agency's connected account (optional). Its numbers, and numbers it can buy there.
+  if (path === "/api/numbers/twilio" && method === "GET") return json(await twilioNumbers(ctx, orgId));
+  if (path === "/api/numbers/twilio/available" && method === "GET") {
+    if (!(await canUseTwilio(ctx))) throw new AuthError("Connect your Twilio account under Connections first.", 403);
+    const { country, type } = searchFor(url.searchParams.get("country"), url.searchParams.get("type"));
+    return json({ numbers: await availableTwilioNumbers(await requireTwilio(orgId), type, country) });
+  }
+
   if (path === "/api/clients") {
     if (method === "GET") return json({ clients: await listClients(orgId) });
     if (method === "POST") {
@@ -865,7 +955,7 @@ async function route(req: Request, server?: { requestIP(r: Request): { address: 
   }
 
   const match = path.match(
-    /^\/api\/clients\/([a-f0-9-]{36})(\/calls(?:\/([^/]+)\/messages)?|\/numbers|\/number-requests|\/email|\/email\/check|\/texting|\/texting\/numbers|\/texting\/test|\/simulator\/texts|\/simulator\/texts\/send|\/simulator\/email|\/booking|\/booking\/test|\/booking\/events\/[a-f0-9-]{36}|\/calendar|\/calendar\/signin\/(?:google|microsoft)|\/connect-link)?$/,
+    /^\/api\/clients\/([a-f0-9-]{36})(\/calls(?:\/([^/]+)\/messages)?|\/numbers|\/numbers\/(?:owned|attach|detach)|\/number-requests|\/email|\/email\/check|\/texting|\/texting\/numbers|\/texting\/test|\/simulator\/texts|\/simulator\/texts\/send|\/simulator\/email|\/booking|\/booking\/test|\/booking\/events\/[a-f0-9-]{36}|\/calendar|\/calendar\/signin\/(?:google|microsoft)|\/connect-link)?$/,
   );
   if (match) {
     // Another organisation's receptionist looks exactly like one that doesn't exist.
@@ -895,7 +985,7 @@ async function route(req: Request, server?: { requestIP(r: Request): { address: 
       // Texting is a Telnyx feature: a Vapi receptionist has none.
       if (providerOfClient(client) === "vapi") {
         if (method === "GET") return json({ enabled: false, numbers: [], waiting: [] });
-        throw new ValidationError("Texting isn't available on Vapi.");
+        throw new ValidationError("Telnyx texting isn't used with Vapi. Follow-up texts go out from a Twilio number instead.");
       }
       if (method === "GET") return json(await textingState(client));
       if (method === "POST") {
@@ -903,7 +993,7 @@ async function route(req: Request, server?: { requestIP(r: Request): { address: 
         return json(await textingState(client));
       }
     } else if (match[2] === "/texting/numbers") {
-      if (providerOfClient(client) === "vapi") throw new ValidationError("Texting isn't available on Vapi.");
+      if (providerOfClient(client) === "vapi") throw new ValidationError("Telnyx texting isn't used with Vapi. Follow-up texts go out from a Twilio number instead.");
       if (method === "POST") return json(await connectNumberForTexts((await getClient(client.id)) ?? client, await req.json()));
     } else if (match[2] === "/connect-link") {
       if (method === "POST") return json(await createConnectLink(client));
@@ -949,7 +1039,7 @@ async function route(req: Request, server?: { requestIP(r: Request): { address: 
       }
     } else if ((match[2] === "/simulator/texts" || match[2] === "/simulator/texts/send" || match[2] === "/texting/test") && providerOfClient(client) === "vapi") {
       // The text simulator and test texts run on Telnyx's chat and messaging.
-      throw new ValidationError("Texting isn't available on Vapi.");
+      throw new ValidationError("Telnyx texting isn't used with Vapi. Follow-up texts go out from a Twilio number instead.");
     } else if (match[2] === "/simulator/texts") {
       if (method === "POST") return json(await startTextSim(client));
     } else if (match[2] === "/simulator/texts/send") {
@@ -964,26 +1054,37 @@ async function route(req: Request, server?: { requestIP(r: Request): { address: 
         // Doesn't ask the carrier: the request is saved either way.
         return json({ requests: await requestsForClient(client.id) }, 201);
       }
+    } else if (match[2] === "/numbers/owned") {
+      if (method === "GET") return json({ numbers: await ownedNumbers(ctx, orgId) });
+    } else if (match[2] === "/numbers/attach" || match[2] === "/numbers/detach") {
+      if (method === "POST") return json(await changeOwnNumber(ctx, orgId, client, match[2] === "/numbers/attach" ? "attach" : "detach", await req.json()));
     } else if (match[2] === "/numbers") {
       if (method === "GET") return json(await numberState(ctx, client));
       if (method === "POST") {
         // Numbers cost money every month. On the platform's account, agencies ask
         // (number-requests) and the platform team buys; on its own account an agency buys.
-        if (!(await canBuyNumbers(ctx))) throw new AuthError("Request a number and we'll set it up.", 403);
+        const input = (await req.json()) as { source?: unknown; accountSid?: unknown; apiKeySid?: unknown; phoneNumber?: unknown; number?: unknown; confirm?: unknown };
+        // A Twilio number on the agency's connected Twilio account: the agency pays Twilio, so it's the
+        // agency's owners and admins whatever the phone account behind the voice engine is.
+        const fromTwilio = typeof input?.source === "string" && input.source.startsWith("twilio") && !input.accountSid && !input.apiKeySid;
+        if (fromTwilio) {
+          if (!isDemo(client.assistantId) && providerOfClient(client) !== "vapi") throw new ValidationError("Twilio numbers work with the Vapi voice engine. This receptionist runs on Telnyx.");
+          if (!(await canUseTwilio(ctx))) throw new AuthError("Connect your Twilio account under Connections first. Owners and admins can do that.", 403);
+        } else if (!(await canBuyNumbers(ctx))) throw new AuthError("Request a number and we'll set it up.", 403);
         requireRole(ctx, "admin");
         // A demo receptionist (test lab, local test servers): nothing is bought, the number is only recorded.
         if (isDemo(client.assistantId)) {
-          const picked = (await req.json()) as { phoneNumber?: unknown; confirm?: unknown };
-          const number = String(picked.phoneNumber ?? "");
+          const picked = input;
+          const number = String(picked.phoneNumber ?? picked.number ?? "");
           checkBuyable(number);
-          if (picked.confirm !== true) throw new ValidationError("Confirm the purchase first.");
+          // A number the agency already has costs nothing new; a purchase needs its confirmation.
+          if (input.source !== "twilio" && picked.confirm !== true) throw new ValidationError("Confirm the purchase first.");
           const withNumber = { ...client, phoneNumbers: [...new Set([...(client.phoneNumbers ?? []), number])], updatedAt: new Date().toISOString() };
           await saveClient(withNumber);
           if (singleAgency()) await settleRequests(client.id, number);
           await audit(ctx, "number.buy", { number, demo: true }, { clientId: client.id });
           return json({ order: { id: `demo-${number}`, status: "success", requirementsMet: true, phoneNumbers: [number], createdAt: withNumber.updatedAt }, ...(await numberState(ctx, withNumber)) }, 201);
         }
-        const input = (await req.json()) as { source?: unknown };
         // Vapi: a number the agency already has is brought over (import); Telnyx: bought.
         const order = await (voiceFor(client).id === "vapi" ? voiceFor(client).numbers.attach(client, input) : voiceFor(client).numbers.buy(client, input));
         await audit(ctx, "number.buy", { number: order.phoneNumbers[0] ?? "" }, { clientId: client.id });
@@ -1060,6 +1161,8 @@ startCallSync();
 startAutomations();
 // Vapi receptionists: rewrite the greeting when the business opens or closes (server/voice/vapiHours.ts).
 startVapiHours();
+// Health and usage counts to the setup provider, unless the owner turned it off (server/supportSync.ts).
+startSupportSync();
 
 // Check every connected mailbox once a minute. One at a time, so a slow mail
 // server can't pile up connections.

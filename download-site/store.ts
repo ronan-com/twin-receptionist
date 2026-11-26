@@ -32,8 +32,8 @@ function decrypt(box: string, aad: string): string {
   return Buffer.concat([d.update(b.subarray(28)), d.final()]).toString("utf8");
 }
 
-export type SecretName = "do_token" | "railway_token" | "cf_token" | "telnyx_key" | "vapi_key" | "vapi_public" | "resend_key" | "smtp_password" | "google_secret" | "microsoft_secret";
-export const ALL_SECRETS: SecretName[] = ["do_token", "railway_token", "cf_token", "telnyx_key", "vapi_key", "vapi_public", "resend_key", "smtp_password", "google_secret", "microsoft_secret"];
+export type SecretName = "do_token" | "railway_token" | "cf_token" | "telnyx_key" | "vapi_key" | "vapi_public" | "twilio_token" | "resend_key" | "smtp_password" | "google_secret" | "microsoft_secret";
+export const ALL_SECRETS: SecretName[] = ["do_token", "railway_token", "cf_token", "telnyx_key", "vapi_key", "vapi_public", "twilio_token", "resend_key", "smtp_password", "google_secret", "microsoft_secret"];
 
 export const last4 = (v: string) => (v.length > 8 ? v.slice(-4) : "");
 export const mask = (l4?: string) => (l4 ? `••••${l4}` : "••••");
@@ -135,7 +135,7 @@ export interface SetupData {
     chosen?: boolean;
   };
   // provider: the voice engine chosen on the phones step (missing means Telnyx).
-  phones?: { balance?: string; checked?: boolean; confirmed?: boolean; provider?: "telnyx" | "vapi" };
+  phones?: { balance?: string; checked?: boolean; confirmed?: boolean; provider?: "telnyx" | "vapi"; /** Optional Twilio account (with Vapi): the Account SID; its token is the twilio_token secret. */ twilioSid?: string };
   railway?: { email?: string; workspaceId?: string; workspaceName?: string; plan?: string; confirmed?: boolean };
   /** What we made in the buyer's Railway account (ids only). */
   rw?: {
@@ -160,6 +160,17 @@ export interface SetupData {
   extrasDone?: boolean;
   /** Railway: extras the buyer chose to leave for later. */
   skipped?: { email?: boolean; domain?: boolean; calendars?: boolean };
+  /**
+   * "Update your agency" (Railway, after Done): the buyer pastes a Railway token again and we send the newest
+   * app to the same project. ask = token screen, running = deploying, failed = nothing changed, done = last result.
+   */
+  update?: {
+    phase: "ask" | "running" | "failed" | "done";
+    from?: string; to?: string;
+    envId?: string; appId?: string; varsSet?: boolean;
+    deploymentId?: string; deployStatus?: string; uploadedAt?: string; healthSince?: string;
+    error?: string; startedAt?: string; at?: string; attempt?: number;
+  };
   // the install
   phase: Phase;
   progress?: string[];

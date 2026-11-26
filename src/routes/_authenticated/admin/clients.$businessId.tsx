@@ -20,7 +20,9 @@ import { AutomationChips, AutomationIcon, CallSheet, LinkBox, READ_ONLY_HINT, us
 import { BrandEditor } from "./-brand";
 import { BuyNumber } from "./-buy-number";
 import { ImportNumber } from "./-import-number";
+import { AttachedNumbers } from "./-own-numbers";
 import { TestCall } from "@/components/app/TestCall";
+import { WebsiteChatCard } from "@/components/app/webchat/WebsiteChatCard";
 import { PRODUCT } from "@/lib/app/product";
 
 // A client: one company the agency looks after, with everything under it (its
@@ -594,6 +596,22 @@ function ReceptionistCard({
     onError: (e: Error) => toast.error("Couldn't request a number", { description: e.message }),
   });
   const who = r.business_name || companyName;
+  // An agency owner or admin on its own phone account sees each number as Telnyx reports it (approval status, disconnect).
+  const showOwnNumbers = !readOnly && ownPhone && canManage && r.provider !== "vapi";
+  const plainNumbers = r.numbers.length ? (
+    <ul className="space-y-1.5" data-list="numbers">
+      {r.numbers.map((n) => (
+        <li key={n.id} className="flex items-center justify-between gap-2 text-[13px]">
+          <span className="flex items-center gap-1.5 tabular-nums">
+            <Phone className="h-3.5 w-3.5 text-ink-muted" /> {n.friendly_name}
+          </span>
+          <StatusBadge tone="success">{n.capabilities.sms ? "Calls + texts" : "Calls"}</StatusBadge>
+        </li>
+      ))}
+    </ul>
+  ) : (
+    <p className="text-[12.5px] text-ink-muted">No number yet. You can test it from the browser meanwhile.</p>
+  );
 
   return (
     <Panel
@@ -661,20 +679,7 @@ function ReceptionistCard({
         <div className="min-w-0">
           {!readOnly && !paused && !r.demo_assistant ? <TestCall assistantId={r.provider_agent_id} provider={r.provider} clientId={r.business_id} /> : null}
           <div className="mb-1.5 text-[12.5px] font-medium text-ink">Phone number</div>
-          {r.numbers.length ? (
-            <ul className="space-y-1.5" data-list="numbers">
-              {r.numbers.map((n) => (
-                <li key={n.id} className="flex items-center justify-between gap-2 text-[13px]">
-                  <span className="flex items-center gap-1.5 tabular-nums">
-                    <Phone className="h-3.5 w-3.5 text-ink-muted" /> {n.friendly_name}
-                  </span>
-                  <StatusBadge tone="success">{n.capabilities.sms ? "Calls + texts" : "Calls"}</StatusBadge>
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <p className="text-[12.5px] text-ink-muted">No number yet. You can test it from the browser meanwhile.</p>
-          )}
+          {showOwnNumbers ? <AttachedNumbers clientId={r.id} fallback={plainNumbers} onChanged={onChanged} /> : plainNumbers}
           {r.number_requests.length ? (
             <ul className="mt-3 space-y-1 border-t border-hairline pt-3 text-[12px]" data-list="number-requests">
               {r.number_requests.map((n) => (
@@ -691,11 +696,13 @@ function ReceptionistCard({
           ) : null}
           {!readOnly && ownPhone ? (
             canManage ? (
-              r.provider === "vapi" ? <ImportNumber clientId={r.id} onDone={onChanged} /> : <BuyNumber clientId={r.id} timezone={s.timezone} onBought={onChanged} />
+              r.provider === "vapi" ? <ImportNumber clientId={r.id} timezone={s.timezone} onDone={onChanged} /> : <BuyNumber clientId={r.id} timezone={s.timezone} onBought={onChanged} />
             ) : (
               <p className="mt-3 border-t border-hairline pt-3 text-[12px] text-ink-muted">Ask an owner or admin of your agency to buy a number.</p>
             )
           ) : !readOnly ? (
+            <>
+            {r.provider === "vapi" && canManage && !platform ? <ImportNumber clientId={r.id} timezone={s.timezone} twilioOnly onDone={onChanged} /> : null}
             <form
               className="mt-3 space-y-2 border-t border-hairline pt-3"
               onSubmit={(e) => {
@@ -721,8 +728,12 @@ function ReceptionistCard({
                 </p>
               ) : null}
             </form>
+            </>
           ) : null}
         </div>
+      </div>
+      <div className="mt-4" data-website-chat={r.id}>
+        <WebsiteChatCard clientId={r.id} businessName={who} />
       </div>
     </Panel>
   );

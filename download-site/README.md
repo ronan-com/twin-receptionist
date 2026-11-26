@@ -3,7 +3,9 @@
 The one thing we host for the packaged AI receptionist agency. A buyer (the agency) opens their
 private link, connects their own accounts, clicks **Install**, and the wizard sets their agency
 up in **their** accounts. Nothing to download and nothing to run on the buyer's computer. After
-a successful install we delete every key they gave us and keep no access.
+a successful install we delete every key they gave us and have no login to their accounts. Their
+app sends us a health heartbeat (counts only; on by default, the buyer can switch it off) and we can
+"View as" them only while the buyer has switched on Support access in their app (sync.ts).
 
 Two hosting options, chosen for the whole site with `HOSTING`:
 
@@ -26,6 +28,7 @@ providers.ts       Railway, DigitalOcean, Cloudflare, Telnyx, Resend, SMTP, Goog
 userdata.ts        (DigitalOcean) the droplet's first-boot script; provision/runner.sh runs on it
 content.ts         loads the how-tos (handoff-content/providers/*.md) and the welcome email
 pages.ts           /, /guide, error pages
+chat.ts           the Need help? chat: bubble HTML, what the model is told, OpenRouter call (public/chat.js, chat.css)
 lib.ts             settings, database, buyer codes, bundles, production guard
 admin.ts           command-line admin
 public/            wizard.css + Inter fonts, wizard.js, styles.css (/, /guide), favicon
@@ -37,7 +40,7 @@ deploy/            compose.yml + Caddyfile + .env.example for our small server
 ## The buyer's path (Railway)
 
 `/setup/<code>` (old `/download/<code>` links redirect there). One screen per step; how-tos sit
-behind **Show me how** (from `handoff-content/providers/<id>.md`).
+behind **Show me how** (from `handoff-content/providers/<id>.md`), which opens a side panel: five numbered steps or fewer, a Copy button on anything to paste, and a **Stuck?** line with the usual error and its fix.
 
 **Only Railway and Telnyx are required.** Email (Resend), the buyer's own domain and calendars are
 optional: one **Optional extras** screen sits between Telnyx and Install, with a card for each
@@ -185,7 +188,13 @@ Sessions: random 256-bit id, `HttpOnly`, `SameSite=Strict`, `Path=/admin`, 12 ho
 - **Per buyer**: the link again, which step they're on, which keys we hold (name and last 4 only,
   and only until the install finishes), the redacted install log, their setup **read-only**,
   turn the link off/on, reset their setup, delete the buyer.
-- There is no "log in as buyer": once their agency is live we have no access to it.
+- **Health and View as.** Install sets `SUPPORT_SYNC_URL`, `SUPPORT_SYNC_TOKEN` (we keep its hash), `SUPPORT_CALL_TOKEN`
+  (worked out from the site key, so nothing extra is stored) and `SUPPORT_SELLER_NAME` on the buyer's app. The app POSTs a
+  fixed whitelist of counts and health to `/api/sync` every 15 minutes (token auth, rate limited); the buyers list shows
+  Live/last seen, version, calls 7d and receptionists, and the buyer page has the snapshot, **Sync now** and **View as**.
+  View as asks the app for a one-time link (60 seconds, single use); the app refuses unless the buyer turned Support access
+  on, and writes every link and sign-in to the buyer's audit log. Our clicks are in `support_log`. Agencies installed
+  before this have no token: they sync nothing and can't be viewed.
 
 ## Settings (environment variables)
 
@@ -202,6 +211,7 @@ Sessions: random 256-bit id, `HttpOnly`, `SameSite=Strict`, `Path=/admin`, 12 ho
 | `ADMIN_EMAILS`, `ADMIN_PASSWORD_HASH` | | /admin sign-in (escape each `$` as `$$` in a compose `.env`) |
 | `DEMO_APP_URL`, `DEMO_ADMIN_EMAIL`, `DEMO_ADMIN_PASSWORD` | | Turns on /admin's **Start a test run**: a test buyer whose wizard accepts pretend accounts (no provider is called) and ends on a real branded agency on our team demo app (public `DEMO_APP_URL`, its platform admin sign-in). Unset = no button |
 | `SITE_SMTP_URL`, `SITE_MAIL_FROM` | | Our own mail sender, for welcome emails |
+| `OPENROUTER_API_KEY`, `SETUP_CHAT_MODEL` | (off), `anthropic/claude-sonnet-5.5` | Turns on the **Need help?** chat bubble on every wizard page and /guide (not /admin). Without the key the bubble is hidden and `/chat` answers 404. See "Help chat" |
 | `LOOKUPS_PER_MINUTE`, `REQUESTS_PER_MINUTE`, `CHECKS_PER_10_MIN`, `TEST_EMAILS_PER_HOUR`, `SECRETS_IDLE_DAYS` | 20, 600, 20, 3, 14 | |
 | `DNS_SERVERS` | `1.1.1.1,8.8.8.8` | Public resolvers to ask |
 
@@ -209,13 +219,26 @@ Test only (refused on a public address): `MOCK_RAILWAY`, `MOCK_DO`, `MOCK_CF`, `
 `MOCK_TELNYX`, `MOCK_OAUTH`, `MOCK_PORT_BASE`, `MOCK_APP_PORTS`, `EXTRA_LISTEN`, `PREVIEW_JUMP`,
 `*_API_BASE`, `TEST_SITE`.
 
+## Help chat
+
+When `OPENROUTER_API_KEY` is set, a **Need help?** bubble appears on every wizard page and on `/guide`. It asks
+OpenRouter (`SETUP_CHAT_MODEL`, default `anthropic/claude-sonnet-5.5`) and the system prompt is built on the server from the
+how-tos, the step names, the common errors and which step that buyer is on (from their saved setup). It never
+contains keys, tokens, the buyer's email or their setup code, and what they type is scrubbed of anything key-shaped
+before it's sent. Wizard questions go to `POST /setup/<code>/chat` with the same same-origin and per-session CSRF checks
+as the wizard's forms; `/guide` uses `POST /chat` (same-origin only, no setup context). Limits: 500 characters a
+question, 15 questions per setup code and 30 per IP every 10 minutes, 3000 a day for the whole site. In production set the two
+variables in SSM (`/setupsite/env/OPENROUTER_API_KEY`, `/setupsite/env/SETUP_CHAT_MODEL`) or pass them to `deploy/aws/deploy.sh`.
+Tests: `download-site/test/chat.test.ts` (fake OpenRouter, nothing real is called).
+
 ## Command-line admin
 
 ```bash
 bun download-site/admin.ts add-buyer "Jane Citizen" jane@example.com   # prints her /setup/<code> link
 bun download-site/admin.ts list                                        # buyers and where each is
 bun download-site/admin.ts revoke|restore|reset <code or link>
-bun download-site/admin.ts publish <selfhost-bundle.tgz> <version>     # the app new installs get
+bun download-site/admin.ts publish <selfhost-bundle.tgz> <version> [notes]   # the app new installs get; notes = text or a file, one change per line
+bun download-site/admin.ts notes <version> <notes>                     # set or change a published version's release notes
 bun download-site/admin.ts admin-link you@yourcompany.com              # one-time /admin sign-in
 bun download-site/admin.ts admin-hash                                  # ADMIN_PASSWORD_HASH
 bun download-site/admin.ts backup [file]                               # consistent copy of site.db
@@ -228,8 +251,18 @@ app source that goes to buyers:
 
 ```bash
 bash download-site/make-package.sh 1.0.1
-bun download-site/admin.ts publish download-site/out/selfhost-bundle-1.0.1.tgz 1.0.1
+bun download-site/admin.ts publish download-site/out/selfhost-bundle-1.0.1.tgz 1.0.1 "- Calls show in a new timeline
+- Fixes the booking reminder time"
 ```
+
+### Updating buyers who are already installed (Railway)
+
+Publishing also makes every installed buyer's own setup link show **"Your agency is on version X. Version Y is
+available"** with the release notes above. **Update now** asks them to paste a Railway token again, sends the
+newest app to the same project and service (database and all existing variables untouched; only new variables
+the version needs are added), waits for `/api/health`, records the version, then deletes the token. If it fails
+Railway keeps the old deployment running and they press Try again. /admin shows each buyer's installed version
+and an "Update available" pill; to tell a buyer, send them their setup link (the buyer page has a copy button).
 
 ## Run it for real (production)
 

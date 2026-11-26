@@ -12,7 +12,7 @@ import { useWorkspace } from "@/lib/app/workspace";
 import { InitialsAvatar } from "./primitives";
 import { OTHER_BRAND, PRODUCT } from "@/lib/app/product";
 
-export function UserMenu() {
+export function UserMenu({ compact = false }: { compact?: boolean }) {
   const { user, profile, isInternalAdmin, internalRole, isGuestDemo, signOut, console: consoleKind, org, viewing, exitView } = useWorkspace();
   const name = isGuestDemo ? "Demo viewer" : profile?.full_name || user?.user_metadata?.full_name || user?.email?.split("@")[0] || "Account";
   const email = isGuestDemo ? "Sample data · not signed in" : profile?.email || user?.email || "";
@@ -22,18 +22,18 @@ export function UserMenu() {
       <DropdownMenuTrigger asChild>
         <button
           type="button"
-          className="flex w-full items-center gap-2.5 rounded-[5px] px-2 py-1.5 text-left outline-none hover:bg-canvas-2 focus-visible:bg-canvas-2"
+          className={compact ? "flex h-10 w-10 items-center justify-center rounded-full outline-none hover:bg-canvas-2 focus-visible:bg-canvas-2" : "flex w-full items-center gap-2.5 rounded-[5px] px-2 py-1.5 text-left outline-none hover:bg-canvas-2 focus-visible:bg-canvas-2"}
           aria-label="Account menu"
         >
-          <InitialsAvatar name={name} size={28} />
-          <span className="min-w-0 flex-1">
+          <InitialsAvatar name={name} size={compact ? 32 : 28} />
+          <span className={compact ? "hidden" : "min-w-0 flex-1"}>
             <span className="block truncate text-[13px] font-medium text-ink">{name}</span>
             <span className="block truncate text-[11.5px] text-ink-muted">{isGuestDemo ? email : internalRole === "super_admin" ? `${PRODUCT} staff · Platform admin` : consoleKind === "agency" && org ? `${org.name} · Agency` : email}</span>
           </span>
-          <ChevronsUpDown className="h-3.5 w-3.5 shrink-0 text-ink-muted" />
+          {compact ? null : <ChevronsUpDown className="h-3.5 w-3.5 shrink-0 text-ink-muted" />}
         </button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent side="top" align="start" className="w-64">
+      <DropdownMenuContent side={compact ? "bottom" : "top"} align={compact ? "end" : "start"} className="w-64">
         <DropdownMenuLabel className="font-normal">
           <div className="text-[13px] font-medium text-ink">{name}</div>
           <div className="truncate text-[12px] text-ink-muted">{email}</div>
@@ -58,7 +58,7 @@ export function UserMenu() {
             </Link>
           </DropdownMenuItem>
         ) : null}
-        {OTHER_BRAND ? null : (
+        {OTHER_BRAND || !consoleKind ? null : (
           <DropdownMenuItem asChild>
             <Link to="/" className="cursor-pointer">
               <ExternalLink className="mr-2 h-4 w-4" /> answeredai.co

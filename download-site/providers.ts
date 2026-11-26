@@ -317,6 +317,26 @@ export async function checkVapi(key: string, publicKey: string): Promise<Check<{
   return { ok: true, message: "Vapi key works." };
 }
 
+// ======================= Twilio (optional, with Vapi) =======================
+// Another place phone numbers can come from. Checked with one read of the account.
+export async function checkTwilio(accountSid: string, authToken: string): Promise<Check<{ name: string }>> {
+  if (!accountSid && !authToken) return { ok: false, message: "Paste your Twilio Account SID and Auth Token." };
+  if (!/^AC[0-9a-f]{32}$/i.test(accountSid)) return { ok: false, message: "That isn't a Twilio Account SID. It starts with AC and is 34 characters; it's on the front page of the Twilio console." };
+  if (!authToken || hasSpace(authToken)) return { ok: false, message: "Paste the Twilio Auth Token (one line, no spaces)." };
+  const bad = "Twilio didn't accept those: copy the Account SID and Auth Token again from the front page of the Twilio console.";
+  if (CONFIG.mockTelnyx) {
+    // Test mode: never calls Twilio. Only a pretend account passes.
+    return accountSid === "AC" + "0".repeat(32) ? { ok: true, message: "Twilio works (test mode).", name: "Test account" } : { ok: false, message: bad };
+  }
+  const auth = Buffer.from(`${accountSid}:${authToken}`).toString("base64");
+  const { status, json } = await call("Twilio", `https://api.twilio.com/2010-04-01/Accounts/${accountSid}.json`, { headers: { Authorization: `Basic ${auth}`, Accept: "application/json", "User-Agent": UA } }).catch((e) => ({ status: -1, json: { e } }));
+  if (status === -1) return { ok: false, message: (json.e as Error).message };
+  if (status === 401 || status === 403 || status === 404) return { ok: false, message: bad };
+  if (status !== 200) return { ok: false, message: `Twilio had a problem (error ${status}). Wait a minute and try again.` };
+  if (json?.status && json.status !== "active") return { ok: false, message: `That Twilio account is ${json.status}. Reactivate it in Twilio first.` };
+  return { ok: true, message: "Twilio works.", name: String(json?.friendly_name ?? "") };
+}
+
 // ======================= Resend =======================
 async function rs(key: string, method: string, path: string, body?: unknown): Promise<any> {
   const { status, json } = await call("Resend", RESEND_API + path, {

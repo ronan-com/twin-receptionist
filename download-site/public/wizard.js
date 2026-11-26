@@ -2,6 +2,49 @@
 // copy buttons, confirm prompts, no double-submits, and live progress.
 "use strict";
 (function () {
+  // ---- Runs on the guide page too ----
+  // Copy buttons (the ones next to things you paste into a provider)
+  Array.prototype.forEach.call(document.querySelectorAll(".cp .copy[hidden]"), function (b) { b.hidden = false; });
+  document.addEventListener("click", function (e) {
+    const b = e.target.closest("button.copy");
+    if (!b) return;
+    const v = b.getAttribute("data-copy") || "";
+    const done = function () { b.textContent = "Copied"; setTimeout(function () { b.textContent = "Copy"; }, 1500); };
+    if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(v).then(done, function () {});
+    else { const t = document.createElement("textarea"); t.value = v; document.body.appendChild(t); t.select(); try { document.execCommand("copy"); done(); } catch (_) {} t.remove(); }
+  });
+
+  // "Show me how" opens the guide in a side panel (a bottom sheet on a phone) instead of pushing the page down.
+  let panel = null, scrim = null, opener = null;
+  function closePanel() {
+    if (!panel) return;
+    panel.remove(); scrim.remove(); panel = scrim = null;
+    document.body.classList.remove("howopen");
+    if (opener) { opener.focus(); opener = null; }
+  }
+  document.addEventListener("click", function (e) {
+    const sum = e.target.closest("details.how > summary");
+    if (!sum) return;
+    e.preventDefault();
+    closePanel();
+    const box = sum.parentElement.querySelector(".howbox");
+    opener = sum;
+    scrim = document.createElement("div"); scrim.className = "howscrim"; scrim.addEventListener("click", closePanel);
+    panel = document.createElement("aside"); panel.className = "howpanel"; panel.setAttribute("role", "dialog"); panel.setAttribute("aria-modal", "true");
+    const title = sum.parentElement.getAttribute("data-title") || "Show me how";
+    panel.setAttribute("aria-label", title);
+    const head = document.createElement("header"), t = document.createElement("b"), x = document.createElement("button");
+    t.textContent = title; x.type = "button"; x.className = "howclose"; x.setAttribute("aria-label", "Close"); x.textContent = "\u00d7"; x.addEventListener("click", closePanel);
+    head.appendChild(t); head.appendChild(x);
+    const body = document.createElement("div"); body.className = "howbody"; body.innerHTML = box.innerHTML;
+    if (body.querySelectorAll(".howpart").length > 1) panel.classList.add("multi");
+    Array.prototype.forEach.call(body.querySelectorAll(".cp .copy[hidden]"), function (b) { b.hidden = false; });
+    panel.appendChild(head); panel.appendChild(body);
+    document.body.appendChild(scrim); document.body.appendChild(panel); document.body.classList.add("howopen");
+    x.focus();
+  });
+  document.addEventListener("keydown", function (e) { if (e.key === "Escape") closePanel(); });
+
   const root = document.querySelector(".wiz");
   if (!root) return;
 
@@ -41,16 +84,6 @@
     });
     if (rm) rm.addEventListener("click", function () { set(""); lf.value = ""; note.textContent = "No logo. You can add one later in Settings."; });
   }
-
-  // Copy buttons
-  document.addEventListener("click", function (e) {
-    const b = e.target.closest("button.copy");
-    if (!b) return;
-    const v = b.getAttribute("data-copy") || "";
-    const done = function () { b.textContent = "Copied"; setTimeout(function () { b.textContent = "Copy"; }, 1500); };
-    if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(v).then(done, function () {});
-    else { const t = document.createElement("textarea"); t.value = v; document.body.appendChild(t); t.select(); try { document.execCommand("copy"); done(); } catch (_) {} t.remove(); }
-  });
 
   // Confirm prompts and no double-submits
   document.addEventListener("submit", function (e) {

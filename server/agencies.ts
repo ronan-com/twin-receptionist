@@ -77,7 +77,11 @@ export async function listAgencies(ctx: Ctx): Promise<Agency[]> {
 export async function viewAs(ctx: Ctx, input: any): Promise<void> {
   const orgId = String(input?.orgId ?? "");
   const clientId = input?.clientId ? String(input.clientId) : null;
-  if (!ctx.user.platformAdmin) {
+  if (ctx.viewing?.support) {
+    // The setup provider's support person: one of this agency's businesses at a time, never another agency.
+    if (!clientId) throw new AuthError("Choose one of the businesses to view.", 403);
+    if (orgId !== ctx.org?.id) throw new AuthError("That business isn't in this agency.", 403);
+  } else if (!ctx.user.platformAdmin) {
     // Agency owners and admins may see one of their own clients' workspaces (read-only),
     // never another agency and never an agency-level view.
     if (ctx.viewing) throw new AuthError("Exit the current view first.", 403);

@@ -1,4 +1,4 @@
-import type { PhoneAccount, VoiceProviderId } from "../src/lib/shared";
+import type { PhoneAccount, TwilioAccount, VoiceProviderId } from "../src/lib/shared";
 import { AuthError, requireRole, singleAgency, type Ctx } from "./accounts";
 import { audit } from "./audit";
 import { iso, sql } from "./db";
@@ -8,6 +8,7 @@ import { seal, unseal } from "./secrets";
 import { TelnyxError, forgetKey, telnyx } from "./telnyx";
 import { VapiError, accountMode, asProvider, forgetVapiKey, installProvider, platformVapi, providerOfOrg } from "./voice/config";
 import { checkVapiKey, vapi } from "./voice/vapi";
+import { TEST_SID, TEST_TOKEN, checkTwilio, clearTwilio, isTestTwilio, parseTwilioInput, saveTwilio, twilioCredsFor } from "./twilio";
 
 // An agency's own phone account: its Telnyx API key (or, when it chooses Vapi, its Vapi
 // private and public keys), checked against the provider and kept sealed (orgs.telnyx_key,
@@ -88,6 +89,21 @@ export async function canBuyNumbers(ctx: Ctx): Promise<boolean> {
   // SINGLE_AGENCY: the agency's owners and admins buy straight on the server's key.
   if (singleAgency()) return mode !== "none";
   return mode === "own";
+}
+
+/**
+ * Using numbers the agency already owns on its Telnyx account: only its owners and admins,
+ * and only on its own account (or the one server key of a SINGLE_AGENCY install). On the
+ * platform's key the account holds every agency's numbers, so this is off there.
+ */
+export const ownNumbersAllowed = (ctx: Pick<Ctx, "org" | "viewing" | "role">, mode: PhoneAccount["mode"], single: boolean): boolean =>
+  Boolean(ctx.org) && !ctx.viewing && (ctx.role === "owner" || ctx.role === "admin") && (single ? mode !== "none" : mode === "own");
+
+export async function canUseOwnNumbers(ctx: Ctx): Promise<boolean> {
+  if (!ctx.org) return false;
+  const { mode, provider } = await modeOf(ctx.org.id);
+  // Numbers on the agency's own Telnyx account: a Vapi agency brings Twilio numbers instead.
+  return provider === "telnyx" && ownNumbersAllowed(ctx, mode, singleAgency());
 }
 
 export async function phoneAccount(ctx: Ctx): Promise<PhoneAccount> {
@@ -227,3 +243,75 @@ export async function disconnectPhoneAccount(ctx: Ctx): Promise<PhoneAccount> {
   await audit(ctx, "phone_account.disconnect", provider === "vapi" ? { provider } : {});
   return phoneAccount(ctx);
 }
+
+// ---- Twilio (optional): another place numbers come from ----------------------------------
+// Connected beside the voice engine, not instead of it. A Twilio number is answered by a Vapi
+// receptionist and sends its texts (server/twilio.ts), so it's offered for Vapi receptionists.
+
+/** Using the agency's Twilio account (search, buy, connect numbers): its owners and admins, once connected. */
+export const twilioAllowed = (ctx: Pick<Ctx, "org" | "viewing" | "role">, connected: boolean): boolean =>
+  connected && Boolean(ctx.org) && !ctx.viewing && (ctx.role === "owner" || ctx.role === "admin");
+
+export async function canUseTwilio(ctx: Ctx): Promise<boolean> {
+  if (!ctx.org) return false;
+  return twilioAllowed(ctx, Boolean(await twilioCredsFor(ctx.org.id)));
+}
+
+export async function twilioAccount(ctx: Ctx): Promise<TwilioAccount> {
+  const orgId = ctx.org!.id;
+  const [row] = await sql`select twilio_account_sid, twilio_last4, twilio_name, twilio_at, twilio_creds from orgs where id = ${orgId}`;
+  const creds = await twilioCredsFor(orgId);
+  const mode: TwilioAccount["mode"] = !creds ? "none" : creds.own ? "own" : "platform";
+  let problem = "";
+  let name = row?.twilio_name ?? "";
+  if (creds) {
+    try {
+      name = (await checkTwilio(creds)).name || name;
+    } catch (err) {
+      problem = (err as Error).message;
+    }
+  }
+  return {
+    connected: Boolean(creds),
+    mode,
+    accountSid: creds?.accountSid ?? "",
+    authKind: creds?.kind ?? "token",
+    last4: creds?.own ? (row?.twilio_last4 ?? "") : "",
+    name,
+    connectedAt: creds?.own ? iso(row?.twilio_at) : "",
+    problem,
+    installed: singleAgency() || undefined,
+    ...(fakeProvider() ? { testSid: TEST_SID, testToken: TEST_TOKEN } : {}),
+  };
+}
+
+/** Checks the credentials with Twilio without saving them. */
+export async function testTwilio(ctx: Ctx, input: unknown): Promise<{ ok: true; name: string }> {
+  requireRole(ctx, "admin");
+  countCheck(ctx.org!.id);
+  const creds = { ...parseTwilioInput(input), own: true };
+  return { ok: true, name: (await checkTwilio(creds)).name };
+}
+
+export async function connectTwilio(ctx: Ctx, input: unknown): Promise<TwilioAccount> {
+  requireRole(ctx, "admin");
+  if (singleAgency()) throw new ValidationError(INSTALLED_TWILIO);
+  const orgId = ctx.org!.id;
+  countCheck(orgId);
+  const parsed = parseTwilioInput(input);
+  const creds = { ...parsed, own: true };
+  const { name } = await checkTwilio(creds);
+  await saveTwilio(orgId, parsed, name);
+  await audit(ctx, "twilio.connect", { last4: parsed.secret.slice(-4), kind: parsed.kind, test: isTestTwilio(creds) });
+  return twilioAccount(ctx);
+}
+
+export async function disconnectTwilio(ctx: Ctx): Promise<TwilioAccount> {
+  requireRole(ctx, "owner");
+  if (singleAgency()) throw new ValidationError(INSTALLED_TWILIO);
+  await clearTwilio(ctx.org!.id);
+  await audit(ctx, "twilio.disconnect", {});
+  return twilioAccount(ctx);
+}
+
+const INSTALLED_TWILIO = "This server's Twilio account was set when it was installed. Change it on the server instead.";

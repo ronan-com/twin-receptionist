@@ -42,7 +42,11 @@ WHAT HAPPENS AFTER
 WHO OWNS WHAT
 Everything runs in accounts in your name: your Railway project and database, your Telnyx phone account, and any domain, Resend email or calendar apps you add. You pay each provider directly.
 
-Once your install finishes, our setup site deletes every key you gave it. We have no login to your dashboard, your Railway project or any of your accounts, and we don't see your calls or your centres' data.
+Once your install finishes, our setup site deletes every key you gave it. We have no login to your Railway project or any of your accounts, and we never see your calls, messages or your centres' data.
+
+Two things are worth knowing, and both are in your dashboard under Settings, then Support:
+- Health and usage stats: ON by default, and you can turn it off. Every 15 minutes your agency sends us its version, whether it is healthy, and counts (clients, receptionists, phone numbers, calls and bookings over recent days, errors), plus your brand name and logo address and a yes or no for your optional extras. It never sends caller names or numbers, messages, transcripts, recordings, customer details, passwords or keys. We use it to spot a problem before you do. Turn it off and nothing is sent.
+- Support access: OFF unless you turn it on. If you want us to sign in and help, you switch it on for 24 hours, 7 days or until you turn it off. We then sign in as a read-only support person through a one-time link. We can look but not change anything, and we can't see your keys or export your data. Every sign-in is written to your audit log and shown in Settings, and turning it off ends any open session at once.
 
 Billing centres is separate. Set up your own Stripe account and enter your identity and bank details directly with Stripe. Never send them to us.
 

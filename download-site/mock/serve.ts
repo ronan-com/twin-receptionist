@@ -474,7 +474,15 @@ Bun.serve({
       return json(200, { data: { projectCreate: { id: p.id, environments: { edges: [{ node: { id: p.envId, name: "production" } }] } } } });
     }
     if (has("projectDelete")) { const p = rProjects.get(variables.id); if (!p) return gqlErr("Project not found"); await removeRailProject(p); return json(200, { data: { projectDelete: true } }); }
-    if (has("project")) { const p = rProjects.get(variables.id); if (!p) return gqlErr("Project not found"); return json(200, { data: { project: { id: p.id, environments: { edges: [{ node: { id: p.envId, name: "production" } }] } } } }); }
+    if (has("project")) {
+      const p = rProjects.get(variables.id); if (!p) return gqlErr("Project not found");
+      return json(200, { data: { project: { id: p.id, environments: { edges: [{ node: { id: p.envId, name: "production" } }] }, services: { edges: [...p.services.values()].map((x: any) => ({ node: { id: x.id, name: x.name } })) } } } });
+    }
+    // The service's variables (names and values), as `variables(projectId, environmentId, serviceId)` answers.
+    if (has("variables")) {
+      const [p, s] = findService(variables.s); if (!s || p.id !== variables.p) return gqlErr("Service not found");
+      return json(200, { data: { variables: { ...s.variables } } });
+    }
     if (has("serviceCreate")) {
       const p = rProjects.get(input.projectId); if (!p) return gqlErr("Project not found");
       const id = rid("svc");

@@ -377,7 +377,7 @@ export default function BookingCard({ clientId, onChanged }: { clientId: string;
                     {r.note && <span className="request-note">{r.note}</span>}
                   </span>
                   <span className="request-when">
-                    {when(r.at)} · {r.channel === "sms" ? "text" : "call"}
+                    {when(r.at)} · {r.channel === "sms" ? "text" : r.channel === "web" ? "website chat" : "call"}
                   </span>
                 </li>
               ))}

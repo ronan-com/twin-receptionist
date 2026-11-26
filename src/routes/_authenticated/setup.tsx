@@ -307,7 +307,7 @@ function AccountStep({ engine, onEngine, onBack, onNext }: { engine: VoiceProvid
             <>Open the Vapi dashboard and sign up with your work email.</>,
             <>Open <b className="font-semibold">Billing</b> and add a card or credit, so calls aren't cut off.</>,
             <>
-              Vapi gives away free <b className="font-semibold">US</b> numbers only. For an Australian number, keep a Twilio or Telnyx number ready: you connect it to each receptionist later.
+              Vapi gives away free <b className="font-semibold">US</b> numbers only. For an Australian number, use a Twilio account (connect it under Connections, optional) or keep a Telnyx number ready: you connect it to each receptionist later.
             </>,
           ]}
         />
@@ -315,7 +315,7 @@ function AccountStep({ engine, onEngine, onBack, onNext }: { engine: VoiceProvid
           <OpenLink href={VAPI_SIGNUP}>Open Vapi</OpenLink>
         </div>
         <Notice tone="info" className="mt-6" title="What's different on Vapi">
-          Texting after calls and the text simulator are Telnyx features, so they're switched off for Vapi receptionists.
+          Texts after calls go out through Twilio, from a Twilio mobile number the receptionist answers. The text simulator is a Telnyx feature and isn't available.
         </Notice>
         <Nav onBack={onBack}>
           <Button onClick={onNext} className="h-10 px-5" data-action="setup-next">
@@ -559,7 +559,7 @@ function Done({ account, onBack }: { account: PhoneAccount; onBack: () => void }
       </div>
       <Notice tone="info" className="mt-4" title="Before real callers can get through">
         {account.provider === "vapi"
-          ? "Vapi only gives away US numbers. For an Australian number, bring one you already have from Twilio or Telnyx: you connect it from each client's page."
+          ? "Vapi only gives away US numbers. For an Australian number, buy or bring a Twilio number (connect Twilio under Connections first), or bring a Telnyx one: you connect it from each client's page."
           : "Your Telnyx account needs to be upgraded from trial, and each phone number needs Telnyx's approval. Australian numbers need proof of address and take about three days."}
       </Notice>
       <Nav>

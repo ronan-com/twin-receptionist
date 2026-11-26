@@ -12,7 +12,7 @@ type Phase = "idle" | "connecting" | "live" | "failed";
 // The SDK is loaded when someone asks for a call (or hovers the button), not with the page.
 const loadSdk = () => import("@vapi-ai/web");
 
-export function VapiTestCall({ assistantId, clientId }: { assistantId: string; clientId: string }) {
+export function VapiTestCall({ assistantId, clientId, big = false }: { assistantId: string; clientId: string; big?: boolean }) {
   const [phase, setPhase] = useState<Phase>("idle");
   const [error, setError] = useState("");
   const [muted, setMuted] = useState(false);
@@ -60,11 +60,11 @@ export function VapiTestCall({ assistantId, clientId }: { assistantId: string; c
   };
 
   return (
-    <div className="mb-3 space-y-2 border-b border-hairline pb-3" data-test-call data-engine="vapi">
-      <div className="text-[12.5px] font-medium text-ink">Test call</div>
+    <div className={big ? "min-w-0 space-y-2" : "mb-3 space-y-2 border-b border-hairline pb-3"} data-test-call data-engine="vapi">
+      {big ? null : <div className="text-[12.5px] font-medium text-ink">Test call</div>}
       {phase === "idle" || phase === "failed" ? (
-        <Button size="sm" className="h-8 w-full text-[12.5px]" onClick={() => void start()} onPointerEnter={() => void loadSdk().catch(() => {})} onFocus={() => void loadSdk().catch(() => {})} data-action="test-call">
-          <Mic className="mr-1 h-3.5 w-3.5" /> Talk to this receptionist
+        <Button size={big ? "lg" : "sm"} className={big ? "h-14 w-full text-[16px] font-semibold" : "h-8 w-full text-[12.5px]"} onClick={() => void start()} onPointerEnter={() => void loadSdk().catch(() => {})} onFocus={() => void loadSdk().catch(() => {})} data-action="test-call">
+          <Mic className={big ? "mr-2 h-5 w-5" : "mr-1 h-3.5 w-3.5"} /> {big ? "Test call" : "Talk to this receptionist"}
         </Button>
       ) : phase === "connecting" ? (
         <p className="text-[12px] text-ink-muted" data-test-call-status="starting">

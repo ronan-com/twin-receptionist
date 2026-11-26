@@ -6,18 +6,19 @@
 //   bun download-site/admin.ts revoke <code|link>           turns a link off
 //   bun download-site/admin.ts restore <code|link>          turns a revoked link back on
 //   bun download-site/admin.ts reset <code|link>            wipes a buyer's setup so they can start again
-//   bun download-site/admin.ts publish <selfhost-bundle.tgz> <version>   the app bundle new servers install
+//   bun download-site/admin.ts publish <selfhost-bundle.tgz> <version> [notes]   the app bundle new servers install
+//   bun download-site/admin.ts notes <version> <notes>      set or change a published version's release notes
 //   bun download-site/admin.ts admin-link <email>           a one-time /admin sign-in link (15 minutes)
 //   bun download-site/admin.ts admin-hash                   makes ADMIN_PASSWORD_HASH from a password (stdin)
 //   bun download-site/admin.ts backup [file]                a consistent copy of site.db (schedule it)
 //   bun download-site/admin.ts gen-key                      prints a new SETUP_SECRET_KEY
 import { createHash } from "node:crypto";
-import { copyFileSync, existsSync, openSync, readSync, closeSync, renameSync, statSync, unlinkSync } from "node:fs";
+import { copyFileSync, existsSync, openSync, readFileSync, readSync, closeSync, renameSync, statSync, unlinkSync } from "node:fs";
 import { basename, join } from "node:path";
 import { randomBytes } from "node:crypto";
 import {
   CONFIG, PACKAGES_DIR, addBuyer, currentPackage, setupLink, extractCode, findBuyer, humanSize,
-  listBuyers, listPackages, recordPackage, restoreBuyer, revokeBuyer, slug, db,
+  listBuyers, listPackages, recordPackage, restoreBuyer, revokeBuyer, setPackageNotes, slug, db,
 } from "./lib";
 import { getSetup, resetSetup } from "./store";
 
@@ -33,7 +34,10 @@ const USAGE = `Usage: bun download-site/admin.ts <command>
   revoke <code|link>                      Turn a buyer's link off
   restore <code|link>                     Turn a revoked link back on
   reset <code|link>                       Wipe a buyer's setup (and stored keys) so they can start again
-  publish <selfhost-bundle.tgz> <version> Publish the app bundle new servers install (newest wins)
+  publish <selfhost-bundle.tgz> <version> [notes]
+                                          Publish the app bundle new servers install (newest wins). notes = a text file or
+                                          a string, one change per line: buyers see it on their "Update your agency" screen
+  notes <version> <notes>                 Set or change a published version's release notes (text file or string)
   admin-link <email>                      One-time sign-in link for /admin (the email must be in ADMIN_EMAILS)
   admin-hash                              Read a password (stdin or prompt) and print ADMIN_PASSWORD_HASH
   backup [file]                           Write a consistent copy of site.db (default DATA_DIR/backups/site-<time>.db)
@@ -53,6 +57,14 @@ async function sha256File(path: string) {
   const h = createHash("sha256");
   for await (const chunk of Bun.file(path).stream()) h.update(chunk);
   return h.digest("hex");
+}
+
+/** Release notes: the path of a text file, or the notes themselves. */
+function notesArg(v: string | undefined): string {
+  if (!v) return "";
+  const isFile = existsSync(v) && statSync(v).isFile();
+  if (isFile && statSync(v).size > 20_000) die("That notes file is too big (20 KB at most).");
+  return String(isFile ? readFileSync(v, "utf8") : v).replace(/\r/g, "").trim().slice(0, 4000);
 }
 
 const [cmd, ...args] = process.argv.slice(2);
@@ -78,14 +90,14 @@ switch (cmd) {
     if (!buyers.length) console.log("  (none yet)");
     for (const b of buyers) {
       const s = getSetup(b.id);
-      const where = s.phase === "done" ? `INSTALLED ${s.installedAt?.slice(0, 16).replace("T", " ")} https://${s.domain?.host} (droplet ${s.dropletId}, ${s.ip})`
+      const where = s.phase === "done" ? `INSTALLED${s.attemptVersion ? ` v${s.attemptVersion}` : ""} ${s.installedAt?.slice(0, 16).replace("T", " ")} https://${s.domain?.host} (droplet ${s.dropletId}, ${s.ip})`
         : s.phase !== "idle" ? `install: ${s.phase}${s.error ? ` (${s.error.slice(0, 80)})` : ""}` : `setup step: ${s.step}`;
       console.log(`  #${b.id}  ${b.name} <${b.email}>  added ${b.created_at.slice(0, 10)}  ${b.revoked_at ? `REVOKED ${b.revoked_at.slice(0, 10)}` : where}`);
       console.log(`       ${setupLink(b.code)}`);
     }
     console.log(`\nApp bundles (${pkgs.length}), newest is what new servers install:`);
     if (!pkgs.length) console.log("  (none published)");
-    for (const p of pkgs) console.log(`  ${p.version.padEnd(12)} ${p.file}  ${humanSize(p.size)}  sha256 ${p.sha256}  published ${p.published_at.slice(0, 16).replace("T", " ")}`);
+    for (const p of pkgs) console.log(`  ${p.version.padEnd(12)} ${p.file}  ${humanSize(p.size)}  sha256 ${p.sha256}  published ${p.published_at.slice(0, 16).replace("T", " ")}${p.notes ? "  (has release notes)" : ""}`);
     break;
   }
 
@@ -118,8 +130,9 @@ switch (cmd) {
   }
 
   case "publish": {
-    const [src, version] = args;
-    if (!src || !version || args.length !== 2) die("Usage: publish <selfhost-bundle.tgz> <version>", 2);
+    const [src, version, notesIn] = args;
+    if (!src || !version || args.length < 2 || args.length > 3) die("Usage: publish <selfhost-bundle.tgz> <version> [notes file or text]", 2);
+    const notes = notesArg(notesIn);
     if (!/^[0-9A-Za-z][0-9A-Za-z.+-]{0,39}$/.test(version)) die("Version may use letters, digits, '.', '-' and '+' only (e.g. 1.0.0).");
     if (!existsSync(src) || !statSync(src).isFile()) die(`No such file: ${src}`);
     const fd = openSync(src, "r");
@@ -139,10 +152,19 @@ switch (cmd) {
     const sha256 = await sha256File(tmp);
     if (sha256 !== (await sha256File(src))) { unlinkSync(tmp); die("The copy doesn't match the original. Try again."); }
     renameSync(tmp, dest);
-    recordPackage({ version, file, size, sha256 });
+    recordPackage({ version, file, size, sha256, notes });
     console.log(`Published ${file}`);
-    console.log(`  version ${version}, ${humanSize(size)}, sha256 ${sha256}`);
-    console.log("New installs (and retries) now get this version.");
+    console.log(`  version ${version}, ${humanSize(size)}, sha256 ${sha256}${notes ? `, ${notes.split("\n").filter(Boolean).length} release notes` : ", no release notes (add them with: notes <version> <text>)"}`);
+    console.log("New installs (and retries) now get this version, and buyers already installed see \"Update available\" on their setup link.");
+    break;
+  }
+
+  case "notes": {
+    const [version, notesIn] = args;
+    if (!version || !notesIn || args.length !== 2) die("Usage: notes <version> <notes file or text>", 2);
+    const notes = notesArg(notesIn);
+    if (!setPackageNotes(version, notes)) die(`Version ${version} isn't published. See \`list\`.`);
+    console.log(`Release notes for ${version} saved (${notes.split("\n").filter(Boolean).length} lines).`);
     break;
   }
 

@@ -23,3 +23,5 @@ The private key in the first box and the public key in the second. Each is one l
 - The private key can spend your Vapi credit. Paste it only into the wizard, never into an email or chat. The public key is meant for browsers and is safe to expose.
 - If you create a new private key later, replace it in the app under **Connections**.
 - Use keys from the same Vapi account every time: your receptionists live in that account.
+
+> **Stuck?** "Vapi didn't accept that key": copy the whole private key again, or make a new one under API Keys. Calls cut off: add credit under Billing.

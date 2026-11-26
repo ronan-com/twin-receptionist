@@ -18,7 +18,7 @@ import { PRODUCT } from "@/lib/app/product";
  * `ai_call` came from the original webhook, `ai_receptionist` from the
  * seeded/demo data. Both mean "the AI receptionist booked this".
  */
-export const AI_BOOKING_SOURCES = ["ai_call", "ai_receptionist", "ai", "receptionist"] as const;
+export const AI_BOOKING_SOURCES = ["ai_call", "ai_receptionist", "ai", "receptionist", "website_chat"] as const;
 
 export function isAiBooking(source: string | null | undefined): boolean {
   if (!source) return false;
@@ -26,6 +26,7 @@ export function isAiBooking(source: string | null | undefined): boolean {
 }
 
 export function bookingSourceLabel(source: string | null | undefined): string {
+  if (source === "website_chat") return "Booked in the website chat";
   if (isAiBooking(source)) return "Booked by receptionist";
   if (!source) return "Unknown source";
   if (source === "manual") return "Added by your team";

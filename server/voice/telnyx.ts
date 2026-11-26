@@ -177,7 +177,7 @@ export const telnyxProvider: VoiceProvider = {
   },
 
   numbers: {
-    support: () => ({ provider: "telnyx", buy: true, import: false, note: "Numbers are bought here and charged to the Telnyx account each month." }),
+    support: () => ({ provider: "telnyx", buy: true, import: false, twilio: false, note: "Numbers are bought here and charged to the Telnyx account each month. Twilio numbers work with the Vapi voice engine." }),
     async state(ctx, client) {
       const voiceApp = await voiceAppFor(client.assistantId);
       const [numbers, pending, balance] = await Promise.all([

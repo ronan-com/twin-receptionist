@@ -10,7 +10,7 @@ import { cn } from "@/lib/utils";
 
 export const ENGINES: { id: VoiceProviderId; name: string; blurb: string }[] = [
   { id: "telnyx", name: "Telnyx", blurb: "Recommended. Buy Australian numbers here, texting included." },
-  { id: "vapi", name: "Vapi", blurb: "Use your Vapi account. Bring your own Twilio or Telnyx number; no texting." },
+  { id: "vapi", name: "Vapi", blurb: "Use your Vapi account. Buy or bring a Twilio number (or a Telnyx one); texts go out from Twilio." },
 ];
 
 export const engineName = (id: VoiceProviderId | undefined) => (id === "vapi" ? "Vapi" : "Telnyx");

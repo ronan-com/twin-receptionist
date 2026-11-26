@@ -15,6 +15,7 @@ import type { PhoneAccount } from "@/lib/shared";
 import { EngineChoice, PhoneKeyFields, engineName, keysReady, type PhoneKeyValue } from "@/components/app/PhoneKeyFields";
 import { cn } from "@/lib/utils";
 import { READ_ONLY_HINT, useConsole } from "./-shared";
+import { TwilioCard } from "./-twilio-card";
 import { PRODUCT } from "@/lib/app/product";
 
 // Connections: what the agency has plugged in. The phone account is the one that
@@ -29,7 +30,7 @@ export const Route = createFileRoute("/_authenticated/admin/connections")({
 });
 
 function ConnectionsPage() {
-  const { platform, readOnly } = useConsole();
+  const { platform, readOnly, canManage, role, ws } = useConsole();
   const q = useQuery(phoneAccountQuery());
 
   if (q.error) return <ErrorState message={(q.error as Error).message} onRetry={() => void q.refetch()} />;
@@ -52,6 +53,8 @@ function ConnectionsPage() {
 
       <PhoneCard account={a} platform={platform} />
 
+      <TwilioCard engine={a.provider} canManage={canManage} isOwner={role === "owner" || ws.isPlatformAdmin} readOnly={readOnly} />
+
       <div className="grid gap-3 md:grid-cols-3">
         <CountCard icon={Building2} hue="indigo" label="Clients" count={a.counts.clients} hint="Businesses you run receptionists for." to="/admin/clients" cta="Open clients" />
         <CountCard
@@ -59,7 +62,7 @@ function ConnectionsPage() {
           hue="cyan"
           label="Phone numbers"
           count={a.counts.numbers}
-          hint={a.provider === "vapi" ? "Bring a Twilio or Telnyx number from each client's page." : a.mode === "own" || a.installed ? "Bought on your Telnyx account, from each client's page." : "Each number rings one receptionist."}
+          hint={a.provider === "vapi" ? "Buy or bring a Twilio number (or bring a Telnyx one) from each client's page." : a.mode === "own" || a.installed ? "Bought on your Telnyx account, from each client's page." : "Each number rings one receptionist."}
           to="/admin/phone-numbers"
           cta="Open numbers"
         />

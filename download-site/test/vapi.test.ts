@@ -7,6 +7,6 @@ test("the phones step takes Vapi keys (checked with a cheap GET), and Telnyx sti
   const p = Bun.spawn(["bun", "test", "./test/vapi.inner.ts"], { cwd: join(import.meta.dir, ".."), stdout: "pipe", stderr: "pipe", env: { ...process.env, VAPI_INNER: "1" } });
   const [out, err, code] = await Promise.all([new Response(p.stdout).text(), new Response(p.stderr).text(), p.exited]);
   if (code !== 0) console.log(out + err);
-  expect(out + err).toContain("6 pass");
+  expect(out + err).toContain("8 pass");
   expect(code).toBe(0);
 }, 60_000);

@@ -279,6 +279,8 @@ export type AvailableNumber = {
   upfront: number;
   currency: string;
   sms: boolean;
+  /** Twilio only: Australian numbers need an approved regulatory bundle and an address to buy. */
+  needsBundle?: boolean;
 };
 
 export type ConnectedNumber = { id: string; phoneNumber: string; status: string; type: string };
@@ -301,6 +303,8 @@ export type NumberSupport = {
   provider: VoiceProviderId;
   buy: boolean;
   import: boolean;
+  // Whether a Twilio number can answer this receptionist (Vapi only).
+  twilio?: boolean;
   note: string;
 };
 
@@ -313,6 +317,8 @@ export type NumberState = {
   balance: { amount: number; currency: string } | null;
   // Only the platform team buys numbers. Everyone else asks for one.
   canBuy: boolean;
+  // An agency on its own phone account can also connect numbers it already owns.
+  canUseOwn?: boolean;
   requests: NumberRequest[];
 };
 
@@ -816,7 +822,19 @@ export type Brand = {
   sidebarColor?: string;
 };
 
-export type Viewing = { org: string; client: string | null; business: string };
+// `support` is set for a sign-in by the setup provider's support person (Settings, "Support"); `by` is who.
+export type Viewing = { org: string; client: string | null; business: string; support?: boolean; by?: string };
+
+// Settings, "Support" (server/supportSync.ts).
+export type SupportSettings = {
+  configured: boolean;
+  seller: string;
+  sync: { enabled: boolean; lastSentAt: string | null; lastOk: boolean | null; lastError: string };
+  access: { enabled: boolean; until: string | null; grantedAt: string | null };
+  sends: string[];
+  neverSent: string;
+  recent: { action: string; summary: string; at: string }[];
+};
 
 export type Account = {
   user: { id: string; email: string; name: string; platformAdmin: boolean };
@@ -845,6 +863,31 @@ export type Account = {
 
 // An agency's phone account as the Setup and Connections screens see it
 // (server/phoneAccount.ts).
+/** The agency's Twilio account (Connections): an optional extra phone-number source. Server side: server/twilio.ts. */
+export type TwilioAccount = {
+  connected: boolean;
+  // own: the agency's own account. platform: the install's (set when it was installed). none: not connected.
+  mode: "own" | "platform" | "none";
+  accountSid: string;
+  authKind: "token" | "key";
+  last4: string;
+  name: string;
+  connectedAt: string;
+  // Why the last check of the credentials failed ("" when fine).
+  problem: string;
+  // SINGLE_AGENCY or platform account: nothing to connect or replace here.
+  installed?: boolean;
+  // Local test servers only: pretend credentials that pass the check.
+  testSid?: string;
+  testToken?: string;
+};
+
+/** A number on the agency's Twilio account. assignedTo is the receptionist that answers it, or "". */
+export type TwilioNumber = { id: string; phoneNumber: string; friendlyName: string; type: NumberType; sms: boolean; voice: boolean; assignedTo: string };
+
+/** Twilio's rules for Australian numbers: an approved regulatory bundle is needed to buy one. */
+export type TwilioRegulatory = { approved: boolean; inReview: number; consoleUrl: string };
+
 export type PhoneAccount = {
   // The voice engine this agency's new receptionists are made on. Telnyx unless Vapi is chosen.
   provider: VoiceProviderId;

@@ -91,6 +91,39 @@ describe("Vapi on the phones step", () => {
     expect(phoneSettings(b.id, getSetup(b.id)).TELNYX_API_KEY).toBe("KEY0123456789ABCDEF0123456789_abcdefghijkl");
   });
 
+  test("with Vapi, a Twilio account is optional: checked with one read, kept, and handed to the install", async () => {
+    const SID = "AC" + "a".repeat(32);
+    const b = await buyer("g");
+    globalThis.fetch = (async (url: any, init: any) => {
+      calls.push({ url: String(url), auth: new Headers(init?.headers).get("authorization") });
+      return new Response(JSON.stringify(String(url).includes("twilio.com") ? { status: "active", friendly_name: "Acme" } : []), { status: 200, headers: { "Content-Type": "application/json" } });
+    }) as any;
+    calls = [];
+    expect(await run(b, "phones", { provider: "vapi", vapiKey: "priv-0123456789abcdef", vapiPublic: "pub-0123456789abcdef", twilioSid: SID, twilioToken: "t".repeat(32) })).toBeNull();
+    const tw = calls.find((c) => c.url.includes("twilio.com"))!;
+    expect(tw.url).toBe(`https://api.twilio.com/2010-04-01/Accounts/${SID}.json`);
+    expect(tw.auth).toBe(`Basic ${Buffer.from(`${SID}:${"t".repeat(32)}`).toString("base64")}`);
+    expect(getSecret(b.id, "twilio_token")).toBe("t".repeat(32));
+    expect(getSetup(b.id).phones).toMatchObject({ provider: "vapi", twilioSid: SID });
+    expect(phoneSettings(b.id, getSetup(b.id))).toMatchObject({ VOICE_PROVIDER: "vapi", TWILIO_ACCOUNT_SID: SID, TWILIO_AUTH_TOKEN: "t".repeat(32) });
+
+    // Left blank, Vapi works without it and the install gets no Twilio settings.
+    const c = await buyer("h");
+    stub(200);
+    expect(await run(c, "phones", { provider: "vapi", vapiKey: "priv-0123456789abcdef", vapiPublic: "pub-0123456789abcdef" })).toBeNull();
+    expect(phoneSettings(c.id, getSetup(c.id))).not.toHaveProperty("TWILIO_ACCOUNT_SID");
+  });
+
+  test("Twilio credentials Twilio refuses, or that aren't shaped like Twilio's, are an error and nothing is saved", async () => {
+    const b = await buyer("i");
+    stub(401, { message: "Authenticate" });
+    const r = await run(b, "phones", { provider: "vapi", vapiKey: "priv-0123456789abcdef", vapiPublic: "pub-0123456789abcdef", twilioSid: "AC" + "b".repeat(32), twilioToken: "t".repeat(32) });
+    expect(r?.kind).toBe("err");
+    expect(hasSecret(b.id, "twilio_token")).toBe(false);
+    expect(getSetup(b.id).phones?.confirmed).toBeFalsy();
+    expect((await run(b, "phones", { provider: "vapi", vapiKey: "priv-0123456789abcdef", vapiPublic: "pub-0123456789abcdef", twilioSid: "nope" }))?.kind).toBe("err");
+  });
+
   test("the page offers both services and a Vapi Show me how", async () => {
     const { howTo } = await import("../content");
     expect(howTo("vapi-account").html).toContain("US");

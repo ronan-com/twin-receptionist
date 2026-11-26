@@ -15,13 +15,13 @@ function startButton(el: Element): HTMLButtonElement | null {
  * connected, so the widget's own "Talk to…" button never needs pressing. The
  * widget's in-call controls (mute, hang up, transcript) stay as they are.
  */
-export function TestCall({ assistantId, provider, clientId }: { assistantId: string; provider?: string; clientId?: string }) {
+export function TestCall({ assistantId, provider, clientId, big = false }: { assistantId: string; provider?: string; clientId?: string; big?: boolean }) {
   // A Vapi receptionist is called with Vapi's web SDK; everything else is the Telnyx widget below, as it always was.
-  if (provider === "vapi" && clientId) return <VapiTestCall assistantId={assistantId} clientId={clientId} />;
-  return <TelnyxTestCall assistantId={assistantId} />;
+  if (provider === "vapi" && clientId) return <VapiTestCall assistantId={assistantId} clientId={clientId} big={big} />;
+  return <TelnyxTestCall assistantId={assistantId} big={big} />;
 }
 
-function TelnyxTestCall({ assistantId }: { assistantId: string }) {
+function TelnyxTestCall({ assistantId, big }: { assistantId: string; big: boolean }) {
   const holder = useRef<HTMLDivElement>(null);
   const [open, setOpen] = useState(false);
   const [ready, setReady] = useState(false);
@@ -60,7 +60,7 @@ function TelnyxTestCall({ assistantId }: { assistantId: string }) {
       if (root && !root.querySelector("style[data-inline]")) {
         const style = document.createElement("style");
         style.setAttribute("data-inline", "");
-        style.textContent = "main{position:static!important;inset:auto!important;pointer-events:auto!important}main>div{position:static!important}";
+        style.textContent = ":host{display:block!important;width:100%!important;max-width:100%!important}main{position:static!important;inset:auto!important;pointer-events:auto!important;width:100%!important;max-width:100%!important}main>div{position:static!important;width:100%!important;max-width:100%!important;min-width:0!important;box-sizing:border-box!important}main *{max-width:100%!important;box-sizing:border-box}";
         root.appendChild(style);
       }
       if (root || ++tries > 40) window.clearInterval(pin);
@@ -107,18 +107,18 @@ function TelnyxTestCall({ assistantId }: { assistantId: string }) {
   }, [ready]);
 
   return (
-    <div className="mb-3 space-y-2 border-b border-hairline pb-3" ref={holder} data-test-call>
-      <div className="text-[12.5px] font-medium text-ink">Test call</div>
+    <div className={big ? "min-w-0 space-y-2 overflow-hidden" : "mb-3 min-w-0 space-y-2 overflow-hidden border-b border-hairline pb-3"} ref={holder} data-test-call>
+      {big ? null : <div className="text-[12.5px] font-medium text-ink">Test call</div>}
       {!open ? (
         <Button
-          size="sm"
-          className="h-8 w-full text-[12.5px]"
+          size={big ? "lg" : "sm"}
+          className={big ? "h-14 w-full text-[16px] font-semibold" : "h-8 w-full text-[12.5px]"}
           onClick={() => setOpen(true)}
           onPointerEnter={preload}
           onFocus={preload}
           data-action="test-call"
         >
-          <Mic className="mr-1 h-3.5 w-3.5" /> Talk to this receptionist
+          <Mic className={big ? "mr-2 h-5 w-5" : "mr-1 h-3.5 w-3.5"} /> {big ? "Test call" : "Talk to this receptionist"}
         </Button>
       ) : failed ? (
         <p role="alert" className="text-[12px] text-ink-muted">{failed}</p>
@@ -126,7 +126,7 @@ function TelnyxTestCall({ assistantId }: { assistantId: string }) {
         <>
           {phase === "starting" ? <p className="text-[12px] text-ink-muted" data-test-call-status="starting">Connecting the call… allow the microphone if your browser asks.</p> : null}
           {/* Hidden (not removed) while starting, so it can connect and be pressed. */}
-          {createElement("telnyx-ai-agent", { "agent-id": assistantId, style: phase === "starting" ? { visibility: "hidden", height: 0, display: "block", overflow: "hidden" } : undefined })}
+          {createElement("telnyx-ai-agent", { "agent-id": assistantId, style: phase === "starting" ? { visibility: "hidden", height: 0, display: "block", overflow: "hidden" } : { display: "block", width: "100%", maxWidth: "100%" } })}
         </>
       ) : (
         <p className="text-[12px] text-ink-muted">Loading the call…</p>

@@ -7,6 +7,7 @@
 #   ADMIN_EMAILS=a@x.com,b@x.com    saved to SSM /setupsite/env/ADMIN_EMAILS
 #   ADMIN_PASSWORD_HASH='$argon2id$...'   from `bun download-site/admin.ts admin-hash`, saved to SSM
 #   SUPPORT_EMAIL / SELLER_NAME / PRODUCT_NAME / SITE_SMTP_URL / SITE_MAIL_FROM   saved to SSM
+#   OPENROUTER_API_KEY / SETUP_CHAT_MODEL   saved to SSM; turn on the "Need help?" chat (off without the key)
 #   BUNDLE=path/selfhost-bundle.tgz VERSION=1.0.1   also publish this app bundle on the site
 # Secrets live in SSM Parameter Store as SecureString under /setupsite/env/*. SETUP_SECRET_KEY
 # is created once (random 32 bytes) and NEVER overwritten: changing it would lock every
@@ -61,7 +62,7 @@ if [ -n "${ADMIN_PASSWORD_HASH:-}" ]; then
   [[ $ADMIN_PASSWORD_HASH == \$argon2* ]] || { echo "ADMIN_PASSWORD_HASH must come from: bun download-site/admin.ts admin-hash"; exit 1; }
   put ADMIN_PASSWORD_HASH "$ADMIN_PASSWORD_HASH"
 fi
-for k in SUPPORT_EMAIL SELLER_NAME PRODUCT_NAME SITE_SMTP_URL SITE_MAIL_FROM HOSTING; do
+for k in SUPPORT_EMAIL SELLER_NAME PRODUCT_NAME SITE_SMTP_URL SITE_MAIL_FROM HOSTING OPENROUTER_API_KEY SETUP_CHAT_MODEL; do
   [ -n "${!k:-}" ] && put "$k" "${!k}"
 done
 true

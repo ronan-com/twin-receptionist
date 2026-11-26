@@ -1,7 +1,8 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
-import { ArrowDownLeft, ArrowUpRight, Bot, CalendarDays, ChevronDown, MessageSquare, Mic, PhoneForwarded, UserRound } from "lucide-react";
+import { ArrowDownLeft, ArrowUpRight, Bot, CalendarDays, ChevronDown, MessageSquare, Mic, Phone, PhoneForwarded, UserRound } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -138,16 +139,28 @@ export function CallDetailSheet({
         {call ? (
           <div className="flex-1 overflow-y-auto">
             <div className="space-y-5 px-5 py-4">
+              {!admin && call.direction === "inbound" && call.from_number ? (
+                <Button asChild className="h-12 w-full text-[15px]" data-action="call-back">
+                  <a href={`tel:${call.from_number}`}>
+                    <Phone className="mr-2 h-4 w-4" /> Call {call.contact?.full_name?.split(" ")[0] || "them"} back
+                  </a>
+                </Button>
+              ) : null}
+
               <KeyValue
                 columns={2}
                 items={[
                   { label: "Caller", value: <span>{call.contact?.full_name ?? "Unknown caller"}<span className="block text-[12px] text-ink-muted">{fmtPhone(call.direction === "inbound" ? call.from_number : call.to_number) || "No number"}</span></span> },
-                  { label: "Answered on", value: <span>{fmtPhone(call.phone_number?.e164 ?? (call.direction === "inbound" ? call.to_number : call.from_number)) || "—"}</span> },
-                  { label: "Receptionist", value: call.agent?.name ?? "—" },
                   { label: "What they wanted", value: call.intent ?? "Not available" },
                   { label: "How it ended", value: <OutcomeBadge outcome={call.outcome} /> },
                   { label: isText ? "Conversation length" : "Talk time", value: fmtDuration(call.talk_time_seconds) },
-                  { label: "Handled by AI", value: call.ai_handled ? "Yes" : "No" },
+                  ...(admin
+                    ? [
+                        { label: "Answered on", value: <span>{fmtPhone(call.phone_number?.e164 ?? (call.direction === "inbound" ? call.to_number : call.from_number)) || "—"}</span> },
+                        { label: "Receptionist", value: call.agent?.name ?? "—" },
+                        { label: "Handled by AI", value: call.ai_handled ? "Yes" : "No" },
+                      ]
+                    : []),
                   ...(call.after_hours ? [{ label: "After hours", value: "Yes" }] : []),
                 ]}
               />
@@ -177,6 +190,7 @@ export function CallDetailSheet({
                 </div>
               ) : null}
 
+              {admin ? (
               <section>
                 <button
                   type="button"
@@ -201,6 +215,7 @@ export function CallDetailSheet({
                   </div>
                 ) : null}
               </section>
+              ) : null}
 
               {(call.appointments.length > 0 || call.leads.length > 0) && (
                 <section>
@@ -246,11 +261,19 @@ export function CallDetailSheet({
                 </section>
               )}
 
+              {admin ? (
               <section>
                 <SectionLabel className="mb-1.5">Recording</SectionLabel>
                 <p className="text-[12.5px] text-ink-muted">Audio isn't stored for calls. The transcript is below.</p>
               </section>
+              ) : null}
 
+              {!admin ? (
+                <section>
+                  <SectionLabel className="mb-2">Transcript</SectionLabel>
+                  <Transcript segments={call.transcript_segments} />
+                </section>
+              ) : (
               <Tabs defaultValue="transcript">
                 <TabsList className="h-8 bg-canvas-2 p-0.5">
                   <TabsTrigger value="transcript" className="h-7 text-[12px]">Transcript</TabsTrigger>
@@ -271,6 +294,7 @@ export function CallDetailSheet({
                   )}
                 </TabsContent>
               </Tabs>
+              )}
             </div>
           </div>
         ) : q.isPending ? (

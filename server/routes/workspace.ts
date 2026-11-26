@@ -83,6 +83,7 @@ type CallRow = {
   summary: string | null;
   created_at: Date | string;
   updated_at: Date | string;
+  provider?: string;
 };
 
 const ms = (v: Date | string | null | undefined) => (v ? new Date(v).getTime() : NaN);
@@ -148,7 +149,7 @@ export function answeredCall(call: CallRow, client: Business, biz: Biz, requests
     agent_id: call.client_id,
     contact_id: null,
     phone_number_id: null,
-    provider: "telnyx",
+    provider: call.provider === "vapi" ? "vapi" : "telnyx",
     provider_call_id: call.provider_call_id,
     direction: "inbound",
     from_number: call.from_number,
@@ -233,7 +234,7 @@ export function answeredAppointment(r: StoredRequest, clientId: string, cal: Cal
     service: r.service || null,
     reason: null,
     notes: r.bizNotes ?? (r.note || null),
-    source: r.channel === "sms" ? "ai_receptionist" : "ai_call",
+    source: r.channel === "web" ? "website_chat" : r.channel === "sms" ? "ai_receptionist" : "ai_call",
     status: r.apptStatus ?? (r.status === "booked" ? "confirmed" : "pending"),
     staff_name: null,
     location: null,
@@ -290,7 +291,7 @@ export function answeredLead(r: StoredRequest, clientId: string, callId: string 
     phone: r.phone || null,
     email: r.email || null,
     enquiry: r.service || null,
-    intent: "Callback request",
+    intent: r.channel === "web" ? "Website chat message" : "Callback request",
     summary: r.notes ?? (r.note || null),
     stage: r.stage && LEAD_STAGES.includes(r.stage) ? r.stage : "new",
     // A call-back is due when the caller asked for it (a vague "mornings" means as soon as possible),

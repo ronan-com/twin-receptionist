@@ -1,6 +1,6 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { Link, useRouterState } from "@tanstack/react-router";
-import { Bell, Compass, HelpCircle, Menu, Rocket, Sparkles } from "lucide-react";
+import { Bell, Compass, HelpCircle, LifeBuoy, Menu, Rocket, Sparkles } from "lucide-react";
 import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
@@ -12,6 +12,7 @@ import { useGetStarted } from "@/components/onboarding/GetStarted";
 import { TOUR_NAV_EVENT } from "@/components/onboarding/Tour";
 import { useAssistant } from "@/components/assistant/Assistant";
 import { OTHER_BRAND } from "@/lib/app/product";
+import { SupportDialog, UnreadDot, useSupportUnread } from "./SupportDialog";
 
 export interface AppShellProps {
   nav: NavItem[];
@@ -113,6 +114,9 @@ export function AppShell({ nav, variant, brandTo, sidebarHeader, topbarRight, ba
   // The guided tour opens the phone menu so it can point at the items inside.
   const [tourNav, setTourNav] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
+  const [supportOpen, setSupportOpen] = useState(false);
+  const support = useSupportUnread();
+  const canContact = Boolean(support.data?.canCreate || support.data?.mine.length);
   const getStarted = useGetStarted();
   const assistant = useAssistant();
   useEffect(() => {
@@ -196,13 +200,25 @@ export function AppShell({ nav, variant, brandTo, sidebarHeader, topbarRight, ba
             </Popover>
             <Popover open={helpOpen} onOpenChange={setHelpOpen}>
               <PopoverTrigger asChild>
-                <button type="button" data-tour="help" className="inline-flex h-9 w-9 items-center justify-center rounded-[5px] text-ink-muted hover:bg-canvas-2 hover:text-ink" aria-label="Help">
+                <button type="button" data-tour="help" className="relative inline-flex h-9 w-9 items-center justify-center rounded-[5px] text-ink-muted hover:bg-canvas-2 hover:text-ink" aria-label={support.unread ? "Help (new replies)" : "Help"}>
                   <HelpCircle className="h-[17px] w-[17px]" strokeWidth={1.8} />
+                  {support.unread ? <UnreadDot className="absolute right-1.5 top-1.5" /> : null}
                 </button>
               </PopoverTrigger>
               <PopoverContent align="end" className="w-72 text-[12.5px]">
-                {getStarted || assistant ? (
+                {getStarted || assistant || canContact ? (
                   <div className="mb-3 space-y-1 border-b border-hairline pb-3">
+                    {canContact ? (
+                      <button
+                        type="button"
+                        data-action="contact-support"
+                        onClick={() => { setHelpOpen(false); setSupportOpen(true); }}
+                        className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left font-medium text-ink hover:bg-canvas-2"
+                      >
+                        <LifeBuoy className="h-4 w-4 text-indigo" /> Contact support
+                        {support.unread ? <UnreadDot className="ml-auto" /> : null}
+                      </button>
+                    ) : null}
                     {assistant ? (
                       <button
                         type="button"
@@ -249,6 +265,8 @@ export function AppShell({ nav, variant, brandTo, sidebarHeader, topbarRight, ba
         </header>
 
         {banner}
+
+        {supportOpen ? <SupportDialog open onOpenChange={setSupportOpen} /> : null}
 
         <main className="mx-auto w-full max-w-[1400px] flex-1 px-3 py-5 sm:px-5 sm:py-6 lg:px-8">{children}</main>
       </div>

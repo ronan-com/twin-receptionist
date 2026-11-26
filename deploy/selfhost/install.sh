@@ -37,7 +37,9 @@ DOMAIN=${DOMAIN#http://}; DOMAIN=${DOMAIN#https://}; DOMAIN=${DOMAIN%%/*}; DOMAI
 [[ $DOMAIN =~ ^([a-z0-9]([a-z0-9-]*[a-z0-9])?\.)+[a-z0-9]([a-z0-9-]*[a-z0-9])?$ ]] || fail "DOMAIN '$DOMAIN' is not a valid host name"
 ADMIN=${CONF[FIRST_ADMIN_EMAIL]:-}
 [[ $ADMIN == ?*@?*.?* ]] || fail "FIRST_ADMIN_EMAIL is empty or not an email address"
-if [ -z "${CONF[TELNYX_API_KEY]:-}" ] && [ "${CONF[OWN_PHONE_ACCOUNT]:-}" != required ]; then
+if [ "${CONF[VOICE_PROVIDER]:-}" = vapi ]; then
+  [ -n "${CONF[VAPI_API_KEY]:-}" ] || log "    note: VAPI_API_KEY is empty, so phone features stay off until it is set"
+elif [ -z "${CONF[TELNYX_API_KEY]:-}" ] && [ "${CONF[OWN_PHONE_ACCOUNT]:-}" != required ]; then
   log "    note: TELNYX_API_KEY is empty, so phone features stay off until it is set (or set OWN_PHONE_ACCOUNT=required)"
 fi
 [ -n "${CONF[SMTP_URL]:-}" ] || log "    note: SMTP_URL is empty, so emails (invites, password resets) only go to the app log"

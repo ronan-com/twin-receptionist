@@ -58,7 +58,7 @@ export type AdminAgentRow = {
   voice_id: string;
   voice: { id: string; display_name: string; provider: string } | null;
   language: string;
-  provider: "telnyx";
+  provider: "telnyx" | "vapi";
   provider_agent_id: string;
   demo_assistant: boolean;
   llm_model: string;
@@ -252,9 +252,10 @@ export async function getAdminVoices(): Promise<AdminVoiceRow[]> {
     display_name: v.name,
     description: v.label,
     gender: v.gender,
-    accent: "Australian",
+    // Vapi voice ids look like "azure:en-AU-NatashaNeural"; Telnyx's are plain ids.
+    accent: v.id.includes(":") && !v.id.startsWith("azure:") ? "Various" : "Australian",
     language: "en-AU",
-    provider: "telnyx",
+    provider: v.id.includes(":") ? "vapi" : "telnyx",
     recommended: v.recommended,
     agents: agents.filter((a) => a.voice_id === v.id || (!a.voice_id && a.voice?.display_name === v.name)).map((a) => ({ id: a.id, name: a.name, business: a.business })),
   }));
@@ -352,6 +353,12 @@ export const unshareBusiness = (id: string, userId: string) => api.del<{ members
 export const revokeBusinessInvite = (id: string, inviteId: string) => api.del<{ members: ConsolePerson[]; invitations: ConsoleInvite[] }>(`/api/console/businesses/${id}/invites/${inviteId}`);
 /** An agency on its own phone account buys a number for a receptionist (charged to its account). */
 export const buyNumberFor = (id: string, phoneNumber: string) => api.post<{ order: { id: string; status: string; phoneNumbers: string[] } }>(`/api/clients/${id}/numbers`, { phoneNumber, confirm: true });
+/** Vapi: bring a number the agency already has (Twilio or Telnyx), or take a free US one, and point it at the receptionist. */
+export type ImportNumberInput =
+  | { source: "twilio"; number: string; accountSid: string; authToken: string }
+  | { source: "telnyx"; number: string; apiKey: string }
+  | { source: "vapi"; areaCode: string };
+export const importNumberFor = (id: string, input: ImportNumberInput) => api.post<{ order: { id: string; status: string; phoneNumbers: string[] } }>(`/api/clients/${id}/numbers`, input);
 export const requestNumberFor = (id: string, type: "local" | "mobile", note: string) => api.post(`/api/console/businesses/${id}/number-requests`, { type, note });
 export const resolveIncident = (id: string) => api.post<AdminSystem>(`/api/console/incidents/${id}/resolve`);
 export const logIncident = (input: { title: string; details?: string; severity?: string; client_id?: string }) => api.post<AdminSystem>("/api/console/incidents", input);

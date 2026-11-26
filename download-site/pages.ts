@@ -121,7 +121,7 @@ export function guidePage() {
     ["requirements", "What you need"], ["accounts", "Get your accounts ready"], ["wizard", "The setup page, step by step"],
     ["after", "After the install"], ...(RAILWAY ? [["later", "Adding the extras later"] as [string, string]] : []), ["backups", "Backups and updates"], ["problems", "If something goes wrong"], ["yours", "What's yours now"],
   ];
-  const known = new Set(["cloudflare-domain", "registrar-nameservers", "cloudflare-token", "registrar-dns-records", "digitalocean-token", "railway-token", "telnyx-account", "telnyx-api-key", "resend", "google-oauth", "microsoft-oauth"]);
+  const known = new Set(["cloudflare-domain", "registrar-nameservers", "cloudflare-token", "registrar-dns-records", "digitalocean-token", "railway-token", "telnyx-account", "telnyx-api-key", "vapi-account", "vapi-api-key", "resend", "google-oauth", "microsoft-oauth"]);
   const extra = allHowTos().filter((h) => !known.has(h.id) && !h.placeholder);
   return layout(`Buyer guide · ${CONFIG.productName}`, `
 <section class="hero small">
@@ -152,6 +152,7 @@ ${sec("requirements", "1. What you need", RAILWAY ? `<p>Two accounts are all it 
 ${sec("accounts", "2. Get your accounts ready", RAILWAY ? `
 <h3>Hosting (Railway)</h3>${ht("railway-token")}
 <h3>Phones (Telnyx)</h3>${ht("telnyx-account")}${ht("telnyx-api-key")}
+<h3>Phones (Vapi, instead of Telnyx)</h3><p>Prefer Vapi? Choose it on the Phones step. Vapi only gives away US numbers, so for an Australian number you bring one from Twilio or Telnyx.</p>${ht("vapi-account")}${ht("vapi-api-key")}
 <h2 class="gopt">Optional extras</h2>
 <p>Skip these to install now. Each can be added later (see <a href="#later">Adding the extras later</a>).</p>
 <h3>Email (optional)</h3>${ht("resend")}
@@ -165,6 +166,7 @@ ${extra.map((h) => ht(h.id)).join("")}` : `
 ${ht("cloudflare-domain")}${ht("registrar-nameservers")}${ht("cloudflare-token")}${ht("registrar-dns-records")}
 <h3>Your server</h3>${ht("digitalocean-token")}
 <h3>Phones</h3>${ht("telnyx-account")}${ht("telnyx-api-key")}
+<h3>Phones (Vapi, instead of Telnyx)</h3>${ht("vapi-account")}${ht("vapi-api-key")}
 <h3>Email</h3>${ht("resend")}
 <h3>Calendars (optional)</h3>${ht("google-oauth")}${ht("microsoft-oauth")}
 ${extra.map((h) => ht(h.id)).join("")}`)}

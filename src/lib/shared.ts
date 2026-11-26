@@ -141,6 +141,8 @@ export type BookingState = {
   upcoming: CalendarEvent[];
 };
 
+export type VoiceProviderId = "telnyx" | "vapi";
+
 export type Business = {
   id: string;
   assistantId: string;
@@ -151,6 +153,9 @@ export type Business = {
   connect?: { tokenHash: string; expiresAt: string; createdAt: string };
   // Numbers Telnyx reports as connected, refreshed whenever the phone number card loads.
   phoneNumbers?: string[];
+  // The voice engine this receptionist's assistant lives on. Missing means Telnyx (every
+  // receptionist made before Vapi was added). Set when it is made, from its agency's choice.
+  voiceProvider?: VoiceProviderId;
   // Made from the console's "send the client an onboarding link": "pending" until the
   // client finishes setting it up in their workspace, then "done".
   onboarding?: "pending" | "done";
@@ -289,7 +294,19 @@ export type NumberOrder = {
 // numbers: take texts. waiting: answer calls but don't take texts yet.
 export type TextingState = { enabled: boolean; numbers: string[]; waiting: string[] };
 
+// What the voice engine can do about phone numbers, so the screens say it honestly.
+// Telnyx: search, buy and attach. Vapi: it only sells free US numbers, so for an
+// Australian receptionist a number is brought over from Twilio or Telnyx ("import").
+export type NumberSupport = {
+  provider: VoiceProviderId;
+  buy: boolean;
+  import: boolean;
+  note: string;
+};
+
 export type NumberState = {
+  provider?: VoiceProviderId;
+  support?: NumberSupport;
   numbers: ConnectedNumber[];
   pending: NumberOrder[];
   // The platform's balance; only shown to the platform team.
@@ -829,6 +846,12 @@ export type Account = {
 // An agency's phone account as the Setup and Connections screens see it
 // (server/phoneAccount.ts).
 export type PhoneAccount = {
+  // The voice engine this agency's new receptionists are made on. Telnyx unless Vapi is chosen.
+  provider: VoiceProviderId;
+  // Vapi only: the public key browsers use for the test call, once saved.
+  vapiPublicKey?: string;
+  // The engine the install itself defaults to (VOICE_PROVIDER), for the Connections wording.
+  installProvider: VoiceProviderId;
   // own: the agency's own Telnyx key. platform: runs on the platform's account. none: not connected yet.
   mode: "own" | "platform" | "none";
   last4: string;
@@ -880,6 +903,7 @@ export type PlatformSettings = {
 export type PlatformTestResult = { ok: true; message: string; redirectUri?: string };
 
 export type TelnyxSettings = {
+  provider?: VoiceProviderId;
   mode: "own" | "platform" | "none";
   last4: string;
   balance: { amount: number; currency: string } | null;
@@ -894,6 +918,8 @@ export type Agency = {
   owners: string[];
   pendingInvites: string[];
   telnyx: "own" | "platform" | "none";
+  // The voice engine this agency makes new receptionists on.
+  provider?: VoiceProviderId;
   platformTelnyx: boolean;
   suspended: boolean;
   // Onboarding progress, for the platform team's flow view.

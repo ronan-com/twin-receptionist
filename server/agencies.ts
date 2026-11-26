@@ -4,6 +4,7 @@ import { iso, sql } from "./db";
 import { newAgencyUsesPlatform } from "./phoneAccount";
 import { ValidationError } from "./prompt";
 import { forgetKey, telnyx } from "./telnyx";
+import { accountMode, asProvider, installProvider, providerOfOrg } from "./voice/config";
 
 // Agencies are orgs the platform team sets up. An agency brings its own Telnyx
 // account (its API key, kept sealed), its own clients and its own people.
@@ -11,6 +12,12 @@ import { forgetKey, telnyx } from "./telnyx";
 // ---- The agency's own Telnyx account (Settings) ----
 
 export async function telnyxSettings(ctx: Ctx): Promise<TelnyxSettings> {
+  const provider = await providerOfOrg(ctx.org!.id);
+  // Vapi has no balance to show (its credit lives in the Vapi dashboard).
+  if (provider === "vapi") {
+    const [v] = await sql`select vapi_key_last4 from orgs where id = ${ctx.org!.id}`;
+    return { provider, mode: await accountMode(ctx.org!.id, "vapi"), last4: v?.vapi_key_last4 ?? "", balance: null };
+  }
   const [o] = await sql`select telnyx_key is not null as own, telnyx_key_last4, platform_telnyx from orgs where id = ${ctx.org!.id}`;
   const mode = o?.own ? "own" : o?.platform_telnyx ? "platform" : "none";
   let balance: TelnyxSettings["balance"] = null;
@@ -38,7 +45,7 @@ function onlyPlatform(ctx: Ctx): void {
 export async function listAgencies(ctx: Ctx): Promise<Agency[]> {
   onlyPlatform(ctx);
   const orgs = await sql`
-    select o.id, o.name, o.created_at, o.platform_telnyx, o.suspended_at, o.sandbox, o.telnyx_key is not null as own,
+    select o.id, o.name, o.created_at, o.platform_telnyx, o.suspended_at, o.sandbox, (o.telnyx_key is not null or o.vapi_key is not null) as own, o.voice_provider,
       (select count(*)::int from memberships m where m.org_id = o.id and m.role <> 'customer') as members,
       (select count(*)::int from clients c where c.org_id = o.id) as clients,
       coalesce((select array_agg(u.email order by u.email) from memberships m join users u on u.id = m.user_id
@@ -57,6 +64,7 @@ export async function listAgencies(ctx: Ctx): Promise<Agency[]> {
     owners: o.owners,
     pendingInvites: o.pending,
     telnyx: o.own ? "own" : o.platform_telnyx ? "platform" : "none",
+    provider: asProvider(o.voice_provider ?? installProvider()),
     platformTelnyx: o.platform_telnyx,
     suspended: Boolean(o.suspended_at),
     customers: o.customers,

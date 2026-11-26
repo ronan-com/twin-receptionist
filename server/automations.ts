@@ -8,6 +8,9 @@ import { ValidationError, greetingOf } from "./prompt";
 import { isDemo } from "./sandbox";
 import { getClient, orgOfClient } from "./store";
 import { runAsOrg, telnyx } from "./telnyx";
+import { providerOfClient } from "./voice/config";
+import { voiceFor } from "./voice";
+import { UNMAPPED } from "./voice/vapiMap";
 import { textingState } from "./texting";
 
 // Per-receptionist automations (area T): transfer to a person, text-back after a
@@ -219,21 +222,33 @@ const say = (n: string) => n.replace(/^\+61/, "0");
 /** Transfers come from the receptionist's own number (Telnyx requires a from number). */
 export const transferFrom = (client: Business): string | null => (client.phoneNumbers ?? []).find((n) => /^\+61\d{9}$/.test(n)) ?? null;
 
-export function transferTool(client: Business, a: AutomationSettings) {
-  const from = transferFrom(client);
-  if (!a.transfer.enabled || !a.transfer.number || !from || a.transfer.number === from) return null;
+/** The transfer in engine-neutral form (what to say, who to ring), or null when it's off. */
+export function transferSpec(a: AutomationSettings) {
+  if (!a.transfer.enabled || !a.transfer.number) return null;
   const reasons = [
     a.transfer.onRequest && "the caller asks to speak to a person",
     a.transfer.urgent && "it is urgent",
     a.transfer.cantHelp && "you can't help with what they need",
   ].filter(Boolean);
   return {
+    description: `Put the caller through to ${a.transfer.name} when ${reasons.join(", or ")}. Only on a phone call.`,
+    name: a.transfer.name,
+    to: a.transfer.number,
+    takeMessageOnVoicemail: a.transfer.voicemail === "take_message",
+  };
+}
+
+export function transferTool(client: Business, a: AutomationSettings) {
+  const from = transferFrom(client);
+  const spec = transferSpec(a);
+  if (!spec || !from || a.transfer.number === from) return null;
+  return {
     type: "transfer",
     transfer: {
-      description: `Put the caller through to ${a.transfer.name} when ${reasons.join(", or ")}. Only on a phone call.`,
-      targets: [{ name: a.transfer.name, to: a.transfer.number }],
+      description: spec.description,
+      targets: [{ name: spec.name, to: spec.to }],
       from,
-      ...(a.transfer.voicemail === "take_message"
+      ...(spec.takeMessageOnVoicemail
         ? { voicemail_detection: { detection_mode: "premium", on_voicemail_detected: { action: "stop_transfer" } } }
         : {}),
     },
@@ -242,9 +257,10 @@ export function transferTool(client: Business, a: AutomationSettings) {
 
 const usesOpenNow = (a: AutomationSettings) => a.hoursMode.enabled || (a.transfer.enabled && a.transfer.when === "hours");
 
-export function automationInstructions(client: Business, a: AutomationSettings): string {
+export function automationInstructions(client: Business, a: AutomationSettings, engine: "telnyx" | "vapi" = "telnyx"): string {
   const lines: string[] = [];
-  const tool = transferTool(client, a);
+  // Telnyx needs the receptionist's own number to transfer from; Vapi doesn't.
+  const tool = engine === "vapi" ? transferSpec(a) : transferTool(client, a);
   if (usesOpenNow(a)) {
     lines.push(
       `- Open right now: "{{twin_open_now}}" ("yes" or "no"). If it says "unknown", work it out from the current local time and the opening hours above.`,
@@ -425,11 +441,7 @@ export async function applyAutomations(client: Business, deps: AutomationDeps): 
   }
   try {
     const synced = await deps.syncAssistant(client);
-    const res = await telnyx<any>("GET", `/ai/assistants/${client.assistantId}`);
-    const current = (res.data ?? res)?.telephony_settings ?? {};
-    const row = await loadAutomations(client.id);
-    const greet = synced.settings.paused ? {} : overlayPayload(synced, row.settings, { greeting: synced.settings.greeting }, { publicUrl: publicUrl(), token: row.token });
-    await telnyx("POST", `/ai/assistants/${client.assistantId}`, { ...greet, ...telephonyPayload(row.settings, current) });
+    await voiceFor(synced).applyAutomations(synced);
     await markApplied(client.id, null);
     await resolveIncidents("automations_apply", client.id);
     return null;
@@ -469,6 +481,8 @@ export type StatusInputs = {
   publicUrl: string;
   /** Whether these settings have ever reached the phone provider. */
   applied: boolean;
+  /** The voice engine this receptionist runs on (default telnyx). */
+  engine?: "telnyx" | "vapi";
 };
 
 export function statusFor(client: Business, a: AutomationSettings, i: StatusInputs): Record<AutomationKey, AutomationStatus> {
@@ -478,15 +492,17 @@ export function statusFor(client: Business, a: AutomationSettings, i: StatusInpu
   const transfer: AutomationStatus = (() => {
     if (!a.transfer.enabled) return off();
     if (!a.transfer.number) return { state: "needs_setup", label: "Needs a number", detail: "Add the number to put callers through to." };
-    if (!i.demo && !transferFrom(client)) {
+    if (!i.demo && i.engine !== "vapi" && !transferFrom(client)) {
       return { state: "needs_setup", label: "Needs a phone number", detail: "Transfers start once this receptionist has a phone number. Connect one under Call handling." };
     }
     const when = a.transfer.when === "hours" ? "during opening hours" : "any time";
     return { state: "on", label: `On · to ${say(a.transfer.number)}`, detail: `Callers are put through ${when}${demoNote}.` };
   })();
 
+  const vapi = i.engine === "vapi";
   const textBack: AutomationStatus = (() => {
     if (!a.textBack.enabled) return off();
+    if (vapi) return { state: "unsupported", label: "Not available on Vapi", detail: UNMAPPED.textBack };
     if (!a.textBack.afterCall && !a.textBack.missedCall) return { state: "needs_setup", label: "Choose when to text", detail: "Turn on texts after calls, after missed calls, or both." };
     if (i.demo) return { state: "on", label: "On (demo)", detail: "Demo receptionists never send texts." };
     if (i.smsNumber === undefined) return { state: "error", label: "Couldn't check", detail: "The phone service didn't answer. Texts will go out once it does." };
@@ -497,7 +513,7 @@ export function statusFor(client: Business, a: AutomationSettings, i: StatusInpu
   })();
 
   const recording: AutomationStatus = (() => {
-    if (!i.demo && !i.applied) {
+    if (!i.demo && !i.applied && !vapi) {
       return {
         state: "needs_setup",
         label: "Not set yet",
@@ -513,8 +529,10 @@ export function statusFor(client: Business, a: AutomationSettings, i: StatusInpu
 
   const callLimits: AutomationStatus = {
     state: "on",
-    label: `Up to ${a.callLimits.maxMinutes} min · ends after ${a.callLimits.idleSeconds}s of silence`,
-    detail: "Voicemail detection on incoming calls isn't available from the phone service (it only works on calls it makes), so it's offered on transfers instead.",
+    label: vapi ? `Up to ${a.callLimits.maxMinutes} min` : `Up to ${a.callLimits.maxMinutes} min · ends after ${a.callLimits.idleSeconds}s of silence`,
+    detail: vapi
+      ? `${UNMAPPED.silenceLimit} ${UNMAPPED.voicemail}`
+      : "Voicemail detection on incoming calls isn't available from the phone service (it only works on calls it makes), so it's offered on transfers instead.",
   };
 
   const hoursMode: AutomationStatus = (() => {
@@ -531,7 +549,7 @@ export function statusFor(client: Business, a: AutomationSettings, i: StatusInpu
 }
 
 async function smsNumberOf(client: Business): Promise<string | null | undefined> {
-  if (isDemo(client.assistantId)) return null;
+  if (isDemo(client.assistantId) || providerOfClient(client) === "vapi") return null;
   try {
     const t = await textingState(client);
     return t.numbers.find((n) => /^\+614\d{8}$/.test(n)) ?? null;
@@ -549,7 +567,7 @@ export async function automationsState(client: Business, canEdit: boolean) {
     where client_id = ${client.id} order by created_at desc limit 10`;
   return {
     settings: row.settings,
-    status: statusFor(client, row.settings, { demo, smsNumber, publicUrl: publicUrl(), applied: Boolean(row.appliedAt) }),
+    status: statusFor(client, row.settings, { demo, smsNumber, publicUrl: publicUrl(), applied: Boolean(row.appliedAt), engine: providerOfClient(client) }),
     canEdit,
     demo,
     appliedAt: row.appliedAt,
@@ -685,6 +703,7 @@ async function textBackOne(call: any): Promise<void> {
 
   if ("skip" in choice) return void (await finish("skipped", choice.skip));
   if (isDemo(client.assistantId)) return void (await finish("skipped", "Demo receptionist: nothing sent"));
+  if (providerOfClient(client) === "vapi") return void (await finish("skipped", "Texting isn't available on Vapi"));
   const [recent] = await sql`
     select 1 from automation_texts where client_id = ${client.id} and to_number = ${call.from_number} and status = 'sent'
       and created_at > now() - interval '12 hours' and id <> ${id}`;

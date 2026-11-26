@@ -42,7 +42,7 @@ const META: Record<StepId, { title: string; short: string; icon: string; hue: st
   domain: { title: "Domain", short: RAILWAY ? "Optional" : "Your web address", icon: "globe", hue: "cyan" },
   server: { title: "Server", short: "DigitalOcean", icon: "server", hue: "indigo" },
   railway: { title: "Hosting", short: "Railway", icon: "server", hue: "indigo" },
-  phones: { title: "Phones", short: "Telnyx", icon: "phone", hue: "coral" },
+  phones: { title: "Phones", short: "Telnyx or Vapi", icon: "phone", hue: "coral" },
   email: { title: "Email", short: "Optional", icon: "mail", hue: "green" },
   calendars: { title: "Calendars", short: "Optional", icon: "calendar", hue: "magenta" },
   extras: { title: "Extras", short: "Optional, skip any", icon: "sparkles", hue: "cyan" },
@@ -104,7 +104,7 @@ function welcome(c: Ctx) {
 <div class="tiles">
   <div class="tile indigo"><div class="ti">${icon("home")}</div><b>Yours to keep</b><span>Your brand, ${RAILWAY ? "hosting" : "server"}, accounts and clients. We keep no access.</span></div>
   <div class="tile magenta"><div class="ti">${icon("clock")}</div><b>About ${RAILWAY ? "15" : "20"} minutes</b><span>Close the page any time; this link picks up where you left off.</span></div>
-  <div class="tile coral"><div class="ti">${icon("key")}</div><b>Have these ready</b><span>${RAILWAY ? "Railway (hosting) and Telnyx (phones). Email and your own domain are optional extras you can add now or later." : "Your domain, DigitalOcean, Telnyx and Resend accounts."}</span></div>
+  <div class="tile coral"><div class="ti">${icon("key")}</div><b>Have these ready</b><span>${RAILWAY ? "Railway (hosting) and Telnyx or Vapi (phones). Email and your own domain are optional extras you can add now or later." : "Your domain, DigitalOcean, Telnyx (or Vapi) and Resend accounts."}</span></div>
 </div>
 ${mainForm(c, "start", "")}
 ${nav(c, primary("Start"), { back: false })}`;
@@ -216,13 +216,29 @@ function server(c: Ctx) {
 ${nav(c, primary("Check and continue"))}`;
 }
 
+const phonesSummary = (c: Ctx) => (c.s.phones?.provider === "vapi" ? `Vapi ${esc(secretHint(c.b.id, "vapi_key") || "")}` : `Telnyx ${esc(secretHint(c.b.id, "telnyx_key") || "")}`);
+
 function phones(c: Ctx) {
   const saved = secretHint(c.b.id, "telnyx_key");
-  return `${head(c, "Connect your Telnyx account", "Your clients' receptionists answer calls on your Telnyx account.")}
+  const vSaved = secretHint(c.b.id, "vapi_key");
+  const vapi = c.s.phones?.provider === "vapi" || (!c.s.phones?.provider && !!vSaved && !saved);
+  const radio = (id: string, label: string, hint: string, on: boolean) =>
+    `<label class="opt"><input type="radio" name="provider" value="${id}"${on ? " checked" : ""}><b>${label}</b><small>${hint}</small></label>`;
+  return `${head(c, "Connect your phone account", "Your clients' receptionists answer calls on your own account with Telnyx or Vapi.")}
 <div class="body">${mainForm(c, "phones", `
+  <fieldset><legend class="f">Phone service</legend>
+    ${radio("telnyx", "Telnyx (recommended)", "Buy Australian numbers inside the app. Texting after calls works.", !vapi)}
+    ${radio("vapi", "Vapi", "Use a Vapi account. Bring your own Twilio or Telnyx number (Vapi only gives away US numbers). No texting.", vapi)}
+  </fieldset>
+  <h3>Telnyx</h3>
   ${secretIn("key", "KEY...", saved, "Telnyx API key")}
   ${notice("warn", "A new Telnyx account is a trial: callers can't get through until it's upgraded and has credit.")}
-  ${showMeHow(["telnyx-account", "telnyx-api-key"])}`)}</div>
+  ${showMeHow(["telnyx-account", "telnyx-api-key"])}
+  <h3>Vapi</h3>
+  ${secretIn("vapiKey", "Private key", vSaved, "Vapi private API key")}
+  <label class="f" for="vapiPublic">Vapi public key (used by the browser test call)</label><input id="vapiPublic" name="vapiPublic" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" maxlength="300" placeholder="Public key" value="${val(c, "vapiPublic", "")}">
+  <p class="hint">With Vapi, the Telnyx key above is optional: it's only used for AI email replies.</p>
+  ${showMeHow(["vapi-account", "vapi-api-key"])}`)}</div>
 ${nav(c, primary("Check and continue"))}`;
 }
 
@@ -361,7 +377,7 @@ function install(c: Ctx) {
     const region = sv.regions?.find((r) => r.slug === sv.region)?.name.replace(/ \d+$/, "") || sv.region;
     const rows: [string, string][] = [
       ["Brand", `${esc(s.brand?.productName || "")} · ${s.brand?.logo ? "logo added" : "no logo yet"}`], ["Dashboard", esc(host)], ["Server", `${esc(region)} · ${esc((sv.sizes?.find((z) => z.slug === sv.size)?.label.match(/(\d+) GB memory/) || [])[1] || "2")} GB · US$${sv.price}/mo`],
-      ["Phones", `Telnyx ${esc(secretHint(c.b.id, "telnyx_key") || "")}`], ["Email from", esc(s.email?.from || "")],
+      ["Phones", phonesSummary(c)], ["Email from", esc(s.email?.from || "")],
       ["DNS", s.domain?.mode === "cloudflare" ? "Handled by the wizard" : "You add one record"],
     ];
     return `${head(c, "Ready to install", `We'll set up ${P(c)} on your new server. You can close the page while it runs.`)}
@@ -416,7 +432,7 @@ function installRailway(c: Ctx) {
   if (s.phase === "idle") {
     const rows: [string, string][] = [
       ["Address", host ? esc(host) : "Your Railway address (ready as soon as it's built)"], ["Hosting", `Railway${s.railway?.workspaceName ? ` · ${esc(s.railway.workspaceName)}` : ""} · from US$5/mo`],
-      ["Phones", `Telnyx ${esc(secretHint(c.b.id, "telnyx_key") || "")}`], ["Email", s.email?.from ? esc(s.email.from) : "Add later"],
+      ["Phones", phonesSummary(c)], ["Email", s.email?.from ? esc(s.email.from) : "Add later"],
       ...(host ? [["DNS", manual ? "You add two records" : "Handled by the wizard"] as [string, string]] : [["Own domain", "Add later"] as [string, string]]),
     ];
     return `${head(c, "Ready to install", `We'll set up ${P(c)} in your Railway account. You can close the page while it runs.`)}

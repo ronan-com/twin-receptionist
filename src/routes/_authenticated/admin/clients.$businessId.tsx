@@ -19,6 +19,7 @@ import type { AppointmentStatus, LeadStage } from "@/lib/app/types";
 import { AutomationChips, AutomationIcon, CallSheet, LinkBox, READ_ONLY_HINT, useConsole } from "./-shared";
 import { BrandEditor } from "./-brand";
 import { BuyNumber } from "./-buy-number";
+import { ImportNumber } from "./-import-number";
 import { TestCall } from "@/components/app/TestCall";
 import { PRODUCT } from "@/lib/app/product";
 
@@ -658,7 +659,7 @@ function ReceptionistCard({
           {s.greeting ? <p className="rounded-[6px] bg-canvas-2 px-3 py-2 text-[12.5px] text-ink">“{s.greeting}”</p> : null}
         </div>
         <div className="min-w-0">
-          {!readOnly && !paused && !r.demo_assistant ? <TestCall assistantId={r.provider_agent_id} /> : null}
+          {!readOnly && !paused && !r.demo_assistant ? <TestCall assistantId={r.provider_agent_id} provider={r.provider} clientId={r.business_id} /> : null}
           <div className="mb-1.5 text-[12.5px] font-medium text-ink">Phone number</div>
           {r.numbers.length ? (
             <ul className="space-y-1.5" data-list="numbers">
@@ -690,7 +691,7 @@ function ReceptionistCard({
           ) : null}
           {!readOnly && ownPhone ? (
             canManage ? (
-              <BuyNumber clientId={r.id} timezone={s.timezone} onBought={onChanged} />
+              r.provider === "vapi" ? <ImportNumber clientId={r.id} onDone={onChanged} /> : <BuyNumber clientId={r.id} timezone={s.timezone} onBought={onChanged} />
             ) : (
               <p className="mt-3 border-t border-hairline pt-3 text-[12px] text-ink-muted">Ask an owner or admin of your agency to buy a number.</p>
             )

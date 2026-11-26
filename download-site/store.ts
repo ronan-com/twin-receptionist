@@ -32,8 +32,8 @@ function decrypt(box: string, aad: string): string {
   return Buffer.concat([d.update(b.subarray(28)), d.final()]).toString("utf8");
 }
 
-export type SecretName = "do_token" | "railway_token" | "cf_token" | "telnyx_key" | "resend_key" | "smtp_password" | "google_secret" | "microsoft_secret";
-export const ALL_SECRETS: SecretName[] = ["do_token", "railway_token", "cf_token", "telnyx_key", "resend_key", "smtp_password", "google_secret", "microsoft_secret"];
+export type SecretName = "do_token" | "railway_token" | "cf_token" | "telnyx_key" | "vapi_key" | "vapi_public" | "resend_key" | "smtp_password" | "google_secret" | "microsoft_secret";
+export const ALL_SECRETS: SecretName[] = ["do_token", "railway_token", "cf_token", "telnyx_key", "vapi_key", "vapi_public", "resend_key", "smtp_password", "google_secret", "microsoft_secret"];
 
 export const last4 = (v: string) => (v.length > 8 ? v.slice(-4) : "");
 export const mask = (l4?: string) => (l4 ? `••••${l4}` : "••••");
@@ -134,7 +134,8 @@ export interface SetupData {
     sshPublicKey?: string;
     chosen?: boolean;
   };
-  phones?: { balance?: string; checked?: boolean; confirmed?: boolean };
+  // provider: the voice engine chosen on the phones step (missing means Telnyx).
+  phones?: { balance?: string; checked?: boolean; confirmed?: boolean; provider?: "telnyx" | "vapi" };
   railway?: { email?: string; workspaceId?: string; workspaceName?: string; plan?: string; confirmed?: boolean };
   /** What we made in the buyer's Railway account (ids only). */
   rw?: {

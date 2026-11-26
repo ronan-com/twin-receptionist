@@ -9,7 +9,7 @@ import { CONFIG } from "./lib";
 
 export const PROVIDER_IDS = [
   "cloudflare-domain", "cloudflare-token", "registrar-nameservers", "registrar-dns-records", "digitalocean-token", "railway-token",
-  "telnyx-account", "telnyx-api-key", "resend", "google-oauth", "microsoft-oauth", "stripe",
+  "telnyx-account", "telnyx-api-key", "vapi-account", "vapi-api-key", "resend", "google-oauth", "microsoft-oauth", "stripe",
 ] as const;
 export type ProviderId = (typeof PROVIDER_IDS)[number];
 
@@ -90,6 +90,8 @@ const PLACEHOLDER: Record<string, [string, string]> = {
   "railway-token": ["Create a Railway token", "Sign up at [railway.com](https://railway.com), then choose the **Hobby** plan under **Account > Plans** (US$5 a month, which includes US$5 of usage; it needs a card). Open **Account Settings > Tokens** ([railway.com/account/tokens](https://railway.com/account/tokens)), type a name like *Setup*, leave **Workspace** on **No workspace**, click **Create** and copy the token. You can delete it once your agency is live."],
   "telnyx-account": ["Open and upgrade a Telnyx account", "Sign up at [telnyx.com](https://telnyx.com/sign-up), confirm your email, then upgrade from trial under **Account Level** and add credit under **Billing**. Real callers can't reach a trial account."],
   "telnyx-api-key": ["Create a Telnyx API key", "In Telnyx open **Account Settings > API Keys > Create API Key** and copy it straight away (it starts with `KEY`)."],
+  "vapi-account": ["Create a Vapi account", "Sign up at [dashboard.vapi.ai](https://dashboard.vapi.ai/) and add a card under **Billing**. Vapi only gives away US numbers: for an Australian number, keep one from Twilio or Telnyx to connect later."],
+  "vapi-api-key": ["Find your Vapi API keys", "In the Vapi dashboard open **API Keys** and copy both the **Private Key** and the **Public Key**."],
   "resend": ["Create a Resend API key", "Sign up at [resend.com](https://resend.com/signup), open **API Keys > Create API Key**, choose **Full access** and copy it (it starts with `re_`). The setup adds and verifies your sending domain for you."],
   "google-oauth": ["Google calendar keys (optional)", "In [Google Cloud](https://console.cloud.google.com/apis/credentials) enable the Google Calendar API, then create an **OAuth client ID** of type **Web application** with the redirect address shown on this page. Copy the Client ID and secret."],
   "microsoft-oauth": ["Microsoft calendar keys (optional)", "In [Microsoft Entra](https://entra.microsoft.com/) open **App registrations > New registration**, allow any organisation and personal accounts, add the **Web** redirect address shown on this page, then create a client secret and copy its **Value**."],

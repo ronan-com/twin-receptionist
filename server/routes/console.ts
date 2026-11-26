@@ -1,4 +1,4 @@
-import type { Business as Receptionist, CallMessage } from "../../src/lib/shared";
+import type { Business, Business as Receptionist, CallMessage } from "../../src/lib/shared";
 import { countryOfNumber, formatNumber, industry, INDUSTRIES, type IndustryKey } from "../../src/lib/shared";
 import { AuthError, createInvite, emailOf, requireRole, type Ctx } from "../accounts";
 import { changeBrand, ownBrand, uploadAsset } from "../brand";
@@ -7,10 +7,11 @@ import { answeredBusiness } from "../answered";
 import { audit } from "../audit";
 import { iso, sql } from "../db";
 import { createRequest } from "../numberRequests";
-import { callSummary } from "../numbers";
 import { ValidationError } from "../prompt";
 import { demoCallDetail, isDemo } from "../sandbox";
-import { runAsOrg, telnyx } from "../telnyx";
+import { runAsOrg } from "../telnyx";
+import { providerOfClient } from "../voice/config";
+import { voiceFor } from "../voice";
 import { json, readBody, type RouteArgs } from "./http";
 import { manageDeps } from "./manage";
 
@@ -139,9 +140,9 @@ function agentRow(c: ClientRow) {
     greeting: s.greeting ?? "",
     tone: s.tone ?? "friendly",
     voice_id: s.voiceId ?? "",
-    voice: s.voiceName ? { id: s.voiceId ?? "", display_name: s.voiceName, provider: "telnyx" } : null,
+    voice: s.voiceName ? { id: s.voiceId ?? "", display_name: s.voiceName, provider: providerOfClient(c.data) } : null,
     language: "en-AU",
-    provider: "telnyx",
+    provider: providerOfClient(c.data),
     provider_agent_id: c.data.assistantId,
     demo_assistant: isDemo(c.data.assistantId ?? ""),
     llm_model: MODEL,
@@ -167,7 +168,7 @@ function numberRows(c: ClientRow) {
     routing_mode: "ai_receptionist",
     capabilities: { voice: true, sms: e164.startsWith("+614") },
     country: countryOfNumber(e164) ?? "AU",
-    provider: "telnyx",
+    provider: providerOfClient(c.data),
     health: "healthy",
     last_health_check_at: iso(c.data.updatedAt),
     monthly_usage_minutes: null,
@@ -181,7 +182,7 @@ function callRow(r: any, c: ClientRow | undefined) {
     business_id: r.client_id,
     agent_id: r.client_id,
     provider_call_id: r.provider_call_id,
-    provider: "telnyx",
+    provider: r.provider === "vapi" ? "vapi" : "telnyx",
     direction: "inbound",
     channel: r.channel,
     metadata: { channel: r.channel },
@@ -370,18 +371,14 @@ async function transcript(c: ClientRow, providerId: string): Promise<{ summary: 
   if (isDemo(c.data.assistantId)) return demoCallDetail(providerId.replace(`-${c.id}`, ""));
   if (!/^[A-Za-z0-9-]{8,80}$/.test(providerId)) return { summary: "", messages: [] };
   return runAsOrg(c.org_id, async () => {
-    const convo = await telnyx<{ data?: any }>("GET", `/ai/conversations/${providerId}`);
-    // Only transcripts of this receptionist's own calls.
-    if ((convo.data?.metadata ?? {}).assistant_id !== c.data.assistantId) return { summary: "", messages: [] };
-    const [res, summary] = await Promise.all([
-      telnyx<{ data?: any[] }>("GET", `/ai/conversations/${providerId}/messages`),
-      callSummary(providerId).catch(() => ""),
-    ]);
-    const messages = (res.data ?? [])
-      .filter((m) => (m.role === "user" || m.role === "assistant") && (m.text || m.content))
-      .map((m) => ({ role: m.role, text: String(m.text ?? m.content), at: m.sent_at ?? m.created_at ?? "" }))
-      .sort((a, b) => a.at.localeCompare(b.at));
-    return { summary, messages };
+    const business = { ...c.data, id: c.id } as Business;
+    try {
+      // Only transcripts of this receptionist's own calls (the engine checks).
+      return await voiceFor(business).callDetail(business, providerId);
+    } catch (err) {
+      if (err instanceof ValidationError) return { summary: "", messages: [] };
+      throw err;
+    }
   });
 }
 
@@ -554,7 +551,7 @@ async function businesses(ctx: Ctx) {
     memberships: access
       .filter((a: any) => a.client_id === c.id)
       .map((a: any) => ({ id: `${a.user_id}:${c.id}`, user_id: a.user_id, role: a.role === "manager" ? "admin" : "read_only", access_role: a.role })),
-    agents: [{ id: c.id, name: c.data.settings?.receptionistName || "Receptionist", status: statusOf(c), provider: "telnyx" }],
+    agents: [{ id: c.id, name: c.data.settings?.receptionistName || "Receptionist", status: statusOf(c), provider: providerOfClient(c.data) }],
     numbers: (c.data.phoneNumbers ?? []).map((e164) => ({ id: e164, e164, status: "active" })),
     subscription: null,
     pending_invites: inv.get(c.id) ?? 0,

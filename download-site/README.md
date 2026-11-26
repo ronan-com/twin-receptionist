@@ -58,6 +58,11 @@ is no custom domain (the service domain is created before the app's variables fo
 | Install | Press Install | see below |
 | Done | Their address, sign in with the owner email, delete the Railway (and Cloudflare) token, turn on Postgres backups. Skipped extras are listed as **Optional extras** with how to add each later | |
 
+**AI help for your team** is not a wizard step and is never asked for. The Done screen's **Optional
+extras** always lists it with the steps ("paste an OpenRouter key in Railway variables":
+`OPENROUTER_API_KEY` on the app service, optionally `OPENROUTER_MODEL`). With no key the app shows no
+**Ask for help** button; with one, agency owners and admins get the assistant (server/assistant.ts).
+
 Rules between the extras: Resend sends from a domain the buyer owns, so adding email without a
 domain (or calendars without a domain) is refused at Continue / Install with a plain message; skipping
 the domain is refused while email or calendars are set (skip those first). With no email, the app's

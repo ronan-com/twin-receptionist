@@ -513,6 +513,12 @@ function laterCards(c: Ctx, url: string): string {
     "Open your dashboard, then <b>Settings</b>, then <b>Email and calendars</b>, and paste the client ID and secret.",
     `The setup guide's <a href="/guide#accounts" target="_blank" rel="noopener">calendar how-tos</a> walk through each one.`,
   ]));
+  // Not a wizard step and nothing to tick: it is only a Railway variable, so it is always listed.
+  cards.push(late("sparkles", "AI help for your team", "A built-in assistant that answers your team's questions about the dashboard. It switches on when you paste an OpenRouter key into Railway variables.", [
+    "Make an account at <b>openrouter.ai</b> and create an API key (add a few dollars of credit; each answer costs a fraction of a cent or two).",
+    "In Railway, open your project, click the <b>app</b> service, then <b>Variables</b>, and add <code>OPENROUTER_API_KEY</code> with the key as its value.",
+    "Railway restarts the app. Open your dashboard and look for the <b>Ask for help</b> button at the bottom right.",
+  ]));
   return cards.length ? `<h3 class="extras-head">Optional extras: add them whenever you like</h3><div class="xcards">${cards.join("")}</div>` : "";
 }
 

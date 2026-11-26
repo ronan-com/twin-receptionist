@@ -1,6 +1,7 @@
 import { createHash, randomBytes } from "node:crypto";
 import type { Account, OrgRole, TeamState } from "../src/lib/shared";
 import { clientAccessOf, consoleOf } from "./answered";
+import { assistantConfigured, canUseAssistant } from "./assistant";
 import { applyInstallBrand, resolveBrand } from "./brand";
 import { iso, sql } from "./db";
 import { importLegacyData } from "./legacy";
@@ -213,6 +214,8 @@ export async function account(ctx: Ctx): Promise<Account> {
     access: await clientAccessOf(ctx),
     singleAgency: singleAgency(),
     serverSettings: canChangeServerSettings(ctx),
+    // The "Ask for help" assistant: a key is set (OPENROUTER_API_KEY) and this person is an agency owner or admin.
+    assistant: assistantConfigured() && canUseAssistant(ctx),
     ...(ctx.viewing ? { viewing: ctx.viewing } : {}),
     brand: ctx.org ? await resolveBrand(ctx.org.id, await brandClient(ctx)) : undefined,
   };

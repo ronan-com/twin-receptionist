@@ -43,7 +43,8 @@ import { startCallSync } from "./callsync";
 import { industryKeyOf, workspaceBusinesses } from "./answered";
 import { audit } from "./audit";
 import { OTHER_BRAND, UI_PRODUCT, brandedIndex } from "./product";
-import { consoleRoutes, isClientPaused } from "./routes/console";
+import { agencySnapshot, consoleRoutes, isClientPaused } from "./routes/console";
+import { assistantRoute } from "./assistant";
 import { manageRoutes, setManageDeps } from "./routes/manage";
 import { signupRoutes } from "./routes/signup";
 import { automationHooks, automationRoutes } from "./routes/automations";
@@ -748,6 +749,17 @@ async function route(req: Request, server?: { requestIP(r: Request): { address: 
   }
 
   // ---- The Answered UI's route modules (server/routes/*), wired once here ----
+  // The agency help assistant (AI answers about the dashboard, streamed from OpenRouter).
+  if (path === "/api/assistant") {
+    return assistantRoute(req, ctx, {
+      product: UI_PRODUCT,
+      snapshot: async () => {
+        const phone = (await account(ctx)).telnyx;
+        return agencySnapshot(ctx, phone, singleAgency());
+      },
+    });
+  }
+
   if (path.startsWith("/api/automations/")) return (await automationRoutes({ req, url, path, method, ctx, orgId, appUrl: appUrl(req) }, { clientAccessFor, syncAssistant })) ?? json({ error: "Not found" }, 404);
   const area = path.match(/^\/api\/(workspace|manage|console)(\/.*)?$/);
   if (area) {

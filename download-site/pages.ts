@@ -140,6 +140,7 @@ ${sec("requirements", "1. What you need", RAILWAY ? `<p>Two accounts are all it 
     "<b>Your own email.</b> A Resend account (or any SMTP service) so invites and notices come from your address. Without it, invite links show on screen for you to copy and send yourself.",
     "<b>Your own domain</b>, from any registrar (GoDaddy, Namecheap, Crazy Domains, VentraIP, Cloudflare and so on), so your agency lives at app.yourcompany.com. Without it, your agency runs at the https address Railway gives it. Resend sends from a domain you own, so email goes with your domain.",
     "<b>Calendar keys.</b> Google Cloud or Microsoft Entra keys, so receptionists can book into calendars.",
+    "<b>AI help for your team.</b> An OpenRouter key pasted into Railway variables switches on an <b>Ask for help</b> assistant in your dashboard.",
   ])}` : ul([
     "<b>A domain</b> you own, from any registrar (GoDaddy, Namecheap, Crazy Domains, VentraIP, Cloudflare and so on).",
     "<b>A DigitalOcean account</b> with a payment method. Your server is rented here.",
@@ -212,6 +213,12 @@ ${ul([
 ${ul([
     "Make the Google Cloud or Microsoft Entra app (see the how-tos above). Its redirect address is your agency's address followed by <code>/api/oauth/google/callback</code> (or <code>/microsoft/callback</code>).",
     "Open <b>Settings</b>, then <b>Email and calendars</b>, and paste the client ID and secret.",
+  ])}
+<h3>AI help for your team</h3>
+${ul([
+    "Make an account at openrouter.ai and create an API key. Add a few dollars of credit.",
+    "In Railway, open the <b>app</b> service, then <b>Variables</b>, and add <code>OPENROUTER_API_KEY</code> with your key. Railway restarts the app.",
+    "Your dashboard then shows an <b>Ask for help</b> button at the bottom right, where owners and admins can ask how to do things. Optionally set <code>OPENROUTER_MODEL</code> to choose a different model.",
   ])}`) + sec("backups", "6. Backups and updates", ul([
     "Your database is the <b>Postgres</b> service in your Railway project. Open it, then <b>Backups</b>, and turn on daily (and weekly) backups. Railway charges backups like volume storage.",
     "Your app's settings are the <b>app</b> service's <b>Variables</b> in Railway. Never change <code>MAILBOX_KEY</code>: it unlocks saved mailbox and calendar logins.",

@@ -10,6 +10,7 @@ import { adminOverviewCountsQuery } from "@/lib/app/queries";
 import { useWorkspace } from "@/lib/app/workspace";
 import { PRODUCT } from "@/lib/app/product";
 import { GetStartedProvider } from "@/components/onboarding/GetStarted";
+import { AssistantProvider } from "@/components/assistant/Assistant";
 
 // The console. Variant "platform" (the platform admin: everything) or "agency"
 // (agency staff: their own agency). Business users are sent to their workspace,
@@ -84,7 +85,11 @@ function AdminLayout() {
   // "Get started" is for the agency's own owners and admins: not the platform admin, not a read-only view.
   const getStarted = variant === "agency" && !ws.isPlatformAdmin && !ws.viewing && (role === "owner" || role === "admin") && !!ws.session;
 
+  // "Ask for help" (AI): same audience as Get started, and only where the server has a key (session.assistant).
+  const assistant = getStarted && Boolean(ws.session?.assistant);
+
   return (
+    <AssistantProvider enabled={assistant} userId={ws.session?.user.id ?? ""}>
     <GetStartedProvider
       enabled={getStarted}
       userId={ws.session?.user.id ?? ""}
@@ -125,5 +130,6 @@ function AdminLayout() {
       <Outlet />
     </AppShell>
     </GetStartedProvider>
+    </AssistantProvider>
   );
 }

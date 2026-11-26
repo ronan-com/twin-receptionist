@@ -1,6 +1,6 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { Link, useRouterState } from "@tanstack/react-router";
-import { Bell, Compass, HelpCircle, Menu, Rocket } from "lucide-react";
+import { Bell, Compass, HelpCircle, Menu, Rocket, Sparkles } from "lucide-react";
 import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
@@ -11,6 +11,7 @@ import { AgencyMark } from "./AgencyMark";
 import { UserMenu } from "./UserMenu";
 import { useGetStarted } from "@/components/onboarding/GetStarted";
 import { TOUR_NAV_EVENT } from "@/components/onboarding/Tour";
+import { useAssistant } from "@/components/assistant/Assistant";
 import { OTHER_BRAND } from "@/lib/app/product";
 
 export interface AppShellProps {
@@ -140,6 +141,7 @@ export function AppShell({ nav, variant, brandTo, sidebarHeader, topbarRight, ba
   const [tourNav, setTourNav] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
   const getStarted = useGetStarted();
+  const assistant = useAssistant();
   useEffect(() => {
     const on = (e: Event) => setTourNav(Boolean((e as CustomEvent<{ open: boolean }>).detail?.open));
     window.addEventListener(TOUR_NAV_EVENT, on);
@@ -226,8 +228,20 @@ export function AppShell({ nav, variant, brandTo, sidebarHeader, topbarRight, ba
                 </button>
               </PopoverTrigger>
               <PopoverContent align="end" className="w-72 text-[12.5px]">
-                {getStarted ? (
+                {getStarted || assistant ? (
                   <div className="mb-3 space-y-1 border-b border-hairline pb-3">
+                    {assistant ? (
+                      <button
+                        type="button"
+                        data-action="ask-ai"
+                        onClick={() => { setHelpOpen(false); assistant.open(); }}
+                        className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left font-medium text-ink hover:bg-canvas-2"
+                      >
+                        <Sparkles className="h-4 w-4 text-indigo" /> Ask AI
+                        <kbd className="ml-auto rounded border border-hairline bg-canvas-2 px-1 font-mono text-[11px] font-normal text-ink-muted">Ctrl /</kbd>
+                      </button>
+                    ) : null}
+                    {getStarted ? (<>
                     <button
                       type="button"
                       data-action="get-started"
@@ -244,6 +258,7 @@ export function AppShell({ nav, variant, brandTo, sidebarHeader, topbarRight, ba
                     >
                       <Compass className="h-4 w-4 text-indigo" /> Take the tour
                     </button>
+                    </>) : null}
                   </div>
                 ) : null}
                 <div className="font-semibold text-ink">Need a hand?</div>

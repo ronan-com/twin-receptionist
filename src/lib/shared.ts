@@ -822,6 +822,8 @@ export type Account = {
   singleAgency?: boolean;
   // May change the server's own settings (Settings, "Email and calendars").
   serverSettings?: boolean;
+  // The "Ask for help" AI assistant is on for this person (server has an OPENROUTER_API_KEY and they are an agency owner or admin).
+  assistant?: boolean;
 };
 
 // An agency's phone account as the Setup and Connections screens see it

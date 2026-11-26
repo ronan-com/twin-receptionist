@@ -2,6 +2,7 @@ import type { Business as Receptionist, CallMessage } from "../../src/lib/shared
 import { countryOfNumber, formatNumber, industry, INDUSTRIES, type IndustryKey } from "../../src/lib/shared";
 import { AuthError, createInvite, emailOf, requireRole, type Ctx } from "../accounts";
 import { changeBrand, ownBrand, uploadAsset } from "../brand";
+import type { AgencySnapshot } from "../assistant";
 import { answeredBusiness } from "../answered";
 import { audit } from "../audit";
 import { iso, sql } from "../db";
@@ -1290,6 +1291,43 @@ async function sendOnboarding(ctx: Ctx, deps: ConsoleDeps, companyId: string | n
   const shared = await shareCompany(ctx, m.id, { email, role: "manager" }, base);
   await audit(ctx, "company.onboarding_sent", { companyId: m.id, email, summary: `Sent ${email} an onboarding link for ${m.name}` }, { orgId: m.org_id });
   return { id: m.id, url: shared.url, emailed: shared.emailed, added: shared.added };
+}
+
+// ---------------------------------------------------------------- help assistant
+
+/** A short summary of the signed-in agency for the help assistant (server/assistant.ts): counts and names only. */
+export async function agencySnapshot(ctx: Ctx, phone: AgencySnapshot["phone"], singleAgency: boolean): Promise<AgencySnapshot> {
+  const orgId = ctx.org!.id;
+  const [o, list, brand, web] = await Promise.all([
+    overview(ctx),
+    companies(ctx),
+    ownBrand({ orgId, clientId: null }),
+    sql`select 1 from call_log where org_id = ${orgId}::uuid and channel = 'web' limit 1`,
+  ]);
+  return {
+    agency: ctx.org!.name,
+    role: ctx.role === "owner" ? "owner" : "admin",
+    phone,
+    singleAgency,
+    brandSet: Boolean(brand.logo || brand.primaryColor),
+    testCallMade: web.length > 0,
+    receptionists: o.agents,
+    numbers: o.numbers,
+    pendingNumberRequests: o.pendingNumberRequests,
+    openIncidents: o.openIncidents,
+    clientTotal: list.length,
+    clients: list.map((c) => ({
+      id: c.id,
+      name: c.name,
+      receptionists: c.receptionists.length,
+      numbers: c.numbers,
+      customers: c.customers,
+      pendingInvites: Number(c.pending_invites) || 0,
+      onboardingPending: c.onboarding_pending,
+      paused: c.status === "paused",
+      calls30d: Number(c.calls_30d) || 0,
+    })),
+  };
 }
 
 // ---------------------------------------------------------------- dispatch

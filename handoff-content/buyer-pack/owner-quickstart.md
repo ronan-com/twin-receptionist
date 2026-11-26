@@ -160,6 +160,8 @@ Your agency works without these. Your setup link keeps listing whichever you ski
 - **Your own domain.** In Railway: the **app** service, **Settings**, **Networking**, **Custom Domain**, type `app.yourbusiness.com`. Add the CNAME and TXT records Railway shows. When it shows active, change the app service's `PUBLIC_URL` variable to `https://app.yourbusiness.com`.
 - **Calendars.** Make a Google Cloud or Microsoft Entra app (its redirect address is your agency address plus `/api/oauth/google/callback`, or `/microsoft/callback`), then paste the client ID and secret under **Settings**, **Email and calendars**.
 
+- **AI help for your team.** Your dashboard can have an **Ask for help** button at the bottom right: owners and admins ask how to do things and get step-by-step answers that know how far along your agency is. To switch it on, paste an OpenRouter key in Railway variables: make an account at openrouter.ai, create an API key, add a few dollars of credit, then in Railway open the **app** service, **Variables**, add `OPENROUTER_API_KEY` with the key. Railway restarts the app. (Optional: `OPENROUTER_MODEL` picks a different model.) Without the key the button simply isn't shown.
+
 Backups, logs, costs and settings are in the operating guide (operating-guide.md). What you own and how to keep access is in the ownership checklist (ownership-checklist.md).
 
 ## Every day and week

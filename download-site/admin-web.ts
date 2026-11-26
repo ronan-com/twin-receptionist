@@ -3,7 +3,8 @@
 //   POST /admin/login                 email + password (ADMIN_EMAILS + ADMIN_PASSWORD_HASH)
 //   GET  /admin/login/<token>         one-time sign-in link from `bun admin.ts admin-link`; POST uses it
 //   POST /admin/logout
-//   POST /admin/buyers                add a buyer (optional welcome email)
+//   POST /admin/buyers                add a buyer (optional welcome email, or tick Demo for a pretend-accounts run)
+//   POST /admin/demo                  "Start a demo": a demo buyer, then straight to their setup link
 //   GET  /admin/b/<id>                one buyer: link, step, status, the redacted install log
 //   GET  /admin/b/<id>/setup          their wizard, read-only
 //   POST /admin/b/<id>/<revoke|restore|reset|delete>
@@ -15,6 +16,7 @@ import { CONFIG, RAILWAY, addBuyer, db, now, setupLink, sha256, type Buyer } fro
 import { esc } from "./pages";
 import { welcomeEmail } from "./content";
 import { allow, stepDone } from "./setup";
+import { DEMO_READY } from "./demo";
 import { ALL_SECRETS, STEPS, getSetup, logRead, resetSetup, secretHint, type SetupData } from "./store";
 import { wizardPage } from "./wizard";
 
@@ -162,13 +164,14 @@ ${ADMIN_HASH ? `<form method="post" action="/admin/login" class="body">
 </section>`);
 }
 
-function listPage(sid: string, email: string, q: string, filter: string, flash = "") {
+function listPage(sid: string, email: string, q: string, filter: string, flash = "", kind = "") {
   const all = rows();
   const counts = Object.fromEntries(STATUSES.map((s) => [s, all.filter((r) => r.status === s).length]));
+  const demoCount = all.filter((r) => r.b.demo === 1).length;
   const needle = q.trim().toLowerCase();
-  const shown = all.filter((r) => (!filter || r.status === filter) && (!needle || [r.b.name, r.b.email, r.s.brand?.productName, r.s.domain?.host].some((v) => String(v || "").toLowerCase().includes(needle))));
+  const shown = all.filter((r) => (!filter || r.status === filter) && (!kind || (kind === "demo") === (r.b.demo === 1)) && (!needle || [r.b.name, r.b.email, r.s.brand?.productName, r.s.domain?.host].some((v) => String(v || "").toLowerCase().includes(needle))));
   const tr = shown.map((r) => `<tr>
-<td data-l="Buyer"><a href="/admin/b/${r.b.id}"><b>${esc(r.b.name)}</b></a><br><span class="hint">${esc(r.b.email)}</span></td>
+<td data-l="Buyer"><a href="/admin/b/${r.b.id}"><b>${esc(r.b.name)}</b></a>${r.b.demo === 1 ? ` <span class="pill demo">Test</span>` : ""}<br><span class="hint">${esc(r.b.email)}</span></td>
 <td data-l="Brand">${esc(r.s.brand?.productName || "")}</td>
 <td data-l="Status">${pill(r.status)}</td>
 <td data-l="Step">${esc(r.s.phase === "done" ? "Done" : r.s.step)}</td>
@@ -177,10 +180,12 @@ function listPage(sid: string, email: string, q: string, filter: string, flash =
 <td data-l="Last activity">${esc(when(r.updated))}</td></tr>`).join("");
   return page("Buyers", `${flash}
 <section class="card">
-<h1>Buyers</h1><p class="lead">${all.length} buyer${all.length === 1 ? "" : "s"}. ${counts.live} live, ${counts.installing} installing, ${counts.failed} failed.</p>
+<div class="titlerow"><h1>Buyers</h1>${DEMO_READY ? `<form method="post" action="/admin/demo" target="_blank">${hiddenT(sid)}<button class="btn p" type="submit" title="Makes a test buyer with pretend accounts and opens their setup in a new tab">Start a test run</button></form>` : ""}</div>
+<p class="lead">${all.length} buyer${all.length === 1 ? "" : "s"}${demoCount ? ` (${demoCount} test)` : ""}. ${counts.live} live, ${counts.installing} installing, ${counts.failed} failed.</p>
 <form method="get" action="/admin" class="filters">
   <input name="q" type="search" placeholder="Search name, email, brand or domain" value="${esc(q)}" aria-label="Search">
   <select name="status" aria-label="Status"><option value="">All statuses</option>${STATUSES.map((s) => `<option value="${s}"${s === filter ? " selected" : ""}>${s} (${counts[s]})</option>`).join("")}</select>
+  <select name="kind" aria-label="Type"><option value="">Real and test</option><option value="real"${kind === "real" ? " selected" : ""}>Real buyers only (${all.length - demoCount})</option><option value="demo"${kind === "demo" ? " selected" : ""}>Test runs only (${demoCount})</option></select>
   <button class="btn o" type="submit">Show</button>
 </form>
 ${shown.length ? `<table class="records buyers"><thead><tr><th>Buyer</th><th>Brand</th><th>Status</th><th>Step</th><th>Live at</th><th>Created</th><th>Last activity</th></tr></thead><tbody>${tr}</tbody></table>` : `<p class="hint">No buyers match.</p>`}
@@ -190,6 +195,7 @@ ${shown.length ? `<table class="records buyers"><thead><tr><th>Buyer</th><th>Bra
 <form method="post" action="/admin/buyers" class="body">${hiddenT(sid)}
   <div class="two"><div><label class="f" for="name">Name</label><input id="name" name="name" required maxlength="120"></div>
   <div><label class="f" for="bemail">Email</label><input id="bemail" name="email" type="email" required maxlength="200"></div></div>
+  ${DEMO_READY ? `<label class="opt inline"><input type="checkbox" name="demo" value="1"> <b>Test run (pretend accounts)</b> <span class="hint">No email is sent; their setup accepts anything and ends on a test dashboard.</span></label>` : ""}
   ${welcomeConfigured() ? `<label class="opt inline"><input type="checkbox" name="welcome" value="1" checked> <b>Send the welcome email</b></label>` : `<p class="hint">You'll get their private link to send. (Set SITE_SMTP_URL and SITE_MAIL_FROM to email it from here.)</p>`}
   <div class="nav"><span></span><div class="right"><button class="btn p" type="submit">Add buyer</button></div></div>
 </form>
@@ -214,7 +220,7 @@ function buyerPage(sid: string, email: string, b: Buyer, flash = "") {
   return page(b.name, `${flash}
 <p><a href="/admin">← All buyers</a></p>
 <section class="card">
-<h1>${esc(b.name)}</h1>
+<h1>${esc(b.name)}${b.demo === 1 ? ` <span class="pill demo">Test</span>` : ""}</h1>
 <div class="summary">${rowsHtml.filter(([, v]) => v).map(([k, v]) => `<div><span>${k}</span><b>${v}</b></div>`).join("")}</div>
 ${s.error && st === "failed" ? notice("err", esc(s.error)) : ""}
 <label class="f">Private setup link</label>
@@ -303,16 +309,28 @@ export async function adminRoute(req: Request, url: URL, c: AdminCtx): Promise<R
     db().query("DELETE FROM admin_sessions WHERE id_hash = ?").run(sha256(sess.sid));
     return c.redirect("/admin", { "Set-Cookie": endCookie });
   }
-  if (path === "/admin" && method === "GET") return c.html(listPage(sess.sid, sess.email, url.searchParams.get("q") || "", STATUSES.includes(url.searchParams.get("status") as Status) ? url.searchParams.get("status")! : "", flashOf(url)));
+  if (path === "/admin" && method === "GET") return c.html(listPage(sess.sid, sess.email, url.searchParams.get("q") || "", STATUSES.includes(url.searchParams.get("status") as Status) ? url.searchParams.get("status")! : "", flashOf(url), ["real", "demo"].includes(url.searchParams.get("kind") || "") ? url.searchParams.get("kind")! : ""));
+
+  // "Start a demo": a demo buyer (no email), then their setup link. The button opens this in a new tab.
+  if (path === "/admin/demo" && method === "POST") {
+    if (!DEMO_READY) return c.html(listPage(sess.sid, sess.email, "", "", notice("err", "Test runs aren't set up on this site (DEMO_APP_URL and the test app's admin sign-in).").replace('class="notice ', 'class="notice flash ')), 400);
+    const wait = allow(`demo:${sess.email}`, 30, 60 * 60_000);
+    if (wait) return c.html(listPage(sess.sid, sess.email, "", "", notice("err", "Too many test runs just now. Wait a few minutes.").replace('class="notice ', 'class="notice flash ')), 429);
+    const stamp = new Date().toISOString().slice(11, 16);
+    const b = addBuyer(`Test ${stamp}`, `demo-${randomBytes(3).toString("hex")}@example.com`, true);
+    console.log(`[admin] ${sess.email} started demo buyer ${b.id}`);
+    return c.redirect(`/setup/${b.code}`);
+  }
 
   if (path === "/admin/buyers" && method === "POST") {
     const name = String(f.name || "").trim().replace(/[\r\n]/g, " ").slice(0, 120);
     const email = String(f.email || "").trim().toLowerCase().slice(0, 200);
     if (!name || !/^[^\s@<>"]+@[^\s@<>"]+\.[^\s@<>"]+$/.test(email)) return c.html(listPage(sess.sid, sess.email, "", "", notice("err", "Give a name and a real email address.").replace('class="notice ', 'class="notice flash ')), 400);
-    const b = addBuyer(name, email);
-    console.log(`[admin] ${sess.email} added buyer ${b.id}`);
+    const demo = f.demo === "1" && DEMO_READY;
+    const b = addBuyer(name, email, demo);
+    console.log(`[admin] ${sess.email} added ${demo ? "demo " : ""}buyer ${b.id}`);
     let mail = "";
-    if (f.welcome === "1" && welcomeConfigured()) {
+    if (!demo && f.welcome === "1" && welcomeConfigured()) {
       const wait = allow(`welcome:${sess.email}`, 30, 60 * 60_000);
       const errMail = wait ? "Too many welcome emails just now; send this one yourself." : await sendWelcome(b);
       mail = errMail ? notice("err", esc(errMail)) : notice("ok", `Welcome email sent to ${esc(b.email)}.`);

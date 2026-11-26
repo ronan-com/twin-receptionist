@@ -171,6 +171,7 @@ Sessions: random 256-bit id, `HttpOnly`, `SameSite=Strict`, `Path=/admin`, 12 ho
 | `CONTENT_DIR` | | Folder with `providers/*.md` and `welcome-email.md`; else `download-site/content`, else `../handoff-content` |
 | `PORT` / `HOST` / `TRUST_PROXY` | `4500` / `127.0.0.1` / `0` | `TRUST_PROXY=1` behind Caddy |
 | `ADMIN_EMAILS`, `ADMIN_PASSWORD_HASH` | | /admin sign-in (escape each `$` as `$$` in a compose `.env`) |
+| `DEMO_APP_URL`, `DEMO_ADMIN_EMAIL`, `DEMO_ADMIN_PASSWORD` | | Turns on /admin's **Start a test run**: a test buyer whose wizard accepts pretend accounts (no provider is called) and ends on a real branded agency on our team demo app (public `DEMO_APP_URL`, its platform admin sign-in). Unset = no button |
 | `SITE_SMTP_URL`, `SITE_MAIL_FROM` | | Our own mail sender, for welcome emails |
 | `LOOKUPS_PER_MINUTE`, `REQUESTS_PER_MINUTE`, `CHECKS_PER_10_MIN`, `TEST_EMAILS_PER_HOUR`, `SECRETS_IDLE_DAYS` | 20, 600, 20, 3, 14 | |
 | `DNS_SERVERS` | `1.1.1.1,8.8.8.8` | Public resolvers to ask |

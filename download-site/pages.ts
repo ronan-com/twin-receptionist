@@ -98,6 +98,7 @@ export const badCodePage = () =>
 export const revokedPage = () => messagePage(410, "This setup link has been turned off", `If you think that's a mistake, contact ${support()}.`);
 export const limitedPage = (retry: number) => messagePage(429, "Too many tries", `Please wait ${retry} seconds and try again.`);
 export const notFoundPage = () => messagePage(404, "Page not found", "That page doesn't exist.");
+export const demoOfflinePage = (back: string) => messagePage(503, "The test dashboard is offline right now", `The test app isn't answering, so we can't open the dashboard. Try again in a minute. <a href="${esc(back)}">Back to your setup</a>`);
 export const forbiddenPage = () => messagePage(403, "Please reload the page", "Your form expired or came from another site, so we didn't act on it. Reload the setup page and try again.");
 
 // ---------------- the buyer guide ----------------

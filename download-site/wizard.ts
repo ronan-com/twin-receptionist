@@ -3,7 +3,7 @@
 // button. How-tos sit behind a collapsed "Show me how". Plain forms (they work without
 // JavaScript); /wizard.js adds copy buttons and live progress.
 import { CONFIG, RAILWAY, type Buyer } from "./lib";
-import { DEMO, demoSample } from "./demo";
+import { DEMO, demoSample, isDemo } from "./demo";
 import { esc } from "./pages";
 import { howTo } from "./content";
 import { canView, hostOf, locked, oauthRedirect, stepDone, webUrl, zoneOf } from "./setup";
@@ -58,14 +58,14 @@ const mainForm = (c: Ctx, action: string, body: string) => `<form id="main" meth
 const mini = (c: Ctx, action: string, label: string, cls = "btn o", extra = "", fields = "") =>
   `<form method="post" action="${base(c)}/a/${action}">${hidden(c)}${fields}<button class="${cls}" type="submit"${extra}>${label}</button></form>`;
 const primary = (label: string, formId = "main") => `<button class="btn p" type="submit" form="${formId}">${label} ${icon("right")}</button>`;
-const val = (c: Ctx, k: string, d = "") => esc(c.flash?.form?.[k] ?? (d || demoSample(c.view, k, c.code)));
+const val = (c: Ctx, k: string, d = "") => esc(c.flash?.form?.[k] ?? (d || demoSample(c.view, k, c.code, isDemo(c.b))));
 const secretIn = (name: string, ph: string, saved: string | null, label: string) =>
   `<label class="f" for="${name}">${label}</label><input id="${name}" name="${name}" type="password" autocomplete="off" autocapitalize="off" spellcheck="false" maxlength="300" placeholder="${saved ? `Saved (${esc(saved)}). Paste a new one to replace it.` : esc(ph)}">`;
 /** Demo: put the pretend value into a screen's empty inputs. */
 function demoFill(c: Ctx, html: string): string {
-  if (!DEMO) return html;
+  if (!isDemo(c.b)) return html;
   return html.replace(/<input id="(token|key|domain|address)"([^>]*?)>/g, (m, id, rest) => {
-    const v = demoSample(c.view, id, c.code);
+    const v = demoSample(c.view, id, c.code, true);
     if (!v) return m;
     return `<input id="${id}"${/ value="/.test(rest) ? rest.replace(/ value=""/, ` value="${esc(v)}"`) : `${rest} value="${esc(v)}"`}>`;
   });
@@ -140,7 +140,7 @@ ${notice("warn", "Have a website or email on this domain? Check Cloudflare copie
 ${showMeHow(["registrar-nameservers"])}
 ${nav(c, `${mini(c, "domain-edit", "Change domain", "btn o")}${mini(c, "cf-recheck", "Check now", "btn p")}`)}`;
   }
-  const mode = c.flash?.form?.mode || d?.mode || (DEMO ? "manual" : "cloudflare");
+  const mode = c.flash?.form?.mode || d?.mode || (isDemo(c.b) ? "manual" : "cloudflare");
   const zone = c.flash?.form?.domain || d?.zone || (RAILWAY && c.s.email?.sendingDomain ? c.s.email.sendingDomain.replace(/^(mail|send|email|mg|news)\./, "") : "");
   const saved = d?.mode === "cloudflare" ? secretHint(c.b.id, "cf_token") : null;
   const replace = d?.mode === "cloudflare" && cf?.status === "active" && cf.existing && !d.confirmed
@@ -148,7 +148,7 @@ ${nav(c, `${mini(c, "domain-edit", "Change domain", "btn o")}${mini(c, "cf-reche
   return `${head(c, "Your web address", "Your dashboard will live at app.your-domain. Your main website stays as it is.")}
 <div class="body">${mainForm(c, "domain", `
   <label class="f" for="domain">Your domain</label>
-  <input id="domain" name="domain" maxlength="253" required autocapitalize="off" spellcheck="false" placeholder="yourbusiness.com.au" value="${esc(zone)}">
+  <input id="domain" name="domain" maxlength="253"${c.b.demo === 1 ? "" : " required"} autocapitalize="off" spellcheck="false" placeholder="yourbusiness.com.au" value="${esc(zone)}">
   <p class="hint">Your dashboard: <b id="pv">app.${esc(zone || "your-domain")}</b></p>
   <div class="choice">
     <label class="opt"><input type="radio" name="mode" value="cloudflare"${mode !== "manual" ? " checked" : ""}><b>Let the wizard handle DNS <span class="tag">Recommended</span></b><small>Use a free Cloudflare account; we add every record for you.</small></label>
@@ -161,7 +161,7 @@ ${nav(c, `${mini(c, "domain-edit", "Change domain", "btn o")}${mini(c, "cf-reche
   </div>
   <div class="only-manual">${RAILWAY ? `<p class="hint">We'll show you each record to add, with a tick as it appears.</p>` : ""}${showMeHow(["registrar-dns-records"])}</div>
   ${replace}`)}</div>
-${nav(c, primary("Continue"))}`;
+${nav(c, `${c.b.demo === 1 ? mini(c, "domain", "Skip this step", "btn o", "", `<input type="hidden" name="domain" value="">`) : ""}${primary("Continue")}`)}`;
 }
 
 function railwayStep(c: Ctx) {
@@ -407,9 +407,9 @@ ${notice("err", esc((s.error || "Something went wrong.").replace(/^./, (x) => x.
 ${list}${log}
 ${nav(c, `${del}${mini(c, s.phase === "failed" ? "install-retry" : "install-start", `Try again ${icon("right")}`, "btn p")}`, { back: false })}`;
   }
-  if (DEMO && s.phase === "domain") return doneRailway(c);
+  if (isDemo(c.b) && s.phase === "domain") return doneRailway(c);
   if (s.phase === "domain") {
-    const temp = DEMO ? `${base(c)}/open` : webUrl(rw.serviceDomain);
+    const temp = isDemo(c.b) ? `${base(c)}/open` : webUrl(rw.serviceDomain);
     return `${head(c, `${P(c)} is running`, `Use your temporary address now. ${esc(host)} starts working once its records are in.`)}
 <div class="live"><div class="dot">● Running</div><a class="url" href="${esc(temp)}" target="_blank" rel="noopener noreferrer">${esc(temp)}</a><p class="hint">Your temporary address. It keeps working after ${esc(host)} is ready.</p></div>
 ${list}${recs}
@@ -447,9 +447,9 @@ ${nav(c, `<a class="btn p" href="${esc(url)}" target="_blank" rel="noopener nore
 }
 
 function doneRailway(c: Ctx) {
-  if (DEMO) {
+  if (isDemo(c.b)) {
     return `${head(c, "Your agency is live", `${P(c)} is ready. This test uses a temporary address instead of your own domain.`)}
-<div class="live"><div class="dot">● Live</div><p class="hint">Next: create your password, then add your logo and colours.</p></div>
+<div class="live"><div class="dot">● Live</div><p class="hint">Next: create your password and your branded dashboard opens.</p></div>
 ${nav(c, `<a class="btn p" href="${base(c)}/open">Open your dashboard ${icon("ext")}</a>`, { back: false })}`;
   }
   const s = c.s;
@@ -543,7 +543,7 @@ ${live ? `<noscript><meta http-equiv="refresh" content="8"></noscript>` : ""}
 ${rail(c)}
 <main>
   <div class="phonebar"><div class="lab"><span>Step ${i + 1} of ${STEPS.length}</span><b>${META[view].title}</b></div><progress class="bar" max="${STEPS.length}" value="${i + 1}">${i + 1} of ${STEPS.length}</progress></div>
-  <section class="card step-${view}">${lockNote}${withFlash(screenOf(c), fl)}</section>
+  <section class="card step-${view}">${b.demo === 1 ? notice("info", "<b>Test run.</b> Every account here is pretend: press Continue on each step. Nothing real is connected.") : ""}${lockNote}${withFlash(screenOf(c), fl)}</section>
   <p class="foot">${icon("shield")} Your keys are stored encrypted and deleted once your install is done.</p>
 </main>
 </div>

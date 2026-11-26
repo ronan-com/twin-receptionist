@@ -122,6 +122,8 @@ export interface Buyer {
   revoked_at: string | null;
   downloads: number;
   last_download_at: string | null;
+  /** 1 = a demo buyer: pretend accounts, no provider is ever called for them. */
+  demo: number;
 }
 export interface Pkg {
   id: number;
@@ -187,6 +189,8 @@ export function db(): Database {
       PRIMARY KEY (buyer_id, name)
     );
   `);
+  // Older databases (the live one) have no demo column: add it, off for everyone already there.
+  if (!(d.query("PRAGMA table_info(buyers)").all() as { name: string }[]).some((c) => c.name === "demo")) d.exec("ALTER TABLE buyers ADD COLUMN demo INTEGER NOT NULL DEFAULT 0");
   _db = d;
   return d;
 }
@@ -205,9 +209,9 @@ export function findBuyer(code: string): Buyer | null {
   return row && same ? row : null;
 }
 
-export function addBuyer(name: string, email: string): Buyer {
+export function addBuyer(name: string, email: string, demo = false): Buyer {
   const code = newCode();
-  db().query("INSERT INTO buyers (code, code_hash, name, email, created_at) VALUES (?, ?, ?, ?, ?)").run(code, hashCode(code), name, email, now());
+  db().query("INSERT INTO buyers (code, code_hash, name, email, created_at, demo) VALUES (?, ?, ?, ?, ?, ?)").run(code, hashCode(code), name, email, now(), demo ? 1 : 0);
   return findBuyer(code)!;
 }
 

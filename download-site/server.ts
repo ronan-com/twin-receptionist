@@ -14,12 +14,12 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { ANY_MOCK, CODE_RE, CONFIG, db, extractCode, findBuyer, productionGuard, siteUrlWarnings, type Buyer } from "./lib";
 import { loadContent } from "./content";
-import { badCodePage, forbiddenPage, guidePage, homePage, limitedPage, notFoundPage, revokedPage } from "./pages";
+import { badCodePage, demoOfflinePage, forbiddenPage, guidePage, homePage, limitedPage, notFoundPage, revokedPage } from "./pages";
 import { actions, allow, canView, firstOpen, pBundle, pExit, pLog, pNext, startTicker } from "./setup";
 import { STEPS, csrfOk, getSetup, logRead, newSessionId, siteKey, updateSetup, type StepId } from "./store";
 import { statusRev, wizardPage } from "./wizard";
 import { adminRoute } from "./admin-web";
-import { DEMO, DEMO_KEY, demoBuyer, demoDashboard } from "./demo";
+import { DEMO, DEMO_KEY, DemoOffline, demoBuyer, demoDashboard } from "./demo";
 
 if ((process.env.PREVIEW_JUMP || "").trim() === "1" && !ANY_MOCK) {
   console.error("PREVIEW_JUMP=1 is for test sites only and needs a MOCK_* switch on too. Refusing to start.");
@@ -166,13 +166,21 @@ async function handle(req: Request, srv: Bun.Server): Promise<Response> {
 
   // ---- team demo: a fresh start link, and the door into the real dashboard ----
   if (DEMO && isGet && DEMO_KEY && path === `/demo/${DEMO_KEY}`) return redirect(`/setup/${demoBuyer()}`);
-  const dm = DEMO && isGet && path.match(/^\/setup\/([^/]*)\/open$/);
-  if (dm) {
+  // The door into the demo dashboard: the global team demo, or a demo buyer once their install has finished.
+  const dm = isGet && path.match(/^\/setup\/([^/]*)\/open$/);
+  if (dm && (DEMO || CODE_RE.test(dm[1]))) {
     const r = lookupBuyer(dm[1], ip);
     if (r.error) return r.error;
-    const s = getSetup(r.buyer!.id);
-    if (!s.brand) return redirect(`/setup/${dm[1]}`);
-    return redirect(await demoDashboard(r.buyer!.id, s.brand.productName, s.brand.ownerEmail, s.brand.logo, s.brand.colour));
+    const b = r.buyer!;
+    if (!DEMO && b.demo !== 1) return html(notFoundPage(), 404);
+    const s = getSetup(b.id);
+    if (!s.brand || (b.demo === 1 && s.phase !== "done")) return redirect(`/setup/${dm[1]}`);
+    try {
+      return redirect(await demoDashboard(b.demo === 1 ? b.code : String(b.id), s.brand.productName, s.brand.ownerEmail, s.brand.logo, s.brand.colour));
+    } catch (e) {
+      if (e instanceof DemoOffline) return html(demoOfflinePage(`/setup/${dm[1]}`), 503);
+      throw e;
+    }
   }
 
   // ---- our admin dashboard ----

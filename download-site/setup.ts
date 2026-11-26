@@ -6,7 +6,7 @@
 import { randomBytes } from "node:crypto";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { CONFIG, PACKAGES_DIR, RAILWAY, currentPackage, now, slug, type Buyer } from "./lib";
+import { CONFIG, PACKAGES_DIR, RAILWAY, currentPackage, db, now, slug, type Buyer } from "./lib";
 import {
   DEFAULT_REGION, DEFAULT_SIZE, ProviderError, cfCanEdit, cfEnsure, cfFindZone, cfHasDmarc, cfRecords, cfZone, checkCloudflare,
   checkDigitalOcean, checkGoogle, checkMicrosoft, checkRailway, checkResend, checkSmtp, checkTelnyx, doApi, lookup, normalizeDomain,
@@ -50,8 +50,8 @@ export function stepDone(b: Buyer, s: SetupData, id: StepId): boolean {
     case "welcome": return s.step !== "welcome" || !!s.brand;
     case "brand": return !!s.brand;
     case "domain": return !!s.domain?.confirmed && !!s.domain.host;
-    case "server": return !!s.server?.chosen && (hasSecret(b.id, "do_token") || s.phase !== "idle");
-    case "railway": return !!s.railway?.confirmed && (hasSecret(b.id, "railway_token") || s.phase !== "idle");
+    case "server": return !!s.server?.chosen && (b.demo === 1 || hasSecret(b.id, "do_token") || s.phase !== "idle");
+    case "railway": return !!s.railway?.confirmed && (b.demo === 1 || hasSecret(b.id, "railway_token") || s.phase !== "idle");
     case "phones": return !!s.phones?.confirmed;
     case "email": return !!s.email?.confirmed;
     case "calendars": return !!s.calendars?.done;
@@ -410,6 +410,102 @@ export const actions: Record<string, Action> = {
   },
 };
 
+// ---------------- demo buyers ----------------
+// A demo buyer (Admin > Start a demo) goes through the same screens, but every account step
+// accepts anything and NOTHING here calls a provider (no Railway, Telnyx, Resend, Cloudflare,
+// SMTP or Google/Microsoft), and no key is stored. Real buyers never reach these functions: each
+// one is wrapped so it only runs when buyers.demo = 1.
+const demoZone = (b: Buyer) => `demo-${b.code.replace(/[^a-z0-9]/gi, "").slice(0, 8).toLowerCase()}.test`;
+const demoActions: Record<string, Action> = {
+  railway(b) {
+    const g = guard(b, "railway"); if (g) return g;
+    updateSetup(b.id, (s) => { s.railway = { email: s.brand?.ownerEmail, workspaceName: "Test workspace", plan: "hobby", confirmed: true }; nextStep(b, s, "railway"); });
+    return null;
+  },
+  server(b) {
+    const g = guard(b, "server"); if (g) return g;
+    updateSetup(b.id, (s) => { s.server = { region: DEFAULT_REGION, size: DEFAULT_SIZE, price: 18, chosen: true }; nextStep(b, s, "server"); });
+    return null;
+  },
+  phones(b) {
+    const g = guard(b, "phones"); if (g) return g;
+    updateSetup(b.id, (s) => { s.brand!.ownPhoneAccount = false; s.phones = { balance: "demo", checked: true, confirmed: true }; nextStep(b, s, "phones"); });
+    return null;
+  },
+  email(b, f) {
+    const g = guard(b, "email"); if (g) return g;
+    const typed = str(f.address, 200).toLowerCase();
+    const address = isEmail(typed) ? typed : `hello@mail.${demoZone(b)}`;
+    updateSetup(b.id, (s) => {
+      s.email = { mode: "resend", address, sendingDomain: address.split("@")[1], from: `${s.brand!.productName} <${address}>`, checked: true, confirmed: true, resend: { status: "verified", records: [], dmarc: null } };
+      nextStep(b, s, "email");
+    });
+    return null;
+  },
+  smtp(b, f) { return demoActions.email(b, f); },
+  "email-recheck": () => null,
+  "email-test": () => ok("Test email skipped: this is a test run."),
+  // Any domain, or none: the demo gets its own pretend address.
+  domain(b, f) {
+    const g = guard(b, "domain"); if (g) return g;
+    const typed = normalizeDomain(str(f.domain, 253));
+    const zone = typed || demoZone(b);
+    updateSetup(b.id, (s) => { s.domain = { mode: "manual", zone, sub: "app", host: `app.${zone}`, confirmed: true }; nextStep(b, s, "domain"); });
+    return null;
+  },
+  "cf-recheck": () => null,
+  calendars(b) {
+    const g = guard(b, "calendars"); if (g) return g;
+    updateSetup(b.id, (s) => { s.calendars = { done: true }; nextStep(b, s, "calendars"); });
+    return null;
+  },
+  "install-start"(b) {
+    const g = guard(b, "install"); if (g) return g;
+    const s = getSetup(b.id);
+    if (!["idle", "create_failed", "failed"].includes(s.phase)) return null;
+    const missing = STEPS.slice(0, STEPS.indexOf("install")).find((id) => !stepDone(b, s, id));
+    if (missing) return err("Finish the earlier steps first.");
+    updateSetup(b.id, (s) => { s.phase = "creating"; s.error = undefined; s.progress = []; s.rw = {}; s.step = "install"; });
+    kick(b.id);
+    return null;
+  },
+  "install-retry": (b, f) => demoActions["install-start"](b, f),
+  "install-finish"(b) { finish(b.id, demoOpenUrl(b)); return null; },
+  "server-delete"(b) {
+    updateSetup(b.id, (s) => { s.phase = "idle"; s.progress = []; s.rw = undefined; s.error = undefined; });
+    return ok("Test project removed. Press Install to start it again.");
+  },
+};
+// Every action that could reach a provider is swapped for its demo twin, for demo buyers only.
+for (const [name, fn] of Object.entries(demoActions)) {
+  const real = actions[name];
+  actions[name] = real ? (b, f) => (b.demo === 1 ? fn(b, f) : real(b, f)) : fn;
+}
+export const demoOpenUrl = (b: Buyer) => `${CONFIG.siteUrl}/setup/${b.code}/open`;
+
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+/** A pretend install: the normal stages tick by in a few seconds, then it finishes. */
+async function tickDemoInstall(id: number) {
+  const b = db().query("SELECT * FROM buyers WHERE id = ?").get(id) as Buyer | null;
+  if (!b) return;
+  const still = () => ["creating", "deploying"].includes(getSetup(id).phase) && !!db().query("SELECT 1 FROM buyers WHERE id = ?").get(id);
+  const stages: [string, (s: SetupData) => void][] = [
+    ["Creating your project", (s) => { s.rw = { ...s.rw, projectId: "demo" }; }],
+    ["Adding your database", (s) => { s.rw!.pgVolume = true; }],
+    ["Adding the app and your settings", (s) => { s.rw!.deploymentId = "demo"; s.phase = "deploying"; s.rw!.deployStatus = "BUILDING"; }],
+    ["Building the app", (s) => { s.rw!.deployStatus = "DEPLOYING"; }],
+    ["Starting the app", () => {}],
+  ];
+  for (const [msg, fn] of stages) {
+    if (!still()) return;
+    await sleep(1200);
+    if (!still()) return;
+    updateSetup(id, (s) => { fn(s); s.progress = [...(s.progress || []), msg]; });
+  }
+  await sleep(1000);
+  if (still()) finish(id, demoOpenUrl(b));
+}
+
 /** Looks at the chosen Cloudflare zone: active yet? can the token write? anything at app.<zone> already? */
 async function applyZone(id: number, zoneId: string, sub: string, replace: boolean): Promise<Flash | null> {
   const s = getSetup(id);
@@ -478,6 +574,8 @@ export function startTicker() {
   p.unref?.();
 }
 
+const isDemoBuyer = (id: number) => (db().query("SELECT demo FROM buyers WHERE id = ?").get(id) as { demo: number } | null)?.demo === 1;
+
 async function tickOne(id: number) {
   if (busy.has(id)) return;
   const s = getSetup(id);
@@ -486,7 +584,8 @@ async function tickOne(id: number) {
   if (!["creating", "dns", "starting", "installing", "deploying", "domain"].includes(s.phase) && !wantsEmail && !wantsDomain) return;
   busy.add(id);
   try {
-    if (RAILWAY && s.phase === "creating") await tickRailCreate(id);
+    if (isDemoBuyer(id)) { if (["creating", "deploying"].includes(s.phase)) await tickDemoInstall(id); }
+    else if (RAILWAY && s.phase === "creating") await tickRailCreate(id);
     else if (s.phase === "deploying") await tickRailDeploy(id);
     else if (s.phase === "domain") await tickRailDomain(id);
     else if (s.phase === "creating") await tickCreate(id);
@@ -763,9 +862,10 @@ function finish(id: number, url: string) {
   setDropletToken(id, null);
   setAttemptToken(id, null);
   const s = getSetup(id);
+  const demo = isDemoBuyer(id); // a demo keeps its logo and colour: the demo dashboard is built from them
   const kept: SetupData = {
     step: "done", phase: "done",
-    brand: s.brand ? { productName: s.brand.productName, ownerEmail: s.brand.ownerEmail, ownPhoneAccount: s.brand.ownPhoneAccount } : undefined,
+    brand: s.brand ? { productName: s.brand.productName, ownerEmail: s.brand.ownerEmail, ownPhoneAccount: s.brand.ownPhoneAccount, ...(demo ? { logo: s.brand.logo, colour: s.brand.colour } : {}) } : undefined,
     domain: s.domain ? { mode: s.domain.mode, zone: s.domain.zone, sub: s.domain.sub, host: s.domain.host, confirmed: true } : undefined,
     server: s.server ? { region: s.server.region, size: s.server.size, price: s.server.price, chosen: true, sshPublicKey: s.server.sshPublicKey ? "yes" : undefined } : undefined,
     phones: { confirmed: true }, email: s.email ? { mode: s.email.mode, address: s.email.address, from: s.email.from, confirmed: true, resend: s.email.resend ? { status: s.email.resend.status } : undefined } : undefined,
@@ -775,8 +875,8 @@ function finish(id: number, url: string) {
     railway: s.railway ? { workspaceName: s.railway.workspaceName, confirmed: true } : undefined,
     rw: s.rw ? { projectId: s.rw.projectId, serviceDomain: s.rw.serviceDomain, certStatus: s.rw.certStatus, domainOk: s.rw.domainOk } : undefined,
     tempUrl: s.rw?.serviceDomain ? webUrl(s.rw.serviceDomain) : undefined,
-    domainPending: RAILWAY ? !s.rw?.domainOk : undefined,
-    finishRecords: RAILWAY && !s.rw?.domainOk ? (s.rw?.records || []).map(({ cfId, ...r }) => r) : undefined,
+    domainPending: RAILWAY && !demo ? !s.rw?.domainOk : undefined,
+    finishRecords: RAILWAY && !demo && !s.rw?.domainOk ? (s.rw?.records || []).map(({ cfId, ...r }) => r) : undefined,
   };
   saveSetup(id, kept);
   console.log(`[setup] buyer ${id}: installed; ${removed} secrets deleted`);

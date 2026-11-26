@@ -13,12 +13,13 @@ tar -xzf bundle.tgz -C src.new && rm bundle.tgz
 rm -rf src.old; [ -d src ] && mv src src.old; mv src.new src
 cp src/deploy/aws/docker-compose.yml .
 
-# Settings: the /setupsite/env/<NAME> parameters listed here, plus the ones this script owns.
+# Settings: the /setupsite/env/<NAME> parameters listed here (DEMO_* turn on admin's "Start a test run"), plus the ones this script owns.
 # Fetched by name (10 per call): the server's role can't list /setupsite/env/ by path.
 # Values are single-quoted so compose takes "$" (password hashes) and "#" literally.
 umask 077
 names=(SETUP_SECRET_KEY ADMIN_EMAILS ADMIN_PASSWORD_HASH SUPPORT_EMAIL SELLER_NAME PRODUCT_NAME SITE_SMTP_URL SITE_MAIL_FROM
-  HOSTING PROVISION_URL LOOKUPS_PER_MINUTE REQUESTS_PER_MINUTE CHECKS_PER_10_MIN TEST_EMAILS_PER_HOUR SECRETS_IDLE_DAYS DNS_SERVERS)
+  HOSTING PROVISION_URL LOOKUPS_PER_MINUTE REQUESTS_PER_MINUTE CHECKS_PER_10_MIN TEST_EMAILS_PER_HOUR SECRETS_IDLE_DAYS DNS_SERVERS
+  DEMO_APP_URL DEMO_ADMIN_EMAIL DEMO_ADMIN_PASSWORD)
 names=("${names[@]/#//setupsite/env/}")
 q="'"
 for ((i = 0; i < ${#names[@]}; i += 10)); do

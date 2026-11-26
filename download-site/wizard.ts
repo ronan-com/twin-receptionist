@@ -6,6 +6,7 @@ import { CONFIG, RAILWAY, type Buyer } from "./lib";
 import { DEMO, demoSample, isDemo } from "./demo";
 import { esc } from "./pages";
 import { howTo } from "./content";
+import { chatBubble, chatHead } from "./chat";
 import { agencyUrl, canView, hostOf, locked, oauthRedirect, stepDone, updateInfo, webUrl, zoneOf } from "./setup";
 import { DEFAULT_REGION, DEFAULT_SIZE } from "./providers";
 import { STEPS, csrfToken, isOptional, logRead, secretHint, type DnsRecord, type SetupData, type StepId } from "./store";
@@ -78,9 +79,11 @@ const when = (iso?: string) => (iso ? new Date(iso).toISOString().slice(11, 19) 
 function showMeHow(ids: string[]) {
   const parts = ids.map((id) => {
     const h = howTo(id);
-    return `${ids.length > 1 ? `<h3>${esc(h.title)}</h3>` : ""}${h.html}`;
+    const meta = [h.time, h.cost].filter(Boolean).map((x) => esc(x!)).join(" · ");
+    return `<section class="howpart"><h3>${esc(h.title)}</h3>${meta ? `<p class="howmeta">${meta}</p>` : ""}${h.html}</section>`;
   }).join("");
-  return `<details class="how"><summary>Show me how</summary><div class="howbox">${parts}<p><a class="more-link" href="/guide#${esc(ids[0])}" target="_blank" rel="noopener">Open the full guide ${icon("ext")}</a></p></div></details>`;
+  // Without script this is a plain open/close box; /wizard.js turns it into a side panel.
+  return `<details class="how" data-title="${esc(ids.length > 1 ? "Show me how" : howTo(ids[0]).title)}"><summary>Show me how</summary><div class="howbox">${parts}<p><a class="more-link" href="/guide#${esc(ids[0])}" target="_blank" rel="noopener">Open the full guide ${icon("ext")}</a></p></div></details>`;
 }
 
 function head(c: Ctx, title: string, lead: string) {
@@ -673,6 +676,7 @@ export function wizardPage(b: Buyer, s: SetupData, code: string, sid: string, vi
 <link rel="preload" href="/fonts/inter-latin-400-normal.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="stylesheet" href="/wizard.css">
 <script src="/wizard.js" defer></script>
+${chatHead()}
 ${live ? `<noscript><meta http-equiv="refresh" content="8"></noscript>` : ""}
 </head>
 <body>
@@ -687,6 +691,7 @@ ${rail(c)}
   <p class="foot">${icon("shield")} Your keys are stored encrypted and deleted once your install is done.</p>
 </main>
 </div>
+${chatBubble({ url: `/setup/${code}/chat`, t: csrfToken(sid, code), view })}
 </body>
 </html>`;
 }

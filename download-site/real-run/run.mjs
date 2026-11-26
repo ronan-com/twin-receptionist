@@ -145,7 +145,7 @@ function makePng(size, rgb) {
 // ---------------- dry run: local site + fakes ----------------
 const procs = [];
 let SITE = (process.env.SETUP_SITE || "https://setup.chloeeai.co").replace(/\/+$/, "");
-let MOCK = "", DNS_LOCAL = "", PORT_BASE = 0;
+let MOCK = "", DNS_LOCAL = "", PORT_BASE = 0, LOCAL_ENV = null, LOCAL_BUNDLE = "";
 const freePort = (p) => new Promise((res) => { const s = createServer(); s.once("error", () => res(false)); s.listen(p, "127.0.0.1", () => s.close(() => res(true))); });
 async function findBase() {
   for (let b = 4700; b < 5400; b += 40) {
@@ -197,6 +197,7 @@ async function startLocal() {
   start("server.ts", "site");
   await waitUp(`${SITE}/healthz`, "the local setup site");
   execFileSync("bun", ["admin.ts", "publish", bundle, "1.0.0-realrun"], { cwd: SITE_DIR, env });
+  LOCAL_ENV = env; LOCAL_BUNDLE = bundle;
   return `local site ${SITE} (ports ${PORT_BASE}-${PORT_BASE + 9}, app ports ${PORT_BASE + 30}-${PORT_BASE + 39}), data ${data}`;
 }
 
@@ -550,6 +551,62 @@ async function appChecks(page0, ctx, link) {
   void dash;
 }
 
+// ---------------- update your agency (dry run only: needs a second published version) ----------------
+async function updateStage(pa, pb, link) {
+  const proj = async () => (await fetch(`${MOCK}/_mock/state`).then((r) => r.json())).railway;
+  let before;
+  await step("update: publish a newer version, see it in admin and on the buyer's Done screen", async () => {
+    before = await proj();
+    if (before.length !== 1) throw new Error(`expected one Railway project before the update, found ${before.length}`);
+    execFileSync("bun", ["admin.ts", "publish", LOCAL_BUNDLE, "1.0.1-realrun", "- A brand new thing\n- Another fix"], { cwd: SITE_DIR, env: LOCAL_ENV });
+    await pa.goto(`${SITE}/admin`, { waitUntil: "load" });
+    const pill = await pa.$$eval("table.buyers tbody tr", (rows) => rows.map((r) => r.textContent).find((t) => /Test Buyer/.test(t) && /Update available/.test(t)) || "");
+    if (!pill) throw new Error("admin's buyer list shows no 'Update available' for the test buyer");
+    await pb.bringToFront(); // the dashboard check opened another tab; clicks in a background tab do nothing
+    await pb.goto(link, { waitUntil: "load" });
+    const t = await text(pb, "main");
+    if (!/is on version 1\.0\.0-realrun\. Version 1\.0\.1-realrun is available/.test(t)) throw new Error(`no update banner on the Done screen: ${t.slice(0, 300)}`);
+    if (!/A brand new thing/.test(t) || !/Another fix/.test(t)) throw new Error("the release notes aren't shown");
+    await shot(pb, "update-banner");
+    return "banner and release notes shown; admin shows Update available";
+  });
+  await step("update: Update now, paste the token again, redeploy to the same project", async () => {
+    await submit(pb, "update-open");
+    if (!/Update your agency/.test(await text(pb, "h1"))) throw new Error(`expected the update screen, got "${await text(pb, "h1")}"`);
+    await shot(pb, "update-token");
+    await submit(pb, "update-start", { token: keys.railway });
+    const end = Date.now() + WAIT_MS;
+    let h1 = "";
+    while (Date.now() < end) {
+      h1 = await text(pb, "h1");
+      if (/^Your agency is live$/.test(h1)) break;
+      if (/stopped/.test(h1)) throw new Error(`the update failed: ${await text(pb, ".notice.err")}`);
+      await sleep(Math.min(POLL_MS, 5000));
+      await pb.reload({ waitUntil: "load" }).catch(() => {});
+    }
+    if (h1 !== "Your agency is live") throw new Error(`the update hadn't finished after ${WAIT_MS / 60000} minutes (screen "${h1}")`);
+    await shot(pb, "update-done");
+    const t = await text(pb, "main");
+    if (!/now on version 1\.0\.1-realrun|on version 1\.0\.1-realrun, the latest/.test(t)) throw new Error(`Done screen doesn't show the new version: ${t.slice(0, 300)}`);
+    const after = await proj();
+    const a = after[0], b = before[0];
+    if (after.length !== 1 || a.id !== b.id) throw new Error("the update made a new Railway project instead of reusing the old one");
+    const svc = (x) => x.services.map((v) => `${v.id}:${v.name}`).sort().join(",");
+    if (svc(a) !== svc(b)) throw new Error(`the project's services changed: ${svc(b)} -> ${svc(a)}`);
+    const app = a.services.find((v) => v.name === "app"), appB = b.services.find((v) => v.name === "app");
+    const lost = appB.variables.filter((k) => !app.variables.includes(k));
+    if (lost.length) throw new Error(`the update dropped variables: ${lost.join(", ")}`);
+    if (!app.variables.includes("APP_VERSION")) throw new Error("APP_VERSION wasn't added");
+    return `same project ${a.id}, same services, ${appB.variables.length} variables kept, version recorded`;
+  });
+  await step("update: admin shows the new version, token gone", async () => {
+    await pa.goto(`${SITE}/admin`, { waitUntil: "load" });
+    const row = await pa.$$eval("table.buyers tbody tr", (rows) => rows.map((r) => r.textContent).find((t) => /Test Buyer/.test(t)) || "");
+    if (!/1\.0\.1-realrun/.test(row) || /Update available/.test(row)) throw new Error(`admin still shows the old version: ${row.replace(/\s+/g, " ").slice(0, 200)}`);
+    return "admin shows 1.0.1-realrun and no pill";
+  });
+}
+
 // ---------------- main ----------------
 let exitCode = 0;
 try {
@@ -577,6 +634,7 @@ try {
   const logo64 = makePng(256, [11, 143, 106]).toString("base64");
   await wizardStage(pb, link, logo64);
   await appChecks(pb, ctxBuyer, link);
+  if (DRY) await updateStage(pa, pb, link);
   summary.ok = true;
   saveSummary();
   console.log("");

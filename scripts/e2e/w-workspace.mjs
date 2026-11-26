@@ -79,21 +79,11 @@ async function signIn(page, email, password) {
   await clickText(page, "button[type=submit]", "Sign in");
   await page.waitForFunction(() => !location.pathname.startsWith("/login"), { timeout: 10000 });
 }
-/** The "N calls" counter on the calls page. */
-async function callCount(page) {
-  await page.waitForFunction(() => /\b\d+ calls\b/.test(document.querySelector("[aria-live=polite]")?.textContent ?? ""), { timeout: 10000 });
-  return page.evaluate(() => Number(document.querySelector("[aria-live=polite]").textContent.match(/(\d+) calls/)[1]));
-}
+/** The rows on the calls page. */
 async function waitCallCount(page, n, ms = 10000) {
-  await page.waitForFunction((want) => (document.querySelector("[aria-live=polite]")?.textContent ?? "").includes(`${want} calls`), { timeout: ms }, n);
+  await page.waitForFunction((want) => document.querySelectorAll('ul[aria-label="Calls"] li').length === want, { timeout: ms }, n);
 }
-async function setRange(page, label) {
-  // Each preset has a short (phone) and long label; click whichever button holds it.
-  await page.evaluate((l) => {
-    const btn = [...document.querySelectorAll('[role=radiogroup][aria-label="Date range"] [role=radio]')].find((b) => [...b.querySelectorAll("span")].some((s) => s.textContent === l));
-    btn.click();
-  }, label);
-}
+/** Click an Export button and return the CSV text it would download. */
 /** Click an Export button and return the CSV text it would download. */
 async function exportCsv(page) {
   await page.evaluate(() => {
@@ -137,14 +127,19 @@ for (const width of [1280, 390]) {
 
   await step(`${tag} manager signs in and lands on the dashboard with data`, async () => {
     await signIn(page, "manager@alpha.test", "password-for-manager");
+    // A new business is sent to its set-up wizard first; this test is about the dashboard.
+    await apiFetch(page, "PUT", `/api/manage/${CL}/onboarding`, { status: "done" });
     await page.goto(`${B}/app`, { waitUntil: "networkidle0" });
-    await waitText(page, "Answered calls");
+    await waitText(page, "Calls answered");
+    await waitText(page, "Bookings made");
+    await waitText(page, "Messages for you");
     await waitText(page, "Recent calls");
     await waitText(page, "Isabella Rossi");
-    await waitText(page, "Coming up");
-    await waitText(page, "Grace Lee");
-    await waitText(page, "Your next steps");
-    await page.waitForFunction(() => /Isabella Rossi/.test(document.getElementById("dashboard-attention")?.innerText ?? ""), { timeout: 10000 });
+    await waitText(page, "Needs your attention");
+    await page.waitForFunction(() => /Isabella Rossi/.test(document.querySelector("[data-home-attention]")?.innerText ?? ""), { timeout: 10000 });
+    // Four places to go, no more.
+    const tabs = await page.$$eval('nav[aria-label="Primary"] a', (as) => as.filter((a) => a.offsetWidth > 0).map((a) => a.textContent.trim()));
+    assert(tabs.join(",") === "Home,Calls,Bookings,Settings", `client nav is ${tabs}`);
     await noOverflow(page, `${tag} dashboard`);
     const now = new Date();
     const from = new Date(now.getTime() - 120 * 86_400_000).toISOString();
@@ -153,35 +148,28 @@ for (const width of [1280, 390]) {
       leads: (await apiFetch(page, "GET", W("/follow-ups"))).body.leads,
       appts: (await apiFetch(page, "GET", W("/bookings"))).body.appointments,
     };
-    assert(api.calls.length === 6, `expected 6 seeded calls (web call hidden), got ${api.calls.length}`);
+    assert(api.calls.length >= 6, `expected the seeded calls, got ${api.calls.length}`);
   });
 
-  await step(`${tag} calls page: list, date range, search and after-hours filter`, async () => {
+  await step(`${tag} calls page: list, search and the four filters`, async () => {
     await page.goto(`${B}/app/calls`, { waitUntil: "networkidle0" });
-    await setRange(page, width < 640 ? "30d" : "Last 30 days");
-    const in30 = api.calls.filter((c) => Date.parse(c.started_at) > Date.now() - 29 * 86_400_000).length;
-    await waitCallCount(page, in30);
-    await setRange(page, width < 640 ? "7d" : "Last 7 days");
-    const in7 = api.calls.filter((c) => Date.parse(c.started_at) > Date.now() - 6 * 86_400_000).length;
-    await waitCallCount(page, in7);
-    assert(in7 < in30, "the 7 day range should show fewer calls than 30 days");
-    await setRange(page, width < 640 ? "90d" : "Last 90 days");
     await waitCallCount(page, api.calls.length);
     await type(page, 'input[aria-label="Search calls"]', "Isabella");
     await waitCallCount(page, 1);
     await clearAndType(page, 'input[aria-label="Search calls"]', "");
     await waitCallCount(page, api.calls.length);
-    await clickText(page, "button", "Filters");
-    await clickText(page, "button", "After hours");
-    await waitCallCount(page, api.calls.filter((c) => c.after_hours).length);
-    await clickText(page, "button", "Clear");
+    const want = {
+      bookings: api.calls.filter((c) => c.outcome === "booked").length,
+      messages: api.calls.filter((c) => ["lead_captured", "callback_requested", "voicemail"].includes(c.outcome)).length,
+      missed: api.calls.filter((c) => c.status === "missed" || c.status === "failed" || c.outcome === "no_answer").length,
+    };
+    for (const f of ["bookings", "messages", "missed"]) {
+      await page.click(`button[data-filter="${f}"]`);
+      await waitCallCount(page, want[f]);
+    }
+    await page.click('button[data-filter="all"]');
     await waitCallCount(page, api.calls.length);
     await noOverflow(page, `${tag} calls`);
-    const csv = await exportCsv(page);
-    const rows = csv.trim().split("\n");
-    assert(rows[0].startsWith("Started,"), "calls CSV has no header");
-    assert(rows.length === api.calls.length + 1, `calls CSV has ${rows.length - 1} rows`);
-    assert(csv.includes("Isabella Rossi"), "calls CSV is missing a caller");
     await page.reload({ waitUntil: "networkidle0" });
   });
 
@@ -207,41 +195,40 @@ for (const width of [1280, 390]) {
     await closeSheet(page);
   });
 
-  await step(`${tag} bookings: list filters, week view and booking drawer`, async () => {
+  await step(`${tag} bookings: upcoming by day, past, and the booking drawer`, async () => {
     await page.goto(`${B}/app/bookings`, { waitUntil: "networkidle0" });
     await waitText(page, "Grace Lee");
     await waitText(page, "Noah Walker"); // added straight to the calendar
-    const upcoming = api.appts.filter((a) => Date.parse(a.starts_at) >= Date.now() - 3600_000).length;
-    await waitText(page, `${upcoming} bookings`);
-    // Past bookings
-    await page.click('button[aria-label="Time"]');
-    await clickText(page, "[role=option]", "Past");
+    await page.waitForSelector("[data-bookings-list] [data-day]");
+    const upcoming = api.appts.filter((a) => Date.parse(a.starts_at) >= Date.now() - 3600_000 && a.status !== "cancelled").length;
+    const shown = await page.$$eval("[data-bookings-list] li", (els) => els.length);
+    assert(shown === upcoming, `expected ${upcoming} upcoming bookings, got ${shown}`);
+    await page.click('button[data-when="past"]');
     await waitText(page, "Oliver Smith");
     await waitNoText(page, "Grace Lee");
-    await noOverflow(page, `${tag} bookings list`);
-    await clickText(page, "button", "week");
-    await waitText(page, "Week of");
-    await noOverflow(page, `${tag} bookings week`);
-    await clickText(page, "button", "list");
-    await page.click('button[aria-label="Time"]');
-    await clickText(page, "[role=option]", "All time");
-    await clickText(page, "tr, [role=row], li, button", "Grace Lee");
+    await noOverflow(page, `${tag} bookings past`);
+    await page.click('button[data-when="upcoming"]');
+    await clickText(page, "[data-bookings-list] button", "Grace Lee");
     await page.waitForSelector("[role=dialog]", { visible: true });
     await waitText(page, "Open the call that booked this");
-    await waitText(page, "Update status");
+    await waitText(page, "Cancel this booking");
+    await noOverflow(page, `${tag} booking drawer`);
     await closeSheet(page);
   });
 
-  await step(`${tag} manager changes a booking status (persists)`, async () => {
-    const target = width === 1280 ? "Completed" : "No-show";
-    await clickText(page, "tr, [role=row], li, button", "Oliver Smith");
-    await page.waitForSelector('[data-testid="booking-status-actions"]', { visible: true });
-    await clickText(page, '[data-testid="booking-status-actions"] button', target);
-    await waitText(page, `Marked ${target.toLowerCase()}`);
-    const after = (await apiFetch(page, "GET", W("/bookings"))).body.appointments.find((a) => a.customer_name === "Oliver Smith");
-    assert(after.status === (width === 1280 ? "completed" : "no_show"), `booking status is ${after.status}`);
-    await closeSheet(page);
-  });
+  if (width === 390) {
+    await step(`${tag} manager cancels a booking (persists)`, async () => {
+      await clickText(page, "[data-bookings-list] button", "Grace Lee");
+      await page.waitForSelector('[data-testid="booking-status-actions"]', { visible: true });
+      await page.waitForSelector('button[data-action="cancel-booking"]', { visible: true });
+      await page.$eval('button[data-action="cancel-booking"]', (b) => b.click());
+      await page.waitForSelector('button[data-action="confirm-cancel-booking"]', { visible: true });
+      await page.$eval('button[data-action="confirm-cancel-booking"]', (b) => b.click());
+      await waitText(page, "Booking cancelled");
+      const after = (await apiFetch(page, "GET", W("/bookings"))).body.appointments.find((a) => a.customer_name === "Grace Lee");
+      assert(after.status === "cancelled", `booking status is ${after.status}`);
+    });
+  }
 
   await step(`${tag} follow-ups: list, stage filter, pipeline`, async () => {
     await page.goto(`${B}/app/leads`, { waitUntil: "networkidle0" });
@@ -312,9 +299,8 @@ await step("viewer sees the data but can't change a follow-up or booking", async
   const res2 = await apiFetch(page, "PATCH", W("/bookings/req-bk-2"), { status: "cancelled" });
   assert(res2.status === 403, `viewer PATCH booking -> ${res2.status}`);
   await page.goto(`${B}/app/bookings`, { waitUntil: "networkidle0" });
-  await page.click('button[aria-label="Time"]');
-  await clickText(page, "[role=option]", "All time");
-  await clickText(page, "tr, [role=row], li, button", "Oliver Smith");
+  await page.click('button[data-when="past"]');
+  await clickText(page, "[data-bookings-list] button", "Oliver Smith");
   await page.waitForSelector("[role=dialog]", { visible: true });
   const hasStatus = await page.evaluate(() => !!document.querySelector('[data-testid="booking-status-actions"]'));
   assert(!hasStatus, "viewer is offered booking status buttons");

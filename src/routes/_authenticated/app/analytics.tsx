@@ -20,6 +20,7 @@ import {
   isInRange,
   weekdayBreakdown,
 } from "@/lib/app/metrics";
+import { DateRangeSelect } from "@/components/app/DateRangeSelect";
 import { useRangeMetrics } from "@/lib/app/use-metrics";
 import { useWorkspace } from "@/lib/app/workspace";
 import { PRODUCT } from "@/lib/app/product";
@@ -103,9 +104,12 @@ function AnalyticsPage() {
         title="Reports"
         description={`How your receptionist performed over the ${range.label.toLowerCase()}, compared with the period before.`}
         actions={
-          <Button variant="outline" size="sm" onClick={exportCsv} disabled={daily.length === 0}>
-            <Download className="mr-1.5 h-3.5 w-3.5" /> Export
-          </Button>
+          <>
+            <DateRangeSelect value={ws.rangePreset} onChange={ws.setRangePreset} />
+            <Button variant="outline" size="sm" onClick={exportCsv} disabled={daily.length === 0}>
+              <Download className="mr-1.5 h-3.5 w-3.5" /> Export
+            </Button>
+          </>
         }
       />
 

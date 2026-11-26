@@ -13,14 +13,18 @@ export const PROVIDER_IDS = [
 ] as const;
 export type ProviderId = (typeof PROVIDER_IDS)[number];
 
-export interface HowTo { id: string; title: string; time?: string; cost?: string; link?: string; html: string; placeholder: boolean }
+export interface HowTo { id: string; title: string; time?: string; cost?: string; link?: string; html: string; md: string; placeholder: boolean }
 
 const esc = (s: string) => s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
 
-function inline(s: string): string {
-  // Code spans first, so nothing inside them is touched.
+function inline(s: string, copyCode = false): string {
+  // Code spans first, so nothing inside them is touched. In a how-to every code span is something to
+  // type or paste, so it gets a Copy button (hidden until /wizard.js is running, since it needs script).
   const codes: string[] = [];
-  let t = esc(s).replace(/`([^`]+)`/g, (_, c) => { codes.push(`<code>${c}</code>`); return `\u0000${codes.length - 1}\u0000`; });
+  let t = esc(s).replace(/`([^`]+)`/g, (_, c) => {
+    codes.push(copyCode ? `<span class="cp"><code>${c}</code><button type="button" class="copy" data-copy="${c}" hidden>Copy</button></span>` : `<code>${c}</code>`);
+    return `\u0000${codes.length - 1}\u0000`;
+  });
   t = t.replace(/\[([^\]]+)\]\(([^)\s]+)\)/g, (_, label, href) => {
     const h = href.replace(/&amp;/g, "&");
     if (/^https?:\/\//i.test(h)) return `<a href="${esc(h)}" rel="noopener noreferrer" target="_blank">${label}</a>`;
@@ -31,13 +35,14 @@ function inline(s: string): string {
   return t.replace(/\u0000(\d+)\u0000/g, (_, i) => codes[Number(i)]);
 }
 
-export function markdown(src: string, headingShift = 1): string {
+export function markdown(src: string, headingShift = 1, copyCode = false): string {
   const lines = src.replace(/\r/g, "").split("\n");
   const out: string[] = [];
   let para: string[] = [];
   let list: { tag: "ul" | "ol"; items: string[] } | null = null;
-  const flushPara = () => { if (para.length) out.push(`<p>${inline(para.join(" "))}</p>`); para = []; };
-  const flushList = () => { if (list) out.push(`<${list.tag}>${list.items.map((i) => `<li>${inline(i)}</li>`).join("")}</${list.tag}>`); list = null; };
+  const il = (t: string) => inline(t, copyCode);
+  const flushPara = () => { if (para.length) out.push(`<p>${il(para.join("\n")).replace(/\n/g, "<br>")}</p>`); para = []; };
+  const flushList = () => { if (list) out.push(`<${list.tag}>${list.items.map((i) => `<li>${il(i)}</li>`).join("")}</${list.tag}>`); list = null; };
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
     if (/^```/.test(line)) {
@@ -48,7 +53,7 @@ export function markdown(src: string, headingShift = 1): string {
       continue;
     }
     let m = line.match(/^(#{1,4})\s+(.*)$/);
-    if (m) { flushPara(); flushList(); const n = Math.min(6, m[1].length + headingShift); out.push(`<h${n}>${inline(m[2])}</h${n}>`); continue; }
+    if (m) { flushPara(); flushList(); const n = Math.min(6, m[1].length + headingShift); out.push(`<h${n}>${il(m[2])}</h${n}>`); continue; }
     m = line.match(/^\s*(?:[-*+])\s+(.*)$/);
     const o = line.match(/^\s*\d+[.)]\s+(.*)$/);
     if (m || o) {
@@ -60,7 +65,7 @@ export function markdown(src: string, headingShift = 1): string {
     }
     if (list && /^\s{2,}\S/.test(line)) { list.items[list.items.length - 1] += " " + line.trim(); continue; }
     m = line.match(/^>\s?(.*)$/);
-    if (m) { flushPara(); flushList(); out.push(`<blockquote>${inline(m[1])}</blockquote>`); continue; }
+    if (m) { flushPara(); flushList(); out.push(`<blockquote>${il(m[1])}</blockquote>`); continue; }
     if (!line.trim()) { flushPara(); flushList(); continue; }
     flushList();
     para.push(line.trim());
@@ -104,7 +109,7 @@ export function loadContent(): Map<string, HowTo> {
   const m = new Map<string, HowTo>();
   for (const id of PROVIDER_IDS) {
     const [title, body] = PLACEHOLDER[id];
-    m.set(id, { id, title, html: markdown(body), placeholder: true });
+    m.set(id, { id, title, html: markdown(body, 1, true), md: body, placeholder: true });
   }
   for (const dir of contentDirs()) {
     const pdir = join(dir, "providers");
@@ -115,7 +120,7 @@ export function loadContent(): Map<string, HowTo> {
         const { meta, body } = frontMatter(readFileSync(join(pdir, f), "utf8"));
         const id = (meta.id || f.replace(/\.md$/, "")).toLowerCase();
         if (!/^[a-z0-9-]+$/.test(id) || (m.has(id) && !m.get(id)!.placeholder)) continue;
-        m.set(id, { id, title: meta.title || PLACEHOLDER[id]?.[0] || id, time: meta.time, cost: meta.cost, link: /^https?:\/\//.test(meta.link || "") ? meta.link : undefined, html: markdown(body.replace(/^#\s+.*\n/, "")), placeholder: false });
+        m.set(id, { id, title: meta.title || PLACEHOLDER[id]?.[0] || id, time: meta.time, cost: meta.cost, link: /^https?:\/\//.test(meta.link || "") ? meta.link : undefined, html: markdown(body.replace(/^#\s+.*\n/, ""), 1, true), md: body, placeholder: false });
       } catch (e) {
         console.error(`content: couldn't read ${f}: ${(e as Error).message}`);
       }
@@ -125,7 +130,7 @@ export function loadContent(): Map<string, HowTo> {
   cache = m;
   return m;
 }
-export const howTo = (id: string): HowTo => (cache || loadContent()).get(id) || { id, title: id, html: "", placeholder: true };
+export const howTo = (id: string): HowTo => (cache || loadContent()).get(id) || { id, title: id, html: "", md: "", placeholder: true };
 export const allHowTos = () => [...(cache || loadContent()).values()];
 
 /** The welcome email (handoff-content/welcome-email.md): subject + plain-text body with {{placeholders}}. */

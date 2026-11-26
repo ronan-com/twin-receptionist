@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { Loader2, ScrollText } from "lucide-react";
+import { ChevronLeft, Loader2, ScrollText } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -21,6 +21,7 @@ import { useWorkspace } from "@/lib/app/workspace";
 import { mergeFormOnRefresh } from "@/lib/app/business-logic";
 import { ALWAYS_FROM, ALWAYS_TO, TIMEZONES } from "@/lib/shared";
 import { PRODUCT } from "@/lib/app/product";
+import { ClientSettings } from "@/components/app/client/ClientSettings";
 import { ProfileEditor } from "@/components/app/profile/ProfileEditor";
 import { cleanProfile, profileOf, settingsToneFor, totalProgress } from "@/components/app/profile/helpers";
 import { saveReceptionist, type ReceptionistRow } from "@/components/app/receptionist/model";
@@ -36,8 +37,15 @@ export const Route = createFileRoute("/_authenticated/app/settings")({
     const t = String(search["tab"] ?? "");
     return SETTINGS_TABS.includes(t as SettingsTab) ? { tab: t as SettingsTab } : {};
   },
-  component: SettingsPage,
+  component: SettingsRoute,
 });
+
+// No tab: the owner's simple settings. A tab (Business, Account, and the agency's own
+// Call handling, Branding, Plan) opens the fuller editors.
+function SettingsRoute() {
+  const { tab } = Route.useSearch();
+  return tab ? <SettingsPage /> : <ClientSettings />;
+}
 
 // The industries our receptionist script knows (they round-trip through the server).
 const INDUSTRY_OPTIONS = ["Dental", "Healthcare", "Trades", "Salon & beauty", "Real estate", "Automotive", "Professional services", "Childcare", "Other"];
@@ -86,7 +94,9 @@ function SettingsPage() {
   const ws = useWorkspace();
   const navigate = Route.useNavigate();
   const { tab: tabParam } = Route.useSearch();
-  const tab: SettingsTab = tabParam ?? "business";
+  const staff = ws.access.kind === "staff_view";
+  // Call handling and the plan are the agency's: owners don't get those tabs.
+  const tab: SettingsTab = tabParam && (staff || !["handling", "billing"].includes(tabParam)) ? tabParam : "business";
   const qc = useQueryClient();
   const b = ws.business;
   const canManage = ws.access.canManage;
@@ -180,7 +190,10 @@ function SettingsPage() {
 
   return (
     <div className="space-y-5">
-      <PageHeader eyebrow={b.name} title="Settings" description="Business details, hours, your account and usage." />
+      <Link to="/app/settings" search={{}} data-back className="-ml-1 inline-flex min-h-10 items-center gap-1 rounded-md pr-3 text-[14px] font-medium text-[var(--primary-ink)] hover:underline">
+        <ChevronLeft className="h-4 w-4" /> Settings
+      </Link>
+      <PageHeader eyebrow={b.name} title={tab === "account" ? "Your login" : tab === "business" || tab === "hours" ? "Business details" : "Settings"} />
 
       {!canManage ? <Notice tone="neutral">{ws.access.readOnlyReason ?? "Only managers can change business settings."}</Notice> : null}
 
@@ -188,10 +201,10 @@ function SettingsPage() {
         <TabsList className="h-9 w-full justify-start overflow-x-auto rounded-[6px] bg-canvas-2 p-1 sm:w-auto">
           <TabsTrigger value="business" className="text-[12.5px]">Business</TabsTrigger>
           <TabsTrigger value="hours" className="text-[12.5px]">Hours</TabsTrigger>
-          <TabsTrigger value="handling" className="text-[12.5px]" data-settings-tab="handling">Call handling details</TabsTrigger>
+          {staff ? <TabsTrigger value="handling" className="text-[12.5px]" data-settings-tab="handling">Call handling details</TabsTrigger> : null}
           <TabsTrigger value="branding" className="text-[12.5px]">Branding</TabsTrigger>
           <TabsTrigger value="account" className="text-[12.5px]">Your account</TabsTrigger>
-          <TabsTrigger value="billing" className="text-[12.5px]">Plan & usage</TabsTrigger>
+          {staff ? <TabsTrigger value="billing" className="text-[12.5px]">Plan & usage</TabsTrigger> : null}
           {canManage ? <TabsTrigger value="activity" className="text-[12.5px]">Activity</TabsTrigger> : null}
         </TabsList>
 
@@ -247,7 +260,7 @@ function SettingsPage() {
           </FormSection>
           <p className="text-[12px] text-ink-muted">
             Calls are transcribed; audio isn't stored. The services your receptionist can book are kept with the receptionist.{" "}
-            <Link to="/app/receptionist" search={{ tab: "booking" }} className="text-indigo hover:underline">Edit services</Link>.
+            {ws.access.kind === "staff_view" ? <Link to="/app/receptionist" search={{ tab: "booking" }} className="text-indigo hover:underline">Edit services</Link> : "Change them in Settings, What callers can ask for"}.
           </p>
         </TabsContent>
 
@@ -424,7 +437,7 @@ function SettingsPage() {
       ) : null}
 
       <p className="text-[11.5px] text-ink-muted">
-        Need another number? See <Link to="/app/phone-numbers" className="text-indigo hover:underline">Call handling</Link>. To close this business, contact {b.org_name || "support"}.
+        {staff ? <>Need another number? See <Link to="/app/phone-numbers" className="text-indigo hover:underline">Call handling</Link>. </> : null}To close this business or change your numbers, contact {b.org_name || "your agency"}.
       </p>
     </div>
   );

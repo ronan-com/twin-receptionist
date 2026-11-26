@@ -28,7 +28,7 @@ function Brand() {
   const name = ws.business?.org_name || PRODUCT;
   return (
     <Link to="/app" className="inline-flex min-w-0 items-center gap-2 outline-none" data-client-brand>
-      {logo && /^\/brand\/[a-f0-9-]{36}$/.test(logo) ? <img src={logo} alt={name} className="max-h-9 max-w-[140px] object-contain" /> : <span className="truncate text-[16px] font-semibold tracking-[-0.02em] text-ink">{name}</span>}
+      {logo && /^\/brand\/[a-f0-9-]{36}$/.test(logo) ? <span data-workspace-logo><img src={logo} alt={name} className="max-h-9 max-w-[140px] object-contain" /></span> : <span className="truncate text-[16px] font-semibold tracking-[-0.02em] text-ink">{name}</span>}
     </Link>
   );
 }

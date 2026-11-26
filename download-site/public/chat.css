@@ -1,0 +1,37 @@
+/* The "Need help?" bubble. Light, on both the wizard and the guide; no inline styles (the site's CSP forbids them). */
+.chat { --c-ink: #0a2540; --c-muted: #5b6b7f; --c-line: #e3e8ef; --c-accent: #635bff; --c-soft: #efeeff; --c-bg: #f6f9fc;
+  position: fixed; right: 16px; bottom: 16px; z-index: 40; font-family: Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", Arial, sans-serif; font-size: 14px; line-height: 1.5; color: var(--c-ink); }
+.chat[hidden], .chat [hidden] { display: none !important; }
+.chat * { box-sizing: border-box; }
+.chat-fab { display: inline-flex; align-items: center; gap: 8px; min-height: 46px; padding: 0 18px; border: 0; border-radius: 99px; cursor: pointer;
+  background: var(--c-accent); color: #fff; font: inherit; font-weight: 600; box-shadow: 0 10px 30px -10px rgba(99, 91, 255, .7), 0 2px 6px rgba(6, 27, 49, .18); }
+.chat-fab::before { content: ""; width: 18px; height: 18px; background: center / contain no-repeat url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M7.9 20A9 9 0 1 0 4 16.1L2 22Z'/%3E%3C/svg%3E"); }
+.chat-fab:hover { filter: brightness(1.06); }
+.chat-fab:focus-visible, .chat-x:focus-visible, .chat-send:focus-visible, .chat textarea:focus-visible, .chat-chip:focus-visible { outline: 3px solid #cfcaff; outline-offset: 1px; }
+.chat.open .chat-fab { display: none; }
+.chat-panel { width: min(380px, calc(100vw - 32px)); height: min(540px, calc(100vh - 32px)); display: flex; flex-direction: column; background: #fff; border: 1px solid var(--c-line); border-radius: 16px;
+  box-shadow: 0 24px 60px -20px rgba(6, 27, 49, .45); overflow: hidden; }
+.chat-panel > header { display: flex; align-items: center; justify-content: space-between; padding: 10px 10px 10px 16px; border-bottom: 1px solid var(--c-line); background: var(--c-soft); }
+.chat-panel > header b { font-size: 15px; }
+.chat-x { width: 36px; height: 36px; border: 0; border-radius: 50%; background: transparent; color: var(--c-ink); font-size: 24px; line-height: 1; cursor: pointer; }
+.chat-x:hover { background: #fff; }
+.chat-log { flex: 1; overflow-y: auto; padding: 14px 14px 6px; display: flex; flex-direction: column; gap: 10px; background: var(--c-bg); }
+.chat-msg { max-width: 88%; padding: 9px 12px; border-radius: 14px; overflow-wrap: anywhere; }
+.chat-msg.bot { align-self: flex-start; background: #fff; border: 1px solid var(--c-line); border-bottom-left-radius: 4px; }
+.chat-msg.me { align-self: flex-end; background: var(--c-accent); color: #fff; border-bottom-right-radius: 4px; }
+.chat-msg.err { align-self: flex-start; background: #fff7f7; border: 1px solid #ffd0d0; color: #a41d1d; }
+.chat-msg.wait { color: var(--c-muted); }
+.chat-msg p { margin: 0; }
+.chat-msg p + p { margin-top: 6px; }
+.chat-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.chat-chip { border: 1px solid #cfcaff; background: #fff; color: var(--c-accent); border-radius: 99px; padding: 6px 12px; font: inherit; font-size: 13px; font-weight: 500; cursor: pointer; text-align: left; }
+.chat-chip:hover { background: var(--c-soft); }
+.chat-note { margin: 0; padding: 6px 14px 0; font-size: 12px; color: var(--c-muted); background: #fff; border-top: 1px solid var(--c-line); }
+.chat-form { display: flex; gap: 8px; padding: 8px 12px 12px; align-items: flex-end; background: #fff; }
+.chat textarea { flex: 1; resize: none; border: 1px solid var(--c-line); border-radius: 10px; padding: 8px 10px; font: inherit; font-size: 16px; color: var(--c-ink); background: #fff; min-width: 0; }
+.chat-send { flex: none; height: 40px; padding: 0 16px; border: 0; border-radius: 10px; background: var(--c-accent); color: #fff; font: inherit; font-weight: 600; cursor: pointer; }
+.chat-send:disabled { opacity: .55; cursor: default; }
+.chat-sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+@media (max-width: 639px) { .chat { right: 12px; bottom: 12px; } .chat-panel { width: calc(100vw - 24px); height: min(78vh, 560px); } }
+@media (prefers-reduced-motion: no-preference) { .chat-panel { animation: chatin .16s ease-out; } @keyframes chatin { from { transform: translateY(10px); opacity: 0; } } }
+@media print { .chat { display: none; } }

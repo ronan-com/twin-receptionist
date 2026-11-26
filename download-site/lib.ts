@@ -80,7 +80,7 @@ export function siteUrlWarnings(): string[] {
  * (*.trycloudflare.com) and TEST_SITE=1 are the only exceptions: those are test sites.
  */
 export function productionGuard(): string | null {
-  const flags = ["MOCK_DO", "MOCK_RAILWAY", "MOCK_CF", "MOCK_RESEND", "MOCK_TELNYX", "MOCK_OAUTH", "PREVIEW_JUMP", "DO_API_BASE", "CF_API_BASE", "RESEND_API_BASE", "RAILWAY_API_BASE"]
+  const flags = ["MOCK_DO", "MOCK_RAILWAY", "MOCK_CF", "MOCK_RESEND", "MOCK_TELNYX", "MOCK_OAUTH", "PREVIEW_JUMP", "DO_API_BASE", "CF_API_BASE", "RESEND_API_BASE", "RAILWAY_API_BASE", "GODADDY_API_BASE"]
     .filter((k) => (process.env[k] ?? "").trim() && (process.env[k] ?? "").trim() !== "0");
   if (!flags.length) return null;
   let u: URL;
@@ -209,6 +209,27 @@ export function db(): Database {
       data TEXT NOT NULL
     );
     CREATE INDEX IF NOT EXISTS sync_history_buyer ON sync_history (buyer_id, id DESC);
+    -- "Push update now" (releases.ts): the next heartbeat answer carries updateNow, once.
+    CREATE TABLE IF NOT EXISTS sync_push (
+      buyer_id INTEGER PRIMARY KEY,
+      requested_at TEXT NOT NULL,
+      requested_by TEXT NOT NULL DEFAULT ''
+    );
+    -- Alerts we sent about an agency (alerts.ts). Kept for the admin's alert history; de-duped per agency, kind and hour.
+    CREATE TABLE IF NOT EXISTS alerts (
+      id INTEGER PRIMARY KEY,
+      buyer_id INTEGER NOT NULL,
+      kind TEXT NOT NULL,
+      message TEXT NOT NULL,
+      at TEXT NOT NULL,
+      sent TEXT NOT NULL DEFAULT ''
+    );
+    CREATE INDEX IF NOT EXISTS alerts_buyer_kind ON alerts (buyer_id, kind, id DESC);
+    -- Agencies whose owner switched sharing off: their silence is not an outage. Cleared when a heartbeat arrives.
+    CREATE TABLE IF NOT EXISTS sync_off (
+      buyer_id INTEGER PRIMARY KEY,
+      at TEXT NOT NULL
+    );
     -- Our staff's "Sync now" and "View as" clicks. No foreign key: it outlives a deleted buyer.
     CREATE TABLE IF NOT EXISTS support_log (
       id INTEGER PRIMARY KEY,

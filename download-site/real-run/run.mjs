@@ -33,12 +33,17 @@
 //   POLL_SECONDS         dig / page poll interval, default 30 (dry run 3)
 //   --finish-now         if the app is running but its two DNS records never resolve, press "Finish now"
 //   --keep               dry run: leave the local site and fake containers running afterwards
-//   --shots DIR          where screenshots and summary.json go
+//   --shots DIR          where screenshots and summary.json go (default: <system temp>/chloe-real-run)
+//   CHROME_PATH          the browser to drive (default: the first Chromium / Chrome / Edge found)
+//   BUN_BIN              the bun executable (default: bun, or bun.exe from npm's folder on Windows)
+// DNS is checked with Node's own resolver against 1.1.1.1 and 8.8.8.8 (dry run: the fake DNS), so dig isn't needed.
 import { spawn, spawnSync, execFileSync } from "node:child_process";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { createServer } from "node:net";
 import { randomBytes } from "node:crypto";
 import { dirname, join } from "node:path";
+import { tmpdir } from "node:os";
+import { Resolver } from "node:dns/promises";
 import { fileURLToPath } from "node:url";
 import { deflateSync } from "node:zlib";
 import puppeteer from "puppeteer-core";
@@ -52,7 +57,29 @@ const DRY = flag("--dry-run");
 const WITH_EMAIL = flag("--with-email");
 const WITH_DOMAIN = flag("--with-domain") || WITH_EMAIL;
 const SECRETS = "/home/ronan/aibiz/.secrets";
-const SHOTS = argVal("--shots") || "/tmp/claude-1000/-home-ronan-aibiz/532e431f-da0f-47af-8632-947a62e67253/scratchpad/real-run";
+const SHOTS = argVal("--shots") || join(tmpdir(), "chloe-real-run");
+const WIN = process.platform === "win32";
+/** bun itself: on Windows npm installs a bun.cmd shim, which spawn() can't run without a shell. */
+function findBun() {
+  if (process.env.BUN_BIN) return process.env.BUN_BIN;
+  if (!WIN) return "bun";
+  const w = spawnSync("where", ["bun.exe"], { encoding: "utf8" });
+  const hit = (w.stdout || "").split(/\r?\n/).map((l) => l.trim()).find((l) => l && existsSync(l));
+  if (hit) return hit;
+  const npm = join(process.env.APPDATA || "", "npm", "node_modules", "bun", "bin", "bun.exe");
+  return existsSync(npm) ? npm : "bun.exe";
+}
+const BUN = findBun();
+function findChrome() {
+  if (process.env.CHROME_PATH) return process.env.CHROME_PATH;
+  const pf = [process.env.PROGRAMFILES, process.env["PROGRAMFILES(X86)"], process.env.LOCALAPPDATA].filter(Boolean);
+  const list = [
+    "/snap/bin/chromium", "/usr/bin/chromium", "/usr/bin/chromium-browser", "/usr/bin/google-chrome", "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+    ...pf.flatMap((d) => [join(d, "Google", "Chrome", "Application", "chrome.exe"), join(d, "Microsoft", "Edge", "Application", "msedge.exe")]),
+  ];
+  return list.find((x) => existsSync(x)) || "";
+}
+const CHROME = findChrome();
 const DOMAIN = (process.env.TEST_DOMAIN || (DRY ? "chloeeai.co" : "t1.chloeeai.co")).toLowerCase();
 const ROOT = DOMAIN.split(".").slice(-2).join("."); // the zone you edit at GoDaddy
 const BRAND = process.env.BRAND_NAME || "Chloe Test";
@@ -123,11 +150,12 @@ function adminPassword() {
 
 // Where the buyer link lives between runs (mode 600).
 let STATE_FILE = join(SECRETS, "real-run-state.json");
+const chmod600 = (f) => { try { chmodSync(f, 0o600); } catch {} }; // a no-op on Windows
 function loadState() { try { return JSON.parse(readFileSync(STATE_FILE, "utf8")); } catch { return {}; } }
 function saveState(patch) {
   const s = { ...loadState(), ...patch };
   writeFileSync(STATE_FILE, JSON.stringify(s, null, 2), { mode: 0o600 });
-  chmodSync(STATE_FILE, 0o600);
+  chmod600(STATE_FILE);
   return s;
 }
 
@@ -171,7 +199,7 @@ async function startLocal() {
   const bundle = join(SITE_DIR, "../deploy/selfhost/out/selfhost-bundle.tgz");
   if (!existsSync(bundle)) throw new Error(`no app bundle at ${bundle}; run deploy/selfhost/make-bundle.sh first`);
   PORT_BASE = await findBase();
-  const data = mkdtempSync(join(process.env.TMPDIR || "/tmp", "real-run-dry-"));
+  const data = mkdtempSync(join(process.env.TMPDIR || tmpdir(), "real-run-dry-"));
   STATE_FILE = join(data, "real-run-state.json");
   SITE = `http://localhost:${PORT_BASE}`;
   MOCK = `http://127.0.0.1:${PORT_BASE + 1}`;
@@ -179,15 +207,17 @@ async function startLocal() {
   const base = {
     ...process.env, DATA_DIR: data, SITE_URL: SITE, PORT: String(PORT_BASE), HOST: "127.0.0.1", TMPDIR: data,
     SETUP_SECRET_KEY: randomBytes(32).toString("base64"), MOCK_PORT_BASE: String(PORT_BASE), MOCK_APP_PORTS: `${PORT_BASE + 30}-${PORT_BASE + 39}`,
-    DNS_SERVERS: DNS_LOCAL, MOCK_RAILWAY: "1", MOCK_CF: "1", MOCK_RESEND: "1", MOCK_TELNYX: "1", MOCK_OAUTH: "1",
+    DNS_SERVERS: DNS_LOCAL, MOCK_RAILWAY: "1", MOCK_DO: "1", MOCK_CF: "1", MOCK_RESEND: "1", MOCK_TELNYX: "1", MOCK_OAUTH: "1",
     SUPPORT_EMAIL: "support@example.com", PRODUCT_NAME: "AI Receptionist", CHECKS_PER_10_MIN: "30",
   };
   delete base.PREVIEW_JUMP; delete base.HOSTING; delete base.TEST_SITE;
-  const hash = execFileSync("bun", ["admin.ts", "admin-hash"], { cwd: SITE_DIR, env: base, input: adminPassword() + "\n" }).toString().trim().replace(/^ADMIN_PASSWORD_HASH=/, "");
+  // Nothing inherited may point the local site at a real provider: every base address comes from the fakes.
+  for (const k of ["DO_API_BASE", "CF_API_BASE", "RESEND_API_BASE", "RAILWAY_API_BASE", "GODADDY_API_BASE", "DEMO_APP_URL", "MOCK_BASE", "SITE_SMTP_URL", "ALERT_WEBHOOK_URL", "OPENROUTER_API_KEY"]) delete base[k];
+  const hash = execFileSync(BUN, ["admin.ts", "admin-hash"], { cwd: SITE_DIR, env: base, input: adminPassword() + "\n" }).toString().trim().replace(/^ADMIN_PASSWORD_HASH=/, "");
   const env = { ...base, ADMIN_EMAILS: ADMIN_EMAIL, ADMIN_PASSWORD_HASH: hash };
   const logFile = join(data, "procs.log");
   const start = (script, name) => {
-    const p = spawn("bun", [script], { cwd: SITE_DIR, env, stdio: ["ignore", "pipe", "pipe"], detached: false });
+    const p = spawn(BUN, [script], { cwd: SITE_DIR, env, stdio: ["ignore", "pipe", "pipe"], detached: false });
     const w = (d) => { try { writeFileSync(logFile, `[${name}] ${d}`, { flag: "a" }); } catch {} };
     p.stdout.on("data", w); p.stderr.on("data", w);
     procs.push(p);
@@ -196,7 +226,7 @@ async function startLocal() {
   await waitUp(`${MOCK}/_mock/state`, "the fake providers");
   start("server.ts", "site");
   await waitUp(`${SITE}/healthz`, "the local setup site");
-  execFileSync("bun", ["admin.ts", "publish", bundle, "1.0.0-realrun"], { cwd: SITE_DIR, env });
+  execFileSync(BUN, ["admin.ts", "publish", bundle, "1.0.0-realrun"], { cwd: SITE_DIR, env });
   LOCAL_ENV = env; LOCAL_BUNDLE = bundle;
   return `local site ${SITE} (ports ${PORT_BASE}-${PORT_BASE + 9}, app ports ${PORT_BASE + 30}-${PORT_BASE + 39}), data ${data}`;
 }
@@ -210,25 +240,28 @@ const norm = (type, v) => {
   if (type === "MX") { const [p, ...h] = v.split(" "); v = `${p} ${h.join(" ").replace(/\.$/, "")}`; }
   return v.toLowerCase();
 };
-function digAnswers(type, name) {
+/** What public DNS answers for one name, normalised like the wizard's table (one resolver per server, never the system one). */
+async function digAnswers(type, name) {
   const servers = DRY ? [DNS_LOCAL] : ["1.1.1.1", "8.8.8.8"];
   const out = [];
   for (const sv of servers) {
-    const [host, port] = sv.split(":");
-    const a = ["+short", "+time=3", "+tries=1", `@${host}`, ...(port ? ["-p", port] : []), type, name];
-    const r = spawnSync("dig", a, { encoding: "utf8" });
-    if (r.error) throw new Error("dig isn't installed (apt install dnsutils)");
-    out.push(...r.stdout.split("\n").map((l) => l.trim()).filter(Boolean).map((l) => norm(type, l)));
+    const r = new Resolver({ timeout: 3000, tries: 1 });
+    r.setServers([sv]);
+    const got = await (type === "TXT" ? r.resolveTxt(name).then((a) => a.map((parts) => parts.join("")))
+      : type === "MX" ? r.resolveMx(name).then((a) => a.map((m) => `${m.priority} ${m.exchange}`))
+      : type === "CNAME" ? r.resolveCname(name)
+      : r.resolve4(name)).catch(() => []);
+    out.push(...got.map((l) => norm(type, l)));
   }
   return [...new Set(out)];
 }
 /** One line per record: ok / missing / wrong. Returns true when every record resolves to the expected value. */
-function checkRecords(recs) {
+async function checkRecords(recs) {
   let all = true;
   for (const r of recs) {
     const want = norm(r.type, r.type === "MX" && r.prio ? `${r.prio} ${r.value}` : r.value);
     let got = [];
-    try { got = digAnswers(r.type, r.name); } catch (e) { throw e; }
+    got = await digAnswers(r.type, r.name);
     const ok = got.includes(want);
     if (!ok) all = false;
     say(`   dns ${ok ? "OK     " : got.length ? "WRONG  " : "missing"} ${r.type.padEnd(5)} ${r.name}${ok || !got.length ? "" : `  (found ${got.join(" | ").slice(0, 120)})`}`);
@@ -300,14 +333,14 @@ async function adminStage(page) {
   let link = "", st = loadState();
   await step("admin: sign in", async () => {
     await page.goto(`${SITE}/admin`, { waitUntil: "load" });
-    if ((await screen(page)).h1 !== "Buyers") {
+    if ((await screen(page)).h1 !== "Buyers" && (await screen(page)).h1 !== "Agencies") {
       await page.type("#email", ADMIN_EMAIL);
       await page.type("#password", pwAdmin());
       await Promise.all([page.waitForNavigation({ waitUntil: "load" }), page.click("button[type=submit]")]);
     }
     const h = await text(page, "h1");
     await shot(page, "admin-buyers");
-    if (h !== "Buyers") throw new Error(`admin sign-in failed: ${(await text(page, ".notice.err")) || h}`);
+    if (h !== "Buyers" && h !== "Agencies") throw new Error(`admin sign-in failed: ${(await text(page, ".notice.err")) || h}`);
     return `signed in as ${ADMIN_EMAIL}`;
   });
   await step("admin: buyer and setup link", async () => {
@@ -408,7 +441,7 @@ async function emailRecords(p) {
   const end = Date.now() + WAIT_MS;
   let verified = false;
   while (Date.now() < end) {
-    const all = checkRecords(recs);
+    const all = await checkRecords(recs);
     await p.reload({ waitUntil: "load" });
     verified = /Resend verified/.test(await text(p, ".notice.ok"));
     const err = await text(p, ".notice.err");
@@ -454,7 +487,7 @@ async function installStage(p, first) {
         printRecords(`ADD THESE ${recs.length} RECORDS FOR YOUR DASHBOARD (app.${DOMAIN})`, recs);
         if (DRY) { say("   (dry run: adding them to the fake registrar)"); await registrarAdd(recs); recsAdded = true; }
       }
-      if (appRecs && Date.now() - lastDig >= POLL_MS) { lastDig = Date.now(); const ok = checkRecords(appRecs); say(`   dashboard records in DNS: ${ok ? "all" : "not yet"}`); }
+      if (appRecs && Date.now() - lastDig >= POLL_MS) { lastDig = Date.now(); const ok = await checkRecords(appRecs); say(`   dashboard records in DNS: ${ok ? "all" : "not yet"}`); }
       if (sc.h1.endsWith("is running") && flag("--finish-now") && !finishPressed && appRecs) {
         // only when asked: skip waiting for the certificate
         finishPressed = true; say("   --finish-now: pressing Finish now"); await submit(p, "install-finish"); sc = await screen(p); continue;
@@ -558,7 +591,7 @@ async function updateStage(pa, pb, link) {
   await step("update: publish a newer version, see it in admin and on the buyer's Done screen", async () => {
     before = await proj();
     if (before.length !== 1) throw new Error(`expected one Railway project before the update, found ${before.length}`);
-    execFileSync("bun", ["admin.ts", "publish", LOCAL_BUNDLE, "1.0.1-realrun", "- A brand new thing\n- Another fix"], { cwd: SITE_DIR, env: LOCAL_ENV });
+    execFileSync(BUN, ["admin.ts", "publish", LOCAL_BUNDLE, "1.0.1-realrun", "- A brand new thing\n- Another fix"], { cwd: SITE_DIR, env: LOCAL_ENV });
     await pa.goto(`${SITE}/admin`, { waitUntil: "load" });
     const pill = await pa.$$eval("table.buyers tbody tr", (rows) => rows.map((r) => r.textContent).find((t) => /Test Buyer/.test(t) && /Update available/.test(t)) || "");
     if (!pill) throw new Error("admin's buyer list shows no 'Update available' for the test buyer");
@@ -613,14 +646,14 @@ try {
   await step("preflight", async () => {
     if (keys.error) throw new Error(keys.error);
     if (!DRY && !OWNER_EMAIL) throw new Error("set OWNER_EMAIL=the email that will own the test agency (e.g. OWNER_EMAIL=you@example.com)");
-    if (!existsSync("/snap/bin/chromium")) throw new Error("/snap/bin/chromium not found");
-    if (spawnSync("dig", ["-v"]).error) throw new Error("dig isn't installed (apt install dnsutils)");
+    if (!CHROME) throw new Error("no Chromium, Chrome or Edge found: set CHROME_PATH");
+    if (DRY && spawnSync("docker", ["version", "--format", "{{.Server.Version}}"]).status !== 0) throw new Error("Docker isn't running: the fake Railway builds and runs the app in Docker");
     if (DRY) return await startLocal();
     const r = await fetch(`${SITE}/healthz`).catch((e) => ({ ok: false, status: String(e.message) }));
     if (!r.ok) throw new Error(`${SITE}/healthz answered ${r.status}`);
     return `${SITE} is up; keys present (not shown); domain ${DOMAIN}; state file ${STATE_FILE}`;
   });
-  browser = await puppeteer.launch({ executablePath: "/snap/bin/chromium", headless: true, args: ["--no-sandbox", "--disable-gpu"] });
+  browser = await puppeteer.launch({ executablePath: CHROME, headless: true, args: ["--no-sandbox", "--disable-gpu"] });
   const ctxAdmin = await browser.createBrowserContext();
   const pa = await ctxAdmin.newPage();
   await pa.setViewport(VIEW);

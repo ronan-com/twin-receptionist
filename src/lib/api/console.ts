@@ -412,6 +412,7 @@ export const teamApi = {
   revoke: (id: string) => api.del<TeamState>(`/api/team/invites/${id}`),
   changeRole: (userId: string, role: string) => api.put<TeamState>(`/api/team/members/${userId}`, { role }),
   remove: (userId: string) => api.del<TeamState>(`/api/team/members/${userId}`),
+  resetLink: (userId: string) => api.post<{ url: string; emailed: boolean; email: string }>(`/api/team/members/${userId}/reset-link`, {}),
   renameOrg: (name: string) => api.put("/api/org", { name }),
   updateAccount: (input: { name?: string; currentPassword?: string; newPassword?: string }) => api.put("/api/account", input),
 };

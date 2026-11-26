@@ -1,5 +1,6 @@
 import { loadAutomations } from "../automations";
 import { normaliseFollowups } from "../followups";
+import { readOnlyView } from "../supportChanges";
 import { sendTest } from "../followupsRun";
 import { ValidationError } from "../prompt";
 import { enterOrg } from "../telnyx";
@@ -21,7 +22,7 @@ export async function followupTestRoute(args: RouteArgs, deps: AutomationRouteDe
   if (!found) return json({ error: "That business isn't shared with you." }, 404);
   const { client, orgId, access } = found;
   if (orgId !== args.orgId) enterOrg(orgId);
-  if (access === "viewer" || args.ctx.viewing) return json({ error: "Your access to this business is view-only. Ask a manager to change it." }, 403);
+  if (access === "viewer" || readOnlyView(args.ctx)) return json({ error: "Your access to this business is view-only. Ask a manager to change it." }, 403);
 
   const body = await readBody(args.req);
   const kind = body?.kind as keyof typeof SECTION;

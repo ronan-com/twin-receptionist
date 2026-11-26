@@ -2,9 +2,10 @@ import { useEffect, useState } from "react";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { ShieldCheck, Trash2, UserPlus, X } from "lucide-react";
+import { KeyRound, ShieldCheck, Trash2, UserPlus, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { PageHeader, Panel, ErrorState, Notice, EmptyState } from "@/components/app/primitives";
@@ -18,8 +19,9 @@ import { LinkBox, READ_ONLY_HINT, useConsole } from "./-shared";
 import { PRODUCT } from "@/lib/app/product";
 import { EmailCalendarsSection } from "./-email-calendars";
 import { SupportSection } from "./-support";
+import { UpdatesSection } from "./-updates";
 
-const TABS = ["team", "branding", "account", "platform", "email", "support"] as const;
+const TABS = ["team", "branding", "account", "platform", "email", "support", "updates"] as const;
 type Tab = (typeof TABS)[number];
 
 export const Route = createFileRoute("/_authenticated/admin/settings")({
@@ -49,6 +51,7 @@ function AdminSettingsPage() {
           {platform ? <TabsTrigger value="platform">Platform admins</TabsTrigger> : null}
           {serverSettings ? <TabsTrigger value="email">Email and calendars</TabsTrigger> : null}
           {supportTab ? <TabsTrigger value="support">Support</TabsTrigger> : null}
+          {supportTab ? <TabsTrigger value="updates">Updates</TabsTrigger> : null}
         </TabsList>
         <TabsContent value="team" className="mt-4">
           <TeamSection />
@@ -67,6 +70,11 @@ function AdminSettingsPage() {
         {serverSettings ? (
           <TabsContent value="email" className="mt-4">
             <EmailCalendarsSection />
+          </TabsContent>
+        ) : null}
+        {supportTab ? (
+          <TabsContent value="updates" className="mt-4">
+            <UpdatesSection />
           </TabsContent>
         ) : null}
         {supportTab ? (
@@ -100,6 +108,15 @@ function TeamSection() {
       await qc.invalidateQueries({ queryKey: ["console", "team"] });
     },
     onError: (e: Error) => toast.error("Couldn't invite", { description: e.message }),
+  });
+  const [reset, setReset] = useState<{ email: string; url: string } | null>(null);
+  const resetLink = useMutation({
+    mutationFn: teamApi.resetLink,
+    onSuccess: (r) => {
+      if (r.emailed) toast.success(`Reset link emailed to ${r.email}`);
+      else setReset({ email: r.email, url: r.url });
+    },
+    onError: (e: Error) => toast.error("Couldn't make a reset link", { description: e.message }),
   });
   const revoke = useMutation({ mutationFn: teamApi.revoke, onSuccess: set, onError: (e: Error) => toast.error(e.message) });
   const change = useMutation({ mutationFn: ({ id, r }: { id: string; r: string }) => teamApi.changeRole(id, r), onSuccess: set, onError: (e: Error) => toast.error(e.message) });
@@ -154,6 +171,11 @@ function TeamSection() {
                         <SelectItem value="member">Member</SelectItem>
                       </SelectContent>
                     </Select>
+                    {m.role !== "owner" || role === "owner" ? (
+                      <Button variant="outline" size="sm" className="h-8 text-[12px]" disabled={resetLink.isPending} onClick={() => resetLink.mutate(m.id)} data-reset-link>
+                        <KeyRound className="mr-1 h-3.5 w-3.5" /> Copy reset link
+                      </Button>
+                    ) : null}
                     <Button variant="ghost" size="sm" className="h-8 px-2 text-ink-muted" aria-label={`Remove ${m.email}`} onClick={() => remove.mutate(m.id)}>
                       <Trash2 className="h-3.5 w-3.5" />
                     </Button>
@@ -204,6 +226,15 @@ function TeamSection() {
             </Button>
           </form>
         ) : null}
+        <Dialog open={Boolean(reset)} onOpenChange={(o) => !o && setReset(null)}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Password reset link</DialogTitle>
+              <DialogDescription>Send {reset?.email} this link. It lets them choose a new password, works once, and expires in an hour. Email isn't set up, so nothing was sent.</DialogDescription>
+            </DialogHeader>
+            {reset ? <LinkBox url={reset.url} label="Reset link" /> : null}
+          </DialogContent>
+        </Dialog>
         {link ? (
           <div className="space-y-2 border-t border-hairline p-4" data-team-invite-link>
             <p className="text-[12.5px] text-ink-muted">{link.emailed ? `Invite emailed to ${link.email}. You can also send them this link:` : `Send ${link.email} this link (invite emails aren't set up on this server yet):`}</p>

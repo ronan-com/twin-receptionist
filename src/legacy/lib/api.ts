@@ -70,7 +70,7 @@ export const auth = {
     request<{ ok: true }>("POST", "/api/signup", details),
   signIn: (email: string, password: string) => request<{ ok: true }>("POST", "/api/login", { email, password }),
   signOut: () => request<{ ok: true }>("POST", "/api/logout"),
-  forgot: (email: string) => request<{ ok: true }>("POST", "/api/password-reset", { email }),
+  forgot: (email: string) => request<{ ok: true; emailsSetUp?: boolean }>("POST", "/api/password-reset", { email }),
   reset: (token: string, password: string) =>
     request<{ ok: true }>("POST", `/api/password-reset/${encodeURIComponent(token)}`, { password }),
   invite: (token: string) => request<InviteInfo>("GET", `/api/invites/${encodeURIComponent(token)}`),

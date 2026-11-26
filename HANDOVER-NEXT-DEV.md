@@ -1,5 +1,41 @@
 # Handover to the next developer (27 Nov 2026)
 
+## READ THIS FIRST: update from Jesse's Claude (27 Nov 2026, later the same day)
+
+The three unfinished pieces below are now **merged into `own-phone-account`** (from branch `chloe-finish`) and pushed. **Nothing is deployed.** Live is still 1.0.5 on the setup site and 1.0.2 on the first real agency.
+
+**Checks run on Windows (Bun 1.4.5, Postgres 16 in Docker):**
+| Check | Result |
+|---|---|
+| `bunx tsc --noEmit` (root) | pass |
+| `cd download-site && bunx tsc --noEmit -p .` (new `download-site/tsconfig.json`) | pass |
+| `bun run build` | pass |
+| `bun test --env-file=.env server/` | **348 pass, 0 fail**. It was 150/11 before, and own-phone-account was also red. |
+| `cd download-site && bun test` | **20 pass, 0 fail** |
+| `node download-site/real-run/run.mjs --dry-run` | **NOT run to the end.** It stops at preflight because `deploy/selfhost/out/selfhost-bundle.tgz` must be built first with `bash deploy/selfhost/make-bundle.sh`, which is Linux/WSL only. Run it on Linux before releasing. |
+
+**What was done:**
+1. **Compile fix:** `demo-flow` + `wip-unfinished` reconciled (`download-site/admin-web.ts`, `download-site/server.ts`, `server/index.ts`).
+2. **Server tests:** the 11 failures were stale `mock.module` stand-ins leaking across test files (`automations.apply.test.ts`, `ownNumbers.test.ts`, `voice/telnyx.test.ts`). `webchat.test.ts` now runs the real `migrate()`.
+3. **Auto-update fails safe** (`server/autoUpdate.ts`): if Railway refuses the project token on upsert, `/up` or `deployment(id)` (3×), it turns itself off for that token, shows "Auto-update unavailable" plus the reason (Settings → Updates, and the admin through the heartbeat), and doesn't retry. A network error still retries hourly. Manual "Update your agency" keeps working and mints a fresh token, which re-arms it. There are 10 new fallback tests in `server/ops.inner.ts`. Everything was tested with fakes only, never with real Railway.
+4. **Support:** `supportGate()` moved into `server/supportChanges.ts`, with 5 matrix tests. `server/problems.ts` uses an AsyncLocalStorage re-entry guard, so problems are no longer silently dropped.
+5. **Jesse decided:** support access is **ON by default** and **support can make changes** (within the matrix). Set on both the Railway and DigitalOcean install paths. The buyer pack and handoff copy have been reworded to match. See REVIEW-NOTES.md "Approved by Jesse".
+6. **Help tickets:** an agency "Support requests" page at `/admin/support-requests`, plus a nav item with an unread count, and a link from the Contact support dialog. `routeTree.gen.ts` has been regenerated.
+7. **Done-for-you onboarding:** the admin panel is wired. "Delete the project" now also removes the GoDaddy/Cloudflare records it created (`download-site/test/dnsdelete.*`).
+
+**Still to do (in this order):**
+1. On Linux: `bash deploy/selfhost/make-bundle.sh`, then `NODE_PATH=$PWD/node_modules node download-site/real-run/run.mjs --dry-run`, and fix anything red. The setup-site agent was stopped before finishing this, so check its `run.mjs` / `mock/serve.ts` edits.
+2. Click-test in a browser (`scripts/e2e/setup.sh`): Support requests page, Settings → Updates, admin Agencies / Help tickets / Problems / done-for-you panel. None of it was opened in a browser.
+3. `download-site/setup.ts` "Update your agency" should also mint a new project token when the heartbeat says `updates.available` is false (today it does so only when `lastResult` is "failed").
+4. Small gaps: the help-menu dialog skips the page link when an owner has only client requests, and new agency tickets have no client picker.
+5. Release (Ronan or whoever has AWS): `bash scripts/release-chloe.sh 1.0.6 "<notes>"`, then Update now on the first real agency. It's the first real test of the project-token calls.
+
+**Jesse to know:** with "Support can make changes" on, support can buy phone numbers on the buyer's Telnyx account (costs them money) and send onboarding to their businesses. The buyer wording says so.
+
+**Security:** the setup admin password, Telnyx key and OpenRouter key were pasted in plain chat during this handover. **Rotate them.** Never put them in this repo.
+
+---
+
 **For Jesse, in plain English.** Chloe works end to end: the landing page, the setup site, and a real agency installed on Railway. Credits ran out before the last pieces were finished. The finished and proven parts are live. The unfinished parts are saved on GitHub, labelled below. Hand this file to GPT or Claude and say: "Finish the unfinished work in HANDOVER-NEXT-DEV.md in the order given, test it, then release with the script." Nothing unfinished is live, so nothing live is at risk.
 
 **Where the code is (private repo `ronan-com/twin-receptionist`):**

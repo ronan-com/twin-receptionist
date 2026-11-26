@@ -729,7 +729,12 @@ export async function manageRoutes(args: ClientRouteArgs): Promise<Response | nu
   }
 
   // ---- Integrations (S7, S8, S9) ----
-  if (rest === "/integrations" && method === "GET") return json({ integrations: await answeredIntegrations(client, access) });
+  if (rest === "/integrations" && method === "GET") {
+    const list = await answeredIntegrations(client, access);
+    // The setup provider's support person never sees a signing secret or any other connection secret.
+    if (ctx.viewing?.support) for (const i of list as any[]) if (i?.config && "signing_secret" in i.config) delete i.config.signing_secret;
+    return json({ integrations: list });
+  }
   if (rest === "/integration-events" && method === "GET") return json({ events: await answeredIntegrationEvents(client) });
   if (rest === "/calendar") {
     if (method === "GET") {

@@ -8,23 +8,30 @@
 //   :4524  Resend API
 //   :4525  DNS server (UDP). Answers from the fake Cloudflare zones (active ones only) and from
 //          "registrar" records the test adds by hand (POST /_mock/registrar on :4521).
+//   :4526  Railway (GraphQL + /up); each deployed app runs in a local container with the real
+//          provider hosts (Railway, Telnyx, Vapi, Twilio, Cloudflare, GoDaddy, Resend, OpenRouter)
+//          pointed at 127.0.0.1, so a test app can never call them with its fake keys
+//   :4527  GoDaddy DNS API (/v1/domains/...). Key "gd-key-ok", secret "gd-secret-ok"; domain
+//          godaddy-reception.test. Its records answer on the DNS server too.
 //   bun download-site/mock/serve.ts
 // Only containers, volumes and the network named wiz-test-* are ever created or removed.
 import { createSocket } from "node:dgram";
 import { createServer } from "node:net";
 import { randomBytes } from "node:crypto";
+import { mkdirSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 const BASE = Number(process.env.MOCK_PORT_BASE || 4520);
-const P = { do: BASE + 1, smtp: BASE + 2, cf: BASE + 3, resend: BASE + 4, dns: BASE + 5, rail: BASE + 6 };
+const P = { do: BASE + 1, smtp: BASE + 2, cf: BASE + 3, resend: BASE + 4, dns: BASE + 5, rail: BASE + 6, gd: BASE + 7 };
 const NET = process.env.MOCK_DROPLET_NET || "wiz-test-net";
 const IMAGE = process.env.MOCK_DROPLET_IMAGE || "wiz-test-droplet:24.04";
 const NS_AFTER = Number(process.env.MOCK_NS_AFTER || 3); // pending zone turns active after this many zone reads
 const log = (...a: unknown[]) => console.log("[mock]", ...a);
 const json = (status: number, body?: unknown) => new Response(body === undefined ? null : JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
 
-async function sh(args: string[], input?: string): Promise<{ code: number; out: string; err: string }> {
-  const p = Bun.spawn(args, { stdin: input === undefined ? "ignore" : new Blob([input]), stdout: "pipe", stderr: "pipe" });
+async function sh(args: string[], input?: string, cwd?: string): Promise<{ code: number; out: string; err: string }> {
+  const p = Bun.spawn(args, { cwd, stdin: input === undefined ? "ignore" : new Blob([input]), stdout: "pipe", stderr: "pipe" });
   const [out, err] = await Promise.all([new Response(p.stdout).text(), new Response(p.stderr).text()]);
   return { code: await p.exited, out: out.trim(), err: err.trim() };
 }
@@ -39,6 +46,9 @@ const zones = [
 ];
 const nsFor = (z: string) => [`ada.ns.cloudflare.com`, `bob.ns.cloudflare.com`];
 const registrar: Rec[] = []; // records "added at the registrar" for the manual path
+// GoDaddy's DNS (the fake on P.gd). Names are relative to the domain, "@" for the apex, like GoDaddy's API.
+interface GdRec { type: string; name: string; data: string; ttl: number; priority?: number }
+const gdDomains: Record<string, GdRec[]> = { "godaddy-reception.test": [] };
 const unq = (s: string) => s.replace(/^"|"$/g, "");
 
 function publicAnswers(type: string, name: string): Rec[] {
@@ -46,6 +56,10 @@ function publicAnswers(type: string, name: string): Rec[] {
   const out: Rec[] = [];
   for (const z of zones) if (z.status === "active" && (name === z.name || name.endsWith("." + z.name))) out.push(...z.records.filter((r) => r.name === name && r.type === type && !r.proxied));
   out.push(...registrar.filter((r) => r.name === name && r.type === type));
+  for (const [d, recs] of Object.entries(gdDomains)) if (name === d || name.endsWith("." + d)) {
+    const rel = name === d ? "@" : name.slice(0, -d.length - 1);
+    out.push(...recs.filter((r) => r.name === rel && r.type === type).map((r, i) => ({ id: `gd-${i}`, type: r.type, name, content: r.data, ttl: r.ttl, priority: r.priority })));
+  }
   return out;
 }
 
@@ -263,7 +277,7 @@ Bun.serve({
     const p = u.pathname, m0 = req.method;
     // ---- test controls (no auth: only on 127.0.0.1) ----
     if (p === "/_mock/rail/fail-next-deploy" && m0 === "POST") { railFailNext = (await req.text()) || "error: script \"build\" exited with code 1"; return json(200, { ok: true }); }
-    if (p === "/_mock/state") return json(200, { railway: [...rProjects.values()].map((x) => ({ ...x, services: [...x.services.values()].map((s: any) => ({ ...s, variables: Object.keys(s.variables), smtpKey: /re_mocksend_/.test(String(s.variables.SMTP_URL || "")) ? "send-only" : /re_mock_full_access_key/.test(String(s.variables.SMTP_URL || "")) ? "FULL" : "" })) })), deployments: [...rDeps.values()].map(({ logs, rlogs, ...d }: any) => d), droplets: [...droplets.values()].map((d) => ({ ...d, user_data: undefined, user_data_bytes: d.user_data?.length || 0, has_user_data: !!d.user_data })), keys: [...keys.values()], zones, registrar, resend: domains.map(domainView), sent });
+    if (p === "/_mock/state") return json(200, { godaddy: gdDomains, railway: [...rProjects.values()].map((x) => ({ ...x, services: [...x.services.values()].map((s: any) => ({ ...s, variables: Object.keys(s.variables), smtpKey: /re_mocksend_/.test(String(s.variables.SMTP_URL || "")) ? "send-only" : /re_mock_full_access_key/.test(String(s.variables.SMTP_URL || "")) ? "FULL" : "" })) })), deployments: [...rDeps.values()].map(({ logs, rlogs, ...d }: any) => d), droplets: [...droplets.values()].map((d) => ({ ...d, user_data: undefined, user_data_bytes: d.user_data?.length || 0, has_user_data: !!d.user_data })), keys: [...keys.values()], zones, registrar, resend: domains.map(domainView), sent });
     if (p === "/_mock/droplet-user-data") return new Response(droplets.get(Number(u.searchParams.get("id")))?.user_data || "", { status: 200 });
     if (p === "/_mock/registrar" && m0 === "POST") { const b: any = await req.json(); registrar.push({ id: "reg-" + registrar.length, ttl: 300, ...b, name: String(b.name).toLowerCase() }); return json(200, { ok: true }); }
     if (p === "/_mock/do/fail-next-create" && m0 === "POST") { failNextCreate = (await req.text()) || "Region is not available"; return json(200, { ok: true }); }
@@ -323,9 +337,10 @@ const RW_OK = "mock-rail-token-ok", RW_NOCARD = "mock-rail-token-nocard";
 const [PORT_LO, PORT_HI] = (process.env.MOCK_APP_PORTS || `${BASE + 30}-${BASE + 39}`).split("-").map(Number);
 const usedPorts = new Set<number>();
 const rProjects = new Map<string, any>();
+const rProjectTokens = new Map<string, string>(); // project token -> project id
 const rDeps = new Map<string, any>();
 let railFailNext: string | null = null;
-const RAIL_TMP = join(process.env.TMPDIR || "/tmp", `wiz-test-rail-${BASE}`);
+const RAIL_TMP = join(process.env.TMPDIR || tmpdir(), `wiz-test-rail-${BASE}`);
 const rid = (p: string) => `${p}-${randomBytes(5).toString("hex")}`;
 const tag = (projectId: string) => projectId.slice(-10);
 const gqlErr = (message: string) => json(200, { data: null, errors: [{ message }] });
@@ -378,6 +393,9 @@ async function streamInto(args: string[], into: string[]): Promise<number> {
   await Promise.all([pump(pr.stdout), pump(pr.stderr)]);
   return pr.exited;
 }
+// A test app has fake keys: point every real provider at an address that refuses, so it can never reach them.
+const NO_REAL_HOSTS = ["backboard.railway.com", "backboard.railway.app", "api.telnyx.com", "api.vapi.ai", "api.twilio.com", "api.cloudflare.com", "api.godaddy.com", "api.resend.com", "openrouter.ai", "api.digitalocean.com", "smtp.resend.com", "pricing.twilio.com", "numbers.twilio.com"];
+const NO_REAL_PROVIDERS = NO_REAL_HOSTS.flatMap((h) => ["--add-host", `${h}:127.0.0.1`]);
 async function runDeploy(d: any, body: Uint8Array) {
   if (process.env.DEMO_APP_URL) { await Bun.sleep(800); d.logs.push("Build finished", "Deploy complete"); d.status = "DEPLOYING"; await Bun.sleep(800); d.status = "SUCCESS"; return; }
   const [p, app] = findService(d.serviceId) as [any, any];
@@ -391,15 +409,16 @@ async function runDeploy(d: any, body: Uint8Array) {
       return;
     }
     const dir = join(RAIL_TMP, d.id);
-    await sh(["mkdir", "-p", dir]);
+    mkdirSync(dir, { recursive: true });
     await Bun.write(join(dir, "src.tgz"), body);
-    const x = await sh(["tar", "-xzf", join(dir, "src.tgz"), "-C", dir]);
+    // cwd + a bare name: GNU tar (Git Bash on Windows) reads "C:\..." in -f as a remote host.
+    const x = await sh(["tar", "-xzf", "src.tgz"], undefined, dir);
     if (x.code !== 0) { d.logs.push("could not unpack the upload: " + x.err); d.status = "FAILED"; return; }
     const dockerfile = app.variables.RAILWAY_DOCKERFILE_PATH || app.settings?.dockerfilePath || "Dockerfile";
     d.logs.push(`Using Detected Dockerfile ${dockerfile}`, "");
     const img = `wiz-test-rail-img-${tag(p.id)}`;
     const code = await streamInto(["docker", "build", "-f", join(dir, dockerfile), "-t", img, dir], d.logs);
-    await sh(["rm", "-rf", dir]);
+    rmSync(dir, { recursive: true, force: true });
     if (code !== 0) { d.logs.push(`ERROR: docker build exited with code ${code}`); d.status = "FAILED"; log(`railway: build ${d.id} failed`); return; }
     if (gone()) { d.status = "REMOVED"; return; }
     d.status = "DEPLOYING";
@@ -421,8 +440,8 @@ async function runDeploy(d: any, body: Uint8Array) {
     const envFile = join(RAIL_TMP, `${d.id}.env`);
     await Bun.write(envFile, Object.entries(env).map(([k, v]) => `${k}=${v.replace(/[\r\n]/g, " ")}`).join("\n") + "\n");
     await sh(["docker", "rm", "-f", app.container]);
-    const r = await sh(["docker", "run", "-d", "--name", app.container, "--network", net, "--label", "wiz-test=1", "--label", `wiz-test-port=${BASE}`, "--env-file", envFile, ...(app.port ? ["-p", `127.0.0.1:${app.port}:${env.PORT || 8791}`] : []), img]);
-    await sh(["rm", "-f", envFile]);
+    const r = await sh(["docker", "run", "-d", "--name", app.container, "--network", net, "--label", "wiz-test=1", "--label", `wiz-test-port=${BASE}`, ...NO_REAL_PROVIDERS, "--env-file", envFile, ...(app.port ? ["-p", `127.0.0.1:${app.port}:${env.PORT || 8791}`] : []), img]);
+    rmSync(envFile, { force: true });
     if (r.code !== 0) { d.logs.push("could not start: " + r.err); d.status = "CRASHED"; return; }
     let okHealth = false;
     for (let i = 0; i < 90 && app.port; i++) {
@@ -442,7 +461,12 @@ Bun.serve({
   port: P.rail, hostname: "127.0.0.1", maxRequestBodySize: 200 * 1024 * 1024,
   async fetch(req) {
     const u = new URL(req.url);
-    const tok = (req.headers.get("authorization") || "").replace(/^Bearer /, "");
+    let tok = (req.headers.get("authorization") || "").replace(/^Bearer /, "");
+    // A project token (Project-Access-Token): good for that one project's uploads and variables, nothing else.
+    const ptok = req.headers.get("project-access-token") || "";
+    const ptokProject = ptok ? rProjectTokens.get(ptok) : undefined;
+    if (ptok && !ptokProject) return json(401, { message: "Not Authorized" });
+    if (ptokProject) tok = RW_OK;
     const up = u.pathname.match(/^\/project\/([^/]+)\/environment\/([^/]+)\/up$/);
     if (up && req.method === "POST") {
       if (tok !== RW_OK && tok !== RW_NOCARD) return json(401, { message: "Unauthorized" });
@@ -466,6 +490,13 @@ Bun.serve({
     if (has("me")) {
       if (/\bplan\b/.test(query)) return json(200, { data: { me: { workspaces: [{ id: "ws-1", plan: tok === RW_NOCARD ? "FREE" : "HOBBY", customer: { isTrialing: tok === RW_NOCARD, defaultPaymentMethodId: tok === RW_NOCARD ? null : "pm_mock" } }] } } });
       return json(200, { data: { me: { email: "owner@example.com", workspaces: [{ id: "ws-1", name: "Owner's Projects" }] } } });
+    }
+    if (has("projectTokenCreate")) {
+      if (ptokProject) return gqlErr("Not Authorized");
+      const p = rProjects.get(input.projectId); if (!p || p.envId !== input.environmentId) return gqlErr("Project not found");
+      const t = `fake-project-token-${rid("t")}`;
+      rProjectTokens.set(t, p.id); log(`railway: project token for ${p.id}`);
+      return json(200, { data: { projectTokenCreate: t } });
     }
     if (has("projectCreate")) {
       if (tok === RW_NOCARD) return gqlErr("You must upgrade your plan to create more projects");
@@ -551,5 +582,27 @@ createServer((sock) => {
   sock.on("error", () => {});
 }).listen(P.smtp, "127.0.0.1");
 
-log(`DigitalOcean :${P.do}  SMTP :${P.smtp}  Cloudflare :${P.cf}  Resend :${P.resend}  DNS udp :${P.dns}  Railway :${P.rail} (apps on 127.0.0.1:${PORT_LO}-${PORT_HI})  (droplets on ${NET}, image ${IMAGE})`);
+// ============================ GoDaddy DNS API ============================
+const GD_AUTH = "sso-key gd-key-ok:gd-secret-ok";
+Bun.serve({
+  port: P.gd, hostname: "127.0.0.1",
+  async fetch(req) {
+    const u = new URL(req.url);
+    if (req.headers.get("authorization") !== GD_AUTH) return json(401, { code: "UNABLE_TO_AUTHENTICATE", message: "Unauthorized : Could not authenticate API key/secret" });
+    const m = u.pathname.match(/^\/v1\/domains\/([^/]+)(\/records(?:\/([A-Z]+)(?:\/([^/]+))?)?)?$/);
+    const d = m ? decodeURIComponent(m[1]).toLowerCase() : "";
+    if (!m || !gdDomains[d]) return json(404, { code: "NOT_FOUND", message: "The given domain is not registered, or does not have a zone file" });
+    if (!m[2]) return req.method === "GET" ? json(200, { domain: d, status: "ACTIVE" }) : json(405, {});
+    const type = m[3], name = m[4] ? decodeURIComponent(m[4]).toLowerCase() : undefined;
+    const at = (r: GdRec) => (!type || r.type === type) && (name === undefined || r.name === name);
+    const body: any = req.method === "PATCH" || req.method === "PUT" ? await req.json().catch(() => null) : null;
+    if (req.method === "GET") return json(200, gdDomains[d].filter(at));
+    if (req.method === "PATCH" && !type && Array.isArray(body)) { gdDomains[d].push(...body.map((r: any) => ({ type: r.type, name: String(r.name).toLowerCase(), data: r.data, ttl: r.ttl, priority: r.priority }))); log(`godaddy: +${body.length} record(s) in ${d}`); return new Response(null, { status: 200 }); }
+    if (req.method === "PUT" && type && name !== undefined && Array.isArray(body)) { gdDomains[d] = gdDomains[d].filter((r) => !at(r)).concat(body.map((r: any) => ({ type, name, data: r.data, ttl: r.ttl, priority: r.priority }))); log(`godaddy: set ${type} ${name} in ${d}`); return new Response(null, { status: 200 }); }
+    if (req.method === "DELETE" && type && name !== undefined) { const n = gdDomains[d].length; gdDomains[d] = gdDomains[d].filter((r) => !at(r)); if (n === gdDomains[d].length) return json(404, { code: "NOT_FOUND", message: "no such record" }); log(`godaddy: deleted ${type} ${name} in ${d}`); return new Response(null, { status: 204 }); }
+    return json(422, { code: "INVALID_BODY", message: "unsupported" });
+  },
+});
+
+log(`DigitalOcean :${P.do}  SMTP :${P.smtp}  Cloudflare :${P.cf}  Resend :${P.resend}  DNS udp :${P.dns}  Railway :${P.rail}  GoDaddy :${P.gd} (apps on 127.0.0.1:${PORT_LO}-${PORT_HI})  (droplets on ${NET}, image ${IMAGE})`);
 void join;

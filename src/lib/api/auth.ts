@@ -26,7 +26,7 @@ export const authApi = {
   signOut: () => api.post<{ ok: true }>("/api/logout", {}, { allow401: true }),
   signupAgency: (input: AgencySignup) => api.post<{ ok: true; home: "/admin" | "/app" }>("/api/signup/agency", input, { allow401: true }),
   signupBusiness: (input: BusinessSignup) => api.post<{ ok: true; home: "/admin" | "/app" }>("/api/signup/business", input, { allow401: true }),
-  requestReset: (email: string) => api.post<{ ok: true }>("/api/password-reset", { email }, { allow401: true }),
+  requestReset: (email: string) => api.post<{ ok: true; emailsSetUp?: boolean }>("/api/password-reset", { email }, { allow401: true }),
   resetPassword: (token: string, password: string) =>
     api.post<{ ok: true }>(`/api/password-reset/${encodeURIComponent(token)}`, { password }, { allow401: true }),
   inviteInfo: (token: string) => api.get<InviteInfo>(`/api/invites/${encodeURIComponent(token)}`, { allow401: true }),

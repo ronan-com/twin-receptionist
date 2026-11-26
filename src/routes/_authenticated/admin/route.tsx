@@ -11,6 +11,7 @@ import { useWorkspace } from "@/lib/app/workspace";
 import { PRODUCT } from "@/lib/app/product";
 import { GetStartedProvider } from "@/components/onboarding/GetStarted";
 import { AssistantProvider } from "@/components/assistant/Assistant";
+import { useSupportUnread } from "@/components/app/SupportDialog";
 
 // The console. Variant "platform" (the platform admin: everything) or "agency"
 // (agency staff: their own agency). Business users are sent to their workspace,
@@ -37,6 +38,9 @@ function AdminLayout() {
   const viewingAgency = Boolean(ws.viewing && !ws.viewing.client);
   const variant: "platform" | "agency" = ws.isPlatformAdmin && !viewingAgency ? "platform" : "agency";
   const countsQ = useQuery({ ...adminOverviewCountsQuery(), enabled: !ws.loading && !!ws.session, staleTime: 60_000 });
+  // New replies and new client requests: a count on "Support requests" (agency console only).
+  const support = useSupportUnread(!ws.loading && !!ws.session);
+  const supportUnread = variant === "agency" ? support.unread : 0;
 
   const notifications = useMemo(() => {
     const out: { title: string; description?: string; tone?: "info" | "warning" | "danger"; to?: string }[] = [];
@@ -44,8 +48,9 @@ function AdminLayout() {
     if (c?.openIncidents) out.push({ title: `${c.openIncidents} open incident${c.openIncidents === 1 ? "" : "s"}`, description: "Review in System / QA.", tone: "danger", to: "/admin/system" });
     if (c?.pendingNumberRequests && !ws.session?.singleAgency)
       out.push({ title: `${c.pendingNumberRequests} number request${c.pendingNumberRequests === 1 ? "" : "s"} waiting`, tone: "warning", to: "/admin/number-requests" });
+    if (supportUnread) out.push({ title: `${supportUnread} new in Support requests`, description: "Replies and client requests you haven't read.", tone: "info", to: "/admin/support-requests" });
     return out;
-  }, [countsQ.data, ws.session?.singleAgency]);
+  }, [countsQ.data, ws.session?.singleAgency, supportUnread]);
 
   if (ws.loading) {
     return (
@@ -120,7 +125,7 @@ function AdminLayout() {
               <span>
                 {ws.viewing.support ? (
                   <>
-                    <span className="font-semibold">Support session.</span> {ws.viewing.by || "Your setup provider"} is helping you, with your permission. Read only, and every sign-in is in the audit log.
+                    <span className="font-semibold">Support session.</span> {ws.viewing.by || "Your setup provider"} is helping you, with your permission. {ws.viewing.canEdit ? "They can fix things for you but never see or change your keys, billing or owner account, or export your data." : "Read only."} Every sign-in and change is in your audit log.
                   </>
                 ) : (
                   <>

@@ -76,8 +76,8 @@ export async function checkDigitalOcean(token: string) {
       if (!(e instanceof ProviderError && e.status === 422)) throw e; // 422 = tag already exists, which is fine
     }
     const [rr, sr] = await Promise.all([doApi(token, "GET", "/v2/regions?per_page=200"), doApi(token, "GET", "/v2/sizes?per_page=200")]);
-    const regions = (rr.regions || []).filter((r: any) => r.available).map((r: any) => ({ slug: String(r.slug), name: String(r.name) })).sort((x: any, y: any) => x.name.localeCompare(y.name));
-    const sizes = (sr.sizes || [])
+    const regions: { slug: string; name: string }[] = (rr.regions || []).filter((r: any) => r.available).map((r: any) => ({ slug: String(r.slug), name: String(r.name) })).sort((x: any, y: any) => x.name.localeCompare(y.name));
+    const sizes: { slug: string; label: string; price: number; regions: string[] }[] = (sr.sizes || [])
       .filter((s: any) => s.available && /^s-/.test(s.slug) && s.memory >= 2048 && s.memory <= 8192)
       .map((s: any) => ({ slug: String(s.slug), price: Number(s.price_monthly), regions: (s.regions || []).map(String), label: `${s.vcpus} CPU, ${s.memory / 1024} GB memory, ${s.disk} GB disk` }))
       .sort((x: any, y: any) => x.price - y.price);
@@ -565,4 +565,16 @@ export function normalizeDomain(v: string): string | null {
   d = d.replace(/^https?:\/\//, "").replace(/\/.*$/, "").replace(/\.$/, "").replace(/^www\./, "");
   if (!/^(?=.{4,253}$)([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/.test(d)) return null;
   return d;
+}
+
+// ======================= OpenRouter (optional: "Ask for help" inside the agency's dashboard) =======================
+const OPENROUTER_API = () => (process.env.OPENROUTER_API_BASE || "https://openrouter.ai/api/v1").trim().replace(/\/$/, "");
+export async function checkOpenRouter(key: string): Promise<Check> {
+  if (!key) return { ok: false, message: "Paste the OpenRouter API key first." };
+  if (hasSpace(key)) return { ok: false, message: "That key has spaces in it: copy just the key." };
+  const { status } = await call("OpenRouter", `${OPENROUTER_API()}/auth/key`, { headers: { Authorization: `Bearer ${key}`, "User-Agent": UA } }).catch((e) => ({ status: -1, json: { e } as any }));
+  if (status === -1) return { ok: false, message: "We couldn't reach OpenRouter just now. Try again in a minute." };
+  if (status === 401 || status === 403) return { ok: false, message: "OpenRouter didn't accept that key: copy it again, or make a new one." };
+  if (status !== 200) return { ok: false, message: `OpenRouter had a problem (error ${status}). Wait a minute and try again.` };
+  return { ok: true, message: "OpenRouter key works." };
 }

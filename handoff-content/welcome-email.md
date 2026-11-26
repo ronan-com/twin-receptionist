@@ -16,7 +16,7 @@ Thanks for your purchase. Here's your private setup link:
 
 It's just for you, so please don't share it.
 
-The setup wizard connects your own accounts and installs your agency at app.your-domain, under your brand, in your own Railway account. When it's done, everything is in your name and we have no login to your accounts. Your agency shares health and usage counts with us unless you switch that off, and we can only sign in to help if you turn Support access on.
+The setup wizard connects your own accounts and installs your agency at app.your-domain, under your brand, in your own Railway account. When it's done, everything is in your name and we have no login to your accounts. Your agency shares health and usage counts with us, and Support access lets us sign in to help and make changes for you. Both are on by default, and you can switch either one off in your dashboard under Settings, then Support.
 
 **Have these ready:**
 - A domain you own (any registrar works)

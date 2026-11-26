@@ -1,5 +1,6 @@
 import type { Business } from "../../src/lib/shared";
 import type { Ctx } from "../accounts";
+import { readOnlyView } from "../supportChanges";
 import { audit } from "../audit";
 import { automationsState, dynamicVariables, saveAutomations, type AutomationDeps } from "../automations";
 import { enterOrg } from "../telnyx";
@@ -28,7 +29,7 @@ export async function automationRoutes(args: RouteArgs, deps: AutomationRouteDep
   if (!found) return json({ error: "That business isn't shared with you." }, 404);
   const { client, orgId, access } = found;
   if (orgId !== args.orgId) enterOrg(orgId);
-  const canEdit = access !== "viewer" && !args.ctx.viewing;
+  const canEdit = access !== "viewer" && !readOnlyView(args.ctx);
 
   if (args.method === "GET") return json(await automationsState(client, canEdit));
   if (args.method === "PUT") {

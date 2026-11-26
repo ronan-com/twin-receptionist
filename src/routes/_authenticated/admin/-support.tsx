@@ -65,13 +65,13 @@ export function SupportSection() {
         </div>
       </Panel>
 
-      <Panel title="Support access" description={`Off unless you turn it on. Lets ${seller} sign in to your dashboard to help you.`}>
+      <Panel title="Support access" description={`On by default for a fresh install, so ${seller} can help you fast. You can turn it off at any time. Lets ${seller} sign in to your dashboard to help you.`}>
         <div className="space-y-3">
           <div className="flex items-start justify-between gap-4">
             <div className="min-w-0 max-w-[620px] space-y-2 text-[13px] leading-5 text-ink-muted">
               <p className="font-medium text-ink">Let {seller} sign in to your dashboard to help you</p>
-              <p>They sign in through a link that works once, for 60 seconds, as a read-only support person. They can look around to help with a problem. They can't change anything, can't see or change your keys, billing or owner, and can't export your data. Every sign-in is in your audit log and listed below.</p>
-              {s.access.enabled ? <p className="text-ink">On{s.access.until ? ` until ${fmtDateTime(s.access.until)}` : " until you turn it off"}.</p> : null}
+              <p>They sign in through a link that works once, for 60 seconds, as a support person. They can look around to help with a problem{s.edit.enabled ? " and, while \"Support can make changes\" is on, fix things for you (receptionists, automations, numbers, knowledge, clients and settings)" : " (read only, because \"Support can make changes\" is off)"}. They can never see or change your keys or connection secrets, billing, the owner account or password, delete your agency, or export your data. Every sign-in and every change is in your audit log and listed below.</p>
+              {s.access.enabled ? <p className="text-ink">On{s.access.until ? ` until ${fmtDateTime(s.access.until)}` : " until you turn it off"}{s.access.isDefault ? " (the default for this install: you haven't chosen yet)" : ""}.</p> : null}
             </div>
             <div className="flex shrink-0 items-center gap-2">
               {!s.access.enabled ? (
@@ -101,7 +101,20 @@ export function SupportSection() {
         </div>
       </Panel>
 
-      <Panel title="Support activity" description="Every time access was turned on or off, a link was asked for, or someone signed in.">
+      <Panel title="Support can make changes" description={`On by default. Off means ${seller} can look but not change anything, as before.`}>
+        <div className="flex items-start justify-between gap-4">
+          <div className="min-w-0 max-w-[620px] space-y-2 text-[13px] leading-5 text-ink-muted">
+            <p className="font-medium text-ink">Let {seller} fix things while they're signed in</p>
+            <p>Only while Support access is on. Each change is written to your audit log as "By support" and shown under Support activity below.</p>
+          </div>
+          <label className="flex shrink-0 items-center gap-2 text-[13px] font-medium text-ink">
+            <Switch checked={s.edit.enabled} disabled={!canChange || save.isPending} onCheckedChange={(v) => save.mutate({ edit: v })} aria-label={`Let ${seller} make changes while signed in`} data-setting="support-edit" />
+            {s.edit.enabled ? "On" : "Off"}
+          </label>
+        </div>
+      </Panel>
+
+      <Panel title="Support activity" description="Every time access was turned on or off, a link was asked for, someone signed in, or support changed something.">
         {s.recent.length ? (
           <ul className="divide-y divide-[var(--hue-line,#e5e7eb)] text-[12.5px]">
             {s.recent.map((r, i) => (
@@ -109,6 +122,7 @@ export function SupportSection() {
                 <span className="min-w-0 truncate text-ink">{r.summary || r.action}</span>
                 <span className="flex shrink-0 items-center gap-2 text-ink-muted">
                   {r.action === "support.signin" ? <StatusBadge tone="info">Sign-in</StatusBadge> : null}
+                  {r.action === "support.change" ? <StatusBadge tone="info">By support</StatusBadge> : null}
                   {fmtDateTime(r.at)}
                 </span>
               </li>

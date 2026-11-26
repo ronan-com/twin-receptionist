@@ -19,7 +19,8 @@ cp src/deploy/aws/docker-compose.yml .
 umask 077
 names=(SETUP_SECRET_KEY ADMIN_EMAILS ADMIN_PASSWORD_HASH SUPPORT_EMAIL SELLER_NAME PRODUCT_NAME SITE_SMTP_URL SITE_MAIL_FROM
   HOSTING PROVISION_URL LOOKUPS_PER_MINUTE REQUESTS_PER_MINUTE CHECKS_PER_10_MIN TEST_EMAILS_PER_HOUR SECRETS_IDLE_DAYS DNS_SERVERS
-  DEMO_APP_URL DEMO_ADMIN_EMAIL DEMO_ADMIN_PASSWORD OPENROUTER_API_KEY SETUP_CHAT_MODEL)
+  DEMO_APP_URL DEMO_ADMIN_EMAIL DEMO_ADMIN_PASSWORD OPENROUTER_API_KEY SETUP_CHAT_MODEL
+  ALERT_WEBHOOK_URL ALERT_EMAIL_TO)
 names=("${names[@]/#//setupsite/env/}")
 q="'"
 for ((i = 0; i < ${#names[@]}; i += 10)); do
@@ -54,6 +55,9 @@ if [ -n "$APPKEY" ]; then
   chmod 644 "incoming/$f"
   docker exec setup-site bun admin.ts publish "/incoming/$f" "$APPVER"
 fi
+
+# Buyers can have their setup link on their own domain: Caddy needs its global on_demand_tls option for that (added once, checked, rolled back if rejected).
+bash src/deploy/aws/ensure-ondemand-tls.sh
 
 # Route the address through the main Caddy (https certificate is automatic).
 sed "s/__DOMAIN__/$DOMAIN/" src/deploy/aws/setupsite.caddy.tmpl > /opt/twin/sites/setupsite.caddy

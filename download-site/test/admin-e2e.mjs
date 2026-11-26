@@ -76,7 +76,7 @@ try {
   check("admin: a wrong password gets one clear sentence", /don't match/.test(await text(p, ".notice.err")), await text(p, ".notice.err"));
   await p.$eval("#password", (e) => (e.value = "")); await p.type("#password", PASSWORD);
   await click(p, "button[type=submit]");
-  check("admin: email + password signs in", (await text(p, "h1")) === "Buyers", await text(p, "h1"));
+  check("admin: email + password signs in", (await text(p, "h1")) === "Agencies", await text(p, "h1"));
   const ck = (await p.cookies()).find((c) => c.name === "as");
   check("admin: session cookie is HttpOnly, SameSite=Strict, Path=/admin", ck?.httpOnly && ck.sameSite === "Strict" && ck.path === "/admin");
 
@@ -139,7 +139,7 @@ try {
   await click(p, "form[action$='/reset'] button");
   check("admin: reset wipes their setup and keys", /Setup wiped/.test(await text(p, ".notice.flash")) && /not started/.test(await p.content()) && /None yet/.test(await text(p, "section.card")));
   await click(p, "form[action$='/delete'] button");
-  check("admin: delete removes the buyer and their link stops working", /Buyer deleted/.test(await text(p, ".notice.flash")) && (await fetch(l2)).status === 404 && !/Sam Setup/.test(await p.content()));
+  check("admin: delete removes the buyer and their link stops working", /Agency deleted/.test(await text(p, ".notice.flash")) && (await fetch(l2)).status === 404 && !/Sam Setup/.test(await p.content()));
 
   // ---- one-time link ----
   const once = admin("admin-link", "second@twin.example").trim().split("\n").pop();
@@ -151,7 +151,7 @@ try {
   await q.goto(once);
   check("admin: a one-time link asks for a button press (link previews can't use it up)", /Sign in as second@twin\.example/.test(await text(q, "h1")));
   await click(q, "button[type=submit]");
-  check("admin: the one-time link signs in", (await text(q, "h1")) === "Buyers", await text(q, "h1"));
+  check("admin: the one-time link signs in", (await text(q, "h1")) === "Agencies", await text(q, "h1"));
   const again = await fetch(once);
   check("admin: the one-time link works only once", again.status === 410, String(again.status));
   await click(q, "form[action='/admin/logout'] button");

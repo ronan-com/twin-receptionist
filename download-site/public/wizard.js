@@ -104,6 +104,33 @@
     pv.textContent = "app." + (d || "your-domain");
   });
 
+  // Admin, "Set up for them": keep checking public DNS and tick each record as it appears (POST with the page's token).
+  const dp = document.querySelector("[data-dns-poll]");
+  if (dp) {
+    let tries = 0;
+    const note = dp.querySelector("[data-dns-note]");
+    const tick = async function () {
+      tries++;
+      try {
+        const r = await fetch(dp.getAttribute("data-dns-poll"), { method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/x-www-form-urlencoded" }, body: "t=" + encodeURIComponent(dp.getAttribute("data-t") || "") });
+        if (r.ok) {
+          const j = await r.json();
+          Array.prototype.forEach.call(j.rows || [], function (x) {
+            const tr = Array.prototype.find.call(dp.querySelectorAll("tr[data-rec]"), function (e) { return e.getAttribute("data-rec") === x.key; });
+            const cell = tr && tr.querySelector(".rok");
+            if (cell) cell.textContent = x.ok ? "\u2713 live" : x.seen ? "found: " + x.seen : "waiting";
+          });
+          const host = Array.prototype.find.call(dp.querySelectorAll("tr[data-rec]"), function (e) { return e.getAttribute("data-rec").indexOf("setup-host:") === 0; });
+          if (host && j.host !== null && j.host !== undefined) host.querySelector(".rok").textContent = j.host ? "\u2713 live" : "waiting";
+          if (j.all && j.host !== false) { if (note) note.textContent = "Every record is live."; return; }
+        }
+      } catch (_) {}
+      if (tries < 60) setTimeout(tick, 10000);
+      else if (note) note.textContent = "Still waiting. Press Check DNS now later.";
+    };
+    setTimeout(tick, 8000);
+  }
+
   // Live progress: reload when something meaningful changes; stream the install log.
   if (root.dataset.live !== "1") return;
   const url = root.dataset.status;

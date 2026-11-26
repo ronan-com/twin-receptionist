@@ -1,6 +1,6 @@
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import { Link, useRouterState } from "@tanstack/react-router";
-import { ChevronLeft, HelpCircle } from "lucide-react";
+import { ChevronLeft, HelpCircle, LifeBuoy } from "lucide-react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
 import { CLIENT_BACKLINKS, type NavItem } from "@/lib/app/constants";
@@ -10,6 +10,7 @@ import { isNavActive } from "./AppShell";
 import { UserMenu } from "./UserMenu";
 import { WorkspaceSwitcher } from "./WorkspaceSwitcher";
 import { useWorkspaceBrand } from "./WorkspaceBrand";
+import { SupportDialog, UnreadDot, useSupportUnread } from "./SupportDialog";
 
 // The business owner's frame: four places (Home, Calls, Bookings, Settings), as a bar
 // along the bottom on a phone and a plain sidebar on a desk. The brand is the agency's
@@ -36,18 +37,37 @@ function Brand() {
 function HelpMenu({ className }: { className?: string }) {
   const ws = useWorkspace();
   const who = ws.business?.org_name || "whoever set up your account";
+  const [open, setOpen] = useState(false);
+  const [supportOpen, setSupportOpen] = useState(false);
+  const support = useSupportUnread();
+  const canContact = Boolean(support.data?.canCreate || support.data?.mine.length);
   return (
-    <Popover>
-      <PopoverTrigger asChild>
-        <button type="button" aria-label="Help" className={cn("inline-flex items-center gap-2 text-ink-muted hover:text-ink", className)}>
-          <HelpCircle className="h-[18px] w-[18px]" strokeWidth={1.8} />
-        </button>
-      </PopoverTrigger>
-      <PopoverContent align="end" className="w-72 text-[13px]">
-        <div className="font-semibold text-ink">Need a hand?</div>
-        <p className="mt-1 text-ink-muted">Contact {who} and they'll help you out. You can always change how your receptionist answers in Settings.</p>
-      </PopoverContent>
-    </Popover>
+    <>
+      <Popover open={open} onOpenChange={setOpen}>
+        <PopoverTrigger asChild>
+          <button type="button" aria-label={support.unread ? "Help (new replies)" : "Help"} className={cn("relative inline-flex items-center gap-2 text-ink-muted hover:text-ink", className)}>
+            <HelpCircle className="h-[18px] w-[18px]" strokeWidth={1.8} />
+            {support.unread ? <UnreadDot className="absolute right-1.5 top-1.5" /> : null}
+          </button>
+        </PopoverTrigger>
+        <PopoverContent align="end" className="w-72 text-[13px]">
+          <div className="font-semibold text-ink">Need a hand?</div>
+          <p className="mt-1 text-ink-muted">Contact {who} and they'll help you out. You can always change how your receptionist answers in Settings.</p>
+          {canContact ? (
+            <button
+              type="button"
+              data-action="contact-support"
+              onClick={() => { setOpen(false); setSupportOpen(true); }}
+              className="mt-3 flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left font-medium text-ink hover:bg-canvas-2"
+            >
+              <LifeBuoy className="h-4 w-4 text-[var(--primary-ink)]" /> Contact support
+              {support.unread ? <UnreadDot className="ml-auto" /> : null}
+            </button>
+          ) : null}
+        </PopoverContent>
+      </Popover>
+      {supportOpen ? <SupportDialog open onOpenChange={setSupportOpen} /> : null}
+    </>
   );
 }
 

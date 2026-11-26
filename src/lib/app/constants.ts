@@ -11,6 +11,7 @@ import {
   FlaskConical,
   Home,
   LayoutDashboard,
+  LifeBuoy,
   Palette,
   Phone,
   PhoneCall,
@@ -44,6 +45,8 @@ export interface NavItem {
   match?: string[];
   /** Console pages only the platform team sees (agency staff are sent back to /admin). */
   platformOnly?: boolean;
+  /** Console pages for an agency only: hidden in the platform team's own console, shown while it views as an agency. */
+  agencyOnly?: boolean;
 }
 
 /**
@@ -85,6 +88,7 @@ export const ADMIN_NAV: NavItem[] = [
   { to: "/admin/test-lab", label: "Test Lab", icon: FlaskConical, platformOnly: true },
   { to: "/admin/system", label: "System / QA", icon: ClipboardCheck },
   { to: "/admin/audit", label: "Audit Log", icon: ScrollText },
+  { to: "/admin/support-requests", label: "Support requests", icon: LifeBuoy, agencyOnly: true },
   { to: "/admin/settings", label: "Settings", icon: ShieldCheck, match: ["/admin/branding"] },
 ];
 // (Integrations and Billing have no Twin backing yet: no console pages. Branding is a tab of Settings.)
@@ -96,7 +100,7 @@ export function isPlatformOnlyPath(pathname: string): boolean {
   return PLATFORM_ONLY_PATHS.some((p) => pathname === p || pathname.startsWith(p + "/"));
 }
 
-export const adminNavFor = (variant: "platform" | "agency") => (variant === "platform" ? ADMIN_NAV : ADMIN_NAV.filter((n) => !n.platformOnly));
+export const adminNavFor = (variant: "platform" | "agency") => (variant === "platform" ? ADMIN_NAV.filter((n) => !n.agencyOnly) : ADMIN_NAV.filter((n) => !n.platformOnly));
 
 /* ------------------------------------------------------------------ */
 /* Labels                                                              */

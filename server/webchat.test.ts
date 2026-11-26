@@ -2,10 +2,8 @@
 // pretend OpenRouter, and storage (against the dev database, cleaning up after itself).
 //   bun test --env-file=../.env server/webchat.test.ts
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from "bun:test";
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
 import { blankSettings, type Business } from "../src/lib/shared";
-import { sql } from "./db";
+import { migrate, sql } from "./db";
 import { insertClient } from "./store";
 import {
   CHAT_LIMITS,
@@ -462,8 +460,9 @@ describe("storage", () => {
 
   beforeAll(async () => {
     try {
-      // The migration is repeatable, so it can be applied here without the server's runner.
-      await sql.unsafe(readFileSync(join(import.meta.dir, "migrations", "017_website_chat.sql"), "utf8"));
+      // The server's own runner (what it does on start): a fresh dev database has no clients table
+      // yet, and on one that's up to date this applies nothing.
+      await migrate();
       await sql`insert into orgs (id, name) values (${orgId}, 'webchat test')`;
       await insertClient(orgId, a);
       await insertClient(orgId, b);

@@ -8,9 +8,9 @@ import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { CONFIG, PACKAGES_DIR, RAILWAY, currentPackage, db, listPackages, now, slug, type Buyer } from "./lib";
 import {
-  DEFAULT_REGION, DEFAULT_SIZE, ProviderError, cfCanEdit, cfEnsure, cfFindZone, cfHasDmarc, cfRecords, cfZone, checkCloudflare,
+  DEFAULT_REGION, DEFAULT_SIZE, ProviderError, cfCanEdit, cfEnsure, cfFindZone, cfRecords, cfZone, checkCloudflare,
   checkDigitalOcean, checkGoogle, checkMicrosoft, checkRailway, checkResend, checkSmtp, checkTelnyx, checkTwilio, checkVapi, doApi, lookup, normalizeDomain,
-  railway, railwayUpload, recordLive, resendDomain, resendSend, resendSendingKey, resendStatus, resendVerify, smtpSend, smtpUrl,
+  RAILWAY_API, railway, railwayUpload, recordLive, resendDomain, resendSend, resendSendingKey, resendStatus, resendVerify, smtpSend, smtpUrl,
 } from "./providers";
 import {
   STEPS, OPTIONAL_HUB, isOptional, buyerByAttemptToken, buyerByDropletToken, deleteAllSecrets, getSecret, getSetup, hasSecret, logAppend, logBytes,
@@ -18,7 +18,11 @@ import {
   activeSetups, deleteSecret, staleSecretBuyers, type DnsRecord, type SetupData, type StepId,
 } from "./store";
 import { USER_DATA_LIMIT, buildEnv, buildUserData } from "./userdata";
-import { SYNC_URL, newSyncToken } from "./sync";
+import { SYNC_URL, latestSnapshot, newSyncToken } from "./sync";
+import { appSource } from "./releases";
+import { createProjectToken, RailwayError } from "./railwayUp";
+import { asAdmin } from "./ctx";
+import { checkGoDaddy, cloudflareWriter, dnsKeyMissing, godaddyExisting, godaddyWriter, writerFor, type DnsWriter } from "./dns";
 
 const MIN = 60_000;
 const ago = (iso?: string) => (iso ? Date.now() - Date.parse(iso) : Infinity);
@@ -43,7 +47,7 @@ export function allow(key: string, max: number, windowMs: number): number {
   return 0;
 }
 const tooMany = (secs: number) => err(`You've tried that a lot in a short time. Please wait ${secs > 90 ? `${Math.ceil(secs / 60)} minutes` : `${secs} seconds`} and try again.`);
-const checkLimit = (b: Buyer) => allow(`check:${b.id}`, CONFIG.checksPer10Min, 10 * MIN);
+const checkLimit = (b: Buyer) => (asAdmin.getStore() ? 0 : allow(`check:${b.id}`, CONFIG.checksPer10Min, 10 * MIN)); // our admin has their own limit (assist.ts)
 
 // ---------------- steps ----------------
 export function stepDone(b: Buyer, s: SetupData, id: StepId): boolean {
@@ -83,6 +87,8 @@ export const zoneOf = (s: SetupData) => s.domain?.zone || "";
 export const hostOf = (s: SetupData) => s.domain?.host || "";
 export const oauthRedirect = (s: SetupData, p: "google" | "microsoft") => `https://${hostOf(s) || "app.your-domain"}/api/oauth/${p}/callback`;
 /** Where the finished agency answers: the buyer's own domain if they added one, else Railway's own address. */
+/** The address of their running app, for calling it ("Sync now", "View as", owner reset): their own domain once it works, else Railway's. */
+export const appUrlOf = (s: SetupData) => (s.phase !== "done" ? "" : s.domainPending && s.tempUrl ? s.tempUrl : agencyUrl(s));
 export const agencyUrl = (s: SetupData) => (hostOf(s) ? `https://${hostOf(s)}` : s.resultUrl || s.tempUrl || webUrl(s.rw?.serviceDomain));
 /** Railway's own address for the app: https, except the local fake (localhost:<port>). */
 export const webUrl = (domain?: string) => (!domain ? "" : /^(localhost|127\.)/.test(domain) ? `http://${domain}` : `https://${domain}`);
@@ -110,7 +116,7 @@ function guard(b: Buyer, step: StepId): Flash | null {
   const s = getSetup(b.id);
   if (s.phase === "done") return err("Your install is finished.");
   if (step !== "install" && locked(s)) return err(LOCKED_MSG);
-  if (!canView(b, s, step)) return err("Finish the earlier steps first.");
+  if (!canView(b, s, step) && !asAdmin.getStore()) return err("Finish the earlier steps first.");
   return null;
 }
 const go = (b: Buyer, from: StepId) => updateSetup(b.id, (s) => nextStep(b, s, from));
@@ -151,13 +157,32 @@ export const actions: Record<string, Action> = {
     if (RAILWAY) return domainRailway(b, f);
     const s = getSetup(b.id);
     const domain = normalizeDomain(str(f.domain, 253) || s.domain?.zone || "");
-    const mode = f.mode === "manual" ? "manual" : "cloudflare";
+    const mode = f.mode === "manual" ? "manual" : f.mode === "godaddy" ? "godaddy" : "cloudflare";
     if (!domain) return err("Type your domain, like yourcompany.com.", f);
     const sub = "app";
     const resetEmail = (s: SetupData) => { if ((s.domain?.zone !== domain || s.domain?.mode !== mode) && s.email) { delete s.email.resend; s.email.confirmed = false; s.email.checked = false; } };
     if (mode === "manual") {
-      deleteSecret(b.id, "cf_token");
+      deleteSecret(b.id, "cf_token"); deleteSecret(b.id, "godaddy_key"); deleteSecret(b.id, "godaddy_secret");
       updateSetup(b.id, (s) => { resetEmail(s); s.domain = { mode: "manual", zone: domain, sub, host: `${sub}.${domain}`, confirmed: true }; nextStep(b, s, "domain"); });
+      return null;
+    }
+    if (mode === "godaddy") {
+      // GoDaddy's DNS API (key + secret), as on Railway: checked now; the server's A record is written at Install (tickDns).
+      const gk = str(f.gdKey, 200) || (s.domain?.mode === "godaddy" ? getSecret(b.id, "godaddy_key") : null) || "";
+      const gs = str(f.gdSecret, 200) || (s.domain?.mode === "godaddy" ? getSecret(b.id, "godaddy_secret") : null) || "";
+      if (!gk || !gs) return err("Paste your GoDaddy API key and secret.", { domain, mode });
+      const wait = checkLimit(b); if (wait) return tooMany(wait);
+      const r = await checkGoDaddy(gk, gs, domain);
+      if (!r.ok) return err(r.message, { domain, mode });
+      const replace = f.replace === "1" || (s.domain?.mode === "godaddy" && !!s.domain.replace);
+      const host = `${sub}.${r.zone}`;
+      try {
+        const existing = await godaddyExisting(gk, gs, r.zone, host);
+        if (existing && !replace) return err(`${host} already points somewhere else (${existing}). Tick "Replace it" to point it at the new server.`, { domain, mode });
+      } catch (e) { safeLog("godaddy", e); return err(errMsg(e), { domain, mode }); }
+      deleteSecret(b.id, "cf_token");
+      putSecret(b.id, "godaddy_key", gk); putSecret(b.id, "godaddy_secret", gs);
+      updateSetup(b.id, (s) => { resetEmail(s); s.domain = { mode: "godaddy", zone: r.zone, sub, host, replace, confirmed: true }; nextStep(b, s, "domain"); });
       return null;
     }
     const token = str(f.token, 300) || (s.domain?.mode === "cloudflare" ? getSecret(b.id, "cf_token") : null) || "";
@@ -348,17 +373,17 @@ export const actions: Record<string, Action> = {
       const d = await resendDomain(key, sendingDomain, zone);
       const dmarc: DnsRecord = { key: "dmarc", purpose: "Spoofing protection (DMARC)", type: "TXT", name: `_dmarc.${zone}`, value: "v=DMARC1; p=none;", ttl: "Auto" };
       let needDmarc = true;
-      if (s.domain?.mode === "cloudflare") {
-        const cfTok = getSecret(b.id, "cf_token")!;
-        needDmarc = !(await cfHasDmarc(cfTok, s.domain.cf!.zoneId!, zone));
-        for (const rec of d.records) rec.cfId = await cfEnsure(cfTok, s.domain.cf!.zoneId!, rec);
-        if (needDmarc) dmarc.cfId = await cfEnsure(cfTok, s.domain.cf!.zoneId!, dmarc);
+      const writer = writerFor(b.id, s);
+      if (writer) {
+        needDmarc = !(await writer.hasDmarc(zone));
+        for (const rec of d.records) rec.cfId = await writer.ensure(rec);
+        if (needDmarc) dmarc.cfId = await writer.ensure(dmarc);
       } else {
         needDmarc = !(await lookup("TXT", dmarc.name, zone)).some((v) => /^v=DMARC1/i.test(v));
       }
       if (d.status !== "verified") await resendVerify(key, d.id).catch(() => {});
       updateSetup(b.id, (s) => {
-        s.email = { mode: "resend", address, sendingDomain, from: `${s.brand!.productName} <${address}>`, checked: true, resend: { domainId: d.id, status: d.status === "verified" ? "verified" : "pending", records: d.records, dmarc: needDmarc ? dmarc : null, written: s.domain?.mode === "cloudflare", verifyAt: now(), lastCheck: undefined } };
+        s.email = { mode: "resend", address, sendingDomain, from: `${s.brand!.productName} <${address}>`, checked: true, resend: { domainId: d.id, status: d.status === "verified" ? "verified" : "pending", records: d.records, dmarc: needDmarc ? dmarc : null, written: !!writer, verifyAt: now(), lastCheck: undefined } };
       });
       return null;
     } catch (e) { safeLog("email", e); return err(errMsg(e), f); }
@@ -522,10 +547,8 @@ export const actions: Record<string, Action> = {
     busy.add(b.id);
     try {
       if (s.dropletId) await doApi(token, "DELETE", `/v2/droplets/${s.dropletId}`).catch((e) => { if (!(e instanceof ProviderError && e.status === 404)) throw e; });
-      if (s.aRecord?.cfId && s.domain?.mode === "cloudflare") {
-        const cfTok = getSecret(b.id, "cf_token");
-        if (cfTok) await fetchDelete(cfTok, s.domain.cf!.zoneId!, s.aRecord.cfId).catch(() => {});
-      }
+      // The A record we wrote (Cloudflare or GoDaddy). Best effort: the server is already gone.
+      if (s.aRecord?.cfId) await writerFor(b.id, s)?.remove(s.aRecord).catch((e) => safeLog("dns delete", e));
     } catch (e) { return err(errMsg(e)); } finally { busy.delete(b.id); }
     setDropletToken(b.id, null); setAttemptToken(b.id, null); logClear(b.id);
     updateSetup(b.id, (s) => {
@@ -668,11 +691,6 @@ async function applyZone(id: number, zoneId: string, sub: string, replace: boole
   } catch (e) { return err(errMsg(e)); }
 }
 
-async function fetchDelete(cfTok: string, zoneId: string, id: string) {
-  const { CF_API } = await import("./providers");
-  await fetch(`${CF_API}/zones/${encodeURIComponent(zoneId)}/dns_records/${encodeURIComponent(id)}`, { method: "DELETE", headers: { Authorization: `Bearer ${cfTok}` }, signal: AbortSignal.timeout(15000) });
-}
-
 function startAttempt(s: SetupData) {
   s.phase = "starting";
   s.pendingAttempt = (s.attempt || 0) + 1;
@@ -773,7 +791,7 @@ function brandSettings(s: SetupData): Record<string, string> {
 export function phoneSettings(id: number, s: SetupData): Record<string, string> {
   const sid = twilioSidOf(s);
   // The backup Twilio account: numbers and the texts sent from them.
-  const twilio = sid && getSecret(id, "twilio_token") ? { TWILIO_ACCOUNT_SID: sid, TWILIO_AUTH_TOKEN: getSecret(id, "twilio_token") || "" } : {};
+  const twilio: Record<string, string> = sid && getSecret(id, "twilio_token") ? { TWILIO_ACCOUNT_SID: sid, TWILIO_AUTH_TOKEN: getSecret(id, "twilio_token") || "" } : {};
   if (!useVapi(s)) return { TELNYX_API_KEY: getSecret(id, "telnyx_key") || "", ...twilio };
   return {
     VOICE_PROVIDER: "vapi",
@@ -788,15 +806,16 @@ export function phoneSettings(id: number, s: SetupData): Record<string, string> 
 /**
  * Settings for the health heartbeat and Support access (sync.ts). The app sends counts and health to us
  * with SUPPORT_SYNC_TOKEN (we keep only its hash), and we call it with SUPPORT_CALL_TOKEN. The buyer sees
- * and controls both in their app's Settings, "Support": sharing is on until they switch it off, Support access is off
- * until they switch it on.
+ * and controls both in their app's Settings, "Support". On a fresh install all of it starts ON (SUPPORT_ACCESS_DEFAULT=on,
+ * set by buildSettings and railwayVars, never by an update): sharing, Support access, and "Support can make changes"
+ * (the app's own default). The owner can switch each one off.
  */
 function supportSettings(id: number): Record<string, string> {
   const { token, callToken } = newSyncToken(id);
   return { SUPPORT_SYNC_URL: SYNC_URL(), SUPPORT_SYNC_TOKEN: token, SUPPORT_CALL_TOKEN: callToken, SUPPORT_SELLER_NAME: CONFIG.sellerName, APP_VERSION: currentPackage()?.version || "" };
 }
 
-function buildSettings(id: number, s: SetupData): string {
+export function buildSettings(id: number, s: SetupData): string {
   const resendKey = getSecret(id, "resend_key");
   const smtp = s.email?.mode === "resend" ? `smtps://resend:${resendKey}@smtp.resend.com:465` : smtpUrl(s.email!.smtp!.host, s.email!.smtp!.port, s.email!.smtp!.user, getSecret(id, "smtp_password") || "");
   return buildEnv({
@@ -806,6 +825,8 @@ function buildSettings(id: number, s: SetupData): string {
     ...phoneSettings(id, s),
     ...brandSettings(s),
     ...supportSettings(id),
+    // Fresh installs only (a droplet is made once): Support access starts ON, as on Railway. The owner can switch it off.
+    SUPPORT_ACCESS_DEFAULT: "on",
     OWN_PHONE_ACCOUNT: "", // the buyer is the agency: every client runs on their Telnyx key
     SMTP_URL: smtp,
     MAIL_FROM: s.email!.from || "",
@@ -881,15 +902,16 @@ async function tickCreate(id: number) {
 
 async function tickDns(id: number) {
   const s = getSetup(id);
-  if (s.domain?.mode === "cloudflare" && !s.aRecord?.cfId) {
-    const token = getSecret(id, "cf_token");
-    if (!token) return fail(id, "create_failed", "Your Cloudflare token is missing. Delete the server, check the token on the Domain step, and start again.");
+  if ((s.domain?.mode === "cloudflare" || s.domain?.mode === "godaddy") && !s.aRecord?.cfId) {
+    const writer = writerFor(id, s);
+    const name = s.domain.mode === "godaddy" ? "GoDaddy" : "Cloudflare";
+    if (!writer) return fail(id, "create_failed", `${dnsKeyMissing(s).replace(/\.$/, "")}, then delete the server and start again.`);
     try {
-      const cfId = await cfEnsure(token, s.domain.cf!.zoneId!, s.aRecord!);
-      updateSetup(id, (s) => { s.aRecord!.cfId = cfId; s.progress = [...(s.progress || []), `Pointed ${hostOf(s)} at your server in Cloudflare`]; });
+      const cfId = await writer.ensure(s.aRecord!);
+      updateSetup(id, (s) => { s.aRecord!.cfId = cfId; s.progress = [...(s.progress || []), `Pointed ${hostOf(s)} at your server in ${name}`]; });
     } catch (e) {
-      safeLog("cf A", e);
-      return fail(id, "create_failed", `We couldn't add the DNS record in Cloudflare: ${errMsg(e)}`);
+      safeLog("dns A", e);
+      return fail(id, "create_failed", `We couldn't add the DNS record in ${name}: ${errMsg(e)}`);
     }
     return;
   }
@@ -1038,6 +1060,7 @@ function finish(id: number, url: string) {
     phones: { confirmed: true, provider: useVapi(s) ? "vapi" : "telnyx" }, email: s.email ? { mode: s.email.mode, address: s.email.address, from: s.email.from, confirmed: true, resend: s.email.resend ? { status: s.email.resend.status } : undefined } : undefined,
     calendars: s.calendars ? { google: s.calendars.google, microsoft: s.calendars.microsoft, done: true } : undefined,
     skipped: s.skipped, extrasDone: s.extrasDone,
+    assist: s.assist ? { steps: s.assist.steps, keepDns: s.assist.keepDns, dnsBy: s.assist.dnsBy, installBy: s.assist.installBy, openrouter: s.assist.openrouter } : undefined,
     dropletId: s.dropletId, ip: s.ip, attempt: s.attempt, attemptVersion: s.attemptVersion,
     serverCreatedAt: s.serverCreatedAt, installedAt: now(), purgedAt: now(), resultUrl: url, sshKeyAdded: s.sshKeyAdded,
     railway: s.railway ? { workspaceName: s.railway.workspaceName, confirmed: true } : undefined,
@@ -1082,7 +1105,7 @@ async function emailBeforeDomain(b: Buyer, f: Form): Promise<Flash | null> {
 const guessZone = (d: string) => (d.split(".").length > 2 && /^(mail|send|email|mg|mx|news)\./.test(d) ? d.slice(d.indexOf(".") + 1) : d);
 
 /** Resend's records (and DMARC if missing) for `zone`: written to Cloudflare, or kept to show. */
-async function emailDns(id: number, zone: string, cfTok?: string, zoneId?: string) {
+export async function emailDns(id: number, zone: string, writer?: DnsWriter | null) {
   const s = getSetup(id);
   if (s.email?.mode !== "resend" || !s.email.sendingDomain) return;
   const key = getSecret(id, "resend_key");
@@ -1090,16 +1113,16 @@ async function emailDns(id: number, zone: string, cfTok?: string, zoneId?: strin
   const d = await resendDomain(key, s.email.sendingDomain, zone);
   const dmarc: DnsRecord = { key: "dmarc", purpose: "Spoofing protection (DMARC)", type: "TXT", name: `_dmarc.${zone}`, value: "v=DMARC1; p=none;", ttl: "Auto" };
   let needDmarc: boolean;
-  if (cfTok && zoneId) {
-    needDmarc = !(await cfHasDmarc(cfTok, zoneId, zone));
-    for (const rec of d.records) rec.cfId = await cfEnsure(cfTok, zoneId, rec);
-    if (needDmarc) dmarc.cfId = await cfEnsure(cfTok, zoneId, dmarc);
+  if (writer) {
+    needDmarc = !(await writer.hasDmarc(zone));
+    for (const rec of d.records) rec.cfId = await writer.ensure(rec);
+    if (needDmarc) dmarc.cfId = await writer.ensure(dmarc);
   } else {
     needDmarc = !(await lookup("TXT", dmarc.name, zone)).some((v) => /^v=DMARC1/i.test(v));
   }
   if (d.status !== "verified") await resendVerify(key, d.id).catch(() => {});
   updateSetup(id, (s) => {
-    s.email!.resend = { domainId: d.id, status: d.status === "verified" ? "verified" : "pending", records: d.records, dmarc: needDmarc ? dmarc : null, written: !!cfTok, verifyAt: now() };
+    s.email!.resend = { domainId: d.id, status: d.status === "verified" ? "verified" : "pending", records: d.records, dmarc: needDmarc ? dmarc : null, written: !!writer, verifyAt: now() };
   });
 }
 
@@ -1107,16 +1130,38 @@ async function emailDns(id: number, zone: string, cfTok?: string, zoneId?: strin
 async function domainRailway(b: Buyer, f: Form): Promise<Flash | null> {
   const s = getSetup(b.id);
   const domain = normalizeDomain(str(f.domain, 253) || s.domain?.zone || "");
-  const mode = f.mode === "manual" ? "manual" : "cloudflare";
+  const mode = f.mode === "manual" ? "manual" : f.mode === "godaddy" ? "godaddy" : "cloudflare";
   if (!domain) return err("Type your domain, like yourbusiness.com.", f);
   const sd = s.email?.mode === "resend" ? s.email.sendingDomain || "" : "";
   if (sd && sd !== domain && !sd.endsWith("." + domain)) return err(`Your email address is on ${sd}. Use that domain here, or go back to Email and change the address.`, { domain, mode });
   const sub = "app";
   if (mode === "manual") {
-    deleteSecret(b.id, "cf_token");
+    deleteSecret(b.id, "cf_token"); deleteSecret(b.id, "godaddy_key"); deleteSecret(b.id, "godaddy_secret");
     updateSetup(b.id, (s) => { s.domain = { mode: "manual", zone: domain, sub, host: `${sub}.${domain}`, confirmed: false }; });
     try { await emailDns(b.id, domain); } catch (e) { safeLog("email dns", e); return err(errMsg(e)); }
     return null; // the screen now lists the email records, with Continue
+  }
+  if (mode === "godaddy") {
+    // GoDaddy's own DNS API (key + secret). Same shape as Cloudflare: check, write email records now, the app's at Install.
+    const gk = str(f.gdKey, 200) || (s.domain?.mode === "godaddy" ? getSecret(b.id, "godaddy_key") : null) || "";
+    const gs = str(f.gdSecret, 200) || (s.domain?.mode === "godaddy" ? getSecret(b.id, "godaddy_secret") : null) || "";
+    if (!gk || !gs) return err("Paste your GoDaddy API key and secret.", { domain, mode });
+    const wait = checkLimit(b); if (wait) return tooMany(wait);
+    const r = await checkGoDaddy(gk, gs, domain);
+    if (!r.ok) return err(r.message, { domain, mode });
+    if (sd && sd !== r.zone && !sd.endsWith("." + r.zone)) return err(`Your email address is on ${sd}, which isn't part of ${r.zone}.`, { domain, mode });
+    const replace = f.replace === "1" || (s.domain?.mode === "godaddy" && !!s.domain.replace);
+    const host = `${sub}.${r.zone}`;
+    try {
+      const existing = await godaddyExisting(gk, gs, r.zone, host);
+      if (existing && !replace) return err(`${host} already points somewhere else (${existing}). Tick "Replace it" to point it at the new agency.`, { domain, mode });
+    } catch (e) { safeLog("godaddy", e); return err(errMsg(e), { domain, mode }); }
+    deleteSecret(b.id, "cf_token");
+    putSecret(b.id, "godaddy_key", gk); putSecret(b.id, "godaddy_secret", gs);
+    updateSetup(b.id, (s) => { s.domain = { mode: "godaddy", zone: r.zone, sub, host, replace }; });
+    try { await emailDns(b.id, r.zone, godaddyWriter(gk, gs, r.zone, { replace })); } catch (e) { safeLog("email dns", e); return err(errMsg(e), { domain, mode }); }
+    updateSetup(b.id, (s) => { s.domain!.confirmed = true; nextStep(b, s, "domain"); });
+    return null;
   }
   const token = str(f.token, 300) || (s.domain?.mode === "cloudflare" ? getSecret(b.id, "cf_token") : null) || "";
   if (!token) return err("Paste your Cloudflare token.", { domain, mode });
@@ -1132,7 +1177,7 @@ async function domainRailway(b: Buyer, f: Form): Promise<Flash | null> {
   const res = await applyZone(b.id, zone.id, sub, replace);
   const d = getSetup(b.id).domain!;
   if (d.cf?.status === "active" && d.cf.canEdit && (!d.cf.existing || d.cf.replace)) {
-    try { await emailDns(b.id, zone.name, token, zone.id); } catch (e) { safeLog("email dns", e); return err(errMsg(e)); }
+    try { await emailDns(b.id, zone.name, cloudflareWriter(token, zone.id)); } catch (e) { safeLog("email dns", e); return err(errMsg(e)); }
     updateSetup(b.id, (s) => { s.domain!.confirmed = true; nextStep(b, s, "domain"); });
     return null;
   }
@@ -1147,28 +1192,15 @@ async function deleteRailwayProject(b: Buyer): Promise<Flash | null> {
   busy.add(b.id);
   try {
     if (s.rw?.projectId) await railway(token, "mutation($id: String!) { projectDelete(id: $id) }", { id: s.rw.projectId }).catch((e) => { if (!(e instanceof ProviderError && /not found/i.test(e.message))) throw e; });
-    const cfTok = s.domain?.mode === "cloudflare" ? getSecret(b.id, "cf_token") : null;
-    if (cfTok) for (const r of s.rw?.records || []) if (r.cfId) await fetchDelete(cfTok, s.domain!.cf!.zoneId!, r.cfId).catch(() => {});
+    // The app's records we wrote at Install (Cloudflare or GoDaddy). Best effort: the project is already gone.
+    const writer = writerFor(b.id, s);
+    if (writer) for (const r of s.rw?.records || []) if (r.cfId) await writer.remove(r).catch((e) => safeLog("dns delete", e));
   } catch (e) { return err(errMsg(e)); } finally { busy.delete(b.id); }
   logClear(b.id);
   updateSetup(b.id, (s) => { delete s.rw; delete s.error; delete s.attempt; s.phase = "idle"; s.progress = []; });
   return ok("Project deleted. Press Install to make a new one.");
 }
 
-/** The app's source (.tar.gz), taken out of the published bundle once and kept next to it. */
-async function appSource(): Promise<Uint8Array> {
-  const pkg = currentPackage();
-  if (!pkg) throw new ProviderError("The app isn't ready to install yet. Please try again later or contact support.");
-  const bundle = join(PACKAGES_DIR, pkg.file);
-  const cached = bundle.replace(/\.tgz$/, ".app-src.tgz");
-  if (!existsSync(cached)) {
-    const p = Bun.spawn(["tar", "-xzOf", bundle, "./app-src.tgz"], { stdout: "pipe", stderr: "ignore" });
-    const out = new Uint8Array(await new Response(p.stdout).arrayBuffer());
-    if ((await p.exited) !== 0 || out.length < 1000) throw new ProviderError("The app bundle is damaged. Contact support.");
-    writeFileSync(cached, out, { mode: 0o600 });
-  }
-  return new Uint8Array(readFileSync(cached));
-}
 
 const PROJECT_Q = "query($id: String!) { project(id: $id) { id environments { edges { node { id name } } } } }";
 const DOMAIN_FIELDS = "id domain status { verified certificateStatus verificationDnsHost verificationToken dnsRecords { recordType hostlabel fqdn zone requiredValue currentValue status purpose } }";
@@ -1221,8 +1253,37 @@ async function railwayVars(id: number, s: SetupData, token: string): Promise<Rec
   };
   if (s.calendars?.google) { v.GOOGLE_CLIENT_ID = s.calendars.google.clientId; v.GOOGLE_CLIENT_SECRET = getSecret(id, "google_secret") || ""; }
   if (s.calendars?.microsoft) { v.MICROSOFT_CLIENT_ID = s.calendars.microsoft.clientId; v.MICROSOFT_CLIENT_SECRET = getSecret(id, "microsoft_secret") || ""; }
-  void token;
+  // Optional "Ask for help" in their dashboard: an OpenRouter key our admin added for them.
+  const orKey = getSecret(id, "openrouter_key");
+  if (orKey) v.OPENROUTER_API_KEY = orKey;
+  // Fresh installs only: Support access starts ON (the owner can switch it off in Settings, "Support"). Never set by an update.
+  v.SUPPORT_ACCESS_DEFAULT = "on";
+  Object.assign(v, await autoUpdateVars(id, token, { projectId: s.rw?.projectId, environmentId: s.rw?.environmentId, serviceId: s.rw?.appId }));
   return v;
+}
+
+/**
+ * The app's own Railway PROJECT token, so it can update itself without us holding anyone's access: scoped to this one
+ * project and environment, made with the account token the buyer just gave us, and handed straight to the app (we keep
+ * nothing). Best effort: if Railway won't make one the agency still installs, and the admin shows "Auto-update
+ * unavailable: buyer must press Update". Returns the variables to set, or none.
+ */
+/** Should "Update your agency" mint the app a new Railway project token? */
+export function needsProjectToken(have: Record<string, string>, st: { snap: { updates: { available: boolean; lastResult?: string | null } } } | null): boolean {
+  if (!("RAILWAY_PROJECT_TOKEN" in have)) return true;
+  const u = st?.snap.updates;
+  return !!u && (u.lastResult === "failed" || u.available === false);
+}
+
+export async function autoUpdateVars(id: number, accountToken: string, ids: { projectId?: string; environmentId?: string; serviceId?: string }): Promise<Record<string, string>> {
+  if (!ids.projectId || !ids.environmentId || !ids.serviceId) return {};
+  try {
+    const t = await createProjectToken(accountToken, ids.projectId, ids.environmentId, "Automatic updates", { base: RAILWAY_API });
+    return { RAILWAY_PROJECT_TOKEN: t, AUTOUPDATE_PROJECT_ID: ids.projectId, AUTOUPDATE_ENVIRONMENT_ID: ids.environmentId, AUTOUPDATE_SERVICE_ID: ids.serviceId };
+  } catch (e) {
+    console.log(`[setup] buyer ${id}: no project token for automatic updates (${e instanceof RailwayError ? e.code : "error"})`);
+    return {};
+  }
 }
 
 function setRw(id: number, fn: (rw: NonNullable<SetupData["rw"]>, s: SetupData) => void) {
@@ -1299,13 +1360,13 @@ async function tickRailCreate(id: number) {
       setRw(id, (r) => { r.customDomainId = String(cd.id); r.records = railRecords(cd, hostOf(s), zoneOf(s)); });
       return;
     }
-    if (hostOf(s) && s.domain?.mode === "cloudflare" && !rw.cfWritten && rw.records?.length) {
-      const cfTok = getSecret(id, "cf_token");
-      if (!cfTok) return fail(id, "create_failed", "Your Cloudflare token is missing. Check it again on the Domain step.");
+    if (hostOf(s) && (s.domain?.mode === "cloudflare" || s.domain?.mode === "godaddy") && !rw.cfWritten && rw.records?.length) {
+      const writer = writerFor(id, s);
+      if (!writer) return fail(id, "create_failed", dnsKeyMissing(s));
       const recs = rw.records.map((r) => ({ ...r }));
-      for (const r of recs) r.cfId = await cfEnsure(cfTok, s.domain.cf!.zoneId!, r);
+      for (const r of recs) r.cfId = await writer.ensure(r);
       setRw(id, (r) => { r.records = recs; r.cfWritten = true; });
-      progress(id, `Added ${hostOf(s)}'s records to Cloudflare`);
+      progress(id, `Added ${hostOf(s)}'s records to ${writer.kind === "godaddy" ? "GoDaddy" : "Cloudflare"}`);
       return;
     }
     if (!rw.deploymentId) {
@@ -1518,6 +1579,11 @@ async function tickUpdate(id: number) {
       const add: Record<string, string> = {};
       for (const h of updateVarHooks) for (const [k, v] of Object.entries(h(id, have))) if (!(k in have) && !(k in add)) add[k] = v;
       add.APP_VERSION = to; // ours: says which version this agency is
+      // Automatic updates: a new project token for the app if it has none yet, its last automatic update failed, or its
+      // latest heartbeat says automatic updates are unavailable (a token Railway no longer accepts). Not kept by us.
+      if (needsProjectToken(have, latestSnapshot(id))) {
+        Object.assign(add, await autoUpdateVars(id, token, { projectId, environmentId: u.envId, serviceId: u.appId }));
+      }
       await railway(token, "mutation($input: VariableCollectionUpsertInput!) { variableCollectionUpsert(input: $input) }", { input: { ...base, serviceId: u.appId, variables: add, skipDeploys: true } });
       setUpdate(id, (u) => { u.varsSet = true; u.to = to; });
       return;

@@ -49,6 +49,8 @@ const STEP_NAMES: Record<StepId, string> = {
   email: RAILWAY ? "Email (optional)" : "Email",
   calendars: "Calendars (optional)",
   extras: "Extras (optional: email, your own domain, calendars)",
+  vapi: "Vapi (optional backup voice provider; Telnyx is the main one)",
+  twilio: "Twilio (optional backup for numbers and texts; Telnyx is the main one)",
   install: "Install",
   done: "Done (your agency is live)",
 };

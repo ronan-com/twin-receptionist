@@ -1,6 +1,6 @@
 # Wording changes for Jesse to approve
 
-Your materials were written for the Vapi, Supabase and Netlify build, where our team ran the infrastructure. The buyer now sets everything up themselves through a private setup link on setup.chloeeai.co. They connect their own Railway, Telnyx, Resend, domain and (optionally) Google or Microsoft accounts. The wizard installs their dashboard at app.[THEIR DOMAIN], and we have no login to their accounts after that. Their app shares health counts with us unless they switch it off, and we can sign in only if they turn Support access on.
+Your materials were written for the Vapi, Supabase and Netlify build, where our team ran the infrastructure. The buyer now sets everything up themselves through a private setup link on setup.chloeeai.co. They connect their own Railway, Telnyx, Resend, domain and (optionally) Google or Microsoft accounts. The wizard installs their dashboard at app.[THEIR DOMAIN], and we have no login to their accounts after that. Two things are on by default, and the buyer can switch either off in Settings, Support: their app shares health counts with us, and Support access lets us sign in to their dashboard and make changes (never keys, billing, the owner account or team, deleting the agency or exports). Jesse approved these defaults on 27 Nov 2026.
 
 Each line below quotes something that's now wrong, then gives the replacement. Tick or change each one.
 
@@ -8,7 +8,7 @@ Each line below quotes something that's now wrong, then gives the replacement. T
 
 | # | Now says | Change to |
 |---|---|---|
-| 1 | "Our team handles the infrastructure." | "The buyer connects their own accounts through a private setup link. Once it's live, we have no login to their accounts. Stats sharing is on by default and can be turned off; support access is off unless they turn it on." |
+| 1 | "Our team handles the infrastructure." | "The buyer connects their own accounts through a private setup link. Once it's live, we have no login to their accounts. Stats sharing and support access are on by default and either can be turned off. While support access is on, we can sign in and make changes, never to keys, billing or the owner account." |
 | 2 | "The buyer should open one owner invitation, set a password and be able to start onboarding centres." | "The buyer opens their setup link, connects their accounts, then creates the owner account at app.[THEIR DOMAIN] and starts adding centres." |
 | 3 | "Connect a Chloe-controlled Vapi assistant and Australian number" | "The buyer buys an Australian number for each centre from their dashboard (Buy a number). It runs on their own Telnyx account." |
 | 4 | "Give the buyer control of the site, forms, hosting, database, phone, calendar, sender, source and recovery." | "Hosting, database, phone, email and calendar are in the buyer's own accounts from the start. Only the website, forms, brand files and business pack need handing over." |
@@ -45,7 +45,7 @@ Each line below quotes something that's now wrong, then gives the replacement. T
 | 20 | "3 Launch the backend: Provision a separate production database and host. Apply migrations, configure authentication and backups, verify email and bootstrap the buyer's owner role." | "3 Run the setup link: connect Railway, Telnyx, Resend, your domain and (optionally) calendars, press Install, then turn on database backups in Railway." |
 | 21 | "Connect the buyer's Vapi workspace, Google tour calendar and verified email sender." | "Buy the centre's number from its page, and connect its Google or Outlook calendar from its Integrations. Email is set up by the wizard." |
 | 22 | "Transfer source and files to a buyer-controlled private folder or repository. Invite the owner to the domain, hosting, database, form and relevant suppliers." | "Put the business pack in a buyer-controlled folder. Hosting, database, phone and email are already in the buyer's name." |
-| 23 | "Agree Jesse's support hours, end date and any continuing access" / "reduce temporary access" | "Agree Jesse's support hours and end date. We keep no software access after install except what the buyer chooses: health stats are on by default and can be turned off, and support access is off unless they turn it on. The buyer deletes the Railway (and Cloudflare, if used) setup tokens." |
+| 23 | "Agree Jesse's support hours, end date and any continuing access" / "reduce temporary access" | "Agree Jesse's support hours and end date. We keep no software access after install except what the buyer chooses: health stats and support access (which lets us sign in and make changes) are on by default, and the buyer can turn either off. The buyer deletes the Railway (and Cloudflare, if used) setup tokens." |
 | 24 | "The buyer's production URL and login are pending." | "The buyer's dashboard is at app.[THEIR DOMAIN]." |
 
 ## Owner-Operating-Guide.pdf

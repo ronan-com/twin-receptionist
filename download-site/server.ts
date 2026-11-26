@@ -12,6 +12,10 @@
 //   POST /p/<attempt token>/log     install output, in order (?offset=<bytes already sent>)
 //   POST /p/<attempt token>/exit    install.sh finished (?code=<exit code>)
 //   POST /api/sync                  the buyer's app sends its health snapshot (Bearer sync token; sync.ts)
+//   POST /api/tickets               a help ticket from the agency's app; GET /api/tickets/updates: our replies (Bearer sync token; tickets.ts)
+//   GET  /api/tls-allowed?domain=X  Caddy only: 200 for a host registered to a buyer (hosts.ts); a buyer's own domain serves their wizard at /
+//   GET  /api/releases/latest       the newest app release, for an app updating itself (Bearer sync token; releases.ts)
+//   GET  /api/releases/bundle/<v>   its source, only with a signed address that runs out in 10 minutes
 //   GET  /guide /styles.css /favicon.svg /wizard.js /chat.js /chat.css /healthz
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -19,12 +23,16 @@ import { ANY_MOCK, CODE_RE, CONFIG, db, extractCode, findBuyer, productionGuard,
 import { loadContent } from "./content";
 import { chatEnabled, chatReply, parseChatBody } from "./chat";
 import { badCodePage, demoOfflinePage, forbiddenPage, guidePage, homePage, limitedPage, notFoundPage, revokedPage } from "./pages";
-import { actions, allow, canView, firstOpen, pBundle, pExit, pLog, pNext, startTicker } from "./setup";
+import { actions, allow, appUrlOf, canView, firstOpen, pBundle, pExit, pLog, pNext, startTicker } from "./setup";
 import { STEPS, csrfOk, getSetup, logRead, newSessionId, siteKey, updateSetup, type StepId } from "./store";
 import { statusRev, wizardPage } from "./wizard";
 import { adminRoute } from "./admin-web";
-import { MAX_SYNC_BODY, bearerOf, buyerBySyncToken, receive } from "./sync";
+import { ticketsApi } from "./tickets";
+import { MAX_SYNC_BODY, bearerOf, buyerBySyncToken, ownerResetLink, receive } from "./sync";
+import { appSource, bundleSignatureOk, latestRelease, signBundleUrl } from "./releases";
+import { startAlerts } from "./alerts";
 import { DEMO, DEMO_KEY, DemoOffline, demoBuyer, demoDashboard } from "./demo";
+import { serveOwnHost, tlsAllowedResponse } from "./hosts";
 
 if ((process.env.PREVIEW_JUMP || "").trim() === "1" && !ANY_MOCK) {
   console.error("PREVIEW_JUMP=1 is for test sites only and needs a MOCK_* switch on too. Refusing to start.");
@@ -44,6 +52,7 @@ const ASSETS: Record<string, { body: Uint8Array; type: string }> = {
   "/wizard.js": { body: readFileSync(join(import.meta.dir, "public/wizard.js")), type: "text/javascript; charset=utf-8" },
   "/chat.js": { body: readFileSync(join(import.meta.dir, "public/chat.js")), type: "text/javascript; charset=utf-8" },
   "/chat.css": { body: readFileSync(join(import.meta.dir, "public/chat.css")), type: "text/css; charset=utf-8" },
+  "/tickets.css": { body: readFileSync(join(import.meta.dir, "public/tickets.css")), type: "text/css; charset=utf-8" },
   "/wizard.css": { body: readFileSync(join(import.meta.dir, "public/wizard.css")), type: "text/css; charset=utf-8" },
 };
 for (const w of [400, 500, 600, 700]) ASSETS[`/fonts/inter-latin-${w}-normal.woff2`] = { body: readFileSync(join(import.meta.dir, `public/fonts/inter-latin-${w}-normal.woff2`)), type: "font/woff2" };
@@ -67,7 +76,7 @@ const redirect = (to: string, extra: Record<string, string> = {}) => respond(nul
 // ---------------- rate limits per IP ----------------
 const SITE_ORIGIN = new URL(CONFIG.siteUrl).origin;
 const SECURE = SITE_ORIGIN.startsWith("https:");
-function clientIp(req: Request, server: Bun.Server): string {
+function clientIp(req: Request, server: Bun.Server<unknown>): string {
   if (CONFIG.trustProxy) {
     const last = req.headers.get("x-forwarded-for")?.split(",").map((s) => s.trim()).filter(Boolean).pop();
     if (last) return last;
@@ -156,11 +165,16 @@ const ACTION = /^\/setup\/([^/]*)\/a\/([a-z-]{2,40})$/;
 const PROV = /^\/p\/([ad]_[A-Za-z0-9_-]{32})\/(next|bundle|log|exit)$/;
 const OLD = /^\/download\/([^/]*)(?:\/.*)?$/;
 
-async function handle(req: Request, srv: Bun.Server): Promise<Response> {
+async function handle(req: Request, srv: Bun.Server<unknown>): Promise<Response> {
   const url = new URL(req.url);
   const path = url.pathname;
   const method = req.method;
   const isGet = method === "GET" || method === "HEAD";
+
+  // Caddy asks here before getting a certificate for a buyer's own domain (internal only), then their own domain serves their wizard (hosts.ts).
+  if (path === "/api/tls-allowed") return tlsAllowedResponse(req, url);
+  const own = await serveOwnHost(req, (r) => handle(r, srv));
+  if (own) return own;
 
   if (isGet && path === "/") return html(homePage());
   if (isGet && path === "/guide") return html(guidePage(), 200, { "Cache-Control": "public, max-age=300" });
@@ -206,6 +220,38 @@ async function handle(req: Request, srv: Bun.Server): Promise<Response> {
     if (Number(req.headers.get("content-length") || 0) > MAX_SYNC_BODY) return json({ error: "too large" }, 413);
     const r = receive(tok, (await req.text()).slice(0, MAX_SYNC_BODY + 1));
     return json(r.body, r.status);
+  }
+
+  // ---- the app's help tickets, and our replies back (Bearer sync token; tickets.ts) ----
+  if (path === "/api/tickets" || path === "/api/tickets/updates") { const r = (await ticketsApi(req, url, ip))!; return respond(r.body, r.status, Object.fromEntries(r.headers)); }
+
+  // ---- an app updating itself (the buyer's Settings, "Updates"): what's newest, and the bundle by a signed address ----
+  if (path === "/api/releases/latest" || path.startsWith("/api/releases/bundle/")) {
+    const json = (o: unknown, status = 200, h: Record<string, string> = {}) => respond(JSON.stringify(o), status, { "Content-Type": "application/json", "Cache-Control": "no-store", ...h });
+    if (!isGet) return json({ error: "GET only" }, 405, { Allow: "GET" });
+    if (path === "/api/releases/latest") {
+      const buyerId = buyerBySyncToken(bearerOf(req));
+      if (buyerId == null) {
+        const retry = allow(`relbad:${ip}`, 30, 10 * 60_000);
+        return retry ? json({ error: "too many tries" }, 429, { "Retry-After": String(retry) }) : json({ error: "unauthorised" }, 401);
+      }
+      const retry = allow(`rel:${buyerId}`, 30, 60 * 60_000);
+      if (retry) return json({ error: "too many requests" }, 429, { "Retry-After": String(retry) });
+      const rel = await latestRelease();
+      if (!rel) return json({ error: "no release" }, 404);
+      const signed = signBundleUrl(buyerId, rel.version);
+      return json({ version: rel.version, notes: rel.notes, sha256: rel.sha256, size: rel.size, bundleUrl: signed.url, expiresAt: signed.expiresAt });
+    }
+    const bm = path.match(/^\/api\/releases\/bundle\/([A-Za-z0-9._+-]{1,40})$/);
+    const buyerId = Number(url.searchParams.get("b"));
+    const retry = allow(`relbundle:${ip}`, 20, 60 * 60_000);
+    if (retry) return json({ error: "too many requests" }, 429, { "Retry-After": String(retry) });
+    if (!bm || !Number.isInteger(buyerId) || !bundleSignatureOk(buyerId, bm[1], url.searchParams.get("exp") || "", url.searchParams.get("sig") || "")) return json({ error: "expired or invalid" }, 403);
+    const buyer = db().query("SELECT revoked_at FROM buyers WHERE id = ?").get(buyerId) as { revoked_at: string | null } | null;
+    const rel = await latestRelease();
+    if (!buyer || buyer.revoked_at || !rel || rel.version !== bm[1]) return json({ error: "not found" }, 404);
+    console.log(`[release] buyer ${buyerId} downloaded ${rel.version}`);
+    return respond(await appSource(), 200, { "Content-Type": "application/gzip", "Cache-Control": "no-store", "Content-Disposition": `attachment; filename="app-${rel.version}.tgz"` });
   }
 
   // ---- our admin dashboard ----
@@ -303,6 +349,19 @@ async function handle(req: Request, srv: Bun.Server): Promise<Response> {
     const f = await readForm(req);
     if (!f) return respond("Too large", 413);
     if (!sameOrigin(req) || !sid || !csrfOk(sid, m[1], f.t || "")) return html(forbiddenPage(), 403);
+    // "Locked out? Reset your owner password": the one-time link is shown on this response only, never saved.
+    if (m[2] === "owner-reset") {
+      const s0 = getSetup(b.id);
+      const wait = allow(`ownerreset:${b.id}`, 5, 10 * 60_000);
+      const r = s0.phase !== "done" ? null : wait ? null : await ownerResetLink(b.id, appUrlOf(s0));
+      const flash = !r
+        ? { kind: "err" as const, text: wait ? `That was a lot of tries. Wait ${Math.ceil(wait / 60)} minutes and try again.` : "Your agency isn't finished yet." }
+        : r.ok
+          ? { kind: "ok" as const, text: `Here is your reset link. It works once and runs out in ${r.minutes} minutes. Your agency records this in its audit log.`, link: r.url }
+          : { kind: "err" as const, text: r.message };
+      console.log(`[owner-reset] buyer ${b.id}: ${r ? (r.ok ? "link issued" : r.reason) : "not allowed"}`);
+      return html(wizardPage(b, getSetup(b.id), m[1], sid, "done", flash));
+    }
     const act = actions[m[2]];
     if (!act) return html(notFoundPage(), 404);
     const before = getSetup(b.id).step;
@@ -327,7 +386,7 @@ async function handle(req: Request, srv: Bun.Server): Promise<Response> {
 
 const opts = {
   port: CONFIG.port,
-  maxRequestBodySize: 128 * 1024,
+  maxRequestBodySize: 3 * 1024 * 1024, // 128 KB is plenty for every route except /api/tickets (a screenshot of up to 2 MB); each route checks its own size
   development: false,
   idleTimeout: 60,
   fetch: handle,
@@ -343,6 +402,7 @@ if (CONFIG.extraListen) {
   Bun.serve({ ...opts, hostname: h, port: Number(p || CONFIG.port) });
 }
 startTicker();
+startAlerts();
 
 console.log(`Setup site for ${CONFIG.productName} (${CONFIG.sellerName}) on http://${server.hostname}:${server.port}${CONFIG.extraListen ? ` and ${CONFIG.extraListen}` : ""}  data: ${CONFIG.dataDir}`);
 if (ANY_MOCK) console.log(`TEST MODE: ${Object.entries({ PREVIEW_JUMP: CONFIG.previewJump, MOCK_RAILWAY: CONFIG.mockRailway, MOCK_DO: CONFIG.mockDO, MOCK_CF: CONFIG.mockCF, MOCK_RESEND: CONFIG.mockResend, MOCK_TELNYX: CONFIG.mockTelnyx, MOCK_OAUTH: CONFIG.mockOAuth }).filter(([, v]) => v).map(([k]) => k).join(" ")} (fake providers; nothing real is called)`);

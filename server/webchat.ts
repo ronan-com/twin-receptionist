@@ -8,6 +8,7 @@ import { ValidationError, buildInstructions, knowledgeFor, type KnowledgeEntry }
 import { enterOrg } from "./telnyx";
 import type { RouteArgs, ClientAccess } from "./routes/http";
 import type { Ctx } from "./accounts";
+import { readOnlyView } from "./supportChanges";
 
 // Website chat: a chatbot a business puts on its own website with a copy-paste snippet.
 //
@@ -690,7 +691,7 @@ export async function webchatAdmin(args: RouteArgs, deps: WebchatAdminDeps): Pro
   if (!found) return jsonBody({ error: "That business isn't shared with you." }, 404);
   const { client, orgId, access } = found;
   if (orgId !== args.orgId) enterOrg(orgId);
-  const canEdit = access !== "viewer" && !args.ctx.viewing;
+  const canEdit = access !== "viewer" && !readOnlyView(args.ctx);
   const base = deps.publicUrl() || args.appUrl;
 
   if (m[2] === "chats") {

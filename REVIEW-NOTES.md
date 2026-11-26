@@ -30,7 +30,7 @@ Published app bundles on the setup site: 1.0.0, 1.0.1, **1.0.2** (current). 1.0.
 - Logo and colour flow through to the installed app on first boot.
 - Resend DNS record names are fixed for subdomains (`fqdn()`).
 - Admin "Start a test run": a per-buyer demo flag. Pretend accounts, no provider calls, and it lands on a real branded dashboard on the test app.
-- Admin sync and View as: the buyer app sends a whitelisted heartbeat (counts and health only, no personal data). It's **on by default and can be switched off**. "View as" works only when the buyer turns on **Support access**, which is off by default, expires, and writes to the audit log. See `server/supportSync.ts`, `server/supportAccess.ts` and `download-site/sync.ts`.
+- Admin sync and View as: the buyer app sends a whitelisted heartbeat (counts and health only, no personal data). It's **on by default and can be switched off**. "View as" works only while **Support access** is on. It was off by default when this was written; since 27 Nov 2026 it is on for fresh installs (see "Approved by Jesse" below). It can expire, and it writes to the audit log. See `server/supportSync.ts`, `server/supportAccess.ts` and `download-site/sync.ts`.
 - `real-run/run.mjs`: drives a full real install. `--dry-run` runs against the mock providers, and all 18 steps pass.
 
 **App (agency dashboard)**
@@ -63,8 +63,25 @@ DOMAIN=setup.chloeeai.co BUNDLE=deploy/selfhost/out/selfhost-bundle.tgz VERSION=
 ```
 Then rsync the test dashboard to the ThinkCentre, and the buyer presses **Update now**.
 
+## Approved by Jesse (27 Nov 2026): support defaults
+Jesse, the owner, approved this product decision for fresh installs:
+- **Stats sharing is ON by default** (the whitelisted heartbeat). The owner can switch it off in Settings, Support.
+- **Support access is ON by default** on a fresh install. The setup site sets `SUPPORT_ACCESS_DEFAULT=on` at install only, never on an update, so older agencies keep what they chose. The owner can switch it off, and that ends any open support session at once.
+- **Support can make changes** ("Support can make changes" is ON unless the owner switches it off), limited by the deny-by-default matrix in `server/supportChanges.ts`. Support can never touch keys or connection secrets, billing, the owner account or team, deleting the agency, exports, or the owner's Support and Updates switches. Every change is written to the audit log, marked "By support".
+- The buyer-pack wording now says this plainly (`handoff-content/buyer-pack/buyer-email.txt` "Who owns what", `owner-quickstart.md`, `wording-changes.md`). Both defaults are on, either can be switched off, and while access is on support can see the dashboard (calls and messages included) and make changes, which can include buying a phone number on the buyer's Telnyx account.
+- Code defaults that match: `server/supportAccess.ts` (`accessDefaultOn`, `editAllowed`, `syncAllowed`), with tests in `server/ops.inner.ts` ("Support access on by default", "support sessions are allowed or blocked per the deny-by-default matrix").
+- Done since: the DigitalOcean install path also sets `SUPPORT_ACCESS_DEFAULT=on`. `ownership-checklist.md`, `welcome-email.md`, `landing-copy.md`, `wizard-copy.md` and the setup-site admin wording now match.
+
+## Auto-update when Railway refuses the project token (27 Nov 2026)
+Nobody has run the project-token calls against real Railway yet: `projectTokenCreate`, the `Project-Access-Token` header on `/up`, `variableCollectionUpsert` and `deployment(id)`. The app (`server/autoUpdate.ts`) now fails safe:
+- If Railway answers anything but success on the variable upsert or the upload, the running version stays, the version label is put back, and automatic updates **turn themselves off for that token**. They don't retry every hour. Settings shows "aren't available", and the setup site's admin shows "Auto-update unavailable" (the heartbeat's `updates.available` is false). It's recorded once as an incident and a problem.
+- If `deployment(id)` is refused three times in a row, the app stops watching and turns itself off. A new version that does start still reports itself at boot.
+- A network failure (Railway unreachable) is not a refusal, so the app tries again next hour.
+- The manual "Update your agency" on the setup link uses the buyer's account token, not this one, so it keeps working. Because the last result is "failed", it also mints a new project token, and a new token re-arms automatic updates. We store only a short SHA-256 tag of the token, never the token.
+- If `projectTokenCreate` fails at install, the setup site already installs without a token and the app reports "unavailable" (`download-site/setup.ts` `autoUpdateVars`).
+
 ## Things to review closely / known risks
-- **Ownership promise changed.** Stats sync is on by default (whitelisted, can be switched off), and support access is opt-in. Jesse needs to approve the buyer-pack wording.
+- **Ownership promise changed (approved, see above).** Stats sync and support access are both on by default and can be switched off. While access is on, support can make changes within the matrix.
 - **Railway upload** uses the CLI's undocumented `/up` endpoint. It's proven once on a real install (1.0.2). Research suggests moving to OAuth ("Login with Railway") plus a private image later; that's about a day of work.
 - **Telnyx detach** (`connection_id` cleared with `""` then null) hasn't been confirmed live.
 - **Inbound SMS isn't wired**, so reminder replies C/X do nothing yet.

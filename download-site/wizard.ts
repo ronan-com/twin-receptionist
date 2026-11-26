@@ -7,7 +7,9 @@ import { DEMO, demoSample, isDemo } from "./demo";
 import { esc } from "./pages";
 import { howTo } from "./content";
 import { chatBubble, chatHead } from "./chat";
-import { agencyUrl, canView, hostOf, locked, oauthRedirect, stepDone, updateInfo, webUrl, zoneOf } from "./setup";
+import { agencyUrl, canView, firstOpen, hostOf, locked, oauthRedirect, stepDone, updateInfo, webUrl, zoneOf } from "./setup";
+import { detailOf, hasAssist, helpedStep, stepRows, type AssistId } from "./assist";
+import { servingOwnHost } from "./ctx";
 import { DEFAULT_REGION, DEFAULT_SIZE } from "./providers";
 import { OPTIONAL_HUB, STEPS, csrfToken, isOptional, logRead, secretHint, type DnsRecord, type SetupData, type StepId } from "./store";
 
@@ -101,7 +103,9 @@ function nav(c: Ctx, right: string, opts: { back?: boolean } = {}) {
   const skip = CONFIG.previewJump && i < STEPS.length - 1 ? `<a class="btn g" href="${base(c)}?step=${STEPS[i + 1]}">Skip (preview)</a>` : "";
   return `<div class="nav">${back}<div class="right">${skip}${right}</div></div>`;
 }
-const P = (c: Ctx) => esc(c.s.brand?.productName || CONFIG.productName);
+/** The buyer's brand. Before they've named it, ours (on our address) or a plain "your agency" (on their own domain: nothing of ours shows there). */
+const NEUTRAL = () => (servingOwnHost() ? "your agency" : CONFIG.productName);
+const P = (c: Ctx) => esc(c.s.brand?.productName || NEUTRAL());
 
 // ======================= screens =======================
 function welcome(c: Ctx) {
@@ -416,7 +420,7 @@ function install(c: Ctx) {
     const rows: [string, string][] = [
       ["Brand", `${esc(s.brand?.productName || "")} · ${s.brand?.logo ? "logo added" : "no logo yet"}`], ["Dashboard", esc(host)], ["Server", `${esc(region)} · ${esc((sv.sizes?.find((z) => z.slug === sv.size)?.label.match(/(\d+) GB memory/) || [])[1] || "2")} GB · US$${sv.price}/mo`],
       ["Phones", phonesSummary(c)], ["Email from", esc(s.email?.from || "")],
-      ["DNS", s.domain?.mode === "cloudflare" ? "Handled by the wizard" : "You add one record"],
+      ["DNS", s.domain?.mode === "cloudflare" ? "Handled by the wizard" : s.domain?.mode === "godaddy" ? "Handled by the wizard (GoDaddy)" : "You add one record"],
     ];
     return `${head(c, "Ready to install", `We'll set up ${P(c)} on your new server. You can close the page while it runs.`)}
 <div class="summary">${rows.map(([k, v]) => `<div><span>${k}</span><b>${v}</b></div>`).join("")}</div>
@@ -539,9 +543,17 @@ function done(c: Ctx) {
   <div>${icon("check")}<span>Keep your ${s.email?.mode === "resend" ? "Resend key" : "email login"}: your server sends email with it.</span></div>
   <div>${icon("check")}<span>${s.sshKeyAdded ? `Log in to the server with your SSH key: <code>ssh root@${esc(s.ip || "")}</code>` : "Server login: DigitalOcean emailed you its root password, or use the droplet's Console."}</span></div>
 </div>
-${notice("info", "We've deleted every key you gave us. We have no login to your server or accounts. Your agency shares health and usage counts with us (never calls or customer details). That is on by default and you can switch it off in your dashboard, under Settings, then Support. Support access, which would let us sign in to help you, is off unless you turn it on there.")}
+${lockedOut(c)}
+${notice("info", `We've deleted every key you gave us${s.assist?.keepDns ? " except the DNS access noted above" : ""}. We have no login to your server or accounts. Your agency shares health and usage counts and a short, masked list of recent problems with us (never calls or customer details). Sharing and Support access (which lets us sign in and, unless you say no, fix things for you, but never see your keys, billing or owner account) are both on by default so we can help you fast. You can switch each one off in your dashboard, under Settings: Support. Automatic updates are not available on a DigitalOcean server yet.`)}
 <details class="log"><summary>Show details</summary><pre id="log" data-next="${next}">${esc(text.slice(-60000))}</pre></details>
 ${nav(c, `<a class="btn p" href="${esc(url)}" target="_blank" rel="noopener noreferrer">Open your dashboard ${icon("ext")}</a>`, { back: false })}`;
+}
+
+/** Done screen: for owners with no email set up (or who simply forgot). Asks their agency for a one-time reset link; the answer comes back on screen only. */
+function lockedOut(c: Ctx): string {
+  return `<details class="lockedout"><summary>Locked out? Reset your owner password</summary>
+<p class="hint">If you can't sign in and the reset email never arrives (email may not be set up), press the button. Your agency gives us a one-time link to choose a new password for the owner account (<b>${esc(c.s.brand?.ownerEmail || "your owner email")}</b>). It works once and runs out in 15 minutes. Nobody else's password can be reset this way, and your agency records it in its audit log.</p>
+${mini(c, "owner-reset", `Reset your owner password ${icon("right")}`, "btn o", " data-owner-reset")}</details>`;
 }
 
 /** Done screen: what's still optional, with how to add each one later (their same setup link keeps showing this). */
@@ -551,7 +563,7 @@ function laterCards(c: Ctx, url: string): string {
   const cards: string[] = [];
   const late = (ico: string, title: string, text: string, steps: string[]) =>
     `<div class="xcard late"><div class="xh">${icon(ico)}<b>${title}</b><span class="tag">Optional</span></div><p>${text}</p><details><summary>How to add it later</summary><ol>${steps.map((x) => `<li>${x}</li>`).join("")}</ol></details></div>`;
-  if (!have.email) cards.push(late("mail", "Your own email", "Until then, invite links show on screen for you to copy and send yourself. Forgot your own password? The reset link is printed in the app's Logs in Railway.", [
+  if (!have.email) cards.push(late("mail", "Your own email", "Until then, invite links show on screen for you to copy and send yourself. Forgot your own password? Use <b>Locked out? Reset your owner password</b> on this page.", [
     "Make a Resend account and a domain you own (Resend sends from your domain).",
     `Open your dashboard, then <b>Settings</b>, then <b>Email and calendars</b>.`,
     "Paste your mail server address, like <code>smtps://resend:YOUR_RESEND_KEY@smtp.resend.com:465</code>, and the address emails come from. Press <b>Send a test</b>.",
@@ -634,6 +646,15 @@ ${log}
 ${nav(c, "", { back: false })}`;
 }
 
+/** The "Before you go" line about the DNS login used for the domain. */
+function dnsCheck(s: SetupData): string {
+  const m = s.domain?.mode;
+  if (m !== "cloudflare" && m !== "godaddy") return "";
+  const [name, href] = m === "godaddy" ? ["GoDaddy API key", "https://developer.godaddy.com/keys"] : ["Cloudflare token", "https://dash.cloudflare.com/profile/api-tokens"];
+  if (s.assist?.keepDns) return `<div>${icon("check")}<span>Your provider kept the ${m === "godaddy" ? "GoDaddy" : "Cloudflare"} access you gave them, only for changes to your domain's records that you ask for. You can delete that ${name} any time. <a href="${href}" target="_blank" rel="noopener noreferrer">Open ${m === "godaddy" ? "GoDaddy" : "Cloudflare"}</a></span></div>`;
+  return `<div>${icon("check")}<span>Delete your ${name}. <a href="${href}" target="_blank" rel="noopener noreferrer">Open ${m === "godaddy" ? "GoDaddy" : "Cloudflare"}</a></span></div>`;
+}
+
 function doneRailway(c: Ctx) {
   if (c.s.update && c.s.update.phase !== "done") return updateScreen(c);
   if (isDemo(c.b)) {
@@ -658,12 +679,13 @@ ${updateBanner(c)}
 ${pending && s.finishRecords?.length ? `<div class="recbox"><b>Records for ${esc(hostOf(s))}</b>${recordTable(s.finishRecords, true)}</div>` : ""}
 <div class="checks"><b>Before you go</b>
   <div>${icon("check")}<span>Delete your Railway token. <a href="https://railway.com/account/tokens" target="_blank" rel="noopener noreferrer">Open Railway</a></span></div>
-  ${s.domain?.mode === "cloudflare" ? `<div>${icon("check")}<span>Delete your Cloudflare token. <a href="https://dash.cloudflare.com/profile/api-tokens" target="_blank" rel="noopener noreferrer">Open Cloudflare</a></span></div>` : ""}
+  ${dnsCheck(s)}
   ${have.email ? `<div>${icon("check")}<span>${s.email?.mode === "resend" ? "Keep your Resend account: your agency sends email through it with its own send-only key." : "Keep your email login: your agency sends email with it."}</span></div>` : ""}
   <div>${icon("check")}<span>Turn on backups for the Postgres volume in Railway (its Backups tab).</span></div>
 </div>
+${lockedOut(c)}
 ${laterCards(c, shown)}
-${notice("info", "We've deleted every key you gave us. We have no login to your Railway project or accounts. Your agency shares health and usage counts with us (never calls or customer details). That is on by default and you can switch it off in your dashboard, under Settings, then Support. Support access, which would let us sign in to help you, is off unless you turn it on there.")}
+${notice("info", `We've deleted every key you gave us${s.assist?.keepDns ? " except the DNS access noted above" : ""}. We have no login to your Railway project or accounts. Your agency shares health and usage counts and a short, masked list of recent problems with us (never calls or customer details), and updates itself overnight. Sharing, Support access (which lets us sign in and, unless you say no, fix things for you, but never see your keys, billing or owner account) and automatic updates are all on by default so we can help you fast. You can switch each one off in your dashboard, under Settings: Support and Updates.`)}
 <details class="log"><summary>Show details</summary><pre id="log" data-next="${next}">${esc(text.slice(-60000))}</pre></details>
 ${nav(c, `<a class="btn p" href="${esc(shown)}" target="_blank" rel="noopener noreferrer">Open your dashboard ${icon("ext")}</a>`, { back: false })}`;
 }
@@ -691,7 +713,8 @@ function rail(c: Ctx) {
     const m = META[id];
     const isDone = stepDone(c.b, c.s, id) && id !== c.view && id !== "done";
     const can = canView(c.b, c.s, id) && id !== c.view && !(c.s.phase === "done" && id !== "done");
-    const inner = `<b>${isDone ? icon("check") : i + 1}</b><span><span class="t">${m.title}</span><span class="s">${m.short}</span></span>`;
+    const by = isDone && helpedStep(c.s, id) ? "Done by your provider" : m.short;
+    const inner = `<b>${isDone ? icon("check") : i + 1}</b><span><span class="t">${m.title}</span><span class="s">${by}</span></span>`;
     return `<li class="${id === c.view ? "on" : isDone ? "done" : ""}">${can ? `<a href="/setup/${esc(c.code)}?step=${id}">${inner}</a>` : `<span>${inner}</span>`}</li>`;
   }).join("")}</ol></aside>`;
 }
@@ -703,9 +726,32 @@ const withFlash = (html: string, fl: string) => {
   return at < 0 ? fl + html : html.slice(0, at) + fl + html.slice(at);
 };
 
+/** A step our admin filled in for them: what was set, a way to change it, and on to what's left. */
+function helped(c: Ctx): string {
+  const id = c.view as AssistId;
+  const next = firstOpen(c.b, c.s);
+  const who = c.s.assist?.steps?.[id];
+  const change = locked(c.s) ? "" : mini(c, "assist-release", "Change", "btn o", "", `<input type="hidden" name="step" value="${esc(id)}">`);
+  return `${head(c, `${META[c.view].title}: set up by your provider`, "Your provider already did this step for you, so there's nothing to do here.")}
+<div class="summary"><div><span>Set up</span><b>${esc(detailOf(c.b, c.s, id)) || "Done"}</b></div>${who ? `<div><span>When</span><b>${esc(who.at.slice(0, 10))}</b></div>` : ""}</div>
+${notice("info", "Your keys for this step were checked and stored the same way yours would be, and they're deleted once your install is done.")}
+${nav(c, `${change}<a class="btn p" href="${base(c)}?step=${next}">${next === "done" ? "See your agency" : "Continue"} ${icon("right")}</a>`)}`;
+}
+
+/** At the top of every step: what your provider did for you, and what's left. */
+function assistNote(c: Ctx): string {
+  if (!hasAssist(c.s)) return "";
+  const rows = stepRows(c.b, c.s);
+  const mine = rows.filter((r) => r.by === "you").map((r) => r.title);
+  if (c.s.phase === "done") return notice("info", "Your provider helped set this up.");
+  const left = rows.filter((r) => !r.optional && !r.done).map((r) => r.title);
+  return notice("info", `<b>Your provider helped set this up.</b> Done for you: ${esc(mine.join(", "))}. ${left.length ? `Left for you: ${esc(left.join(", "))}.` : "Nothing is left for you: you can install now."}`);
+}
+
 // A step opened out of order on a test site may be missing what earlier steps fill in.
 function screenOf(c: Ctx): string {
   try {
+    if (c.s.phase !== "done" && c.s.phase === "idle" && helpedStep(c.s, c.view) && !c.flash?.form) return helped(c);
     return demoFill(c, SCREENS[c.view](c));
   } catch {
     return head(c, META[c.view].title, "This screen needs the earlier steps filled in first.") + nav(c, "");
@@ -720,7 +766,10 @@ export function wizardPage(b: Buyer, s: SetupData, code: string, sid: string, vi
   const lockNote = locked(s) && s.phase !== "done" && !["install", "done", "welcome"].includes(view)
     ? notice("info", `Your server is already built with these settings. <a href="/setup/${esc(code)}?step=install">Go to Install</a>`) : "";
   const fl = flash ? notice(flash.kind === "ok" ? "ok" : flash.kind === "err" ? "err" : "info", esc(flash.text)).replace('class="notice ', 'class="notice flash ') : "";
-  const title = `${META[view].title} · Set up ${s.brand?.productName || CONFIG.productName}`;
+  // A one-time link (owner password reset): a big button, shown once and never stored.
+  const flLink = flash?.link && /^https?:\/\/[^\s"'<>]+$/.test(flash.link)
+    ? `<p class="resetlink"><a class="btn p big" href="${esc(flash.link)}" target="_blank" rel="noopener noreferrer" data-owner-reset-link>Set a new password ${icon("ext")}</a></p>` : "";
+  const title = `${META[view].title} · Set up ${s.brand?.productName || NEUTRAL()}`;
   return `<!doctype html>
 <html lang="en-AU">
 <head>
@@ -743,7 +792,7 @@ ${live ? `<noscript><meta http-equiv="refresh" content="8"></noscript>` : ""}
 ${rail(c)}
 <main>
   <div class="phonebar"><div class="lab"><span>Step ${i + 1} of ${mainSteps.length}</span><b>${META[view].title}</b></div><progress class="bar" max="${mainSteps.length}" value="${i + 1}">${i + 1} of ${mainSteps.length}</progress></div>
-  <section class="card step-${view}">${b.demo === 1 ? notice("info", "<b>Test run.</b> Every account here is pretend: press Continue on each step. Nothing real is connected.") : ""}${lockNote}${withFlash(screenOf(c), fl)}</section>
+  <section class="card step-${view}">${b.demo === 1 ? notice("info", "<b>Test run.</b> Every account here is pretend: press Continue on each step. Nothing real is connected.") : ""}${assistNote(c)}${lockNote}${(flLink ? fl + flLink + screenOf(c) : withFlash(screenOf(c), fl))}</section>
   <p class="foot">${icon("shield")} Your keys are stored encrypted and deleted once your install is done.</p>
 </main>
 </div>

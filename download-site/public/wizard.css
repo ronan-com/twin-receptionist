@@ -325,3 +325,23 @@ input[type=color] { display: block; width: 64px; height: 40px; padding: 2px; bor
 .whatsnew ul { margin: 4px 0 8px 18px; padding: 0; }
 .whatsnew .nv > span { display: block; font-size: 12px; color: var(--muted); margin-top: 6px; }
 .verline { margin: 12px 0 0; }
+
+.lockedout { margin: 18px 0; border: 1px solid var(--line, #e3e6ee); border-radius: 12px; padding: 12px 16px; background: #fff; }
+.lockedout summary { cursor: pointer; font-weight: 600; }
+.lockedout form { margin-top: 10px; }
+.resetlink { margin: 14px 0 4px; }
+.resetlink .btn.big { width: 100%; min-height: 52px; font-size: 16px; justify-content: center; }
+.loglines { white-space: pre-wrap; word-break: break-word; font-size: 12px; line-height: 1.45; max-height: 70vh; overflow: auto; background: #0f1720; color: #d6e2f0; padding: 12px; border-radius: 8px; }
+.adm .top nav a { margin-right: 14px; font-size: 14px; }
+.hint.bad { color: var(--red-ink); }
+
+/* Admin: "Set up for them" */
+.assist h3 { margin: 26px 0 6px; }
+.assist h4 { margin: 12px 0 4px; font-size: 14px; }
+.assist .assistbox { margin-top: 10px; border: 1px solid var(--line); border-radius: 12px; padding: 4px 14px 10px; }
+.assist .assistbox > summary { padding: 8px 0; font-weight: 600; color: var(--ink, inherit); }
+.assist form.sf { margin: 8px 0; }
+.assist form.sf + form.sf { border-top: 1px solid var(--line); padding-top: 10px; }
+.assist .audit { list-style: none; padding: 0; margin: 8px 0 0; font-size: 13px; }
+.assist .audit li { padding: 4px 0; border-bottom: 1px solid var(--line); overflow-wrap: anywhere; }
+.assist select { max-width: 100%; }

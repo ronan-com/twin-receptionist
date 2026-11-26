@@ -108,13 +108,10 @@ function ClientDetailPage() {
   });
   const resolve = useMutation({ mutationFn: resolveIncident, onSuccess: refresh, onError: (e: Error) => toast.error(e.message) });
   const viewAs = useMutation({
-    mutationFn: async (r: CompanyReceptionist) => {
-      await platformApi.viewAs(q.data!.company.org_id, r.id);
-      await qc.invalidateQueries();
-      await ws.refresh();
-      ws.setBusinessId(r.id);
-    },
-    onSuccess: () => void navigate({ to: "/app" }),
+    mutationFn: (r: CompanyReceptionist) => platformApi.viewAs(q.data!.company.org_id, r.id),
+    // A fresh page load: the session is now the client's view, so this console page's own
+    // requests (which would be refused) must not run again.
+    onSuccess: () => window.location.assign("/app"),
     onError: (e: Error) => toast.error(e.message),
   });
 

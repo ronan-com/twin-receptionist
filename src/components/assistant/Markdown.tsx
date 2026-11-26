@@ -137,7 +137,9 @@ export function parseBlocks(src: string): Block[] {
           items.push(m[3]);
           i++;
         } else if (/^\s{2,}\S/.test(lines[i]) && items.length) {
-          items[items.length - 1] += " " + lines[i].trim(); // a wrapped line
+          const sub = /^\s{2,}[-*+]\s+(.*)$/.exec(lines[i]);
+          // an indented bullet under an item stays on its own line; anything else is a wrapped line
+          items[items.length - 1] += sub ? "\n\u2022 " + sub[1] : " " + lines[i].trim();
           i++;
         } else break;
       }
@@ -193,7 +195,7 @@ export const Markdown = memo(function Markdown({ text, onLink, className }: { te
             return (
               <ul key={i} className="list-disc space-y-1 pl-5 marker:text-ink-muted">
                 {b.items.map((it, j) => (
-                  <li key={j}>{inline(it, onLink, `u${i}-${j}`)}</li>
+                  <li key={j}><Lines text={it} onLink={onLink} /></li>
                 ))}
               </ul>
             );
@@ -201,7 +203,7 @@ export const Markdown = memo(function Markdown({ text, onLink, className }: { te
             return (
               <ol key={i} className="list-decimal space-y-1 pl-5 marker:font-medium marker:text-ink-muted">
                 {b.items.map((it, j) => (
-                  <li key={j}>{inline(it, onLink, `o${i}-${j}`)}</li>
+                  <li key={j}><Lines text={it} onLink={onLink} /></li>
                 ))}
               </ol>
             );

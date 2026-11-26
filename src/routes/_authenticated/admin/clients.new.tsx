@@ -423,7 +423,7 @@ function BusinessStep({ value, onChange }: StepProps) {
         <p className="text-[12.5px] text-ink-muted">Who this receptionist answers the phone for.</p>
       </div>
       <Field label="Business name" htmlFor="w-name" required>
-        <Input id="w-name" maxLength={80} placeholder="e.g. Bright Smile Dental" value={value.businessName} onChange={(e) => onChange({ businessName: e.target.value })} autoFocus />
+        <Input id="w-name" maxLength={80} placeholder="e.g. Bright Smile Dental" value={value.businessName} onChange={(e) => onChange({ businessName: e.target.value })} />
       </Field>
       <Field label="How do you say the business name?" htmlFor="w-sayname" hint="Optional. Only if it isn't obvious, written the way it sounds.">
         <Input id="w-sayname" maxLength={80} placeholder="e.g. Kee-OR-a" value={value.sayName ?? ""} onChange={(e) => onChange({ sayName: e.target.value })} />

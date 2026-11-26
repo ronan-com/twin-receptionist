@@ -186,6 +186,9 @@ body.howopen { overflow: hidden; }
 .records th, .records td { text-align: left; padding: 9px 6px; border-bottom: 1px solid var(--line); vertical-align: top; }
 .records th { font-size: 11.5px; color: var(--muted); font-weight: 600; }
 .records td.v code { word-break: break-all; }
+.records td a { overflow-wrap: anywhere; }
+.records.buyers { table-layout: auto; }
+.records.buyers td:nth-child(4) { max-width: 220px; overflow-wrap: anywhere; }
 .st { font-weight: 600; font-size: 11.5px; white-space: nowrap; display: inline-flex; gap: 4px; align-items: center; }
 .st.w { color: #b45309; }
 .st.f { color: var(--green); }

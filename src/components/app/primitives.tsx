@@ -81,12 +81,12 @@ export function Panel({
   return (
     <section className={cn("panel flex flex-col", className)}>
       {title || actions ? (
-        <header className="flex items-start justify-between gap-3 border-b border-hairline px-4 py-3">
+        <header className="flex flex-col gap-2 border-b border-hairline px-4 py-3 sm:flex-row sm:items-start sm:justify-between sm:gap-3">
           <div className="min-w-0">
             {title ? <h2 className="text-[14px] font-semibold text-ink">{title}</h2> : null}
             {description ? <p className="mt-0.5 text-[12px] text-ink-muted">{description}</p> : null}
           </div>
-          {actions ? <div className="flex shrink-0 items-center gap-2">{actions}</div> : null}
+          {actions ? <div className="flex min-w-0 flex-wrap items-center gap-2 sm:shrink-0">{actions}</div> : null}
         </header>
       ) : null}
       <div className={cn("min-w-0 flex-1", padded && "p-4", bodyClassName)}>{children}</div>

@@ -1,4 +1,4 @@
-import { createFileRoute, Outlet, redirect } from "@tanstack/react-router";
+import { createFileRoute, Link, Outlet, redirect } from "@tanstack/react-router";
 import { ClientShell } from "@/components/app/ClientShell";
 import { Notice, ErrorState } from "@/components/app/primitives";
 import { SetupPrompt } from "@/components/app/SetupPrompt";
@@ -11,10 +11,14 @@ import { OTHER_BRAND, PRODUCT } from "@/lib/app/product";
 
 // The business workspace. Business users (managers and viewers) live here; the
 // platform team gets here only while viewing as a business. Agency staff and the
-// platform team otherwise belong in the console.
+// platform team otherwise belong in the console, except on the receptionist's own
+// setup pages, which "Open and edit" on a client's page opens for them.
+const STAFF_EDIT_PAGES = ["/app/receptionist", "/app/knowledge", "/app/phone-numbers", "/app/automations", "/app/analytics", "/app/team", "/app/integrations"];
 export const Route = createFileRoute("/_authenticated/app")({
-  beforeLoad: ({ context }) => {
-    if (context.session.console) throw redirect({ to: "/admin", replace: true });
+  beforeLoad: ({ context, location }) => {
+    if (context.session.console && !STAFF_EDIT_PAGES.some((p) => location.pathname === p || location.pathname.startsWith(`${p}/`))) {
+      throw redirect({ to: "/admin", replace: true });
+    }
   },
   head: () => ({
     meta: [{ title: OTHER_BRAND ? PRODUCT : "Your receptionist" }, { name: "robots", content: "noindex" }],
@@ -74,6 +78,20 @@ function ClientAppLayout() {
         <div className="border-b border-[#ffe1b0] bg-[#fff9ee] px-4 py-2 text-[12.5px] text-[#8a4b00]">
           <div className="mx-auto max-w-[1400px]">
             <span className="font-semibold">Test lab.</span> {ws.business.name} is a demo receptionist with sample calls. Nothing here reaches a real phone.
+          </div>
+        </div>
+      );
+    }
+    if (ws.console) {
+      return (
+        <div className="border-b border-[#dcdaff] bg-[#f4f3ff] px-4 py-2 text-[12.5px] text-[#4338ca]">
+          <div className="mx-auto flex max-w-[1400px] flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <span>
+              Editing <span className="font-medium">{ws.business.name}</span> for your agency.
+            </span>
+            <Link to="/admin" className="self-start font-medium underline-offset-2 hover:underline sm:self-auto">
+              Back to your dashboard
+            </Link>
           </div>
         </div>
       );

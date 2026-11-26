@@ -99,7 +99,7 @@ export function CallSheet({ callId, onClose }: { callId: string | null; onClose:
               <div className="flex flex-wrap items-center gap-2">
                 <CallStatusBadge status={c.status} />
                 <OutcomeBadge outcome={c.outcome} />
-                {c.channel && c.channel !== "call" ? <StatusBadge tone="info">Text</StatusBadge> : null}
+                {c.channel && c.channel !== "call" ? <StatusBadge tone="info">{c.channel === "web" ? "Test call" : "Text"}</StatusBadge> : null}
               </div>
               {c.status === "failed" ? (
                 <div className="rounded-[6px] border border-[#ffd0d0] bg-[#ffecec] px-3 py-2 text-[12.5px] text-[#a41d1d]">{c.error_message ?? "The call failed."}</div>

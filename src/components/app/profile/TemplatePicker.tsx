@@ -14,15 +14,16 @@ import type { NicheTemplate } from "@/lib/profile";
 export function TemplatePicker({ templateId, onPick, onBlank }: { templateId: string | undefined; onPick: (t: NicheTemplate) => void; onBlank: () => void }) {
   const [query, setQuery] = useState("");
   const [open, setOpen] = useState(false);
+  const [group, setGroup] = useState<string | null>(null);
   const chosen = templateById(templateId);
   const q = query.trim().toLowerCase();
   const groups = useMemo(
     () =>
-      TEMPLATE_GROUPS.map((g) => ({
+      TEMPLATE_GROUPS.filter((g) => !group || g === group).map((g) => ({
         group: g,
         items: TEMPLATES.filter((t) => t.group === g && (!q || [t.label, t.group, t.about, ...t.services].some((x) => x.toLowerCase().includes(q)))),
       })).filter((g) => g.items.length),
-    [q],
+    [q, group],
   );
 
   if (TEMPLATES.length === 0) return null;
@@ -54,6 +55,20 @@ export function TemplatePicker({ templateId, onPick, onBlank }: { templateId: st
       <div className="relative">
         <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-ink-muted" />
         <Input className="pl-8" placeholder={`Search ${TEMPLATES.length} templates, e.g. dentist, plumber, café`} value={query} onChange={(e) => setQuery(e.target.value)} aria-label="Search templates" />
+      </div>
+      <div className="flex flex-wrap gap-1.5" data-list="template-groups">
+        {[null, ...TEMPLATE_GROUPS].map((g) => (
+          <button
+            key={g ?? "all"}
+            type="button"
+            aria-pressed={group === g}
+            data-group={g ?? "all"}
+            onClick={() => setGroup(g)}
+            className={cn("rounded-full border px-2.5 py-1 text-[11.5px] transition-colors", group === g ? "border-indigo bg-[#efeeff] font-medium text-indigo" : "border-hairline bg-white text-ink-muted hover:bg-canvas-2")}
+          >
+            {g ?? "All"}
+          </button>
+        ))}
       </div>
       <div className="max-h-[340px] space-y-3 overflow-y-auto rounded-[6px] border border-hairline p-2.5" data-list="templates">
         {groups.length === 0 ? <p className="px-1 py-2 text-[12.5px] text-ink-muted">No template matches "{query}". Pick a business type below, or start blank.</p> : null}

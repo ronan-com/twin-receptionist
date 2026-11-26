@@ -211,7 +211,7 @@ function listPage(sid: string, email: string, q: string, filter: string, flash =
   <select name="kind" aria-label="Type"><option value="">Real and test</option><option value="real"${kind === "real" ? " selected" : ""}>Real buyers only (${all.length - demoCount})</option><option value="demo"${kind === "demo" ? " selected" : ""}>Test runs only (${demoCount})</option></select>
   <button class="btn o" type="submit">Show</button>
 </form>
-${shown.length ? `<table class="records buyers"><thead><tr><th>Buyer</th><th>Brand</th><th>Status</th><th>Live at</th><th>Sync</th><th>Version</th><th>Calls 7d</th><th>Receptionists</th><th>Last activity</th></tr></thead><tbody>${tr}</tbody></table>` : `<p class="hint">No buyers match.</p>`}
+${shown.length ? `<div style="overflow-x:auto"><table class="records buyers"><thead><tr><th>Buyer</th><th>Brand</th><th>Status</th><th>Live at</th><th>Sync</th><th>Version</th><th>Calls 7d</th><th>Receptionists</th><th>Last activity</th></tr></thead><tbody>${tr}</tbody></table></div>` : `<p class="hint">No buyers match.</p>`}
 </section>
 <section class="card">
 <h2>Add a buyer</h2>

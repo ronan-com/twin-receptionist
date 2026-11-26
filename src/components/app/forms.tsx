@@ -20,7 +20,7 @@ export function Field({
   required?: boolean;
 }) {
   return (
-    <div className={cn("grid gap-1.5", className)}>
+    <div className={cn("grid content-start gap-1.5", className)}>
       <label htmlFor={htmlFor} className="text-[12.5px] font-medium text-ink">
         {label}
         {required ? <span className="ml-0.5 text-coral">*</span> : null}

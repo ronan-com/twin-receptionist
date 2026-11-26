@@ -1,6 +1,6 @@
-import { useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { Link, useRouterState } from "@tanstack/react-router";
-import { Bell, HelpCircle, Menu } from "lucide-react";
+import { Bell, Compass, HelpCircle, Menu, Rocket } from "lucide-react";
 import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
@@ -9,6 +9,8 @@ import { CLIENT_SUBNAV } from "@/lib/app/constants";
 import { BrandMark } from "./BrandMark";
 import { AgencyMark } from "./AgencyMark";
 import { UserMenu } from "./UserMenu";
+import { useGetStarted } from "@/components/onboarding/GetStarted";
+import { TOUR_NAV_EVENT } from "@/components/onboarding/Tour";
 
 export interface AppShellProps {
   nav: NavItem[];
@@ -85,6 +87,7 @@ function NavList({ nav, notifications = [], onNavigate }: { nav: NavItem[]; noti
             key={item.to}
             to={item.to}
             onClick={onNavigate}
+            data-tour={`nav:${item.to}`}
             aria-current={active ? "page" : undefined}
             className={cn(
               "group relative flex h-[34px] items-center gap-2.5 rounded-[6px] px-2.5 text-[13px] font-medium outline-none transition-colors",
@@ -132,6 +135,15 @@ function SidebarBody({ nav, variant, brandTo, sidebarHeader, notifications, onNa
 
 export function AppShell({ nav, variant, brandTo, sidebarHeader, topbarRight, banner, notifications = [], children }: AppShellProps) {
   const [open, setOpen] = useState(false);
+  // The guided tour opens the phone menu so it can point at the items inside.
+  const [tourNav, setTourNav] = useState(false);
+  const [helpOpen, setHelpOpen] = useState(false);
+  const getStarted = useGetStarted();
+  useEffect(() => {
+    const on = (e: Event) => setTourNav(Boolean((e as CustomEvent<{ open: boolean }>).detail?.open));
+    window.addEventListener(TOUR_NAV_EVENT, on);
+    return () => window.removeEventListener(TOUR_NAV_EVENT, on);
+  }, []);
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const current = nav.find((n) => isNavActive(n, pathname));
   const needsAttention = notifications.filter((n) => n.tone === "warning" || n.tone === "danger").length;
@@ -144,8 +156,8 @@ export function AppShell({ nav, variant, brandTo, sidebarHeader, topbarRight, ba
       </aside>
 
       {/* Mobile sheet */}
-      <Sheet open={open} onOpenChange={setOpen}>
-        <SheetContent side="left" className="w-[280px] p-0 [&>button]:top-4">
+      <Sheet open={open || tourNav} onOpenChange={(o) => { if (!tourNav) setOpen(o); }} modal={!tourNav}>
+        <SheetContent side="left" className="w-[280px] p-0 [&>button]:top-4" onInteractOutside={(e) => { if (tourNav) e.preventDefault(); }}>
           <SheetTitle className="sr-only">Navigation</SheetTitle>
           <SidebarBody nav={nav} variant={variant} brandTo={brandTo} sidebarHeader={sidebarHeader} notifications={notifications} onNavigate={() => setOpen(false)} />
         </SheetContent>
@@ -206,13 +218,33 @@ export function AppShell({ nav, variant, brandTo, sidebarHeader, topbarRight, ba
                 )}
               </PopoverContent>
             </Popover>
-            <Popover>
+            <Popover open={helpOpen} onOpenChange={setHelpOpen}>
               <PopoverTrigger asChild>
-                <button type="button" className="inline-flex h-9 w-9 items-center justify-center rounded-[5px] text-ink-muted hover:bg-canvas-2 hover:text-ink" aria-label="Help">
+                <button type="button" data-tour="help" className="inline-flex h-9 w-9 items-center justify-center rounded-[5px] text-ink-muted hover:bg-canvas-2 hover:text-ink" aria-label="Help">
                   <HelpCircle className="h-[17px] w-[17px]" strokeWidth={1.8} />
                 </button>
               </PopoverTrigger>
               <PopoverContent align="end" className="w-72 text-[12.5px]">
+                {getStarted ? (
+                  <div className="mb-3 space-y-1 border-b border-hairline pb-3">
+                    <button
+                      type="button"
+                      data-action="get-started"
+                      onClick={() => { setHelpOpen(false); getStarted.openWelcome(); }}
+                      className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left font-medium text-ink hover:bg-canvas-2"
+                    >
+                      <Rocket className="h-4 w-4 text-indigo" /> Get started
+                    </button>
+                    <button
+                      type="button"
+                      data-action="take-tour-menu"
+                      onClick={() => { setHelpOpen(false); getStarted.startTour(); }}
+                      className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left font-medium text-ink hover:bg-canvas-2"
+                    >
+                      <Compass className="h-4 w-4 text-indigo" /> Take the tour
+                    </button>
+                  </div>
+                ) : null}
                 <div className="font-semibold text-ink">Need a hand?</div>
                 <p className="mt-1 text-ink-muted">
                   Email <a className="text-indigo hover:underline" href="mailto:support@answeredai.co">support@answeredai.co</a> and a human will reply within one business day.

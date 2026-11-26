@@ -500,3 +500,32 @@
     animation: none !important;
   }
 }
+
+/* Get started: guided tour and animated how-to guides (src/components/onboarding) */
+@keyframes gsFade { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+@keyframes gsPop { 0% { opacity: 0; transform: scale(0.6); } 70% { transform: scale(1.08); } 100% { opacity: 1; transform: scale(1); } }
+@keyframes gsFill { from { width: 0; } to { width: 100%; } }
+@keyframes gsClick { 0%, 55% { opacity: 0; transform: scale(0.4); } 65% { opacity: 1; } 100% { opacity: 0; transform: scale(2.2); } }
+@keyframes gsRing { 0% { opacity: 0.7; transform: scale(0.8); } 100% { opacity: 0; transform: scale(1.9); } }
+@keyframes gsWave { 0%, 100% { transform: scaleY(0.45); } 50% { transform: scaleY(1.15); } }
+@keyframes gsPress { 0%, 60% { transform: scale(1); } 70% { transform: scale(0.94); } 85%, 100% { transform: scale(1); } }
+@keyframes gsType { from { clip-path: inset(0 100% 0 0); } to { clip-path: inset(0 0 0 0); } }
+@keyframes gsPick { 0%, 55% { box-shadow: none; } 100% { box-shadow: 0 0 0 3px color-mix(in srgb, var(--indigo) 22%, transparent); } }
+@keyframes gsPulse { 0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--indigo) 45%, transparent); } 50% { box-shadow: 0 0 0 6px transparent; } }
+.gs-scene { animation: gsFade 0.35s ease-out both; }
+.gs-fade { animation: gsFade 0.4s ease-out both; }
+.gs-pop { animation: gsPop 0.5s cubic-bezier(0.2, 0.9, 0.3, 1.2) 0.5s both; }
+.gs-fill { animation: gsFill linear forwards; }
+.gs-click { animation: gsClick 1.4s ease-out 1s both; }
+.gs-ring { animation: gsRing 1.6s ease-out infinite; }
+.gs-wave { animation: gsWave 0.9s ease-in-out infinite; }
+.gs-press { animation: gsPress 1.4s ease-out 1s both; }
+.gs-type { animation: gsType 0.8s steps(18, end) 0.2s both; }
+.gs-pick { animation: gsPick 1.4s ease-out both; }
+.gs-cursor { transition: left 0.9s cubic-bezier(0.4, 0, 0.2, 1), top 0.9s cubic-bezier(0.4, 0, 0.2, 1); }
+.gs-spot { transition: top 0.28s ease, left 0.28s ease, width 0.28s ease, height 0.28s ease; }
+.gs-spot-ring { animation: gsPulse 2s ease-in-out infinite; }
+@media (prefers-reduced-motion: reduce) {
+  .gs-scene, .gs-fade, .gs-pop, .gs-click, .gs-ring, .gs-wave, .gs-press, .gs-type, .gs-pick, .gs-fill, .gs-cursor, .gs-spot, .gs-spot-ring { animation: none !important; transition: none !important; }
+  .gs-click { opacity: 0; }
+}

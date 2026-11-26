@@ -80,7 +80,7 @@ export function siteUrlWarnings(): string[] {
  * (*.trycloudflare.com) and TEST_SITE=1 are the only exceptions: those are test sites.
  */
 export function productionGuard(): string | null {
-  const flags = ["MOCK_DO", "MOCK_RAILWAY", "MOCK_CF", "MOCK_RESEND", "MOCK_TELNYX", "MOCK_OAUTH", "PREVIEW_JUMP", "DO_API_BASE", "CF_API_BASE", "RESEND_API_BASE", "RAILWAY_API_BASE"]
+  const flags = ["MOCK_DO", "MOCK_RAILWAY", "MOCK_CF", "MOCK_RESEND", "MOCK_TELNYX", "MOCK_OAUTH", "PREVIEW_JUMP", "DO_API_BASE", "CF_API_BASE", "RESEND_API_BASE", "RAILWAY_API_BASE", "GODADDY_API_BASE"]
     .filter((k) => (process.env[k] ?? "").trim() && (process.env[k] ?? "").trim() !== "0");
   if (!flags.length) return null;
   let u: URL;

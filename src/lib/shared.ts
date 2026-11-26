@@ -842,6 +842,8 @@ export type SupportSettings = {
 export type UpdatesStatus = {
   /** this copy has its own Railway project token, so it can update itself */
   available: boolean;
+  /** why it isn't available: "no-token", or what Railway said when it refused the project token */
+  unavailableReason?: string;
   enabled: boolean;
   mode: "overnight" | "asap";
   version: string;

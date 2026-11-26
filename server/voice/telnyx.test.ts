@@ -1,7 +1,14 @@
 // The Telnyx engine sends what server/index.ts used to send itself: nothing changed by moving it.
 //   DATABASE_URL=postgres://unused@localhost/unused bun test server/voice/telnyx.test.ts
-import { expect, mock, test } from "bun:test";
+import { afterAll, expect, mock, test } from "bun:test";
 import { blankSettings, type Business } from "../../src/lib/shared";
+
+// bun's mock.module is process-wide: put the real modules back so later test files don't get these.
+const real = { telnyx: { ...(await import("../telnyx")) }, db: { ...(await import("../db")) } };
+afterAll(() => {
+  mock.module("../telnyx", () => real.telnyx);
+  mock.module("../db", () => real.db);
+});
 
 const calls: { method: string; path: string; body?: any }[] = [];
 

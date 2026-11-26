@@ -1,8 +1,17 @@
 // applyAutomations end to end with the phone provider and the database stubbed: what
 // exactly is sent to Telnyx when automations are saved.
 //   DATABASE_URL=postgres://unused@localhost/unused bun test server/automations.apply.test.ts
-import { expect, mock, test } from "bun:test";
+import { afterAll, expect, mock, test } from "bun:test";
 import { blankSettings, type Business } from "../src/lib/shared";
+
+// bun's mock.module is process-wide: without putting the real modules back, the stand-ins below
+// would be what every later test file gets (a fake database, a fake phone service).
+const real = { telnyx: { ...(await import("./telnyx")) }, db: { ...(await import("./db")) }, booking: { ...(await import("./booking")) } };
+afterAll(() => {
+  mock.module("./telnyx", () => real.telnyx);
+  mock.module("./db", () => real.db);
+  mock.module("./booking", () => real.booking);
+});
 
 const calls: { method: string; path: string; body?: any }[] = [];
 let stored: any = {};
@@ -13,8 +22,12 @@ mock.module("./telnyx", () => ({
     if (method === "GET") return { data: { telephony_settings: { default_texml_app_id: "texml-9", supports_unauthenticated_web_calls: true } } };
     return { data: {} };
   },
+  // Every export of server/telnyx.ts: a missing one breaks the modules automations.ts pulls in
+  // (sms.ts, twilio.ts, voice/*) with "Export named ... not found".
   runAsOrg: (_o: unknown, fn: () => unknown) => fn(),
   enterOrg: () => {},
+  currentOrg: () => null,
+  forgetKey: () => {},
   TelnyxError: class extends Error {},
   hasKey: () => true,
 }));
@@ -25,7 +38,8 @@ const sql: any = async (strings: TemplateStringsArray) => {
   return [];
 };
 mock.module("./db", () => ({ sql, iso: (d: any) => (d ? new Date(d).toISOString() : ""), migrate: async () => {} }));
-mock.module("./booking", () => ({ publicUrl: () => "https://answered.example" }));
+// The real booking module with only the public address pinned.
+mock.module("./booking", () => ({ ...real.booking, publicUrl: () => "https://answered.example" }));
 
 const { applyAutomations, normaliseAutomations, withAutomations } = await import("./automations");
 

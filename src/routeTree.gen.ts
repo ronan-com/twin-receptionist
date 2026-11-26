@@ -34,6 +34,7 @@ import { Route as AuthenticatedAdminNumberRequestsRouteImport } from './routes/_
 import { Route as AuthenticatedAdminPhoneNumbersRouteImport } from './routes/_authenticated/admin/phone-numbers'
 import { Route as AuthenticatedAdminReceptionistsRouteImport } from './routes/_authenticated/admin/receptionists'
 import { Route as AuthenticatedAdminSettingsRouteImport } from './routes/_authenticated/admin/settings'
+import { Route as AuthenticatedAdminSupportRequestsRouteImport } from './routes/_authenticated/admin/support-requests'
 import { Route as AuthenticatedAdminSystemRouteImport } from './routes/_authenticated/admin/system'
 import { Route as AuthenticatedAdminTestLabRouteImport } from './routes/_authenticated/admin/test-lab'
 import { Route as AuthenticatedAdminUsageRouteImport } from './routes/_authenticated/admin/usage'
@@ -188,6 +189,12 @@ const AuthenticatedAdminSettingsRoute =
     path: '/settings',
     getParentRoute: () => AuthenticatedAdminRouteRoute,
   } as any)
+const AuthenticatedAdminSupportRequestsRoute =
+  AuthenticatedAdminSupportRequestsRouteImport.update({
+    id: '/support-requests',
+    path: '/support-requests',
+    getParentRoute: () => AuthenticatedAdminRouteRoute,
+  } as any)
 const AuthenticatedAdminSystemRoute =
   AuthenticatedAdminSystemRouteImport.update({
     id: '/system',
@@ -328,6 +335,7 @@ export interface FileRoutesByFullPath {
   '/admin/phone-numbers': typeof AuthenticatedAdminPhoneNumbersRoute
   '/admin/receptionists': typeof AuthenticatedAdminReceptionistsRoute
   '/admin/settings': typeof AuthenticatedAdminSettingsRoute
+  '/admin/support-requests': typeof AuthenticatedAdminSupportRequestsRoute
   '/admin/system': typeof AuthenticatedAdminSystemRoute
   '/admin/test-lab': typeof AuthenticatedAdminTestLabRoute
   '/admin/usage': typeof AuthenticatedAdminUsageRoute
@@ -372,6 +380,7 @@ export interface FileRoutesByTo {
   '/admin/phone-numbers': typeof AuthenticatedAdminPhoneNumbersRoute
   '/admin/receptionists': typeof AuthenticatedAdminReceptionistsRoute
   '/admin/settings': typeof AuthenticatedAdminSettingsRoute
+  '/admin/support-requests': typeof AuthenticatedAdminSupportRequestsRoute
   '/admin/system': typeof AuthenticatedAdminSystemRoute
   '/admin/test-lab': typeof AuthenticatedAdminTestLabRoute
   '/admin/usage': typeof AuthenticatedAdminUsageRoute
@@ -420,6 +429,7 @@ export interface FileRoutesById {
   '/_authenticated/admin/phone-numbers': typeof AuthenticatedAdminPhoneNumbersRoute
   '/_authenticated/admin/receptionists': typeof AuthenticatedAdminReceptionistsRoute
   '/_authenticated/admin/settings': typeof AuthenticatedAdminSettingsRoute
+  '/_authenticated/admin/support-requests': typeof AuthenticatedAdminSupportRequestsRoute
   '/_authenticated/admin/system': typeof AuthenticatedAdminSystemRoute
   '/_authenticated/admin/test-lab': typeof AuthenticatedAdminTestLabRoute
   '/_authenticated/admin/usage': typeof AuthenticatedAdminUsageRoute
@@ -468,6 +478,7 @@ export interface FileRouteTypes {
     | '/admin/phone-numbers'
     | '/admin/receptionists'
     | '/admin/settings'
+    | '/admin/support-requests'
     | '/admin/system'
     | '/admin/test-lab'
     | '/admin/usage'
@@ -512,6 +523,7 @@ export interface FileRouteTypes {
     | '/admin/phone-numbers'
     | '/admin/receptionists'
     | '/admin/settings'
+    | '/admin/support-requests'
     | '/admin/system'
     | '/admin/test-lab'
     | '/admin/usage'
@@ -559,6 +571,7 @@ export interface FileRouteTypes {
     | '/_authenticated/admin/phone-numbers'
     | '/_authenticated/admin/receptionists'
     | '/_authenticated/admin/settings'
+    | '/_authenticated/admin/support-requests'
     | '/_authenticated/admin/system'
     | '/_authenticated/admin/test-lab'
     | '/_authenticated/admin/usage'
@@ -771,6 +784,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedAdminSettingsRouteImport
       parentRoute: typeof AuthenticatedAdminRouteRoute
     }
+    '/_authenticated/admin/support-requests': {
+      id: '/_authenticated/admin/support-requests'
+      path: '/support-requests'
+      fullPath: '/admin/support-requests'
+      preLoaderRoute: typeof AuthenticatedAdminSupportRequestsRouteImport
+      parentRoute: typeof AuthenticatedAdminRouteRoute
+    }
     '/_authenticated/admin/system': {
       id: '/_authenticated/admin/system'
       path: '/system'
@@ -926,6 +946,7 @@ interface AuthenticatedAdminRouteRouteChildren {
   AuthenticatedAdminPhoneNumbersRoute: typeof AuthenticatedAdminPhoneNumbersRoute
   AuthenticatedAdminReceptionistsRoute: typeof AuthenticatedAdminReceptionistsRoute
   AuthenticatedAdminSettingsRoute: typeof AuthenticatedAdminSettingsRoute
+  AuthenticatedAdminSupportRequestsRoute: typeof AuthenticatedAdminSupportRequestsRoute
   AuthenticatedAdminSystemRoute: typeof AuthenticatedAdminSystemRoute
   AuthenticatedAdminTestLabRoute: typeof AuthenticatedAdminTestLabRoute
   AuthenticatedAdminUsageRoute: typeof AuthenticatedAdminUsageRoute
@@ -950,6 +971,8 @@ const AuthenticatedAdminRouteRouteChildren: AuthenticatedAdminRouteRouteChildren
     AuthenticatedAdminPhoneNumbersRoute: AuthenticatedAdminPhoneNumbersRoute,
     AuthenticatedAdminReceptionistsRoute: AuthenticatedAdminReceptionistsRoute,
     AuthenticatedAdminSettingsRoute: AuthenticatedAdminSettingsRoute,
+    AuthenticatedAdminSupportRequestsRoute:
+      AuthenticatedAdminSupportRequestsRoute,
     AuthenticatedAdminSystemRoute: AuthenticatedAdminSystemRoute,
     AuthenticatedAdminTestLabRoute: AuthenticatedAdminTestLabRoute,
     AuthenticatedAdminUsageRoute: AuthenticatedAdminUsageRoute,

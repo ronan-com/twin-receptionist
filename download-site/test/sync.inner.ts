@@ -237,7 +237,7 @@ describe("the admin pages", () => {
     const html = await (await adminGet(`/admin/b/${buyerId}`)).text();
     expect(html).toContain("Health and support");
     expect(html).toContain("Sync now");
-    expect(html).toContain("Ask the agency to turn on Support access");
+    expect(html).toContain("The agency has switched Support access off");
     expect(html).toMatch(/<button class="btn o" type="button" disabled>View as<\/button>/);
     expect(html).not.toContain("callerName");
   });

@@ -223,7 +223,7 @@ Style: Australian spelling, short sentences, no exclamation marks. Every step ha
 - Keep your Resend account: your agency sends email through it with its own send-only key.
 - Turn on backups for the Postgres volume in Railway (its Backups tab).
 
-**Notice:** We've deleted every key you gave us. We have no login to your Railway project or accounts. Your agency shares health and usage counts with us (never calls or customer details). That is on by default and you can switch it off in your dashboard, under Settings, then Support. Support access, which would let us sign in to help you, is off unless you turn it on there.
+**Notice:** We've deleted every key you gave us. We have no login to your Railway project or accounts. Your agency shares health and usage counts with us (never calls or customer details). That is on by default and you can switch it off in your dashboard, under Settings, then Support. Support access lets us sign in to help you and make changes. It's also on by default, and you can turn it off there.
 
 **Button:** `Open your dashboard`
 

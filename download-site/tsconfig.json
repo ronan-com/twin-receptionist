@@ -1,0 +1,17 @@
+{
+  // Type-check only (Bun runs the .ts files directly): cd download-site && ../node_modules/.bin/tsc -p .
+  "compilerOptions": {
+    "target": "ESNext",
+    "lib": ["ESNext"],
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "strict": true,
+    "noEmit": true,
+    "skipLibCheck": true,
+    "isolatedModules": true,
+    "allowImportingTsExtensions": true,
+    "types": ["bun"]
+  },
+  "include": ["*.ts", "test/*.ts", "mock/*.ts"],
+  "exclude": ["node_modules"]
+}

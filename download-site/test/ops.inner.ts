@@ -53,7 +53,8 @@ const SRC_SHA = createHash("sha256").update(SRC).digest("hex");
   writeFileSync(join(work, "app-src.tgz"), SRC);
   mkdirSync(PACKAGES_DIR, { recursive: true });
   const file = "chloe-server-1.2.3.tgz";
-  const p = Bun.spawnSync(["tar", "-czf", join(PACKAGES_DIR, file), "-C", work, "./app-src.tgz"]);
+  // A bare archive name with cwd: GNU tar (Git Bash) reads "C:\..." in -f as a remote host.
+  const p = Bun.spawnSync(["tar", "-czf", file, "-C", work, "./app-src.tgz"], { cwd: PACKAGES_DIR });
   if (p.exitCode !== 0) throw new Error("tar failed");
   recordPackage({ version: "1.2.3", file, size: 1, sha256: "x", notes: "- faster dashboard\n- fixes" });
 }
@@ -380,6 +381,17 @@ describe("the project token, at install and at update", () => {
     expect(await setup.autoUpdateVars(b.id, "ACCOUNT-TOKEN", { projectId: "proj1", environmentId: "env1", serviceId: "svc1" })).toEqual({});
     expect(await setup.autoUpdateVars(b.id, "ACCOUNT-TOKEN", { projectId: "proj1" })).toEqual({});
     railMode = "ok";
+  });
+  test("Update your agency mints a new project token when there is none, the last automatic update failed, or the heartbeat says unavailable", () => {
+    const snap = (u: { available: boolean; lastResult?: string | null }) => ({ snap: { updates: u } });
+    const has = { RAILWAY_PROJECT_TOKEN: "ptok-old" };
+    expect(setup.needsProjectToken({}, null)).toBe(true);
+    expect(setup.needsProjectToken({}, snap({ available: true }))).toBe(true);
+    expect(setup.needsProjectToken(has, null)).toBe(false); // nothing heard yet: keep the one it has
+    expect(setup.needsProjectToken(has, snap({ available: true, lastResult: "ok" }))).toBe(false);
+    expect(setup.needsProjectToken(has, snap({ available: true, lastResult: "failed" }))).toBe(true);
+    expect(setup.needsProjectToken(has, snap({ available: false }))).toBe(true);
+    expect(setup.needsProjectToken(has, snap({ available: false, lastResult: null }))).toBe(true);
   });
   test("Support access starts on only for a fresh install: the update hook never sets it", () => {
     const fresh = setup.updateVarHooks.flatMap((h) => Object.keys(h(1, {})));

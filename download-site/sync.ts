@@ -4,7 +4,7 @@
 //   - the app POSTs a small snapshot of counts and health to /api/sync every 15 minutes, unless the buyer
 //     switched sharing off. The shape is fixed below; whatever else arrives is dropped. (The app has the same
 //     list, in server/supportSync.ts; keep them in step.)
-//   - "View as" works only while the buyer has turned Support access on in their app. We ask the app (with the
+//   - "View as" works only while Support access is on in the buyer's app (on by default for a fresh install; theirs to switch off). We ask the app (with the
 //     buyer's own sync token) for a link that works once, for 60 seconds, and open it. The app refuses when
 //     access is off, and records every link and sign-in in the buyer's audit log.
 // Tokens are stored as hashes; the buyer's app holds the only copy.
@@ -257,14 +257,14 @@ export async function syncNow(buyerId: number, appUrl: string, doFetch: typeof f
   return { ok: true, snapshot: latestSnapshot(buyerId)! };
 }
 
-/** "View as": a one-time sign-in link (the app makes it valid for 60 seconds, once). The app refuses unless the buyer turned Support access on. */
+/** "View as": a one-time sign-in link (the app makes it valid for 60 seconds, once). The app refuses while Support access is off. */
 export async function viewAsLink(buyerId: number, appUrl: string, doFetch: typeof fetch = fetch): Promise<Outcome<{ url: string }>> {
   const base = appBase(appUrl);
   const tok = callToken(buyerId);
   if (!base || !tok) return { ok: false, reason: "no-app", message: "We don't have this app's address, or it was installed before syncing existed." };
   const r = await callApp(base, "/api/support/login-link", tok, doFetch);
   if (!r) return { ok: false, reason: "unreachable", message: "The app didn't answer. It may be down, restarting or asleep." };
-  if (r.status === 403 && r.json?.error === "access_off") return { ok: false, reason: "off", message: "The buyer hasn't turned on Support access." };
+  if (r.status === 403 && r.json?.error === "access_off") return { ok: false, reason: "off", message: "The buyer has switched Support access off." };
   if (r.status === 401) return { ok: false, reason: "refused", message: "The app didn't accept our token. It was installed before syncing existed, or its settings changed." };
   const link = typeof r.json?.url === "string" ? r.json.url : "";
   // The link must be on the app's own address: never follow one that points elsewhere.
@@ -276,14 +276,14 @@ export async function viewAsLink(buyerId: number, appUrl: string, doFetch: typeo
 }
 
 export type LogLine = { at: string; level: string; line: string };
-/** "Fetch recent logs": the app's last 200 log lines (scrubbed by the app), only while the buyer has Support access on. Never stored. */
+/** "Fetch recent logs": the app's last 200 log lines (scrubbed by the app), only while Support access is on. Never stored. */
 export async function fetchLogs(buyerId: number, appUrl: string, doFetch: typeof fetch = fetch): Promise<Outcome<{ lines: LogLine[] }>> {
   const base = appBase(appUrl);
   const tok = callToken(buyerId);
   if (!base || !tok) return { ok: false, reason: "no-app", message: "We don't have this app's address, or it was installed before syncing existed." };
   const r = await callApp(base, "/api/support/logs", tok, doFetch);
   if (!r) return { ok: false, reason: "unreachable", message: "The app didn't answer. It may be down, restarting or asleep." };
-  if (r.status === 403 && r.json?.error === "access_off") return { ok: false, reason: "off", message: "The buyer hasn't turned on Support access." };
+  if (r.status === 403 && r.json?.error === "access_off") return { ok: false, reason: "off", message: "The buyer has switched Support access off." };
   if (r.status === 401 || r.status === 404) return { ok: false, reason: "refused", message: "This version of the app can't send logs yet. The buyer needs to update." };
   if (r.status !== 200 || !r.json?.ok || !Array.isArray(r.json.lines)) return { ok: false, reason: "error", message: `The app answered ${r.status}.` };
   const lines: LogLine[] = r.json.lines.slice(-200).filter((l: any) => l && typeof l.line === "string").map((l: any) => ({ at: String(l.at || "").slice(0, 30), level: String(l.level || "log").slice(0, 8), line: String(l.line).slice(0, 300) }));

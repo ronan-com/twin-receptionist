@@ -65,7 +65,7 @@ Your agency and its database run in your own Railway account. No server to patch
 You pay each provider directly, at their prices. Railway's Hobby plan is US$5 a month, which includes US$5 of usage; you pay more only if you use more. Telnyx charges for each phone number and for call minutes, from prepaid credit. Resend has a free plan that suits a small start. Our operating guide lists current prices with links to each provider.
 
 **Who owns it?**
-You do. The hosting, database, domain, phone numbers and every account are in your name. After setup, we have no login to any of them. Your agency shares health counts with us unless you switch that off, and we can only sign in if you turn Support access on.
+You do. The hosting, database, domain, phone numbers and every account are in your name. After setup, we have no login to any of them. Your agency shares health counts with us, and Support access lets us sign in to help. Both are on by default, and you can switch either one off at any time.
 
 **Can I use my own domain and registrar?**
 Yes. Use any domain you own. If its DNS is on Cloudflare, the wizard adds the records for you. If not, it shows you the exact records to add at your registrar and checks them for you. Your main website stays as it is: the dashboard goes at app.your-domain.

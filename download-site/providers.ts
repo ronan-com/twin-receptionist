@@ -76,8 +76,8 @@ export async function checkDigitalOcean(token: string) {
       if (!(e instanceof ProviderError && e.status === 422)) throw e; // 422 = tag already exists, which is fine
     }
     const [rr, sr] = await Promise.all([doApi(token, "GET", "/v2/regions?per_page=200"), doApi(token, "GET", "/v2/sizes?per_page=200")]);
-    const regions = (rr.regions || []).filter((r: any) => r.available).map((r: any) => ({ slug: String(r.slug), name: String(r.name) })).sort((x: any, y: any) => x.name.localeCompare(y.name));
-    const sizes = (sr.sizes || [])
+    const regions: { slug: string; name: string }[] = (rr.regions || []).filter((r: any) => r.available).map((r: any) => ({ slug: String(r.slug), name: String(r.name) })).sort((x: any, y: any) => x.name.localeCompare(y.name));
+    const sizes: { slug: string; label: string; price: number; regions: string[] }[] = (sr.sizes || [])
       .filter((s: any) => s.available && /^s-/.test(s.slug) && s.memory >= 2048 && s.memory <= 8192)
       .map((s: any) => ({ slug: String(s.slug), price: Number(s.price_monthly), regions: (s.regions || []).map(String), label: `${s.vcpus} CPU, ${s.memory / 1024} GB memory, ${s.disk} GB disk` }))
       .sort((x: any, y: any) => x.price - y.price);

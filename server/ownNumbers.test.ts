@@ -7,6 +7,8 @@ import { numberFailed, numberIsLive, numberWaiting } from "../src/lib/ownNumbers
 
 // server/telnyx.ts as it behaves with a plain key (same fetch, same error shape), so another test
 // file's stand-in for it can't change what this one checks. The only thing mocked is the network.
+// It carries every export of server/telnyx.ts: bun's mock.module is process-wide, so later test
+// files get it too (putting the real module back in afterAll breaks voice/telnyx.test.ts's imports).
 class TelnyxError extends Error {
   constructor(
     public status: number,
@@ -20,6 +22,7 @@ mock.module("./telnyx", () => ({
   forgetKey: () => {},
   hasKey: () => true,
   enterOrg: () => {},
+  currentOrg: () => null,
   runAsOrg: (_org: unknown, fn: () => unknown) => fn(),
   telnyx: async (method: string, path: string, body?: unknown) => {
     const res = await fetch(`https://api.telnyx.com/v2${path}`, { method, headers: { Authorization: "Bearer test" }, body: body === undefined ? undefined : JSON.stringify(body) });

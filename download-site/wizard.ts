@@ -420,7 +420,7 @@ function install(c: Ctx) {
     const rows: [string, string][] = [
       ["Brand", `${esc(s.brand?.productName || "")} · ${s.brand?.logo ? "logo added" : "no logo yet"}`], ["Dashboard", esc(host)], ["Server", `${esc(region)} · ${esc((sv.sizes?.find((z) => z.slug === sv.size)?.label.match(/(\d+) GB memory/) || [])[1] || "2")} GB · US$${sv.price}/mo`],
       ["Phones", phonesSummary(c)], ["Email from", esc(s.email?.from || "")],
-      ["DNS", s.domain?.mode === "cloudflare" ? "Handled by the wizard" : "You add one record"],
+      ["DNS", s.domain?.mode === "cloudflare" ? "Handled by the wizard" : s.domain?.mode === "godaddy" ? "Handled by the wizard (GoDaddy)" : "You add one record"],
     ];
     return `${head(c, "Ready to install", `We'll set up ${P(c)} on your new server. You can close the page while it runs.`)}
 <div class="summary">${rows.map(([k, v]) => `<div><span>${k}</span><b>${v}</b></div>`).join("")}</div>
@@ -544,7 +544,7 @@ function done(c: Ctx) {
   <div>${icon("check")}<span>${s.sshKeyAdded ? `Log in to the server with your SSH key: <code>ssh root@${esc(s.ip || "")}</code>` : "Server login: DigitalOcean emailed you its root password, or use the droplet's Console."}</span></div>
 </div>
 ${lockedOut(c)}
-${notice("info", "We've deleted every key you gave us. We have no login to your server or accounts. Your agency shares health and usage counts and a short, masked list of recent problems with us (never calls or customer details), and updates itself overnight. Sharing, Support access (which lets us sign in and, unless you say no, fix things for you, but never see your keys, billing or owner account) and automatic updates are all on by default so we can help you fast. You can switch each one off in your dashboard, under Settings: Support and Updates.")}
+${notice("info", `We've deleted every key you gave us${s.assist?.keepDns ? " except the DNS access noted above" : ""}. We have no login to your server or accounts. Your agency shares health and usage counts and a short, masked list of recent problems with us (never calls or customer details). Sharing and Support access (which lets us sign in and, unless you say no, fix things for you, but never see your keys, billing or owner account) are both on by default so we can help you fast. You can switch each one off in your dashboard, under Settings: Support. Automatic updates are not available on a DigitalOcean server yet.`)}
 <details class="log"><summary>Show details</summary><pre id="log" data-next="${next}">${esc(text.slice(-60000))}</pre></details>
 ${nav(c, `<a class="btn p" href="${esc(url)}" target="_blank" rel="noopener noreferrer">Open your dashboard ${icon("ext")}</a>`, { back: false })}`;
 }

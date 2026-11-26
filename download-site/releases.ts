@@ -21,7 +21,7 @@ export async function appSource(): Promise<Uint8Array> {
   const bundle = join(PACKAGES_DIR, pkg.file);
   const cached = bundle.replace(/\.tgz$/, ".app-src.tgz");
   if (!existsSync(cached)) {
-    const p = Bun.spawn(["tar", "-xzOf", bundle, "./app-src.tgz"], { stdout: "pipe", stderr: "ignore" });
+    const p = Bun.spawn(["tar", "-xzOf", pkg.file, "./app-src.tgz"], { cwd: PACKAGES_DIR, stdout: "pipe", stderr: "ignore" }); // bare name: GNU tar reads "C:\..." as a remote host
     const out = new Uint8Array(await new Response(p.stdout).arrayBuffer());
     if ((await p.exited) !== 0 || out.length < 1000) throw new ProviderError("The app bundle is damaged. Contact support.");
     writeFileSync(cached, out, { mode: 0o600 });

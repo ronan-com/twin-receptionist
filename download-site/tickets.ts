@@ -306,7 +306,7 @@ ${flash}
 <div class="titlerow"><h1>${esc(t.subject)}</h1>${pill(t.status)}</div>
 <p class="lead">${buyer ? `<a href="/admin/b/${buyer.id}"><b>${esc(buyer.name)}</b></a>` : "A deleted agency"}${t.from_name ? ` · from ${esc(t.from_name)}` : ""} · opened ${esc(when(t.created_at))} UTC</p>
 <div class="summary">${ctxRows.filter(([, v]) => v).map(([k, v]) => `<div><span>${k}</span><b>${v}</b></div>`).join("")}</div>
-${buyer ? `<p class="hint">On their agency page: <a href="/admin/b/${buyer.id}">health, problems and recent logs</a>, and "View as" if they've turned on Support access.</p>` : ""}
+${buyer ? `<p class="hint">On their agency page: <a href="/admin/b/${buyer.id}">health, problems and recent logs</a>, and "View as" while Support access is on (it is unless they switched it off).</p>` : ""}
 <div class="thread">${msgs.map((m) => `<div class="msg ${m.author}"><div class="who"><b>${m.author === "support" ? `You${m.author_name ? ` (${esc(m.author_name)})` : ""}` : esc(m.author_name || t.from_name || "Agency")}</b> <span class="hint">${esc(when(m.at))} UTC</span></div>
 <div class="text">${esc(m.body)}</div>${m.has_file ? `<a href="/admin/tickets/${t.id}/file/${m.id}" target="_blank" rel="noopener noreferrer"><img class="shot" src="/admin/tickets/${t.id}/file/${m.id}" alt="Screenshot${m.file_name ? `: ${esc(m.file_name)}` : ""}"></a>` : ""}</div>`).join("")}</div>
 ${t.status === "closed" ? `<p class="hint">This ticket is closed. Replying reopens it for them.</p>` : ""}

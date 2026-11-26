@@ -55,7 +55,7 @@ const cf = Bun.serve({
     const path = u.pathname.replace("/client/v4", "");
     const ok = (result: any) => Response.json({ success: true, result });
     if ((req.headers.get("authorization") || "") !== "Bearer cf-good-token-0001") return Response.json({ success: false, errors: [{ code: 1000, message: "Invalid API Token" }] }, { status: 401 });
-    const body = req.method === "GET" || req.method === "DELETE" ? undefined : await req.json();
+    const body = req.method === "GET" || req.method === "DELETE" ? undefined : ((await req.json()) as any);
     cfCalls.push({ method: req.method, path: path + u.search, body });
     const zone = { id: "z1", name: "example.com", status: "active", name_servers: ["a.ns.cloudflare.com", "b.ns.cloudflare.com"] };
     if (path === "/user/tokens/verify") return ok({ status: "active" });
@@ -79,7 +79,7 @@ const gd = Bun.serve({
     const u = new URL(req.url);
     const auth = req.headers.get("authorization") || "";
     if (auth !== "sso-key gd-key-0001:gd-secret-0001") return Response.json({ code: "UNABLE_TO_AUTHENTICATE", message: "Authenticated user is not allowed access" }, { status: 401 });
-    const body = req.method === "GET" || req.method === "DELETE" ? undefined : await req.json();
+    const body = req.method === "GET" || req.method === "DELETE" ? undefined : ((await req.json()) as any);
     gdCalls.push({ method: req.method, path: u.pathname, body, auth });
     const m = u.pathname.match(/^\/v1\/domains\/([^/]+)(\/records(?:\/([A-Z]+)\/([^/]+))?)?$/);
     if (!m || m[1] !== "example.com.au") return Response.json({ code: "UNKNOWN_DOMAIN", message: "The given domain is not registered" }, { status: 404 });

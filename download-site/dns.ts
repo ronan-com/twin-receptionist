@@ -3,8 +3,10 @@
 //   Cloudflare  existing cfEnsure() in providers.ts (records created or updated, DNS only, never proxied)
 //   GoDaddy     GET /v1/domains/{domain} to check the key, PATCH /v1/domains/{domain}/records to add records
 //               (API key + secret from developer.godaddy.com; it works for single-domain accounts)
-import { CONFIG } from "./lib";
-import { ProviderError, cfEnsure, cfHasDmarc, cfFindZone, cfRecords, normalizeDomain, type Check } from "./providers";
+// remove() takes back a record ensure() made (Delete the project / Delete the server). It never removes a record
+// that was already there before we wrote ours.
+import { ANY_MOCK, CONFIG } from "./lib";
+import { CF_API, ProviderError, cfEnsure, cfHasDmarc, cfFindZone, cfRecords, normalizeDomain, type Check } from "./providers";
 import type { DnsRecord, SetupData } from "./store";
 import { getSecret } from "./store";
 
@@ -12,11 +14,16 @@ export interface DnsWriter {
   kind: "cloudflare" | "godaddy";
   /** Make `rec` exist; returns an id we can show or delete later (Cloudflare's record id; GoDaddy has none, so "name/type"). */
   ensure(rec: DnsRecord): Promise<string>;
+  /** Take back a record ensure() wrote (rec.cfId is the id it returned). A record that was already there is left alone. */
+  remove(rec: DnsRecord): Promise<void>;
   hasDmarc(zone: string): Promise<boolean>;
 }
 
 // ---------------- GoDaddy ----------------
-export const GODADDY_API = () => (process.env.GODADDY_API_BASE || "https://api.godaddy.com").trim().replace(/\/$/, "");
+// A test site (any MOCK_* on) never calls the real GoDaddy: it gets the fake in mock/serve.ts (MOCK_PORT_BASE + 7).
+export const GODADDY_API = () => (process.env.GODADDY_API_BASE || (ANY_MOCK ? `${CONFIG.mockBase}:${Number(process.env.MOCK_PORT_BASE || 4520) + 7}` : "https://api.godaddy.com")).trim().replace(/\/$/, "");
+/** The id ensure() gives a GoDaddy record that was already there (so remove() leaves it). */
+const GD_EXISTING = "/existing";
 const GD_UA = "receptionist-setup/1.0";
 
 async function gd(key: string, secret: string, method: string, path: string, body?: unknown): Promise<{ status: number; json: any }> {
@@ -106,7 +113,7 @@ export function godaddyWriter(key: string, secret: string, zone: string, opts: {
       const here = (await all()).filter((x) => String(x.name).toLowerCase() === body.name);
       const same = here.find((x) => x.type === body.type && unq(x.data).toLowerCase() === body.data.toLowerCase() && (body.type !== "MX" || Number(x.priority ?? 10) === body.priority));
       const id = `${body.name}/${body.type}`;
-      if (same) return id;
+      if (same) return id + GD_EXISTING;
       if (rec.type === "A" || rec.type === "CNAME") {
         const clash = here.filter((x) => ["A", "AAAA", "CNAME"].includes(x.type));
         if (clash.length) {
@@ -125,6 +132,23 @@ export function godaddyWriter(key: string, secret: string, zone: string, opts: {
       if (r.status >= 300) gdFail(r.status, r.json);
       return id;
     },
+    async remove(rec) {
+      if (!rec.cfId || rec.cfId.endsWith(GD_EXISTING)) return;
+      const body = gdBody(rec, zone);
+      const path = `/v1/domains/${z}/records/${body.type}/${encodeURIComponent(body.name)}`;
+      const r = await gd(key, secret, "GET", path);
+      if (r.status === 404) return;
+      if (r.status !== 200) gdFail(r.status, r.json);
+      const here: any[] = Array.isArray(r.json) ? r.json : [];
+      const ours = (x: any) => unq(x.data).toLowerCase() === body.data.toLowerCase() && (body.type !== "MX" || Number(x.priority ?? 10) === body.priority);
+      if (!here.some(ours)) return; // already gone, or changed since: not ours to touch
+      const rest = here.filter((x) => !ours(x));
+      // DELETE takes every record of that type at that name; when others share it, PUT back just those.
+      const res = rest.length
+        ? await gd(key, secret, "PUT", path, rest.map((x) => ({ data: x.data, ttl: x.ttl, ...(x.priority != null ? { priority: x.priority } : {}) })))
+        : await gd(key, secret, "DELETE", path);
+      if (res.status >= 300 && res.status !== 404) gdFail(res.status, res.json);
+    },
     async hasDmarc(zone2) {
       const name = gdName(`_dmarc.${zone2}`, zone);
       return (await all()).some((x) => x.type === "TXT" && String(x.name).toLowerCase() === name && /^v=DMARC1/i.test(unq(x.data)));
@@ -134,7 +158,16 @@ export function godaddyWriter(key: string, secret: string, zone: string, opts: {
 
 // ---------------- Cloudflare (the same code the wizard has always used) ----------------
 export function cloudflareWriter(token: string, zoneId: string): DnsWriter {
-  return { kind: "cloudflare", ensure: (rec) => cfEnsure(token, zoneId, rec), hasDmarc: (zone) => cfHasDmarc(token, zoneId, zone) };
+  return { kind: "cloudflare", ensure: (rec) => cfEnsure(token, zoneId, rec), remove: (rec) => cfDelete(token, zoneId, rec.cfId), hasDmarc: (zone) => cfHasDmarc(token, zoneId, zone) };
+}
+/** DELETE one Cloudflare record by the id cfEnsure() gave it. Gone already is fine. */
+export async function cfDelete(token: string, zoneId: string, id?: string): Promise<void> {
+  if (!id) return;
+  let res: Response;
+  try {
+    res = await fetch(`${CF_API}/zones/${encodeURIComponent(zoneId)}/dns_records/${encodeURIComponent(id)}`, { method: "DELETE", headers: { Authorization: `Bearer ${token}`, "User-Agent": GD_UA }, redirect: "error", signal: AbortSignal.timeout(15000) });
+  } catch { throw new ProviderError("We couldn't reach Cloudflare just now. Try again in a minute."); }
+  if (!res.ok && res.status !== 404) throw new ProviderError(`Cloudflare didn't delete the record (error ${res.status}).`, res.status);
 }
 
 /** The writer for this buyer's chosen DNS (Cloudflare or GoDaddy), from the keys we hold. null for "I add the records myself". */

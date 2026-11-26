@@ -122,7 +122,7 @@ export async function serveOwnHost(req: Request, handle: (r: Request) => Promise
   if (!to) return new Response("Not found", { status: 404, headers: { "Content-Type": "text/plain", "X-Robots-Tag": "noindex, nofollow", "Cache-Control": "no-store" } });
   const next = new URL(req.url);
   next.pathname = to;
-  const inner = await onOwnHost.run(true, () => handle(new Request(next, req)));
+  const inner = await onOwnHost.run(true, () => handle(new Request(next.toString(), req)));
   const type = inner.headers.get("content-type") || "";
   const headers = new Headers(inner.headers);
   // The session cookie is scoped to /setup/ on our address; on their host the wizard lives at the root.

@@ -57,13 +57,13 @@ Do this once for **each** account: registrar, Cloudflare, Railway, Telnyx, Resen
 
 ## What we keep
 
-Nothing that gives us a way in on our own. The only way into your dashboard is Support access, and only you can turn it on.
+No login to any of your accounts. The only way into your dashboard is Support access. It's on when your agency is installed, and you can turn it off at any time.
 
 - Our setup site deleted every key and token you gave it when your install finished. It keeps your brand, owner email, domain, the Railway project id, your addresses, timestamps and the install log (with keys removed).
 - We have no login to your Railway project, database or any of your provider accounts.
 - Your Telnyx, Resend and calendar keys live only in your Railway project.
 - We don't receive your calls, call records or client data.
 - **Health and usage stats: on by default, off with one switch** (your dashboard, Settings, Support). Every 15 minutes your agency sends us its version, health, counts (clients, receptionists, numbers, calls and bookings over recent days, errors), your brand name and logo address, and yes or no for your optional extras. Never caller names or numbers, messages, transcripts, recordings, customer details, passwords or keys. We keep the latest snapshot and a short history of the counts.
-- **Support access: off unless you turn it on.** With it on we can sign in to your dashboard as a read-only support person, through a one-time link (60 seconds, single use), for the time you choose. We can't change anything, see your keys, or export your data. Every sign-in is in your audit log and shown in Settings. Turn it off and any open session ends straight away.
+- **Support access: on by default, off with one switch** (your dashboard, Settings, Support). While it's on, we can sign in to your dashboard as a support person, through a one-time link (60 seconds, single use). We can see your dashboard, including calls and messages. "Support can make changes" is also on by default: we can fix settings and receptionists for you, and that can include buying a phone number on your Telnyx account. Turn that switch off and support becomes view only. We can never see your keys or export your data. Every sign-in and every change is in your audit log and shown in Settings. Turn Support access off and any open session ends straight away.
 
 > TODO (Ronan): decide what we keep about the buyer after handover (name, email, payment record, setup date) and say it here.

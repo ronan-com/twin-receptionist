@@ -1,3 +1,4 @@
+import { AsyncLocalStorage } from "node:async_hooks";
 import { format } from "node:util";
 import { sql } from "./db";
 
@@ -60,26 +61,27 @@ export function classifyError(line: string): { kind: string; msg: string } | nul
 // ---------------------------------------------------------------------------------------------
 
 let stamps: number[] = [];
-let inside = false;
+// Set only inside recordProblem's own work, so an error logged while storing a problem isn't stored again (a loop).
+// Other problems recorded at the same time are still kept (a plain flag dropped them while an insert was waiting).
+const storing = new AsyncLocalStorage<true>();
 const nativeError = console.error.bind(console);
 
 /** Records one problem (best effort; never throws, never logs again). At most 60 a minute. */
 export async function recordProblem(kind: string, message: unknown): Promise<void> {
-  if (inside) return;
+  if (storing.getStore()) return;
   const cut = Date.now() - 60_000;
   stamps = stamps.filter((t) => t > cut);
   if (stamps.length >= 60) return;
   stamps.push(Date.now());
-  inside = true;
-  try {
-    const k = kind.toLowerCase().replace(/[^a-z0-9_.:-]/g, "_").slice(0, 40) || "server_error";
-    await sql`insert into problem_log (kind, msg) values (${k}, ${scrub(message)})`;
-    if (Math.random() < 0.02) await sql`delete from problem_log where at < now() - interval '2 days'`;
-  } catch (err) {
-    nativeError("[problems]", (err as Error).message);
-  } finally {
-    inside = false;
-  }
+  await storing.run(true, async () => {
+    try {
+      const k = kind.toLowerCase().replace(/[^a-z0-9_.:-]/g, "_").slice(0, 40) || "server_error";
+      await sql`insert into problem_log (kind, msg) values (${k}, ${scrub(message)})`;
+      if (Math.random() < 0.02) await sql`delete from problem_log where at < now() - interval '2 days'`;
+    } catch (err) {
+      nativeError("[problems]", (err as Error).message);
+    }
+  });
 }
 
 export type Problem = { kind: string; msg: string; count: number; last: string };

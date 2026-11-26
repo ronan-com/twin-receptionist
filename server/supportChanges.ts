@@ -65,6 +65,25 @@ export function supportMayChange(method: string, path: string): Decision {
   return ALLOW.some((re) => re.test(p)) ? { ok: true } : { ok: false, why: "that isn't something support can change" };
 }
 
+export type Gate = { action: "pass" } | { action: "deny"; error: string } | { action: "audit"; summary: string };
+
+/**
+ * What happens to a request made by a support session (server/index.ts runs this right after sign-in, before any
+ * route). Anyone else, and reads, pass. A write is refused when the session is read-only (the owner switched
+ * "Support can make changes" off, or support is looking at one business's view) or the matrix above says no;
+ * otherwise it goes ahead and is written to the owner's audit log as "by support".
+ */
+export function supportGate(ctx: Pick<Ctx, "viewing">, method: string, path: string, seller: string): Gate {
+  if (!ctx.viewing?.support) return { action: "pass" };
+  const m = method.toUpperCase();
+  if (m === "GET" || m === "HEAD" || path === "/api/admin/view-as" || path === "/api/logout") return { action: "pass" };
+  if (!ctx.viewing.canEdit) return { action: "deny", error: "This is a read-only support session. Nothing can be changed." };
+  if (readOnlyView(ctx)) return { action: "deny", error: "You're looking at a business's own view, which is read-only. Go back to the agency to make changes." };
+  const allowed = supportMayChange(m, path);
+  if (!allowed.ok) return { action: "deny", error: `Support can't change that (${allowed.why}). Ask the owner to do it.` };
+  return { action: "audit", summary: `By support (${seller}): ${describeChange(m, path)}` };
+}
+
 /** A short plain description for the audit log, with ids hidden. */
 export function describeChange(method: string, path: string): string {
   const p = path.split("?")[0].replace(new RegExp(ID, "g"), ":id");

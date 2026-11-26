@@ -45,6 +45,7 @@ export function UpdatesSection() {
         {!u.available ? (
           <p className="max-w-[620px] text-[13px] leading-5 text-ink-muted" data-state="unavailable">
             Automatic updates aren't available on this copy. To update, open your private setup link and press "Update your agency". It takes a few minutes and keeps all your data.
+            {u.unavailableReason && u.unavailableReason !== "no-token" ? <span className="mt-1 block">Why: {u.unavailableReason}.</span> : null}
           </p>
         ) : (
           <div className="space-y-4">

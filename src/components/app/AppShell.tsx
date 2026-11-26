@@ -116,7 +116,9 @@ export function AppShell({ nav, variant, brandTo, sidebarHeader, topbarRight, ba
   const [helpOpen, setHelpOpen] = useState(false);
   const [supportOpen, setSupportOpen] = useState(false);
   const support = useSupportUnread();
-  const canContact = Boolean(support.data?.canCreate || support.data?.mine.length);
+  // The agency console has a "Support requests" page (with the client inbox); the help menu links to it.
+  const requestsPage = nav.find((n) => n.to === "/admin/support-requests")?.to;
+  const canContact = Boolean(support.data?.canCreate || support.data?.mine.length || (requestsPage && support.data?.inbox.length));
   const getStarted = useGetStarted();
   const assistant = useAssistant();
   useEffect(() => {
@@ -266,7 +268,7 @@ export function AppShell({ nav, variant, brandTo, sidebarHeader, topbarRight, ba
 
         {banner}
 
-        {supportOpen ? <SupportDialog open onOpenChange={setSupportOpen} /> : null}
+        {supportOpen ? <SupportDialog open onOpenChange={setSupportOpen} allRequestsTo={requestsPage} /> : null}
 
         <main className="mx-auto w-full max-w-[1400px] flex-1 px-3 py-5 sm:px-5 sm:py-6 lg:px-8">{children}</main>
       </div>

@@ -1,7 +1,8 @@
 import { useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Link } from "@tanstack/react-router";
 import { toast } from "sonner";
-import { ChevronLeft, ImagePlus, LifeBuoy, Plus, X } from "lucide-react";
+import { ArrowRight, ChevronLeft, ImagePlus, LifeBuoy, Plus, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -173,8 +174,8 @@ export function NewTicketForm({ list, onDone, onCancel }: { list: TicketList; on
   );
 }
 
-/** The help menu's dialog: your requests, a new one, and a conversation. */
-export function SupportDialog({ open, onOpenChange, startNew }: { open: boolean; onOpenChange: (o: boolean) => void; startNew?: boolean }) {
+/** The help menu's dialog: your requests, a new one, and a conversation. `allRequestsTo` links to the agency's "Support requests" page (with its client inbox). */
+export function SupportDialog({ open, onOpenChange, startNew, allRequestsTo }: { open: boolean; onOpenChange: (o: boolean) => void; startNew?: boolean; allRequestsTo?: string }) {
   const q = useQuery({ ...ticketsQuery(), enabled: open });
   const [view, setView] = useState<"list" | "new" | { id: string }>(startNew ? "new" : "list");
   const list = q.data;
@@ -193,6 +194,12 @@ export function SupportDialog({ open, onOpenChange, startNew }: { open: boolean;
             <div className="grid gap-3">
               {list.mine.length ? <ul className="divide-y divide-hairline rounded-lg border border-hairline" aria-label="Your requests">{list.mine.map((t) => <TicketRow key={t.id} t={t} onOpen={(id) => setView({ id })} />)}</ul> : <p className="text-[13px] text-ink-muted">{list.why || "You haven't sent any requests."}</p>}
               {list.canCreate ? <div><Button size="sm" onClick={() => setView("new")}><Plus className="mr-1 h-4 w-4" /> New request</Button></div> : list.why && list.mine.length ? <p className="text-[12.5px] text-ink-muted">{list.why}</p> : null}
+              {allRequestsTo ? (
+                <Link to={allRequestsTo} onClick={() => onOpenChange(false)} className="inline-flex items-center gap-1.5 text-[12.5px] font-medium text-indigo hover:underline" data-action="all-support-requests">
+                  {list.inbox.some((t) => t.unread) ? <UnreadDot /> : null}
+                  {list.inbox.length ? `All support requests, with ${list.inbox.length} from your clients` : "All support requests"} <ArrowRight className="h-3.5 w-3.5" />
+                </Link>
+              ) : null}
             </div>
           )}
       </DialogContent>

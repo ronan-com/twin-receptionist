@@ -22,6 +22,13 @@ import { putSetting } from "./store";
 // The owner's switch is respected always, including a "push update now" from the setup site's admin.
 // A copy without the project token (older install, or Railway wouldn't make one) says so, and the buyer presses
 // "Update your agency" on their setup link as before.
+//
+// Not yet proven against real Railway: whether a project token is accepted by variableCollectionUpsert, by the
+// /up upload (Project-Access-Token header) and by deployment(id). So a refusal from Railway on any of those calls
+// turns automatic updates OFF for that token ("Auto-update unavailable" in Settings and in the setup site's admin),
+// once, instead of retrying every hour. The manual "Update your agency" on the setup link doesn't use this token and
+// keeps working. It also gives the app a new project token (it does when the last result was "failed"), and a new
+// token turns automatic updates back on by itself.
 
 export const SETTING_KEY = "auto_update";
 export const STATE_KEY = "auto_update_state";
@@ -42,6 +49,9 @@ export type UpdateState = {
   lastResult?: "ok" | "failed" | "";
   lastError?: string;
   lastAt?: string;
+  /** Railway refused the project token on one of the update calls: automatic updates are off for THIS token.
+   *  `token` is a short SHA-256 tag of it (never the token), so a new token from the setup site re-arms it. */
+  off?: { token: string; reason: string; at: string };
 };
 
 export const DEFAULT_SETTING: UpdateSetting = { enabled: true, mode: "overnight" };
@@ -65,6 +75,11 @@ const saveState = async (patch: Partial<UpdateState>) => putSetting(STATE_KEY, {
 // ---------------------------------------------------------------------------------------------
 
 export type Cfg = { auth: RailwayAuth; projectId: string; environmentId: string; serviceId: string; siteBase: string; syncToken: string };
+/** A short tag for a token, to tell one from another without keeping it. */
+export const tokenTag = (token: string) => createHash("sha256").update(token).digest("hex").slice(0, 16);
+/** True when automatic updates turned themselves off for the token this copy has now. */
+export const offForToken = (cfg: Cfg | null, state: UpdateState) => Boolean(cfg && state.off?.token && state.off.token === tokenTag(cfg.auth.token));
+
 /** Null when this copy can't update itself: no project token (or no ids), or it isn't connected to a setup site. */
 export function updateConfig(env: Record<string, string | undefined> = process.env): Cfg | null {
   const t = (k: string) => (env[k] ?? "").trim();
@@ -210,6 +225,29 @@ export type Outcome =
   | { ok: true; started: true; version: string }
   | { ok: false; error: string };
 
+/**
+ * Railway refused one of the calls made with the project token: turn automatic updates off for this token, record
+ * why once (a problem and an incident, for the owner and for us), and leave everything else as it is.
+ */
+async function turnOff(cfg: Cfg, why: string): Promise<void> {
+  const reason = scrub(why, 160);
+  const at = new Date().toISOString();
+  await saveState({ off: { token: tokenTag(cfg.auth.token), reason, at }, lastResult: "failed", lastError: reason, lastAt: at });
+  await recordIncident({ kind: "update_failed", message: `Automatic updates are unavailable: ${reason}. Update with "Update your agency" on the setup link.` });
+  await recordProblem("update_failed", `Auto-update unavailable: ${reason}`);
+  console.log(`[updates] automatic updates turned off for this project token: ${reason}`);
+}
+
+/** Why a Railway call failed, in words for the owner (and our admin). Never contains the token. */
+function railwayWhy(step: string, err: unknown): string {
+  const e = err as RailwayError;
+  // Ends on "token": scrub() hides whatever follows that word.
+  if (e?.code === "auth") return `When ${step}, Railway refused the app's project token`;
+  if (e?.code === "plan") return `Railway needs a paid plan for ${step}`;
+  if (e?.code === "network") return `Railway couldn't be reached when ${step}`;
+  return `Railway gave an error when ${step} (${scrub(e?.message || "unknown", 100)})`;
+}
+
 async function fail(from: string, to: string, why: string): Promise<Outcome> {
   const msg = scrub(why, 160);
   await saveState({ phase: "idle", lastResult: "failed", lastError: msg, lastAt: new Date().toISOString(), to, from, deploymentId: undefined });
@@ -252,7 +290,7 @@ export async function checkAndUpdate(o: { force?: boolean; owner?: boolean } = {
     const state = await readUpdateState();
     const current = currentVersion(deps.env);
     const stillDeploying = state.phase === "deploying" && state.startedAt && deps.now().getTime() - Date.parse(state.startedAt) < DEPLOY_TIMEOUT_MS;
-    if (!cfg) return { ok: true, started: false, reason: "unavailable" };
+    if (!cfg || offForToken(cfg, state)) return { ok: true, started: false, reason: "unavailable" };
     let rel: Release | null = null;
     try {
       rel = await fetchRelease(cfg, deps.fetch);
@@ -274,18 +312,27 @@ export async function checkAndUpdate(o: { force?: boolean; owner?: boolean } = {
     if (!sha256Matches(bytes, rel.sha256)) return fail(from, rel.version, "the download's checksum didn't match, so it was not installed");
     const rd = { base: deps.railwayBase, doFetch: deps.railwayFetch };
     const ids = { projectId: cfg.projectId, environmentId: cfg.environmentId, serviceId: cfg.serviceId };
+    // Neither call has been run against real Railway with a project token. A refusal turns automatic updates off
+    // for this token (see the top of this file); the version that is running stays as it is.
+    let step = "setting the new version number";
+    let labelSet = false;
     try {
       await setServiceVariables(cfg.auth, ids, { APP_VERSION: rel.version }, rd);
+      labelSet = true;
+      step = "sending the new version";
       const up = await railwayUpload(cfg.auth, ids, bytes, `Automatic update ${rel.version}`, rd);
       await saveState({ deploymentId: up.deploymentId });
       await audit(null, "updates.started", { summary: `Automatic update from ${from || "?"} to ${rel.version} started` }, { orgId: await firstOrgId() });
       void watchDeployment(cfg, up.deploymentId, from, rel.version, deps);
       return { ok: true, started: true, version: rel.version };
     } catch (err) {
-      // The old version is still running: put its version label back.
-      await setServiceVariables(cfg.auth, ids, { APP_VERSION: from }, rd).catch(() => {});
-      const e = err as RailwayError;
-      return fail(from, rel.version, e.code === "auth" ? "Railway refused the app's project token (the buyer may have revoked it)" : e.message || "the upload failed");
+      // The old version is still running: put its version label back (if it was changed).
+      if (labelSet) await setServiceVariables(cfg.auth, ids, { APP_VERSION: from }, rd).catch(() => {});
+      const why = railwayWhy(step, err);
+      const out = await fail(from, rel.version, why);
+      // Couldn't reach Railway at all: not a refusal, so try again next hour. Anything Railway answered turns this off.
+      if (!(err instanceof RailwayError && err.code === "network")) await turnOff(cfg, why);
+      return out;
     }
   } finally {
     running = false;
@@ -295,14 +342,24 @@ export async function checkAndUpdate(o: { force?: boolean; owner?: boolean } = {
 const firstOrgId = async (): Promise<string | null> => (await sql`select id from orgs where not sandbox order by created_at limit 1`)[0]?.id ?? null;
 
 /** Polls the build while this version is still running. If the new one takes over, boot (reconcileOnBoot) records success. */
-async function watchDeployment(cfg: Cfg, deploymentId: string, from: string, to: string, deps: Deps): Promise<void> {
+export async function watchDeployment(cfg: Cfg, deploymentId: string, from: string, to: string, deps: Deps): Promise<void> {
   const end = Date.now() + DEPLOY_TIMEOUT_MS;
+  let refused = 0;
   while (Date.now() < end) {
     await new Promise((r) => setTimeout(r, deps.pollMs ?? 20_000).unref?.());
     let st = "";
     try {
       st = await deploymentStatus(cfg.auth, deploymentId, { base: deps.railwayBase, doFetch: deps.railwayFetch });
-    } catch {
+      refused = 0;
+    } catch (err) {
+      if (err instanceof RailwayError && ["network", "rate", "server"].includes(err.code)) continue; // try again shortly
+      // Railway won't tell this token how the build is going (deployment(id) is unproven with a project token).
+      // After three refusals in a row stop watching and turn automatic updates off. The phase stays "deploying":
+      // if the new version starts it reports "ok" itself at boot (reconcileOnBoot); if not, this version keeps running.
+      if (++refused >= 3) {
+        await turnOff(cfg, railwayWhy("checking the build", err));
+        return;
+      }
       continue;
     }
     if (st === "SUCCESS") return; // the new version takes over and reports "ok" when it starts
@@ -320,8 +377,11 @@ export async function reconcileOnBoot(env: Record<string, string | undefined> = 
   const s = await readUpdateState();
   if (s.phase !== "deploying") return "none";
   if (s.to && currentVersion(env) === s.to) {
-    await saveState({ phase: "idle", lastResult: "ok", lastError: "", lastAt: at.toISOString(), deploymentId: undefined });
-    await resolveIncidents("update_failed");
+    // Still "failed" while automatic updates are off for this token: that is what makes the setup site's
+    // "Update your agency" give the app a new project token (download-site/setup.ts).
+    const off = offForToken(updateConfig(env), s);
+    await saveState({ phase: "idle", lastResult: off ? "failed" : "ok", lastError: off ? s.off!.reason : "", lastAt: at.toISOString(), deploymentId: undefined });
+    if (!off) await resolveIncidents("update_failed");
     await audit(null, "updates.done", { summary: `Updated automatically to ${s.to}` }, { orgId: await firstOrgId() });
     return "ok";
   }
@@ -349,15 +409,21 @@ export function startAutoUpdate(): void {
 // For the heartbeat and Settings
 // ---------------------------------------------------------------------------------------------
 
-export async function updatesStatus() {
+export async function updatesStatus(env: Record<string, string | undefined> = process.env, at = new Date()) {
   const [setting, state] = [await readUpdateSetting(), await readUpdateState()];
+  const cfg = updateConfig(env);
+  const off = offForToken(cfg, state);
   return {
-    available: updateConfig() !== null,
+    // False: Settings says automatic updates aren't available, the setup site's admin "Auto-update unavailable".
+    available: cfg !== null && !off,
+    /** "" when available; "no-token" for a copy without a project token; else why it turned itself off. */
+    unavailableReason: !cfg ? "no-token" : off ? state.off!.reason : "",
     enabled: setting.enabled,
     mode: setting.mode,
-    version: currentVersion(),
+    version: currentVersion(env),
     latest: state.latest ?? "",
-    deploying: state.phase === "deploying",
+    // An install we started that never reported back stops counting as "being installed" after the timeout.
+    deploying: state.phase === "deploying" && Boolean(state.startedAt) && at.getTime() - Date.parse(state.startedAt!) < DEPLOY_TIMEOUT_MS,
     lastResult: state.lastResult ?? "",
     lastError: state.lastError ?? "",
     lastAt: state.lastAt ?? null,

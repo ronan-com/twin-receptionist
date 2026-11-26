@@ -14,7 +14,7 @@
 //   bun download-site/admin.ts gen-key                      prints a new SETUP_SECRET_KEY
 import { createHash } from "node:crypto";
 import { copyFileSync, existsSync, openSync, readFileSync, readSync, closeSync, renameSync, statSync, unlinkSync } from "node:fs";
-import { basename, join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import { randomBytes } from "node:crypto";
 import {
   CONFIG, PACKAGES_DIR, addBuyer, currentPackage, setupLink, extractCode, findBuyer, humanSize,
@@ -140,7 +140,7 @@ switch (cmd) {
     readSync(fd, magic, 0, 4, 0);
     closeSync(fd);
     if (magic[0] !== 0x1f || magic[1] !== 0x8b) die(`${basename(src)} is not a .tgz file (make it with deploy/selfhost/make-bundle.sh).`);
-    const list = Bun.spawnSync(["tar", "-tzf", src]);
+    const list = Bun.spawnSync(["tar", "-tzf", basename(src)], { cwd: dirname(src) }); // bare name: GNU tar reads "C:\..." as a remote host
     const names = list.stdout.toString().split("\n").map((n) => n.replace(/^\.\//, ""));
     if (list.exitCode !== 0 || !names.includes("install.sh") || !names.includes("app-src.tgz")) die(`${basename(src)} doesn't have install.sh and app-src.tgz at the top. Use deploy/selfhost/out/selfhost-bundle.tgz.`);
     if (db().query("SELECT 1 FROM packages WHERE version = ?").get(version)) die(`Version ${version} is already published. Use a new version number.`);

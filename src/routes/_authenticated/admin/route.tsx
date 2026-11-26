@@ -9,6 +9,7 @@ import { adminNavFor, isPlatformOnlyPath } from "@/lib/app/constants";
 import { adminOverviewCountsQuery } from "@/lib/app/queries";
 import { useWorkspace } from "@/lib/app/workspace";
 import { PRODUCT } from "@/lib/app/product";
+import { GetStartedProvider } from "@/components/onboarding/GetStarted";
 
 // The console. Variant "platform" (the platform admin: everything) or "agency"
 // (agency staff: their own agency). Business users are sent to their workspace,
@@ -79,9 +80,20 @@ function AdminLayout() {
       ? { title: "Platform console", sub: "Platform admin" }
       : { title: ws.org?.name ?? "Agency", sub: role === "owner" ? "Agency owner" : role === "admin" ? "Agency admin" : "Agency team" };
 
+  const navItems = adminNavFor(variant).filter((n) => !(variant === "agency" && (ws.session?.telnyx === "own" || ws.session?.singleAgency) && n.to === "/admin/number-requests"));
+  // "Get started" is for the agency's own owners and admins: not the platform admin, not a read-only view.
+  const getStarted = variant === "agency" && !ws.isPlatformAdmin && !ws.viewing && (role === "owner" || role === "admin") && !!ws.session;
+
   return (
+    <GetStartedProvider
+      enabled={getStarted}
+      userId={ws.session?.user.id ?? ""}
+      userName={ws.session?.user.name ?? ""}
+      orgName={ws.org?.name ?? ""}
+      navPaths={navItems.map((n) => n.to)}
+    >
     <AppShell
-      nav={adminNavFor(variant).filter((n) => !(variant === "agency" && (ws.session?.telnyx === "own" || ws.session?.singleAgency) && n.to === "/admin/number-requests"))}
+      nav={navItems}
       variant="admin"
       brandTo="/admin"
       sidebarHeader={
@@ -112,5 +124,6 @@ function AdminLayout() {
     >
       <Outlet />
     </AppShell>
+    </GetStartedProvider>
   );
 }

@@ -1,5 +1,7 @@
 // Types and presets shared by the browser app and the local API server.
 
+import type { ReceptionProfile } from "./profile";
+
 export type DayKey = "mon" | "tue" | "wed" | "thu" | "fri" | "sat" | "sun";
 
 export const DAYS: { key: DayKey; label: string; short: string }[] = [
@@ -78,6 +80,8 @@ export type Settings = {
   questions?: string[];
   /** Paused by the business: callers hear `message`, a message is taken, nothing is booked. */
   paused?: { at: string; message: string } | null;
+  /** The detailed receptionist setup (tone, booking rules, services, policies...). Cleaned by cleanProfile in server/prompt.ts. */
+  profile?: ReceptionProfile;
 };
 
 export type BookingProvider = "builtin" | "google" | "microsoft";

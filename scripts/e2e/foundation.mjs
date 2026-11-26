@@ -159,11 +159,13 @@ try {
     await clickText(ag, '[data-action="continue"]', "Continue");
     await ag.waitForSelector('[data-step="1"]');
     await clickText(ag, '[data-action="continue"]', "Continue");
-    await ag.waitForSelector('[data-step="2"]');
+    await ag.waitForSelector('[data-step="2"]'); // How it handles calls (optional details)
+    await clickText(ag, '[data-action="continue"]', "Continue");
+    await ag.waitForSelector('[data-step="3"]');
     // The first voice is picked for you once the list has loaded.
     await ag.waitForSelector('[aria-labelledby="w-voice"] [role="radio"][aria-checked="true"]');
     await clickText(ag, '[data-action="continue"]', "Continue");
-    await ag.waitForSelector('[data-step="3"]');
+    await ag.waitForSelector('[data-step="4"]');
     await clickText(ag, '[data-action="continue"]', "Continue");
     await ag.waitForSelector("[data-review]");
     await clickText(ag, '[data-action="create-receptionist"]', "Create receptionist");

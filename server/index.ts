@@ -158,6 +158,17 @@ async function instructionsFor(client: Business, settings = client.settings): Pr
   return buildInstructions(settings, bookingLive(client) ? { minutes: client.booking!.minutes } : null, await knowledgeFor(client.id));
 }
 
+// Which booking tools the receptionist is given. Paused: only take-a-message. The profile's
+// booking mode narrows it too: "request" can look at times but not book them, "message_only"
+// only takes messages.
+function toolAllowed(s: Settings, name: string): boolean {
+  if (s.paused) return name === "request_callback";
+  const mode = s.profile?.bookingMode;
+  if (mode === "message_only") return name === "request_callback";
+  if (mode === "request") return name !== "book_appointment";
+  return true;
+}
+
 // Pushes the script and tools that match the client's booking setup to Telnyx.
 // A demo receptionist has no assistant: its script is only saved.
 async function syncAssistant(client: Business): Promise<Business> {
@@ -168,7 +179,7 @@ async function syncAssistant(client: Business): Promise<Business> {
   }
   const instructions = await instructionsFor(client);
   // Paused by the business: only the take-a-message tool stays (server/prompt.ts).
-  const booking = bookingLive(client) ? bookingTools(client, publicUrl()).filter((t: any) => !client.settings.paused || t.webhook?.name === "request_callback") : [];
+  const booking = bookingLive(client) ? bookingTools(client, publicUrl()).filter((t: any) => toolAllowed(client.settings, t.webhook?.name)) : [];
   const tools = [HANGUP, ...booking];
   await telnyx("POST", `/ai/assistants/${client.assistantId}`, await withAutomations(client, { instructions, tools }));
   const next = { ...client, instructions, updatedAt: new Date().toISOString() };
@@ -203,13 +214,18 @@ async function bookingState(client: Business): Promise<BookingState> {
 const MINUTES = [15, 20, 30, 45, 60, 90];
 const PROVIDERS: BookingProvider[] = ["builtin", "google", "microsoft"];
 
+const nearestMinutes = (n: number) => MINUTES.reduce((a, b) => (Math.abs(b - n) < Math.abs(a - n) ? b : a));
+
 async function setUpBooking(client: Business, input: any) {
   if (client.booking) throw new ValidationError("This receptionist already has a calendar. Remove it first to switch.");
   const provider: BookingProvider = PROVIDERS.includes(input?.provider) ? input.provider : "builtin";
   if (provider !== "builtin" && !oauthAvailable()[provider]) {
     throw new ValidationError(`${provider === "google" ? "Google" : "Outlook"} Calendar isn't set up on this server yet.`);
   }
-  const minutes = MINUTES.includes(Number(input?.minutes)) ? Number(input.minutes) : 30;
+  // An explicit length wins; otherwise the profile's default appointment length (snapped to
+  // the lengths the calendar offers), otherwise 30.
+  const fromProfile = client.settings.profile?.appointmentMinutes;
+  const minutes = MINUTES.includes(Number(input?.minutes)) ? Number(input.minutes) : fromProfile ? nearestMinutes(fromProfile) : 30;
   const next: Business = {
     ...client,
     booking: {
@@ -271,6 +287,9 @@ async function hook(req: Request, clientId: string, action: string): Promise<Res
   enterOrg(orgId);
   if (client.settings.paused && action !== "callback") return json({ error: "The receptionist is paused, so nothing can be booked. Take a message with request_callback instead." });
   if (!client.booking!.enabled) return json({ error: "Booking is switched off. Offer to take a message instead." });
+  const mode = client.settings.profile?.bookingMode;
+  if (action === "book" && (mode === "request" || mode === "message_only")) return json({ error: "Bookings aren't made directly. Use request_callback so the team can confirm." });
+  if (action === "availability" && mode === "message_only") return json({ error: "Bookings aren't offered. Take a message with request_callback instead." });
   const closed = action === "callback" ? null : await bookingBlocked(client);
   if (closed) return json({ error: closed });
   const text = await req.text();

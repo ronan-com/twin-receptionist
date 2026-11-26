@@ -16,6 +16,7 @@ import type { AppointmentStatus, LeadStage } from "@/lib/app/types";
 import { HUE_HEX, dailyCounts, hueFor, type Hue } from "@/components/app/hues";
 import { BizCell, CallSheet, useConsole } from "./-shared";
 import { PRODUCT } from "@/lib/app/product";
+import { GetStartedChecklist } from "@/components/onboarding/Checklist";
 
 export const Route = createFileRoute("/_authenticated/admin/")({
   head: () => ({ meta: [{ title: `Admin overview — ${PRODUCT}` }] }),
@@ -118,6 +119,8 @@ function AdminOverview() {
           Something failed in the background (a calendar, a call sync or a tool call).
         </Notice>
       ) : null}
+
+      {!platform && !readOnly ? <GetStartedChecklist /> : null}
 
       {noBusinesses && !platform ? (
         <Panel>

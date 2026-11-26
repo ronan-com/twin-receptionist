@@ -95,6 +95,8 @@ export function answeredBusiness(
     receptionist_name: s.receptionistName,
     phone_numbers: r.phoneNumbers ?? [],
     closures: s.closures ?? "",
+    // The detailed receptionist setup (cleanProfile in server/prompt.ts); {} when none.
+    reception_profile: s.profile ?? {},
   };
 }
 export type AnsweredBusiness = ReturnType<typeof answeredBusiness>;

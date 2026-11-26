@@ -172,10 +172,12 @@ try {
     await click(ag, '[data-action="continue"]');
     await ag.waitForSelector('[data-step="1"]');
     await click(ag, '[data-action="continue"]');
-    await ag.waitForSelector('[data-step="2"]');
-    await sleep(500);
+    await ag.waitForSelector('[data-step="2"]'); // How it handles calls
     await click(ag, '[data-action="continue"]');
     await ag.waitForSelector('[data-step="3"]');
+    await sleep(500);
+    await click(ag, '[data-action="continue"]');
+    await ag.waitForSelector('[data-step="4"]');
     await click(ag, '[data-action="continue"]');
     await ag.waitForSelector("[data-review]");
     await click(ag, '[data-action="create-receptionist"]');

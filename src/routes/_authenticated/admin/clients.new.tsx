@@ -36,9 +36,14 @@ import {
 } from "@/lib/shared";
 import { READ_ONLY_HINT, useConsole } from "./-shared";
 import { PRODUCT } from "@/lib/app/product";
+import { ProfileEditor } from "@/components/app/profile/ProfileEditor";
+import { TemplatePicker } from "@/components/app/profile/TemplatePicker";
+import { cleanProfile, fillGreeting, profileOf, settingsToneFor, summarizeProfile, templatePatch, totalProgress, type WithProfile } from "@/components/app/profile/helpers";
+import { templateById } from "@/lib/templates";
+import type { NicheTemplate, ReceptionProfile } from "@/lib/profile";
 
-// The receptionist setup wizard (ported from the old Twin Setup page): five short
-// steps, then the existing POST /api/clients creates the phone assistant. An urgent
+// The receptionist setup wizard (ported from the old Twin Setup page): six short
+// steps (the first can start from a niche template; "How it handles calls" is the detailed profile), then the existing POST /api/clients creates the phone assistant. An urgent
 // number then turns on the transfer automation, and a childcare centre gets the
 // starter answers from the centre onboarding pack as knowledge for the director to check.
 export const Route = createFileRoute("/_authenticated/admin/clients/new")({
@@ -47,7 +52,7 @@ export const Route = createFileRoute("/_authenticated/admin/clients/new")({
   component: NewReceptionistPage,
 });
 
-const STEPS = ["Client and business", "Hours and services", "Voice", "Urgent calls", "Review"];
+const STEPS = ["Client and business", "Hours and services", "How it handles calls", "Voice", "Urgent calls", "Review"];
 const REVIEW = STEPS.length - 1;
 const NEW = "new";
 
@@ -57,15 +62,15 @@ type Urgent = { number: string; name: string; onRequest: boolean };
 const AU_NUMBER = /^(\+?61|0)[2-478]\d{8}$/;
 const compact = (n: string) => n.replace(/[\s().-]/g, "");
 
-function problem(step: number, s: Settings, urgent: Urgent): string {
+function problem(step: number, s: WithProfile, urgent: Urgent): string {
   if (step === 0 && s.businessName.trim().length < 2) return "Enter the business name.";
   if (step === 1) {
     if (s.services.length === 0) return "Add at least one service callers can ask for.";
     if (Object.values(s.hours).some((h) => h.open && h.from >= h.to)) return "Check the hours: closing time must be after opening time.";
     if (!Object.values(s.hours).some((h) => h.open)) return "Mark at least one day as open.";
   }
-  if (step === 2 && !s.voiceId) return "Choose a voice.";
-  if (step === 3 && urgent.number.trim() && !AU_NUMBER.test(compact(urgent.number))) return "Enter an Australian phone number for urgent calls, like 0412 345 678 or 07 3123 4567.";
+  if (step === 3 && !s.voiceId) return "Choose a voice.";
+  if (step === 4 && urgent.number.trim() && !AU_NUMBER.test(compact(urgent.number))) return "Enter an Australian phone number for urgent calls, like 0412 345 678 or 07 3123 4567.";
   return "";
 }
 
@@ -74,7 +79,10 @@ function NewReceptionistPage() {
   const navigate = useNavigate();
   const qc = useQueryClient();
   const [step, setStep] = useState(0);
-  const [settings, setSettings] = useState<Settings>(blankSettings);
+  const [settings, setSettings] = useState<WithProfile>(blankSettings);
+  // The template's greeting keeps its {business} and {name} until the person writes their own.
+  const [tplGreeting, setTplGreeting] = useState<string | null>(null);
+  const [greetingTouched, setGreetingTouched] = useState(false);
   const [urgent, setUrgent] = useState<Urgent>({ number: "", name: "", onRequest: true });
   const [error, setError] = useState("");
   const [creating, setCreating] = useState(false);
@@ -108,8 +116,32 @@ function NewReceptionistPage() {
 
   const patch = (p: Partial<Settings>) => {
     setError("");
+    if ("greeting" in p) setGreetingTouched(true);
     setSettings((s) => ({ ...s, ...p }));
   };
+  const patchProfile = (profile: ReceptionProfile) => {
+    setError("");
+    setSettings((s) => ({ ...s, profile, ...(profile.tone !== s.profile?.tone && profile.tone ? { tone: settingsToneFor(profile.tone) } : {}) }));
+  };
+  const pickTemplate = (t: NicheTemplate) => {
+    setError("");
+    setGreetingTouched(false);
+    setTplGreeting(t.greeting);
+    setSettings((s) => ({ ...s, ...templatePatch(t) }));
+  };
+  const startBlank = () => {
+    setError("");
+    setTplGreeting(null);
+    setSettings((s) => ({ ...s, profile: undefined, ...(greetingTouched ? {} : { greeting: "" }) }));
+  };
+  // Keep a template greeting in step with the business and receptionist names.
+  useEffect(() => {
+    if (!tplGreeting || greetingTouched) return;
+    setSettings((s) => {
+      const g = fillGreeting(tplGreeting, s.businessName, s.receptionistName);
+      return s.greeting === g ? s : { ...s, greeting: g };
+    });
+  }, [tplGreeting, greetingTouched, settings.businessName, settings.receptionistName]);
 
   function next() {
     const issue = problem(step, settings, urgent);
@@ -125,7 +157,10 @@ function NewReceptionistPage() {
     try {
       // The client (company) first, then its receptionist inside it.
       const target = companyId === NEW ? await companyApi.create({ name: settings.businessName.trim(), industry: settings.industry }) : companyId;
-      const created = await createReceptionist(settings);
+      // The detailed profile goes with the settings; its FAQs become knowledge items below.
+      const { faqs = [], ...profileRest } = cleanProfile(profileOf(settings));
+      const { profile: _drop, ...plain } = settings;
+      const created = await createReceptionist(Object.keys(profileRest).length ? ({ ...plain, profile: profileRest } as Settings) : plain);
       await companyApi.attach(target, created.id);
       // The receptionist exists now: a problem below is reported, not a reason to stop.
       const missed: string[] = [];
@@ -134,7 +169,13 @@ function NewReceptionistPage() {
           transfer: { enabled: true, number: compact(urgent.number), name: urgent.name.trim() || "the team", urgent: true, onRequest: urgent.onRequest },
         }).catch((err) => missed.push(`the urgent number (${(err as Error).message})`));
       }
-      if (settings.industry === "childcare") {
+      if (faqs.length) {
+        for (const f of faqs) {
+          await createKnowledge(created.id, { title: f.q.slice(0, 120), type: "faq", question: f.q, answer: f.a, content: null, status: "published" }).catch(() => {
+            if (!missed.includes("some answers")) missed.push("some answers");
+          });
+        }
+      } else if (settings.industry === "childcare") {
         for (const a of CHILDCARE_STARTER_ANSWERS) {
           await createKnowledge(created.id, { title: starterTitle(a.question), type: "faq", question: starterTitle(a.question), answer: a.answer, content: null, status: "published" }).catch(() => {
             if (!missed.includes("some starter answers")) missed.push("some starter answers");
@@ -153,6 +194,7 @@ function NewReceptionistPage() {
     }
   }
 
+  const faqCount = (profileOf(settings).faqs ?? []).filter((f) => f.q.trim() && f.a.trim()).length;
   const greeting = settings.greeting.trim() || defaultGreeting(settings.businessName, settings.receptionistName);
 
   if (readOnly) {
@@ -175,7 +217,7 @@ function NewReceptionistPage() {
         description={platform ? `Created in ${orgName || "your own team"}. Agencies create their own from their console.` : `For a business ${orgName || "your agency"} looks after.`}
       />
 
-      <ol className="grid grid-cols-5 gap-2" aria-label="Setup progress">
+      <ol className="grid grid-cols-3 gap-2 sm:grid-cols-6" aria-label="Setup progress">
         {STEPS.map((label, i) => (
           <li key={label} className="min-w-0">
             <span className={cn("block h-1 rounded-full", i <= step ? "bg-indigo" : "bg-hairline")} />
@@ -188,6 +230,7 @@ function NewReceptionistPage() {
         <div className="space-y-5" data-step={step}>
           {step === 0 ? (
             <>
+              <TemplatePicker templateId={settings.profile?.template} onPick={pickTemplate} onBlank={startBlank} />
               <Field label="Client" htmlFor="w-company" hint="The company this receptionist works for. A client can have several receptionists.">
                 <Select value={companyId} onValueChange={setCompanyId}>
                   <SelectTrigger id="w-company" data-select="company"><SelectValue /></SelectTrigger>
@@ -206,9 +249,20 @@ function NewReceptionistPage() {
           ) : null}
           {step === 1 ? <HoursStep value={settings} onChange={patch} /> : null}
           {step === 2 ? (
+            <>
+              <div>
+                <h2 className="text-[15px] font-semibold text-ink">How it handles calls</h2>
+                <p className="text-[12.5px] text-ink-muted">
+                  {settings.profile?.template ? `Filled in from the ${templateById(settings.profile.template)?.label ?? "template"} template. ` : ""}Open a section to check or change it. Skip anything that doesn't apply.
+                </p>
+              </div>
+              <ProfileEditor value={profileOf(settings)} onChange={patchProfile} services={settings.services} />
+            </>
+          ) : null}
+          {step === 3 ? (
             voicesQ.error ? <ErrorState message={(voicesQ.error as Error).message} onRetry={() => void voicesQ.refetch()} /> : <VoiceStep value={settings} onChange={patch} voices={voices} loading={voicesQ.isPending} />
           ) : null}
-          {step === 3 ? <UrgentStep value={settings} onChange={patch} urgent={urgent} onUrgent={(p) => { setError(""); setUrgent((u) => ({ ...u, ...p })); }} /> : null}
+          {step === 4 ? <UrgentStep value={settings} onChange={patch} urgent={urgent} onUrgent={(p) => { setError(""); setUrgent((u) => ({ ...u, ...p })); }} /> : null}
           {step === REVIEW ? (
             <dl className="divide-y divide-hairline text-[13px]" data-review>
               <ReviewRow label="Client">{chosen ? chosen.name : `${settings.businessName} (new)`}</ReviewRow>
@@ -239,9 +293,16 @@ function NewReceptionistPage() {
                 ) : "It takes a message"}
               </ReviewRow>
               {settings.avoid?.length ? <ReviewRow label="Passed to staff">{settings.avoid.join(", ")}</ReviewRow> : null}
-              {settings.industry === "childcare" ? (
+              {settings.profile?.template ? <ReviewRow label="Template">{templateById(settings.profile.template)?.label ?? settings.profile.template}</ReviewRow> : null}
+              {summarizeProfile(profileOf(settings)).map((r) => (
+                <ReviewRow key={r.label} label={r.label}>{r.value}</ReviewRow>
+              ))}
+              {faqCount > 0 ? (
+                <ReviewRow label="Saved answers">{faqCount} common question{faqCount === 1 ? "" : "s"} saved as answers the receptionist can use</ReviewRow>
+              ) : settings.industry === "childcare" ? (
                 <ReviewRow label="Starter answers">{CHILDCARE_STARTER_ANSWERS.length} answers from the centre pack, each marked for the director to check</ReviewRow>
               ) : null}
+              <ReviewRow label="Call details">{(() => { const t = totalProgress(profileOf(settings)); return `${t.set} of ${t.total} set`; })()}</ReviewRow>
             </dl>
           ) : null}
           {step === REVIEW ? <p className="text-[12px] text-ink-muted">Creating it takes a few seconds. You can change any of this afterwards and test it from your browser straight away.</p> : null}

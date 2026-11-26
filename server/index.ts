@@ -41,7 +41,7 @@ import { callDetail, listCalls } from "./calls";
 import { startCallSync } from "./callsync";
 import { industryKeyOf, workspaceBusinesses } from "./answered";
 import { audit } from "./audit";
-import { OTHER_BRAND, brandedIndex } from "./product";
+import { OTHER_BRAND, UI_PRODUCT, brandedIndex } from "./product";
 import { consoleRoutes, isClientPaused } from "./routes/console";
 import { manageRoutes, setManageDeps } from "./routes/manage";
 import { signupRoutes } from "./routes/signup";
@@ -297,8 +297,8 @@ async function hook(req: Request, clientId: string, action: string): Promise<Res
 function assistantFields(s: Settings, instructions: string) {
   const who = s.receptionistName || "your receptionist";
   return {
-    name: `${s.businessName} · ${process.env.PRODUCT_NAME || "Twin Receptionist"}`,
-    description: `Created by the ${process.env.PRODUCT_NAME || "Twin Receptionist"} setup.`,
+    name: `${s.businessName} · ${UI_PRODUCT}`,
+    description: `Created by the ${UI_PRODUCT} setup.`,
     instructions,
     greeting: greetingOf(s),
     voice_settings: { voice: s.voiceId, voice_speed: 1.0 },
@@ -411,6 +411,23 @@ const DIST = join(import.meta.dir, "..", "dist");
 
 let ownIndex: { at: number; html: string } | null = null;
 
+// Team demo: many agencies share one copy, so each sees its own name where the product's would be.
+async function demoPage(path: string, req: Request): Promise<Response> {
+  if (path.includes(".")) return page(path);
+  const invited = path.match(/^\/invite\/([A-Za-z0-9_-]+)$/);
+  let name = "";
+  if (invited) name = (await inviteInfo(invited[1]).catch(() => null))?.orgName ?? "";
+  else {
+    const ctx = await sessionFrom(req).catch(() => null);
+    if (ctx?.org && !ctx.user.platformAdmin) name = ctx.org.name;
+  }
+  if (!name) name = decodeURIComponent((req.headers.get("cookie") ?? "").match(/demo_brand=([^;]+)/)?.[1] ?? "");
+  if (!name || !existsSync(join(DIST, "index.html"))) return page(path);
+  return new Response(brandedIndex(readFileSync(join(DIST, "index.html"), "utf8"), name), {
+    headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store", "Referrer-Policy": "same-origin", "Set-Cookie": `demo_brand=${encodeURIComponent(name)}; Path=/; SameSite=Lax; Max-Age=2592000` },
+  });
+}
+
 function page(path: string): Response {
   if (!existsSync(join(DIST, "index.html"))) {
     return new Response("The dashboard hasn't been built yet. Run: bun run build", { status: 503 });
@@ -484,7 +501,7 @@ async function route(req: Request, server?: { requestIP(r: Request): { address: 
 
   if (!path.startsWith("/api/")) {
     if (method !== "GET" && method !== "HEAD") return json({ error: "Not found" }, 404);
-    return page(path);
+    return process.env.DEMO_ROUTES === "1" ? await demoPage(path, req) : page(path);
   }
 
   // A browser sends its cookie with any request, so refuse changes that come
@@ -657,6 +674,20 @@ async function route(req: Request, server?: { requestIP(r: Request): { address: 
     if (path === "/api/admin/agencies") {
       if (method === "GET") return json({ agencies: await listAgencies(ctx) });
       if (method === "POST") return json(await createAgency(ctx, await body(req), appUrl(req)), 201);
+    }
+    // Team demo: make the agency with the logo and colour typed into the setup wizard.
+    if (path === "/api/admin/demo-agency" && method === "POST" && process.env.DEMO_ROUTES === "1") {
+      const input = await body(req);
+      const made = await createAgency(ctx, input, appUrl(req));
+      const [o] = await sql`select id from orgs where created_by = ${ctx.user.id} and name = ${String(input.name ?? "").trim()} order by created_at desc limit 1`;
+      if (o) {
+        const asOwner = { ...ctx, org: { ...ctx.org!, id: o.id }, role: "owner" as const };
+        const scope = { orgId: o.id as string, clientId: null };
+        const logo = String(input.logo ?? "").split(",")[1];
+        if (logo) await uploadAsset(asOwner, scope, "logo", new Uint8Array(Buffer.from(logo, "base64"))).catch((e) => console.error("[demo logo]", e.message));
+        if (input.colour) await changeBrand(asOwner, scope, { primaryColor: input.colour, accentColor: input.colour }).catch((e) => console.error("[demo colour]", e.message));
+      }
+      return json(made, 201);
     }
     const agency = path.match(/^\/api\/admin\/agencies\/([a-f0-9-]{36})(\/invites)?$/);
     if (agency && agency[2] && method === "POST") return json(await inviteAgencyOwner(ctx, agency[1], await body(req), appUrl(req)), 201);

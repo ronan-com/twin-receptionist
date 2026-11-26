@@ -10,7 +10,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { useWorkspace } from "@/lib/app/workspace";
 import { InitialsAvatar } from "./primitives";
-import { named } from "@/lib/app/product";
+import { PRODUCT } from "@/lib/app/product";
 
 export function UserMenu() {
   const { user, profile, isInternalAdmin, internalRole, isGuestDemo, signOut, console: consoleKind, org, viewing, exitView } = useWorkspace();
@@ -28,7 +28,7 @@ export function UserMenu() {
           <InitialsAvatar name={name} size={28} />
           <span className="min-w-0 flex-1">
             <span className="block truncate text-[13px] font-medium text-ink">{name}</span>
-            <span className="block truncate text-[11.5px] text-ink-muted">{isGuestDemo ? email : internalRole === "super_admin" ? named("Answered staff · Platform admin") : consoleKind === "agency" && org ? `${org.name} · Agency` : email}</span>
+            <span className="block truncate text-[11.5px] text-ink-muted">{isGuestDemo ? email : internalRole === "super_admin" ? `${PRODUCT} staff · Platform admin` : consoleKind === "agency" && org ? `${org.name} · Agency` : email}</span>
           </span>
           <ChevronsUpDown className="h-3.5 w-3.5 shrink-0 text-ink-muted" />
         </button>

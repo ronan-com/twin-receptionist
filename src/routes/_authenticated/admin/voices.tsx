@@ -11,10 +11,10 @@ import { fmtNumber, titleCase } from "@/lib/app/format";
 import { adminVoicesQuery } from "@/lib/app/queries";
 import type { AdminVoiceRow } from "@/lib/api/console";
 import { useConsole } from "./-shared";
-import { named } from "@/lib/app/product";
+import { PRODUCT } from "@/lib/app/product";
 
 export const Route = createFileRoute("/_authenticated/admin/voices")({
-  head: () => ({ meta: [{ title: named("Voices — Answered admin") }] }),
+  head: () => ({ meta: [{ title: `Voices — ${PRODUCT} admin` }] }),
   component: AdminVoicesPage,
 });
 

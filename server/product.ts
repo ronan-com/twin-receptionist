@@ -12,8 +12,8 @@ const escapeHtml = (s: string) => s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "
  * The built index.html with this copy's name: the browser title, the link-preview
  * tags, and <meta name="product">, which the screens read (src/lib/app/product.ts).
  */
-export function brandedIndex(html: string): string {
-  const name = escapeHtml(UI_PRODUCT);
+export function brandedIndex(html: string, product = UI_PRODUCT): string {
+  const name = escapeHtml(product);
   const about = `${name}: an AI receptionist that answers every call.`;
   return html
     .replace(/<title>[^<]*<\/title>/, `<title>${name}</title>\n    <meta name="product" content="${name}" />`)

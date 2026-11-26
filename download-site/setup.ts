@@ -99,7 +99,9 @@ export const actions: Record<string, Action> = {
     const ownerEmail = str(f.ownerEmail, 200).toLowerCase();
     if (!productName) return err("Give your brand a name.", f);
     if (!isEmail(ownerEmail)) return err("Enter a real email address.", f);
-    updateSetup(b.id, (s) => { s.brand = { productName, ownerEmail, ownPhoneAccount: false }; nextStep(b, s, "brand"); });
+    updateSetup(b.id, (s) => { const logo = /^data:image\/png;base64,[A-Za-z0-9+/=]+$/.test(f.logo || "") ? f.logo : s.brand?.logo;
+      const colour = /^#[0-9a-fA-F]{6}$/.test(f.colour || "") ? f.colour : s.brand?.colour;
+      s.brand = { productName, ownerEmail, ownPhoneAccount: false, logo, colour }; nextStep(b, s, "brand"); });
     return null;
   },
 

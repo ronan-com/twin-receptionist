@@ -11,6 +11,8 @@ export type WorkspaceBusiness = Business & {
   org_name: string;
   receptionist_name: string;
   phone_numbers: string[];
+  /** Closures and public holidays, "a; b" (empty when none). */
+  closures?: string;
 };
 
 /** A business membership in Answered's shape; access_role is ours (manager / viewer). */

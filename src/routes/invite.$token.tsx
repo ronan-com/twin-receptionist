@@ -8,11 +8,11 @@ import { Label } from "@/components/ui/label";
 import { AuthLayout, FormError } from "@/components/auth/AuthLayout";
 import { authApi, homeOf } from "@/lib/api/auth";
 import { sessionQuery } from "@/lib/app/workspace";
-import { named } from "@/lib/app/product";
+import { PRODUCT } from "@/lib/app/product";
 
 // Accepting an invite: to an agency's team, or to a business's workspace.
 export const Route = createFileRoute("/invite/$token")({
-  head: () => ({ meta: [{ title: named("Accept your invite — Answered") }, { name: "robots", content: "noindex" }] }),
+  head: () => ({ meta: [{ title: `Accept your invite — ${PRODUCT}` }, { name: "robots", content: "noindex" }] }),
   component: InvitePage,
 });
 
@@ -35,6 +35,7 @@ function InvitePage() {
       await authApi.acceptInvite(token, info?.hasAccount ? { password } : { name: name.trim(), password });
       queryClient.clear();
       const s = await queryClient.fetchQuery(sessionQuery());
+      // A new agency owner starts on Branding: logo and colours first.
       navigate({ to: homeOf(s), replace: true });
     } catch (err) {
       setError(err instanceof Error ? err.message : "Something went wrong");

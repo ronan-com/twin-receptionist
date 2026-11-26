@@ -4,6 +4,7 @@ import { audit } from "./audit";
 import { testTransport } from "./mailer";
 import { mailboxSignInAllowed, redirectBase, redirectUri, requestedScopes, type OAuthProvider } from "./oauth";
 import { countCheck } from "./phoneAccount";
+import { UI_PRODUCT } from "./product";
 import {
   clearSaved,
   fresh,
@@ -58,10 +59,10 @@ function checkSmtpUrl(raw: string): string {
 }
 
 function checkFrom(raw: string): string {
-  if (!raw) throw new ValidationError("Add the address emails come from, e.g. Answered <no-reply@example.com>.");
+  if (!raw) throw new ValidationError(`Add the address emails come from, e.g. ${UI_PRODUCT} <no-reply@example.com>.`);
   if (raw.length > 200) throw new ValidationError("The from address is too long.");
   if (!/^(?:[^<>@]*<[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+>|[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+)$/.test(raw)) {
-    throw new ValidationError("The from address should be an email address, or a name and address like Answered <no-reply@example.com>.");
+    throw new ValidationError(`The from address should be an email address, or a name and address like ${UI_PRODUCT} <no-reply@example.com>.`);
   }
   return raw;
 }

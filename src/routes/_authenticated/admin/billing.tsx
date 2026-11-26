@@ -1,10 +1,10 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { PagePlaceholder } from "@/components/app/PagePlaceholder";
-import { named } from "@/lib/app/product";
+import { PRODUCT } from "@/lib/app/product";
 
 // Placeholder from the foundation; the area that owns this page replaces it.
 export const Route = createFileRoute("/_authenticated/admin/billing")({
-  head: () => ({ meta: [{ title: named("Usage & billing — Answered admin") }] }),
+  head: () => ({ meta: [{ title: `Usage & billing — ${PRODUCT} admin` }] }),
   component: BillingPage,
 });
 

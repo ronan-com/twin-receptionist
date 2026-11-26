@@ -98,7 +98,7 @@ export type Phase = "idle" | "creating" | "create_failed" | "dns" | "starting" |
 
 export interface SetupData {
   step: StepId;
-  brand?: { productName: string; ownerEmail: string; ownPhoneAccount: boolean };
+  brand?: { productName: string; ownerEmail: string; ownPhoneAccount: boolean ; logo?: string; colour?: string };
   domain?: {
     mode: "cloudflare" | "manual";
     zone?: string; // example.com

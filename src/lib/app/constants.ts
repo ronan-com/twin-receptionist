@@ -34,7 +34,7 @@ import type {
   MembershipRole,
   KnowledgeType,
 } from "./types";
-import { named } from "@/lib/app/product";
+import { PRODUCT } from "@/lib/app/product";
 
 export interface NavItem {
   to: string;
@@ -249,7 +249,7 @@ export const INTEGRATION_CATALOG: IntegrationDef[] = [
   { provider: "servicem8", name: "ServiceM8", category: "Field service", description: "Turn booked call-outs into ServiceM8 jobs automatically.", availability: "available", oauth: true },
   { provider: "xero", name: "Xero", category: "Accounting", description: "Match callers to Xero contacts and surface invoice questions.", availability: "available", oauth: true },
   { provider: "webhook", name: "Webhook / custom CRM", category: "Automation", description: "Send call, booking and lead events to any HTTPS endpoint.", availability: "available", oauth: false },
-  { provider: "zapier", name: "Zapier", category: "Automation", description: named("Connect Answered to thousands of apps without code."), availability: "coming_soon", oauth: false },
+  { provider: "zapier", name: "Zapier", category: "Automation", description: `Connect ${PRODUCT} to thousands of apps without code.`, availability: "coming_soon", oauth: false },
   { provider: "cliniko", name: "Cliniko", category: "Calendar", description: "Practice management booking for allied health.", availability: "coming_soon", oauth: true },
 ];
 

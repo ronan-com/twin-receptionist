@@ -1,5 +1,5 @@
 import { createFileRoute, Link, redirect } from "@tanstack/react-router";
-import { OTHER_BRAND } from "@/lib/app/product";
+import { OTHER_BRAND, PRODUCT } from "@/lib/app/product";
 import { AnimatePresence, motion, useReducedMotion, useScroll, useTransform } from "motion/react";
 import { useEffect, useRef, useState } from "react";
 
@@ -41,7 +41,7 @@ export const Route = createFileRoute("/")({
   beforeLoad: () => {
     if (OTHER_BRAND) throw redirect({ to: "/login", replace: true });
   },
-  head: () => ({ meta: [{ title: "Answered — The AI Receptionist" }] }),
+  head: () => ({ meta: [{ title: `${PRODUCT} — The AI Receptionist` }] }),
   component: Index,
 });
 
@@ -272,9 +272,9 @@ function Nav() {
   return (
     <header className="absolute inset-x-0 top-0 z-50">
       <Container className="flex h-[66px] items-center justify-between gap-4">
-        <Link to="/" aria-label="Answered home" className="flex min-w-0 shrink-0 flex-col items-start gap-[3px]">
+        <Link to="/" aria-label={`${PRODUCT} home`} className="flex min-w-0 shrink-0 flex-col items-start gap-[3px]">
           <span className="text-[22px] font-bold leading-none tracking-[-0.02em] text-slate-deep">
-            Answered
+            {PRODUCT}
           </span>
           <LogoWave />
         </Link>
@@ -357,10 +357,10 @@ function Waveform() {
 
 function LiveCallCard() {
   const lines = [
-    { who: "Caller", text: "Hi, I'd like to book a cleaning next Thursday." },
-    { who: "Answered", text: "Of course. I have 10:30 or 2:15, which suits?" },
-    { who: "Caller", text: "Two-fifteen is perfect." },
-    { who: "Answered", text: "Booked. See you Thursday at 2:15." },
+    { who: "caller", text: "Hi, I'd like to book a cleaning next Thursday." },
+    { who: "agent", text: "Of course. I have 10:30 or 2:15, which suits?" },
+    { who: "caller", text: "Two-fifteen is perfect." },
+    { who: "agent", text: "Booked. See you Thursday at 2:15." },
   ];
   return (
     <div className="panel w-full max-w-[358px] p-4 shadow-[0_2px_5px_rgba(6,27,49,0.06)]">
@@ -393,8 +393,8 @@ function LiveCallCard() {
             transition={{ delay: 0.8 + i * 0.45, duration: 0.45 }}
             className="text-[13px] leading-[1.5]"
           >
-            <span className="mr-1.5 text-[11px] font-semibold text-indigo">{l.who}</span>
-            <span className={l.who === "Answered" ? "text-slate-deep" : "text-ink-muted"}>
+            <span className="mr-1.5 text-[11px] font-semibold text-indigo">{l.who === "agent" ? PRODUCT : "Caller"}</span>
+            <span className={l.who === "agent" ? "text-slate-deep" : "text-ink-muted"}>
               {l.text}
             </span>
           </motion.div>
@@ -621,7 +621,7 @@ function EntireOffice() {
             <SectionHeading>Your reception, taken care of.</SectionHeading>
             <Reveal delay={0.1}>
               <p className="mt-4 max-w-md text-[16px] leading-[1.55] text-ink-muted">
-                Answered takes care of the day-to-day reception tasks, making life easier for you and your team.
+                {PRODUCT} takes care of the day-to-day reception tasks, making life easier for you and your team.
               </p>
             </Reveal>
           </div>
@@ -703,14 +703,14 @@ function Integrations() {
               </Reveal>
               <Reveal delay={0.1}>
                 <p className="mt-4 max-w-md text-[16px] leading-[1.55] text-ink-muted">
-                  Answered books into its built-in calendar today, around your business hours. Google Calendar and Outlook connections are coming soon.
+                  {PRODUCT} books into its built-in calendar today, around your business hours. Google Calendar and Outlook connections are coming soon.
                 </p>
               </Reveal>
             </div>
 
             <div className="md:col-span-7">
               <div ref={networkRef} className="relative mx-auto aspect-[4/3] w-[300px] max-w-full md:w-[400px]">
-                <svg viewBox="0 0 400 300" className="h-full w-full overflow-visible" fill="none" role="img" aria-label="Answered books into its built-in calendar. Google Calendar and Outlook are coming soon.">
+                <svg viewBox="0 0 400 300" className="h-full w-full overflow-visible" fill="none" role="img" aria-label={`${PRODUCT} books into its built-in calendar. Google Calendar and Outlook are coming soon.`}>
                   <defs>
                     <filter id="node-shadow" x="-50%" y="-50%" width="200%" height="200%"><feDropShadow dx="0" dy="5" stdDeviation="6" floodColor="var(--slate-deep)" floodOpacity="0.12" /></filter>
                     <filter id="hub-glow" x="-60%" y="-60%" width="220%" height="220%"><feDropShadow dx="0" dy="0" stdDeviation="10" floodColor="var(--indigo)" floodOpacity="0.22" /></filter>
@@ -743,7 +743,7 @@ function Integrations() {
 
                   <motion.circle cx="200" cy="152" r="50" fill="none" stroke="var(--indigo)" strokeOpacity="0.16" strokeWidth="1" strokeDasharray="4 7" animate={pulsesRun ? { rotate: 360 } : { rotate: 0 }} transition={{ duration: 18, repeat: pulsesRun ? Infinity : 0, ease: "linear" }} style={{ transformOrigin: "200px 152px" }} />
                   <circle cx="200" cy="152" r="40" fill="var(--card)" stroke="var(--indigo)" strokeOpacity="0.28" filter="url(#hub-glow)" />
-                  <text x="200" y="149" textAnchor="middle" fill="var(--slate-deep)" fontSize="15" fontWeight="700">Answered</text>
+                  <text x="200" y="149" textAnchor="middle" fill="var(--slate-deep)" fontSize="15" fontWeight="700">{PRODUCT}</text>
                   {[7, 13, 19, 11, 16, 8].map((height, index) => <motion.rect key={height} x={181 + index * 7} y={164 - height / 2} width="3" height={height} rx="1.5" initial={false} fill="var(--indigo)" fillOpacity={index % 2 === 0 ? 1 : 0.55} animate={activeNode && pulsesRun ? { height: [height, Math.max(6, height + (index % 2 === 0 ? 6 : -3)), height], y: [164 - height / 2, 164 - Math.max(6, height + (index % 2 === 0 ? 6 : -3)) / 2, 164 - height / 2] } : { height, y: 164 - height / 2 }} transition={activeNode && pulsesRun ? { duration: 0.7, delay: index * 0.04, repeat: Infinity } : { duration: 0.2 }} />)}
                 </svg>
               </div>
@@ -955,28 +955,28 @@ function Industries() {
 /* -------------------------------------------------------------------------- */
 const FAQS = [
   {
-    q: "How does Answered handle incoming calls?",
-    a: "You choose the flow. Forward calls to Answered only when you miss them, or send every call straight to Answered so it picks up instantly. Either way, every caller gets a prompt, professional response, whether you're free or not.",
+    q: `How does ${PRODUCT} handle incoming calls?`,
+    a: `You choose the flow. Forward calls to ${PRODUCT} only when you miss them, or send every call straight to ${PRODUCT} so it picks up instantly. Either way, every caller gets a prompt, professional response, whether you're free or not.`,
   },
   {
-    q: "Does Answered work after hours and on weekends?",
-    a: "Yes. Answered can handle calls after hours and on weekends, following the availability and call-handling rules configured for your business.",
+    q: `Does ${PRODUCT} work after hours and on weekends?`,
+    a: `Yes. ${PRODUCT} can handle calls after hours and on weekends, following the availability and call-handling rules configured for your business.`,
   },
   {
-    q: "What happens if Answered can't answer a customer's question?",
-    a: "When a question needs your team, Answered can capture the enquiry for review. You can update its knowledge base to help it handle similar questions in future.",
+    q: `What happens if ${PRODUCT} can't answer a customer's question?`,
+    a: `When a question needs your team, ${PRODUCT} can capture the enquiry for review. You can update its knowledge base to help it handle similar questions in future.`,
   },
   {
-    q: "How does Answered know what to say to my customers?",
-    a: "Answered uses the business information and call instructions you provide. You can review conversations and refine its knowledge base and responses over time.",
+    q: `How does ${PRODUCT} know what to say to my customers?`,
+    a: `${PRODUCT} uses the business information and call instructions you provide. You can review conversations and refine its knowledge base and responses over time.`,
   },
   {
-    q: "Can Answered handle different types of businesses?",
-    a: "Yes. Answered is built for any service-based business, trades, medical, legal, finance, automotive, health and wellness, hospitality and more. It adapts to your services with responses tailored to how you actually work.",
+    q: `Can ${PRODUCT} handle different types of businesses?`,
+    a: `Yes. ${PRODUCT} is built for any service-based business, trades, medical, legal, finance, automotive, health and wellness, hospitality and more. It adapts to your services with responses tailored to how you actually work.`,
   },
   {
-    q: "Can Answered handle multiple calls at once?",
-    a: "Yes. Answered can take more than one call at the same time, so callers aren't left waiting while it talks to someone else.",
+    q: `Can ${PRODUCT} handle multiple calls at once?`,
+    a: `Yes. ${PRODUCT} can take more than one call at the same time, so callers aren't left waiting while it talks to someone else.`,
   },
 ];
 
@@ -1022,7 +1022,7 @@ function FAQ() {
           <SectionHeading eyebrow="FAQ">Frequently asked questions</SectionHeading>
           <Reveal delay={0.1}>
             <p className="mt-4 max-w-lg text-[16px] leading-[1.55] text-ink-muted">
-              Quick answers to the things people ask most about how Answered works.
+              Quick answers to the things people ask most about how {PRODUCT} works.
             </p>
           </Reveal>
         </div>
@@ -1092,7 +1092,7 @@ function ClosingCTA() {
         <div className="mx-auto max-w-[720px] text-center">
           <Reveal>
             <h2 className="display-strong text-[28px] md:text-[42px]">
-              Hear what Answered can do for your business.
+              Hear what {PRODUCT} can do for your business.
             </h2>
           </Reveal>
           <Reveal delay={0.06}>
@@ -1123,7 +1123,7 @@ function SiteFooter() {
         <div className="flex flex-col gap-8 md:flex-row md:items-start md:justify-between">
           <div className="max-w-[36ch]">
             <div className="flex flex-col items-start gap-[3px]">
-              <span className="text-[20px] font-bold leading-none tracking-[-0.02em] text-slate-deep">Answered</span>
+              <span className="text-[20px] font-bold leading-none tracking-[-0.02em] text-slate-deep">{PRODUCT}</span>
               <LogoWave />
             </div>
             <p className="mt-3 text-[14px] leading-[1.55] text-ink-muted">AI reception for service businesses.</p>
@@ -1142,7 +1142,7 @@ function SiteFooter() {
             </Link>
           </nav>
         </div>
-        <p className="mt-8 border-t border-hairline pt-6 text-[13px] text-ink-muted">© 2026 Answered</p>
+        <p className="mt-8 border-t border-hairline pt-6 text-[13px] text-ink-muted">© 2026 {PRODUCT}</p>
       </Container>
     </footer>
   );

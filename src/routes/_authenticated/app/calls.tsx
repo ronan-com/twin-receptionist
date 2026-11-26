@@ -19,7 +19,7 @@ import { fmtNumber } from "@/lib/app/format";
 import { useRangeMetrics } from "@/lib/app/use-metrics";
 import { useWorkspace } from "@/lib/app/workspace";
 import type { CallListRow, CallOutcome, CallStatus } from "@/lib/app/types";
-import { named } from "@/lib/app/product";
+import { PRODUCT } from "@/lib/app/product";
 
 export const Route = createFileRoute("/_authenticated/app/calls")({
   validateSearch: (search: Record<string, unknown>): { call?: string } => ({
@@ -30,7 +30,7 @@ export const Route = createFileRoute("/_authenticated/app/calls")({
   }),
   head: () => ({
     meta: [
-      { title: named("Calls — Answered") },
+      { title: `Calls — ${PRODUCT}` },
       {
         name: "description",
         content:

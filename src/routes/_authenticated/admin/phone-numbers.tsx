@@ -11,10 +11,10 @@ import { fmtNumber } from "@/lib/app/format";
 import { adminNumbersQuery, adminBusinessesQuery } from "@/lib/app/queries";
 import type { AdminNumberRow } from "@/lib/api/console";
 import { BizCell, useConsole } from "./-shared";
-import { named } from "@/lib/app/product";
+import { PRODUCT } from "@/lib/app/product";
 
 export const Route = createFileRoute("/_authenticated/admin/phone-numbers")({
-  head: () => ({ meta: [{ title: named("Phone numbers — Answered admin") }] }),
+  head: () => ({ meta: [{ title: `Phone numbers — ${PRODUCT} admin` }] }),
   component: AdminNumbersPage,
 });
 

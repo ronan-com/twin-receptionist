@@ -2,12 +2,12 @@ import { createFileRoute } from "@tanstack/react-router";
 import { AutomationsPanel } from "@/components/app/AutomationsPanel";
 import { PageHeader } from "@/components/app/primitives";
 import { useWorkspace } from "@/lib/app/workspace";
-import { named } from "@/lib/app/product";
+import { PRODUCT } from "@/lib/app/product";
 
 // The business's automations: transfer to a person, text-back, recording, language,
 // call limits and after-hours mode. Managers change them; viewers see them read-only.
 export const Route = createFileRoute("/_authenticated/app/automations")({
-  head: () => ({ meta: [{ title: named("Automations | Answered") }] }),
+  head: () => ({ meta: [{ title: `Automations | ${PRODUCT}` }] }),
   component: AutomationsPage,
 });
 

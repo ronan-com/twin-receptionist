@@ -8,7 +8,7 @@ import { Label } from "@/components/ui/label";
 import { AuthLayout, FormError } from "@/components/auth/AuthLayout";
 import { authApi, homeOf, safeRedirect } from "@/lib/api/auth";
 import { sessionQuery } from "@/lib/app/workspace";
-import { PRODUCT, named } from "@/lib/app/product";
+import { PRODUCT } from "@/lib/app/product";
 
 type Mode = "signin" | "forgot";
 
@@ -17,7 +17,7 @@ export const Route = createFileRoute("/login")({
     redirect: typeof search.redirect === "string" ? search.redirect : undefined,
     mode: search.mode === "forgot" ? ("forgot" as const) : undefined,
   }),
-  head: () => ({ meta: [{ title: named("Sign in — Answered") }, { name: "robots", content: "noindex" }] }),
+  head: () => ({ meta: [{ title: `Sign in — ${PRODUCT}` }, { name: "robots", content: "noindex" }] }),
   component: LoginPage,
 });
 
@@ -77,7 +77,7 @@ function LoginPage() {
 
   return (
     <AuthLayout
-      title={mode === "signin" ? named("Sign in to Answered") : "Reset your password"}
+      title={mode === "signin" ? `Sign in to ${PRODUCT}` : "Reset your password"}
       subtitle={mode === "signin" ? "Welcome back. Your receptionist has been busy." : "We'll email you a secure link to choose a new password."}
       footer={
         mode === "signin" ? (

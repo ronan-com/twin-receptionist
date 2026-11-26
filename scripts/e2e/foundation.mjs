@@ -163,6 +163,8 @@ try {
     // The first voice is picked for you once the list has loaded.
     await ag.waitForSelector('[aria-labelledby="w-voice"] [role="radio"][aria-checked="true"]');
     await clickText(ag, '[data-action="continue"]', "Continue");
+    await ag.waitForSelector('[data-step="3"]');
+    await clickText(ag, '[data-action="continue"]', "Continue");
     await ag.waitForSelector("[data-review]");
     await clickText(ag, '[data-action="create-receptionist"]', "Create receptionist");
     // It lands on the new client's page, with its receptionist listed.

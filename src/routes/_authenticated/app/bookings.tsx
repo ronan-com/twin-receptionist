@@ -34,7 +34,7 @@ import {
 import type { AppointmentRow, AppointmentStatus } from "@/lib/app/types";
 import { useWorkspace } from "@/lib/app/workspace";
 import { cn } from "@/lib/utils";
-import { PRODUCT, named } from "@/lib/app/product";
+import { PRODUCT } from "@/lib/app/product";
 
 export const Route = createFileRoute("/_authenticated/app/bookings")({
   validateSearch: (search: Record<string, unknown>): { booking?: string } => ({
@@ -42,7 +42,7 @@ export const Route = createFileRoute("/_authenticated/app/bookings")({
   }),
   head: () => ({
     meta: [
-      { title: named("Bookings | Answered") },
+      { title: `Bookings | ${PRODUCT}` },
       { name: "description", content: "Every appointment your receptionist booked, with the call behind it and its calendar status." },
     ],
   }),
@@ -131,7 +131,7 @@ function BookingsPage() {
       updateAppointment(ws.businessId!, input.id, { status: input.status, notes: input.notes }),
     onSuccess: (saved, input) => {
       toast.success(input.status ? `Marked ${APPOINTMENT_STATUS_LABELS[input.status].toLowerCase()}` : "Notes saved", {
-        description: named("This changes the Answered record only. No calendar invitation or message was sent, so check your calendar if this booking was in it."),
+        description: `This changes the ${PRODUCT} record only. No calendar invitation or message was sent, so check your calendar if this booking was in it.`,
       });
       void qc.invalidateQueries({ queryKey: ["appointments", ws.businessId] });
       if (selected && selected.id === saved.id) setSelected(saved);

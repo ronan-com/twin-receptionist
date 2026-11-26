@@ -5,6 +5,7 @@ import { toast } from "sonner";
 import { Loader2, ScrollText } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -15,17 +16,17 @@ import { Field, FormSection, SaveBar } from "@/components/app/forms";
 import { fmtDateTime, fmtNumber, fmtRelative, humanize } from "@/lib/app/format";
 import { usageQuery } from "@/lib/app/queries";
 import { getAudit, getBilling, updateAccount, updateBusiness } from "@/lib/api/manage";
-import { asBusinessHours, DAY_KEYS, DAY_LABELS, type Business, type BusinessHours } from "@/lib/app/types";
+import { asBusinessHours, DAY_KEYS, DAY_LABELS, DEFAULT_HOURS, type Business, type BusinessHours } from "@/lib/app/types";
 import { useWorkspace } from "@/lib/app/workspace";
 import { mergeFormOnRefresh } from "@/lib/app/business-logic";
-import { TIMEZONES } from "@/lib/shared";
-import { named } from "@/lib/app/product";
+import { ALWAYS_FROM, ALWAYS_TO, TIMEZONES } from "@/lib/shared";
+import { PRODUCT } from "@/lib/app/product";
 
 const SETTINGS_TABS = ["business", "hours", "branding", "account", "billing", "activity"] as const;
 type SettingsTab = (typeof SETTINGS_TABS)[number];
 
 export const Route = createFileRoute("/_authenticated/app/settings")({
-  head: () => ({ meta: [{ title: named("Settings | Answered") }] }),
+  head: () => ({ meta: [{ title: `Settings | ${PRODUCT}` }] }),
   validateSearch: (search: Record<string, unknown>): { tab?: SettingsTab } => {
     const t = String(search["tab"] ?? "");
     return SETTINGS_TABS.includes(t as SettingsTab) ? { tab: t as SettingsTab } : {};
@@ -49,9 +50,16 @@ interface BizForm {
   country: string;
   timezone: string;
   business_hours: BusinessHours;
+  /** One closure per line here; the server stores them as "a; b". */
+  closures: string;
 }
 
-function fromBusiness(b: Business): BizForm {
+// "Always on (24/7)": every day open 00:00 to 23:59.
+const allDay = (h: BusinessHours): boolean => DAY_KEYS.every((d) => !h[d].closed && h[d].open === ALWAYS_FROM && h[d].close === ALWAYS_TO);
+const alwaysHours = (): BusinessHours =>
+  Object.fromEntries(DAY_KEYS.map((d) => [d, { open: ALWAYS_FROM, close: ALWAYS_TO, closed: false }])) as BusinessHours;
+
+function fromBusiness(b: Business & { closures?: string | null }): BizForm {
   return {
     name: b.name,
     industry: b.industry ?? "Other",
@@ -65,6 +73,7 @@ function fromBusiness(b: Business): BizForm {
     country: b.country ?? "AU",
     timezone: b.timezone,
     business_hours: asBusinessHours(b.business_hours),
+    closures: String(b.closures ?? "").split(/;\s*/).filter(Boolean).join("\n"),
   };
 }
 
@@ -124,6 +133,7 @@ function SettingsPage() {
         country: submitted.country.trim(),
         timezone: submitted.timezone,
         business_hours: submitted.business_hours,
+        closures: submitted.closures,
       });
       return { submittedBusinessId: b.id, applied: res.applied, saved: res.business };
     },
@@ -236,41 +246,90 @@ function SettingsPage() {
         </TabsContent>
 
         <TabsContent value="hours" className="mt-3">
-          <Panel title="Business hours" description="Your actual opening hours. Your receptionist tells callers when you're open and only offers times inside them.">
-            <ul className="divide-y divide-hairline">
-              {DAY_KEYS.map((d) => {
-                const day = form.business_hours[d];
-                const put = (next: Partial<typeof day>) => set("business_hours", { ...form.business_hours, [d]: { ...day, ...next } });
-                return (
-                  <li key={d} className="grid grid-cols-[1fr_auto] items-center gap-3 py-2.5 sm:grid-cols-[120px_auto_1fr]">
-                    <span className="text-[13px] font-medium text-ink">{DAY_LABELS[d]}</span>
-                    <div className="flex items-center gap-2 sm:order-3 sm:justify-self-end">
-                      <span className="text-[12px] text-ink-muted">{day.closed ? "Closed" : "Open"}</span>
-                      <Switch checked={!day.closed} onCheckedChange={(v) => put({ closed: !v })} disabled={!canManage} aria-label={`${DAY_LABELS[d]} open`} />
-                    </div>
-                    <div className="col-span-2 flex items-center gap-2 sm:order-2 sm:col-span-1">
-                      <Input type="time" value={day.open} onChange={(e) => put({ open: e.target.value })} disabled={!canManage || day.closed} className="h-8 w-[112px] text-[12.5px]" aria-label={`${DAY_LABELS[d]} opens`} />
-                      <span className="text-[12px] text-ink-muted">to</span>
-                      <Input type="time" value={day.close} onChange={(e) => put({ close: e.target.value })} disabled={!canManage || day.closed} className="h-8 w-[112px] text-[12.5px]" aria-label={`${DAY_LABELS[d]} closes`} />
-                    </div>
-                  </li>
-                );
-              })}
-            </ul>
-            {canManage ? (
-              <Button
-                variant="outline"
-                size="sm"
-                className="mt-3 h-7 text-[12px]"
-                onClick={() => {
-                  const next = { ...form.business_hours };
-                  for (const d of ["tue", "wed", "thu", "fri"] as const) next[d] = { ...form.business_hours.mon };
-                  set("business_hours", next);
-                }}
-              >
-                Copy Monday to weekdays
-              </Button>
-            ) : null}
+          <Panel title="When would you like the AI receptionist to be active?" description="It only operates within these hours.">
+            <div className="mb-3 inline-flex rounded-[6px] border border-hairline p-0.5" role="radiogroup" aria-label="When it's active">
+              {[
+                { id: "always", label: "Always on (24/7)", on: allDay(form.business_hours), pick: () => set("business_hours", alwaysHours()) },
+                {
+                  id: "times",
+                  label: "Set specific times",
+                  on: !allDay(form.business_hours),
+                  // Back to set times: the saved hours, unless they were 24/7 too.
+                  pick: () => {
+                    if (!allDay(form.business_hours)) return;
+                    const saved = (JSON.parse(baseline) as BizForm).business_hours;
+                    set("business_hours", allDay(saved) ? { ...DEFAULT_HOURS } : saved);
+                  },
+                },
+              ].map((o) => (
+                <button
+                  key={o.id}
+                  type="button"
+                  role="radio"
+                  aria-checked={o.on}
+                  data-hours={o.id}
+                  disabled={!canManage}
+                  onClick={o.pick}
+                  className={`flex-1 whitespace-nowrap rounded-[4px] px-3 py-1.5 text-[12.5px] ${o.on ? "bg-indigo text-white" : "text-ink-muted hover:text-ink"}`}
+                >
+                  {o.label}
+                </button>
+              ))}
+            </div>
+            {allDay(form.business_hours) ? (
+              <p className="rounded-[6px] border border-hairline bg-canvas-2 px-3 py-2 text-[12.5px] text-ink">Your receptionist answers every call, any time of day, every day of the week.</p>
+            ) : (
+              <>
+                <ul className="divide-y divide-hairline">
+                  {DAY_KEYS.map((d) => {
+                    const day = form.business_hours[d];
+                    const put = (next: Partial<typeof day>) => set("business_hours", { ...form.business_hours, [d]: { ...day, ...next } });
+                    return (
+                      <li key={d} className="grid grid-cols-[1fr_auto] items-center gap-3 py-2.5 sm:grid-cols-[120px_auto_1fr]">
+                        <span className="text-[13px] font-medium text-ink">{DAY_LABELS[d]}</span>
+                        <div className="flex items-center gap-2 sm:order-3 sm:justify-self-end">
+                          <span className="text-[12px] text-ink-muted">{day.closed ? "Closed" : "Open"}</span>
+                          <Switch checked={!day.closed} onCheckedChange={(v) => put({ closed: !v })} disabled={!canManage} aria-label={`${DAY_LABELS[d]} open`} />
+                        </div>
+                        <div className="col-span-2 flex items-center gap-2 sm:order-2 sm:col-span-1">
+                          <Input type="time" value={day.open} onChange={(e) => put({ open: e.target.value })} disabled={!canManage || day.closed} className="h-8 w-[112px] text-[12.5px]" aria-label={`${DAY_LABELS[d]} opens`} />
+                          <span className="text-[12px] text-ink-muted">to</span>
+                          <Input type="time" value={day.close} onChange={(e) => put({ close: e.target.value })} disabled={!canManage || day.closed} className="h-8 w-[112px] text-[12.5px]" aria-label={`${DAY_LABELS[d]} closes`} />
+                        </div>
+                      </li>
+                    );
+                  })}
+                </ul>
+                {canManage ? (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="mt-3 h-7 text-[12px]"
+                    onClick={() => {
+                      const next = { ...form.business_hours };
+                      for (const d of ["tue", "wed", "thu", "fri"] as const) next[d] = { ...form.business_hours.mon };
+                      set("business_hours", next);
+                    }}
+                  >
+                    Copy Monday to weekdays
+                  </Button>
+                ) : null}
+              </>
+            )}
+          </Panel>
+          <Panel className="mt-4" title="Closures and public holidays" description="Optional. On these days callers are told the business is closed, whatever the hours above say.">
+            <Field label="Closures" htmlFor="h-closures" hint="One per line.">
+              <Textarea
+                id="h-closures"
+                rows={3}
+                maxLength={600}
+                placeholder={"e.g. Closed all national public holidays\nClosed 24 December to 6 January"}
+                value={form.closures}
+                onChange={(e) => set("closures", e.target.value)}
+                disabled={!canManage}
+                data-field="closures"
+              />
+            </Field>
           </Panel>
         </TabsContent>
 

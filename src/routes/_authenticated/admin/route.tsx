@@ -8,7 +8,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { adminNavFor, isPlatformOnlyPath } from "@/lib/app/constants";
 import { adminOverviewCountsQuery } from "@/lib/app/queries";
 import { useWorkspace } from "@/lib/app/workspace";
-import { named } from "@/lib/app/product";
+import { PRODUCT } from "@/lib/app/product";
 
 // The console. Variant "platform" (the platform admin: everything) or "agency"
 // (agency staff: their own agency). Business users are sent to their workspace,
@@ -24,7 +24,7 @@ export const Route = createFileRoute("/_authenticated/admin")({
     if (s.singleAgency && location.pathname.startsWith("/admin/number-requests")) throw redirect({ to: "/admin", replace: true });
   },
   head: () => ({
-    meta: [{ title: named("Admin console — Answered") }, { name: "robots", content: "noindex" }],
+    meta: [{ title: `Admin console — ${PRODUCT}` }, { name: "robots", content: "noindex" }],
   }),
   component: AdminLayout,
 });

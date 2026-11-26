@@ -376,6 +376,7 @@ async function streamInto(args: string[], into: string[]): Promise<number> {
   return pr.exited;
 }
 async function runDeploy(d: any, body: Uint8Array) {
+  if (process.env.DEMO_APP_URL) { await Bun.sleep(800); d.logs.push("Build finished", "Deploy complete"); d.status = "DEPLOYING"; await Bun.sleep(800); d.status = "SUCCESS"; return; }
   const [p, app] = findService(d.serviceId) as [any, any];
   const gone = () => !rProjects.has(p.id); // deleted while it built
   try {

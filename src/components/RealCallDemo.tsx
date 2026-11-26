@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
+import { PRODUCT } from "@/lib/app/product";
 import {
   Calendar,
   Check,
@@ -19,24 +20,24 @@ const DURATION = 81.11;
 type TranscriptLine = {
   start: number;
   end: number;
-  who: "Answered" | "Caller";
+  who: "agent" | "caller";
   text: string;
 };
 
 const TRANSCRIPT: TranscriptLine[] = [
-  { start: 0, end: 4, who: "Answered", text: "Thanks for calling Bright Smile Dental. How can I help you today?" },
-  { start: 4, end: 9.73, who: "Caller", text: "Hey, do you guys accept new patients?" },
-  { start: 9.73, end: 17.73, who: "Answered", text: "Yes, we do accept new patients. Would you like to book your first appointment with us, or is there something specific you'd like to know first?" },
-  { start: 17.73, end: 20.73, who: "Caller", text: "Yeah, I just want to book a normal checkup." },
-  { start: 20.73, end: 27.58, who: "Answered", text: "No problem. We can book you in for a standard checkup and clean. Can I get your full name please?" },
-  { start: 27.58, end: 32.57, who: "Caller", text: "Jack Smith." },
-  { start: 32.57, end: 34.57, who: "Answered", text: "Thanks, Jack." },
-  { start: 34.57, end: 42.65, who: "Answered", text: "You mentioned this is your first visit with us, so we'll book you as a new patient." },
-  { start: 42.65, end: 52.65, who: "Answered", text: "When would you like to come in? We have availability this week. Would you prefer a morning or afternoon?" },
-  { start: 52.65, end: 56.65, who: "Caller", text: "I want a morning one. Can you do Wednesday, 10 a.m.?" },
-  { start: 56.65, end: 68.73, who: "Answered", text: "Yes, we have a 10 a.m. slot available on Wednesday, the 9th of September. I'll book you in for a new patient checkup and clean then." },
-  { start: 68.73, end: 70.73, who: "Caller", text: "No, thank you. That's great." },
-  { start: 70.73, end: DURATION, who: "Answered", text: "You're all booked in, Jack. Wednesday, the 9th of September at 10 a.m. for your new patient checkup. We'll see you then." },
+  { start: 0, end: 4, who: "agent", text: "Thanks for calling Bright Smile Dental. How can I help you today?" },
+  { start: 4, end: 9.73, who: "caller", text: "Hey, do you guys accept new patients?" },
+  { start: 9.73, end: 17.73, who: "agent", text: "Yes, we do accept new patients. Would you like to book your first appointment with us, or is there something specific you'd like to know first?" },
+  { start: 17.73, end: 20.73, who: "caller", text: "Yeah, I just want to book a normal checkup." },
+  { start: 20.73, end: 27.58, who: "agent", text: "No problem. We can book you in for a standard checkup and clean. Can I get your full name please?" },
+  { start: 27.58, end: 32.57, who: "caller", text: "Jack Smith." },
+  { start: 32.57, end: 34.57, who: "agent", text: "Thanks, Jack." },
+  { start: 34.57, end: 42.65, who: "agent", text: "You mentioned this is your first visit with us, so we'll book you as a new patient." },
+  { start: 42.65, end: 52.65, who: "agent", text: "When would you like to come in? We have availability this week. Would you prefer a morning or afternoon?" },
+  { start: 52.65, end: 56.65, who: "caller", text: "I want a morning one. Can you do Wednesday, 10 a.m.?" },
+  { start: 56.65, end: 68.73, who: "agent", text: "Yes, we have a 10 a.m. slot available on Wednesday, the 9th of September. I'll book you in for a new patient checkup and clean then." },
+  { start: 68.73, end: 70.73, who: "caller", text: "No, thank you. That's great." },
+  { start: 70.73, end: DURATION, who: "agent", text: "You're all booked in, Jack. Wednesday, the 9th of September at 10 a.m. for your new patient checkup. We'll see you then." },
 ];
 
 const WAVES = [8, 12, 18, 10, 22, 15, 27, 12, 20, 29, 16, 24, 10, 18, 26, 13, 22, 30, 14, 19, 25, 11, 17, 23, 9, 16, 20, 12, 18, 14];
@@ -159,10 +160,10 @@ function RealCallDemo() {
                   className="w-full"
                 >
                   <div className="mb-2 flex items-center gap-2">
-                    <span className={`grid h-6 w-6 place-items-center rounded-full ${active.who === "Answered" ? "bg-indigo text-white" : "bg-[#f0f1f6] text-slate-deep"}`}>
-                      {active.who === "Answered" ? <Phone className="h-3.5 w-3.5" /> : <UserRound className="h-3.5 w-3.5" />}
+                    <span className={`grid h-6 w-6 place-items-center rounded-full ${active.who === "agent" ? "bg-indigo text-white" : "bg-[#f0f1f6] text-slate-deep"}`}>
+                      {active.who === "agent" ? <Phone className="h-3.5 w-3.5" /> : <UserRound className="h-3.5 w-3.5" />}
                     </span>
-                    <span className={`text-[12px] font-semibold ${active.who === "Answered" ? "text-indigo" : "text-ink-muted"}`}>{active.who}</span>
+                    <span className={`text-[12px] font-semibold ${active.who === "agent" ? "text-indigo" : "text-ink-muted"}`}>{active.who === "agent" ? PRODUCT : "Caller"}</span>
                   </div>
                   <p className="max-w-[42ch] text-[17px] font-medium leading-[1.42] tracking-[-0.015em] text-slate-deep sm:text-[20px]">
                     {active.text}

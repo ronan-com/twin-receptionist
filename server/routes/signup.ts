@@ -5,6 +5,7 @@ import { industryKeyOf } from "../answered";
 import { audit } from "../audit";
 import { sql } from "../db";
 import { newAgencyUsesPlatform } from "../phoneAccount";
+import { UI_PRODUCT } from "../product";
 import { ValidationError } from "../prompt";
 import { runAsOrg } from "../telnyx";
 import { readBody } from "./http";
@@ -69,7 +70,7 @@ async function directOrgId(): Promise<string> {
     const [o] = await tx`select id from orgs where direct limit 1`;
     if (o) return o.id as string;
     const id = crypto.randomUUID();
-    await tx`insert into orgs (id, name, platform_telnyx, direct) values (${id}, ${process.env.DIRECT_ORG_NAME || "Answered Direct"}, true, true)`;
+    await tx`insert into orgs (id, name, platform_telnyx, direct) values (${id}, ${process.env.DIRECT_ORG_NAME || `${UI_PRODUCT} Direct`}, true, true)`;
     return id;
   });
 }

@@ -1,7 +1,7 @@
 // Area R: the receptionist page's persona, conversation and pause fields reach the script.
 //   DATABASE_URL=postgres://unused@localhost/unused bun test server/prompt.test.ts
 import { describe, expect, test } from "bun:test";
-import { alwaysOpen, blankSettings, defaultHours, describeHours, greetingsFor, INDUSTRIES } from "../src/lib/shared";
+import { alwaysOpen, blankSettings, defaultHours, describeHours, greetingsFor, INDUSTRIES, withoutRecordingLine } from "../src/lib/shared";
 import { openNow } from "./automations";
 import { industryKeyOf, industryLabelOf } from "./answered";
 import { DEFAULT_PAUSE_MESSAGE, buildInstructions, greetingOf, normaliseSettings } from "./prompt";
@@ -125,17 +125,22 @@ describe("setup wizard fields", () => {
     expect(industryKeyOf("vet")).toBe("vet");
   });
 
-  test("ready-made greetings keep the AI and recording lines; childcare leads with the centre's", () => {
+  test("ready-made greetings say it's an AI but never that the call is recorded; childcare leads with the centre's", () => {
     for (const i of INDUSTRIES) {
       for (const g of greetingsFor(i.key, "Little Gum Trees", "Chloe")) {
         expect(g.text).toContain("AI");
-        expect(g.text).toContain("recorded");
+        expect(g.text).not.toContain("recorded");
       }
     }
     const [first] = greetingsFor("childcare", "Little Gum Trees", "Chloe");
     expect(first.text).toBe(
-      "Thanks for calling Little Gum Trees. I'm Chloe, the centre's AI receptionist, and this call is recorded. I can help with enrolments, tours and general questions. If you'd prefer to speak with the team, just let me know.",
+      "Thanks for calling Little Gum Trees. I'm Chloe, the centre's AI receptionist. I can help with enrolments, tours and general questions. If you'd prefer to speak with the team, just let me know.",
     );
+    expect(withoutRecordingLine("Hi, you've reached Paws. I'm Chloe, the AI assistant here, and this call is recorded. How can I help?")).toBe(
+      "Hi, you've reached Paws. I'm Chloe, the AI assistant here. How can I help?",
+    );
+    expect(withoutRecordingLine("Hi, Paws. This call is recorded. I'm an AI assistant. How can I help?")).toBe("Hi, Paws. I'm an AI assistant. How can I help?");
+    expect(withoutRecordingLine("Hi, Paws. I'm the AI assistant. How can I help?")).toBe("Hi, Paws. I'm the AI assistant. How can I help?");
     expect(greetingsFor("vet", "Paws", "").some((g) => g.label === "Urgent calls first")).toBe(true);
     expect(greetingsFor("legal", "Smith Law", "").some((g) => g.label === "Urgent calls first")).toBe(false);
   });

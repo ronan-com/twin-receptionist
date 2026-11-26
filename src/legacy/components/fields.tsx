@@ -291,8 +291,8 @@ export function VoiceFields({ value, onChange, voices }: Props & { voices: Voice
           onChange={(e) => onChange({ greeting: e.target.value })}
         />
         <span className="hint">
-          Leave this blank to use the suggested greeting above. Keep the part that says it's an AI assistant and
-          that the call is recorded.
+          Leave this blank to use the suggested greeting above. Keep the part that says it's an AI assistant.
+          The recording notice is added only if call recording is on.
         </span>
       </label>
     </div>

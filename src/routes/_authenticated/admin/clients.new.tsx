@@ -604,7 +604,7 @@ function VoiceStep({ value, onChange, voices, loading }: StepProps & { voices: {
           })}
         </div>
       </div>
-      <Field label="Greeting" htmlFor="w-greeting" hint="Pick one above or write your own. Leave blank to use the standard one. Keep the part that says it's an AI assistant and that the call is recorded.">
+      <Field label="Greeting" htmlFor="w-greeting" hint="Pick one above or write your own. Leave blank to use the standard one. Keep the part that says it's an AI assistant. The recording notice is added only if call recording is on.">
         <Textarea id="w-greeting" rows={3} maxLength={300} placeholder={defaultGreeting(value.businessName, value.receptionistName)} value={value.greeting} onChange={(e) => onChange({ greeting: e.target.value })} />
       </Field>
     </>

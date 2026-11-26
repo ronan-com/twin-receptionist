@@ -787,7 +787,6 @@ async function route(req: Request, server?: { requestIP(r: Request): { address: 
     return json({ error: "Not found" }, 404);
   }
 
-  // ---- The Answered UI's route modules (server/routes/*), wired once here ----
   // The agency help assistant (AI answers about the dashboard, streamed from OpenRouter).
   if (path === "/api/assistant") {
     return assistantRoute(req, ctx, {
@@ -799,6 +798,7 @@ async function route(req: Request, server?: { requestIP(r: Request): { address: 
     });
   }
 
+  // ---- The Answered UI's route modules (server/routes/*), wired once here ----
   if (path.startsWith("/api/automations/")) return (await automationRoutes({ req, url, path, method, ctx, orgId, appUrl: appUrl(req) }, { clientAccessFor, syncAssistant })) ?? json({ error: "Not found" }, 404);
   if (path.startsWith("/api/website-chat/")) return (await webchatAdmin({ req, url, path, method, ctx, orgId, appUrl: appUrl(req) }, { clientAccessFor, publicUrl })) ?? json({ error: "Not found" }, 404);
   const area = path.match(/^\/api\/(workspace|manage|console)(\/.*)?$/);
@@ -950,13 +950,13 @@ async function route(req: Request, server?: { requestIP(r: Request): { address: 
     return json({ numbers: await availableNumbers(type, country) });
   }
 
+  // Numbers the agency already owns on its Telnyx account (not answering for any receptionist yet).
+  if (path === "/api/numbers/owned" && method === "GET") return json({ numbers: await ownedNumbers(ctx, orgId) });
+
   if (path === "/api/clients") {
     if (method === "GET") return json({ clients: await listClients(orgId) });
     if (method === "POST") {
       const input = await req.json();
-  // Numbers the agency already owns on its Telnyx account (not answering for any receptionist yet).
-  if (path === "/api/numbers/owned" && method === "GET") return json({ numbers: await ownedNumbers(ctx, orgId) });
-
       const created = await createClient(orgId, input, { quick: input?.defaultVoice === true });
       await audit(ctx, "receptionist.create", { business: created.settings.businessName }, { clientId: created.id });
       return json({ client: created }, 201);
@@ -1084,14 +1084,14 @@ async function route(req: Request, server?: { requestIP(r: Request): { address: 
         // Doesn't ask the carrier: the request is saved either way.
         return json({ requests: await requestsForClient(client.id) }, 201);
       }
-    } else if (match[2] === "/numbers") {
-      if (method === "GET") return json(await numberState(ctx, client));
-      if (method === "POST") {
-        // Numbers cost money every month. On the platform's account, agencies ask
     } else if (match[2] === "/numbers/owned") {
       if (method === "GET") return json({ numbers: await ownedNumbers(ctx, orgId) });
     } else if (match[2] === "/numbers/attach" || match[2] === "/numbers/detach") {
       if (method === "POST") return json(await changeOwnNumber(ctx, orgId, client, match[2] === "/numbers/attach" ? "attach" : "detach", await req.json()));
+    } else if (match[2] === "/numbers") {
+      if (method === "GET") return json(await numberState(ctx, client));
+      if (method === "POST") {
+        // Numbers cost money every month. On the platform's account, agencies ask
         // (number-requests) and the platform team buys; on its own account an agency buys.
         if (!(await canBuyNumbers(ctx))) throw new AuthError("Request a number and we'll set it up.", 403);
         requireRole(ctx, "admin");

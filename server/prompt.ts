@@ -125,19 +125,21 @@ function aboutFields(src: Record<string, unknown>, current: Partial<Settings>, i
   if (about) out.about = about;
   const sayName = has("sayName") ? oneLine(src.sayName, 80) : (current.sayName ?? "");
   if (sayName) out.sayName = sayName;
-  // One closure per line or separated by semicolons.
-  const closures = has("closures")
-    ? clean(
-        String(src.closures ?? "")
-          .split(/\r?\n|;/)
-          .map((x) => x.trim())
-          .filter(Boolean)
-          .join("; "),
-        600,
-      )
-    : (current.closures ?? "");
+  const closures = has("closures") ? cleanClosures(src.closures) : (current.closures ?? "");
   if (closures) out.closures = closures;
   return out;
+}
+
+/** Closures and public holidays: one per line or separated by semicolons, stored as "a; b". */
+export function cleanClosures(value: unknown): string {
+  return clean(
+    String(value ?? "")
+      .split(/\r?\n|;/)
+      .map((x) => x.trim())
+      .filter(Boolean)
+      .join("; "),
+    600,
+  );
 }
 
 /** What callers hear first: the greeting, or the pause message while paused. */

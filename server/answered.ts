@@ -94,6 +94,7 @@ export function answeredBusiness(
     org_name: extra.orgName,
     receptionist_name: s.receptionistName,
     phone_numbers: r.phoneNumbers ?? [],
+    closures: s.closures ?? "",
   };
 }
 export type AnsweredBusiness = ReturnType<typeof answeredBusiness>;

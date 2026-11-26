@@ -155,9 +155,11 @@ export type BusinessUpdateBody = BusinessDetails & {
   postal_code?: string;
   country?: string;
   business_hours?: Business["business_hours"];
+  /** Closures and public holidays, one per line; empty removes them. */
+  closures?: string;
 };
 export const updateBusiness = (businessId: string, body: BusinessUpdateBody) =>
-  api.put<{ business: Business; applied: boolean }>(`${base(businessId)}/business`, body);
+  api.put<{ business: Business & { closures?: string }; applied: boolean }>(`${base(businessId)}/business`, body);
 
 export async function getSubscription(businessId: string): Promise<SubscriptionRow | null> {
   return (await api.get<{ subscription: SubscriptionRow | null }>(`${base(businessId)}/subscription`)).subscription;

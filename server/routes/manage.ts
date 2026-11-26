@@ -11,7 +11,7 @@ import { checkEmail, connectEmail, disconnectEmail, emailStatus } from "../email
 import { recordIncident } from "../incidents";
 import { webhookSecret } from "../notify";
 import { createRequest, requestsForClient } from "../numberRequests";
-import { COLLECT_FIELDS, DEFAULT_PAUSE_MESSAGE, DIALECTS, TONES, ValidationError } from "../prompt";
+import { COLLECT_FIELDS, DEFAULT_PAUSE_MESSAGE, DIALECTS, TONES, ValidationError, cleanClosures } from "../prompt";
 import { isDemo } from "../sandbox";
 import { getClient, orgOfClient, saveClient } from "../store";
 import { json, readBody, type ClientAccess, type ClientRouteArgs } from "./http";
@@ -531,6 +531,12 @@ function applyBusiness(s: Settings, b: any): Settings {
   if (b.address_line1 !== undefined) next.address = str(b.address_line1, 140);
   if (b.timezone !== undefined) next.timezone = timezoneOf(b.timezone);
   if (b.business_hours !== undefined) next.hours = hoursFrom(b.business_hours, s.hours);
+  // Closures and public holidays (the setup wizard asks too); empty removes them.
+  if (b.closures !== undefined) {
+    const closures = cleanClosures(b.closures);
+    if (closures) next.closures = closures;
+    else delete next.closures;
+  }
   return next;
 }
 

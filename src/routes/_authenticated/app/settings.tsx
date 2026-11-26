@@ -5,6 +5,7 @@ import { toast } from "sonner";
 import { Loader2, ScrollText } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -49,6 +50,8 @@ interface BizForm {
   country: string;
   timezone: string;
   business_hours: BusinessHours;
+  /** One closure per line here; the server stores them as "a; b". */
+  closures: string;
 }
 
 // "Always on (24/7)": every day open 00:00 to 23:59.
@@ -56,7 +59,7 @@ const allDay = (h: BusinessHours): boolean => DAY_KEYS.every((d) => !h[d].closed
 const alwaysHours = (): BusinessHours =>
   Object.fromEntries(DAY_KEYS.map((d) => [d, { open: ALWAYS_FROM, close: ALWAYS_TO, closed: false }])) as BusinessHours;
 
-function fromBusiness(b: Business): BizForm {
+function fromBusiness(b: Business & { closures?: string | null }): BizForm {
   return {
     name: b.name,
     industry: b.industry ?? "Other",
@@ -70,6 +73,7 @@ function fromBusiness(b: Business): BizForm {
     country: b.country ?? "AU",
     timezone: b.timezone,
     business_hours: asBusinessHours(b.business_hours),
+    closures: String(b.closures ?? "").split(/;\s*/).filter(Boolean).join("\n"),
   };
 }
 
@@ -129,6 +133,7 @@ function SettingsPage() {
         country: submitted.country.trim(),
         timezone: submitted.timezone,
         business_hours: submitted.business_hours,
+        closures: submitted.closures,
       });
       return { submittedBusinessId: b.id, applied: res.applied, saved: res.business };
     },
@@ -311,6 +316,20 @@ function SettingsPage() {
                 ) : null}
               </>
             )}
+          </Panel>
+          <Panel className="mt-4" title="Closures and public holidays" description="Optional. On these days callers are told the business is closed, whatever the hours above say.">
+            <Field label="Closures" htmlFor="h-closures" hint="One per line.">
+              <Textarea
+                id="h-closures"
+                rows={3}
+                maxLength={600}
+                placeholder={"e.g. Closed all national public holidays\nClosed 24 December to 6 January"}
+                value={form.closures}
+                onChange={(e) => set("closures", e.target.value)}
+                disabled={!canManage}
+                data-field="closures"
+              />
+            </Field>
           </Panel>
         </TabsContent>
 

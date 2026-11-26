@@ -178,7 +178,7 @@ export function answeredCall(call: CallRow, client: Business, biz: Biz, requests
     metadata: { channel: call.channel },
     created_at: iso(call.created_at),
     updated_at: iso(call.updated_at),
-    contact: { id: null, full_name: matched.find((r) => r.name)?.name || null, phone: call.from_number },
+    contact: { id: null, full_name: matched.find((r) => r.name)?.name || (call.channel === "web" ? "Browser test call" : null), phone: call.from_number },
     agent: { id: call.client_id, name: client.settings.receptionistName || "Receptionist" },
     phone_number: call.to_number ? { id: call.to_number, e164: call.to_number, friendly_name: call.to_number } : null,
     business: biz,
@@ -229,7 +229,7 @@ export function answeredAppointment(r: StoredRequest, clientId: string, cal: Cal
     ends_at: new Date(Date.parse(startsAt) + cal.minutes * MINUTE).toISOString(),
     customer_name: r.name || null,
     customer_phone: r.phone || null,
-    customer_email: null,
+    customer_email: r.email || null,
     service: r.service || null,
     reason: null,
     notes: r.bizNotes ?? (r.note || null),
@@ -288,7 +288,7 @@ export function answeredLead(r: StoredRequest, clientId: string, callId: string 
     updated_at: r.changedAt ?? r.at,
     name: r.name || null,
     phone: r.phone || null,
-    email: null,
+    email: r.email || null,
     enquiry: r.service || null,
     intent: "Callback request",
     summary: r.notes ?? (r.note || null),
@@ -451,7 +451,8 @@ async function callList(args: ClientRouteArgs) {
   const client = args.client!;
   const { from, to } = rangeOf(args.url);
   const [rows, requests, biz] = await Promise.all([
-    sql`select * from call_log where client_id = ${client.id} and channel <> 'web'
+    // Includes browser test calls (channel 'web'), so a test call shows under Calls.
+    sql`select * from call_log where client_id = ${client.id}
         and started_at between ${from} and ${to} order by started_at desc limit ${MAX_CALLS}`,
     requestsOf(client.id),
     bizOf(client, args.clientOrgId!),

@@ -200,11 +200,11 @@ function callRow(r: any, c: ClientRow | undefined) {
     after_hours: false,
     sentiment: null,
     confidence: null,
-    intent: r.channel && r.channel !== "call" ? "Text conversation" : null,
+    intent: r.channel === "web" ? "Browser test call" : r.channel && r.channel !== "call" ? "Text conversation" : null,
     error_code: null,
     error_message: r.status === "failed" ? (r.summary ?? "The call failed.") : null,
     qa_status: "unreviewed",
-    contact: r.from_number ? { id: null, full_name: null, phone: r.from_number } : null,
+    contact: r.channel === "web" ? { id: null, full_name: "Browser test call", phone: null } : r.from_number ? { id: null, full_name: null, phone: r.from_number } : null,
     agent: c ? { id: c.id, name: c.data.settings?.receptionistName || "Receptionist" } : null,
     phone_number: r.to_number ? { id: r.to_number, e164: r.to_number, friendly_name: formatNumber(r.to_number) } : null,
     business: c ? bizRef(c) : null,
@@ -352,13 +352,14 @@ async function overview(ctx: Ctx) {
   };
 }
 
+// The list includes browser test calls (channel 'web') so a test call shows up here; the counts and usage elsewhere leave them out.
 async function calls(ctx: Ctx, url: URL) {
   const scope = scopeOf(ctx);
   const { from, to } = rangeOf(url);
   const clients = indexed(await clientsInScope(scope));
   const rows = await sql`
     select * from call_log
-    where channel <> 'web' and started_at >= ${from} and started_at <= ${to}
+    where started_at >= ${from} and started_at <= ${to}
       and (${scope}::uuid is null or org_id = ${scope}::uuid)
     order by started_at desc limit 10000`;
   return rows.map((r: any) => callRow(r, clients.get(r.client_id)));

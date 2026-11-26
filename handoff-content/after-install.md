@@ -37,11 +37,10 @@ The dashboard searches for Australian numbers. Australian numbers need proof of 
 
 ## 5. Hear your receptionist
 
-1. On the client's page, click **Open and edit**, then open **Receptionist**.
-2. Click **Hear a sample**. You'll hear a real recorded example call, then your own settings read aloud by your browser. This isn't a live call or the receptionist's real voice.
-3. To hear the real voice, ring the client's number once it's connected. The call, its outcome and transcript show under **Calls**.
-
-> TODO (Ronan): the brief asks for "test call from the browser", and some screens say "You can test it from the browser meanwhile", but the current dashboard has no live browser call (the old one is in `src/legacy/`, not routed). Decide: bring back a live browser test call, or reword those screens. This step describes what the code does today.
+1. On the client's page, find the receptionist and click **Talk to this receptionist**. Allow your microphone when your browser asks.
+2. This is a live call from your browser, with the receptionist's real voice. You don't need a phone number yet, and it works the same once a number is connected. Ask a question, then hang up.
+3. To hear it on the phone, ring the client's number once it's connected. Every call, its outcome and transcript show under **Calls**.
+4. Want to preview the settings without a call? Open **Receptionist** and click **Hear a sample**. That plays a recorded example call and reads your settings aloud with your browser's voice; it isn't a live call.
 
 ## 6. Invite the client
 

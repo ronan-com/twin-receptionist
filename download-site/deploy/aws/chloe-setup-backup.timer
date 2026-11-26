@@ -1,0 +1,11 @@
+# Runs chloe-setup-backup.service every night (03:40 Sydney time, 16:40 UTC). Installed by remote-deploy.sh.
+[Unit]
+Description=Nightly setup site database backup
+
+[Timer]
+OnCalendar=*-*-* 16:40:00 UTC
+RandomizedDelaySec=300
+Persistent=true
+
+[Install]
+WantedBy=timers.target

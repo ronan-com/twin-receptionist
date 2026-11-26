@@ -244,9 +244,10 @@ DOMAIN=setup.yourcompany.com ADMIN_EMAILS=you@yourcompany.com \
 Settings are SSM SecureStrings under `/setupsite/env/*` (the site's `.env` is rebuilt from them
 on every deploy). `SETUP_SECRET_KEY` is created once and never overwritten: copy it from SSM into
 the password manager. The remote script refuses any test-only setting, waits for the container
-to be healthy, publishes `BUNDLE` if given, reloads Caddy and installs a nightly cron backup
-(`deploy/aws/backup.sh`: `VACUUM INTO`, gzip, `s3://twinrecep-deploy-<account>/setupsite-backups/`,
-30 days).
+to be healthy, publishes `BUNDLE` if given, reloads Caddy and installs a nightly backup, the systemd timer `chloe-setup-backup.timer`
+(`deploy/aws/backup.sh`: `VACUUM INTO`, integrity check, gzip, 14 days in `/opt/setupsite/backups`,
+and a copy in `s3://twinrecep-deploy-<account>/backups/setup-site/`, the only prefix the server's
+role may write; logs: `journalctl -u chloe-setup-backup`).
 
 ## Run it locally (all fakes)
 

@@ -1,7 +1,7 @@
 #!/bin/bash
 # Runs ON the AWS server (through SSM) for each setup-site deploy. Touches only /opt/setupsite,
 # its own container/volume (setup-site, setupsite_setup-data), the site file
-# /opt/twin/sites/setupsite.caddy, a Caddy reload, and /etc/cron.d/setupsite-backup.
+# /opt/twin/sites/setupsite.caddy, a Caddy reload, and the chloe-setup-backup systemd timer.
 #   remote-deploy.sh <bucket> <bundle key> <region> <domain> [<app bundle key> <app version>]
 set -euo pipefail
 BUCKET=$1; KEY=$2; R=$3; DOMAIN=$4; APPKEY=${5:-}; APPVER=${6:-}
@@ -61,13 +61,11 @@ docker exec twin-caddy-1 caddy reload --config /etc/caddy/Caddyfile --adapter ca
 # Nightly backup of site.db (SQLite VACUUM INTO, safe while running) to S3. The copies hold
 # buyers' encrypted keys; SETUP_SECRET_KEY lives only in SSM, never next to them.
 install -m 755 src/deploy/aws/backup.sh /opt/setupsite/backup.sh
-echo "BUCKET=$BUCKET R=$R" > /opt/setupsite/backup.env
-if [ -d /etc/cron.d ]; then
-  echo "40 3 * * * root /bin/bash /opt/setupsite/backup.sh >> /var/log/setupsite-backup.log 2>&1" > /etc/cron.d/setupsite-backup
-  chmod 644 /etc/cron.d/setupsite-backup
-else
-  echo "WARNING: this server has no cron (/etc/cron.d is missing): the nightly backup is NOT scheduled"
-fi
+echo "BUCKET=$BUCKET R=$R PREFIX=backups/setup-site" > /opt/setupsite/backup.env
+# The server has no cron: a systemd timer (logs: journalctl -u chloe-setup-backup).
+install -m 644 src/deploy/aws/chloe-setup-backup.service src/deploy/aws/chloe-setup-backup.timer /etc/systemd/system/
+systemctl daemon-reload
+systemctl enable --now chloe-setup-backup.timer
 
 docker compose ps
 echo "setup-site healthy at https://$DOMAIN"

@@ -1,6 +1,7 @@
 import type { ResolvedRange } from "../app/date-range";
 import type { AuditRow, CallListRow, CallOutcome, CallStatus } from "../app/types";
-import type { AdminNumberRequest, Agency, AvailableNumber, Brand, NumberCountry, NumberType, Settings, TeamState, TestLogin, Voice as TwinVoice } from "../shared";
+import type { AdminNumberRequest, Agency, AvailableNumber, Brand, NumberCountry, NumberState, NumberType, Settings, TeamState, TestLogin, Voice as TwinVoice } from "../shared";
+import type { OwnedNumber } from "../ownNumbers";
 import { api, qs } from "./base";
 
 // The console (/admin) data layer (area C). Server side: server/routes/console.ts
@@ -352,6 +353,14 @@ export const unshareBusiness = (id: string, userId: string) => api.del<{ members
 export const revokeBusinessInvite = (id: string, inviteId: string) => api.del<{ members: ConsolePerson[]; invitations: ConsoleInvite[] }>(`/api/console/businesses/${id}/invites/${inviteId}`);
 /** An agency on its own phone account buys a number for a receptionist (charged to its account). */
 export const buyNumberFor = (id: string, phoneNumber: string) => api.post<{ order: { id: string; status: string; phoneNumbers: string[] } }>(`/api/clients/${id}/numbers`, { phoneNumber, confirm: true });
+/** Numbers the agency already owns on its Telnyx account that no receptionist answers. */
+export const getOwnedNumbers = async () => (await api.get<{ numbers: OwnedNumber[] }>("/api/numbers/owned")).numbers;
+/** Connect one of them to a receptionist (confirm: true to move it off another connection). */
+export const attachOwnedNumber = (clientId: string, numberId: string, confirm: boolean) =>
+  api.post<NumberState & { movedFrom: string; automationsError?: string }>(`/api/clients/${clientId}/numbers/attach`, { numberId, confirm });
+/** Let a number go from a receptionist. It stays on the Telnyx account. */
+export const detachOwnedNumber = (clientId: string, numberId: string) => api.post<NumberState & { movedFrom: string }>(`/api/clients/${clientId}/numbers/detach`, { numberId });
+export const getNumberState = (clientId: string) => api.get<NumberState>(`/api/clients/${clientId}/numbers`);
 export const requestNumberFor = (id: string, type: "local" | "mobile", note: string) => api.post(`/api/console/businesses/${id}/number-requests`, { type, note });
 export const resolveIncident = (id: string) => api.post<AdminSystem>(`/api/console/incidents/${id}/resolve`);
 export const logIncident = (input: { title: string; details?: string; severity?: string; client_id?: string }) => api.post<AdminSystem>("/api/console/incidents", input);

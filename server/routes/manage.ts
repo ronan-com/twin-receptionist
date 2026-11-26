@@ -11,6 +11,8 @@ import { checkEmail, connectEmail, disconnectEmail, emailStatus } from "../email
 import { recordIncident } from "../incidents";
 import { webhookSecret } from "../notify";
 import { createRequest, requestsForClient } from "../numberRequests";
+import { connectedNumbers, voiceAppFor } from "../numbers";
+import { numberIsLive } from "../../src/lib/ownNumbers";
 import { COLLECT_FIELDS, DEFAULT_PAUSE_MESSAGE, DIALECTS, TONES, ValidationError, cleanClosures, cleanProfile } from "../prompt";
 import { isDemo } from "../sandbox";
 import { getClient, orgOfClient, saveClient } from "../store";
@@ -191,7 +193,19 @@ async function answeredAgent(c: Business, orgSuspended: boolean, voices?: Voice[
 }
 
 // A4
+// What the carrier says about each of the receptionist's numbers, by number. Best effort:
+// a number that's still being approved isn't answering yet. Empty when the carrier can't be asked.
+async function carrierStatuses(c: Business): Promise<Map<string, string>> {
+  if (isDemo(c.assistantId) || !(c.phoneNumbers ?? []).length) return new Map();
+  try {
+    return new Map((await connectedNumbers(await voiceAppFor(c.assistantId))).map((n) => [n.phoneNumber, n.status]));
+  } catch {
+    return new Map();
+  }
+}
+
 async function answeredNumbers(c: Business) {
+  const carrier = await carrierStatuses(c);
   const [degraded] = await sql`select 1 from incidents where client_id = ${c.id} and kind = 'call_sync' and status = 'open' limit 1`;
   const agent = { id: c.id, name: c.settings.receptionistName || "Receptionist" };
   const rows: any[] = (c.phoneNumbers ?? []).map((e164) => ({
@@ -202,7 +216,7 @@ async function answeredNumbers(c: Business) {
     business_id: c.id,
     agent_id: c.id,
     agent,
-    status: "active",
+    status: numberIsLive(carrier.get(e164) ?? "") ? "active" : "pending",
     routing_mode: "ai_receptionist",
     capabilities: { voice: true, sms: e164.startsWith("+614") },
     country: countryOfNumber(e164) ?? "AU",
@@ -214,7 +228,7 @@ async function answeredNumbers(c: Business) {
     monthly_usage_minutes: 0,
     is_outbound_caller_id: false,
     business_hours: {},
-    notes: null,
+    notes: numberIsLive(carrier.get(e164) ?? "") ? null : "waiting for approval",
     created_at: iso(c.createdAt),
     updated_at: iso(c.updatedAt),
   }));

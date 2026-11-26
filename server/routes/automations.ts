@@ -3,6 +3,7 @@ import type { Ctx } from "../accounts";
 import { audit } from "../audit";
 import { automationsState, dynamicVariables, saveAutomations, type AutomationDeps } from "../automations";
 import { enterOrg } from "../telnyx";
+import { followupTestRoute } from "./followups";
 import { json, readBody, type ClientAccess, type RouteArgs } from "./http";
 
 // Area T: per-receptionist automations.
@@ -19,6 +20,8 @@ export type AutomationRouteDeps = AutomationDeps & {
 };
 
 export async function automationRoutes(args: RouteArgs, deps: AutomationRouteDeps): Promise<Response | null> {
+  const test = await followupTestRoute(args, deps); // POST .../test: "Send me a test" for the follow-ups
+  if (test) return test;
   const m = args.path.match(/^\/api\/automations\/([a-f0-9-]{36})$/);
   if (!m) return null;
   const found = await deps.clientAccessFor(args.ctx, args.orgId, m[1]);

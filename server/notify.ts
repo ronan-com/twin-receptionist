@@ -76,7 +76,7 @@ export async function confirmToCaller(client: Business, r: BookingRequest): Prom
 
 function emailText(client: Business, r: BookingRequest): { subject: string; text: string } {
   const who = r.name || "Someone";
-  const how = r.channel === "sms" ? "by text" : r.channel === "email" ? "by email" : "on a call";
+  const how = r.channel === "sms" ? "by text" : r.channel === "email" ? "by email" : r.channel === "web" ? "in the website chat" : "on a call";
   const lines =
     r.kind === "booking"
       ? [

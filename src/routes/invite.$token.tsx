@@ -35,6 +35,7 @@ function InvitePage() {
       await authApi.acceptInvite(token, info?.hasAccount ? { password } : { name: name.trim(), password });
       queryClient.clear();
       const s = await queryClient.fetchQuery(sessionQuery());
+      // A new agency owner starts on Branding: logo and colours first.
       navigate({ to: homeOf(s), replace: true });
     } catch (err) {
       setError(err instanceof Error ? err.message : "Something went wrong");

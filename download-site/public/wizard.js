@@ -5,6 +5,28 @@
   const root = document.querySelector(".wiz");
   if (!root) return;
 
+  // Brand step: shrink the chosen logo and put it in the form
+  const lf = document.getElementById("logoFile");
+  if (lf) lf.addEventListener("change", function () {
+    const file = lf.files && lf.files[0]; if (!file) return;
+    const read = new FileReader();
+    read.onload = function () {
+      const img = new Image();
+      img.onload = function () {
+        const k = Math.min(1, 240 / Math.max(img.width, img.height)), c = document.createElement("canvas");
+        c.width = Math.max(1, Math.round(img.width * k)); c.height = Math.max(1, Math.round(img.height * k));
+        c.getContext("2d").drawImage(img, 0, 0, c.width, c.height);
+        const data = c.toDataURL("image/png");
+        document.getElementById("logo").value = data;
+        const p = document.getElementById("logoPreview"); p.src = data; p.hidden = false;
+        document.getElementById("logoNote").textContent = "Logo added.";
+      };
+      img.onerror = function () { document.getElementById("logoNote").textContent = "That file isn't a picture we can read."; };
+      img.src = read.result;
+    };
+    read.readAsDataURL(file);
+  });
+
   // Copy buttons
   document.addEventListener("click", function (e) {
     const b = e.target.closest("button.copy");

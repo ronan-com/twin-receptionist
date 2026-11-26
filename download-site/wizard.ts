@@ -3,6 +3,7 @@
 // button. How-tos sit behind a collapsed "Show me how". Plain forms (they work without
 // JavaScript); /wizard.js adds copy buttons and live progress.
 import { CONFIG, RAILWAY, type Buyer } from "./lib";
+import { DEMO, demoSample } from "./demo";
 import { esc } from "./pages";
 import { howTo } from "./content";
 import { canView, hostOf, locked, oauthRedirect, stepDone, webUrl, zoneOf } from "./setup";
@@ -57,9 +58,18 @@ const mainForm = (c: Ctx, action: string, body: string) => `<form id="main" meth
 const mini = (c: Ctx, action: string, label: string, cls = "btn o", extra = "", fields = "") =>
   `<form method="post" action="${base(c)}/a/${action}">${hidden(c)}${fields}<button class="${cls}" type="submit"${extra}>${label}</button></form>`;
 const primary = (label: string, formId = "main") => `<button class="btn p" type="submit" form="${formId}">${label} ${icon("right")}</button>`;
-const val = (c: Ctx, k: string, d = "") => esc(c.flash?.form?.[k] ?? d);
+const val = (c: Ctx, k: string, d = "") => esc(c.flash?.form?.[k] ?? (d || demoSample(c.view, k, c.code)));
 const secretIn = (name: string, ph: string, saved: string | null, label: string) =>
   `<label class="f" for="${name}">${label}</label><input id="${name}" name="${name}" type="password" autocomplete="off" autocapitalize="off" spellcheck="false" maxlength="300" placeholder="${saved ? `Saved (${esc(saved)}). Paste a new one to replace it.` : esc(ph)}">`;
+/** Demo: put the pretend value into a screen's empty inputs. */
+function demoFill(c: Ctx, html: string): string {
+  if (!DEMO) return html;
+  return html.replace(/<input id="(token|key|domain|address)"([^>]*?)>/g, (m, id, rest) => {
+    const v = demoSample(c.view, id, c.code);
+    if (!v) return m;
+    return `<input id="${id}"${/ value="/.test(rest) ? rest.replace(/ value=""/, ` value="${esc(v)}"`) : `${rest} value="${esc(v)}"`}>`;
+  });
+}
 const copy = (v: string) => `<button type="button" class="copy" data-copy="${esc(v)}">Copy</button>`;
 const notice = (kind: "err" | "ok" | "warn" | "info", html: string) => `<div class="notice ${kind}">${icon(kind === "ok" ? "check" : kind === "err" || kind === "warn" ? "alert" : "info")}<div>${html}</div></div>`;
 const when = (iso?: string) => (iso ? new Date(iso).toISOString().slice(11, 19) + " UTC" : "");
@@ -105,7 +115,11 @@ function brand(c: Ctx) {
   <input id="productName" name="productName" maxlength="60" required value="${val(c, "productName", br?.productName || "")}" placeholder="e.g. Chloe">
   <label class="f" for="ownerEmail">Owner email</label>
   <input id="ownerEmail" name="ownerEmail" type="email" maxlength="200" required autocomplete="email" value="${val(c, "ownerEmail", br?.ownerEmail || c.b.email)}">
-  <p class="hint">You'll sign in with this as the owner of your agency.</p>`)}</div>
+  <p class="hint">You'll sign in with this as the owner of your agency.</p>
+  ${DEMO ? `<label class="f" for="logoFile">Your logo</label><input id="logoFile" type="file" accept="image/png,image/jpeg,image/webp">
+  <input type="hidden" id="logo" name="logo" value="${esc(br?.logo || "")}"><p class="hint" id="logoNote">${br?.logo ? "Logo added." : "PNG or JPG. You can change it later."}</p>
+  <p><img id="logoPreview" alt="" width="96"${br?.logo ? ` src="${esc(br.logo)}"` : " hidden"}></p>
+  <label class="f" for="colour">Brand colour</label><input id="colour" name="colour" type="color" value="${esc(br?.colour || "#635bff")}">` : ""}`)}</div>
 ${nav(c, primary("Continue"))}`;
 }
 
@@ -122,7 +136,7 @@ ${notice("warn", "Have a website or email on this domain? Check Cloudflare copie
 ${showMeHow(["registrar-nameservers"])}
 ${nav(c, `${mini(c, "domain-edit", "Change domain", "btn o")}${mini(c, "cf-recheck", "Check now", "btn p")}`)}`;
   }
-  const mode = c.flash?.form?.mode || d?.mode || "cloudflare";
+  const mode = c.flash?.form?.mode || d?.mode || (DEMO ? "manual" : "cloudflare");
   const zone = c.flash?.form?.domain || d?.zone || (RAILWAY && c.s.email?.sendingDomain ? c.s.email.sendingDomain.replace(/^(mail|send|email|mg|news)\./, "") : "");
   const saved = d?.mode === "cloudflare" ? secretHint(c.b.id, "cf_token") : null;
   const replace = d?.mode === "cloudflare" && cf?.status === "active" && cf.existing && !d.confirmed
@@ -389,8 +403,9 @@ ${notice("err", esc((s.error || "Something went wrong.").replace(/^./, (x) => x.
 ${list}${log}
 ${nav(c, `${del}${mini(c, s.phase === "failed" ? "install-retry" : "install-start", `Try again ${icon("right")}`, "btn p")}`, { back: false })}`;
   }
+  if (DEMO && s.phase === "domain") return doneRailway(c);
   if (s.phase === "domain") {
-    const temp = webUrl(rw.serviceDomain);
+    const temp = DEMO ? `${base(c)}/open` : webUrl(rw.serviceDomain);
     return `${head(c, `${P(c)} is running`, `Use your temporary address now. ${esc(host)} starts working once its records are in.`)}
 <div class="live"><div class="dot">● Running</div><a class="url" href="${esc(temp)}" target="_blank" rel="noopener noreferrer">${esc(temp)}</a><p class="hint">Your temporary address. It keeps working after ${esc(host)} is ready.</p></div>
 ${list}${recs}
@@ -428,6 +443,11 @@ ${nav(c, `<a class="btn p" href="${esc(url)}" target="_blank" rel="noopener nore
 }
 
 function doneRailway(c: Ctx) {
+  if (DEMO) {
+    return `${head(c, "Your agency is live", `${P(c)} is ready. This test uses a temporary address instead of your own domain.`)}
+<div class="live"><div class="dot">● Live</div><p class="hint">Next: create your password, then add your logo and colours.</p></div>
+${nav(c, `<a class="btn p" href="${base(c)}/open">Open your dashboard ${icon("ext")}</a>`, { back: false })}`;
+  }
   const s = c.s;
   const url = s.resultUrl || `https://${hostOf(s)}`;
   const temp = s.tempUrl || "";
@@ -484,7 +504,7 @@ const withFlash = (html: string, fl: string) => {
 // A step opened out of order on a test site may be missing what earlier steps fill in.
 function screenOf(c: Ctx): string {
   try {
-    return SCREENS[c.view](c);
+    return demoFill(c, SCREENS[c.view](c));
   } catch {
     return head(c, META[c.view].title, "This screen needs the earlier steps filled in first.") + nav(c, "");
   }

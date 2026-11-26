@@ -19,6 +19,7 @@ import { actions, allow, canView, firstOpen, pBundle, pExit, pLog, pNext, startT
 import { STEPS, csrfOk, getSetup, logRead, newSessionId, siteKey, updateSetup, type StepId } from "./store";
 import { statusRev, wizardPage } from "./wizard";
 import { adminRoute } from "./admin-web";
+import { DEMO, DEMO_KEY, demoBuyer, demoDashboard } from "./demo";
 
 if ((process.env.PREVIEW_JUMP || "").trim() === "1" && !ANY_MOCK) {
   console.error("PREVIEW_JUMP=1 is for test sites only and needs a MOCK_* switch on too. Refusing to start.");
@@ -123,9 +124,9 @@ function sameOrigin(req: Request): boolean {
 
 async function readForm(req: Request): Promise<Record<string, string> | null> {
   if (!(req.headers.get("content-type") || "").startsWith("application/x-www-form-urlencoded")) return {};
-  if (Number(req.headers.get("content-length") || 0) > 16 * 1024) return null;
+  if (Number(req.headers.get("content-length") || 0) > (DEMO ? 400 : 16) * 1024) return null;
   const text = await req.text();
-  if (text.length > 16 * 1024) return null;
+  if (text.length > (DEMO ? 400 : 16) * 1024) return null;
   const out: Record<string, string> = {};
   for (const [k, v] of new URLSearchParams(text)) if (!(k in out)) out[k] = v;
   return out;
@@ -162,6 +163,17 @@ async function handle(req: Request, srv: Bun.Server): Promise<Response> {
   const ip = clientIp(req, srv);
   const r0 = allow(`ip:${ip}`, CONFIG.requestsPerMinute, 60_000);
   if (r0) return tooMany(r0);
+
+  // ---- team demo: a fresh start link, and the door into the real dashboard ----
+  if (DEMO && isGet && DEMO_KEY && path === `/demo/${DEMO_KEY}`) return redirect(`/setup/${demoBuyer()}`);
+  const dm = DEMO && isGet && path.match(/^\/setup\/([^/]*)\/open$/);
+  if (dm) {
+    const r = lookupBuyer(dm[1], ip);
+    if (r.error) return r.error;
+    const s = getSetup(r.buyer!.id);
+    if (!s.brand) return redirect(`/setup/${dm[1]}`);
+    return redirect(await demoDashboard(r.buyer!.id, s.brand.productName, s.brand.ownerEmail, s.brand.logo, s.brand.colour));
+  }
 
   // ---- our admin dashboard ----
   if (path === "/admin" || path.startsWith("/admin/")) return adminRoute(req, url, { ip, sameOrigin, readForm, html, redirect });

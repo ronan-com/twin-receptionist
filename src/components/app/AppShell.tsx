@@ -7,6 +7,7 @@ import { cn } from "@/lib/utils";
 import type { NavItem } from "@/lib/app/constants";
 import { CLIENT_SUBNAV } from "@/lib/app/constants";
 import { BrandMark } from "./BrandMark";
+import { AgencyMark } from "./AgencyMark";
 import { UserMenu } from "./UserMenu";
 
 export interface AppShellProps {
@@ -116,7 +117,7 @@ function SidebarBody({ nav, variant, brandTo, sidebarHeader, notifications, onNa
   return (
     <div className="flex h-full flex-col">
       <div className="flex h-14 items-center px-4">
-        <BrandMark to={brandTo} suffix={variant === "admin" ? "Admin" : undefined} />
+        {variant === "admin" ? <AgencyMark to={brandTo} /> : <BrandMark to={brandTo} />}
       </div>
       {sidebarHeader ? <div className="px-2 pb-2">{sidebarHeader}</div> : null}
       <div className="flex-1 overflow-y-auto py-1">

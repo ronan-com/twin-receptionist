@@ -2,6 +2,7 @@
 // screens are in wizard.ts. The only script is /wizard.js, on wizard pages only.
 import { CONFIG, RAILWAY } from "./lib";
 import { allHowTos, howTo } from "./content";
+import { chatBubble, chatHead, type ChatMount } from "./chat";
 
 export const esc = (s: unknown) =>
   String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
@@ -11,7 +12,7 @@ const S = () => esc(CONFIG.sellerName);
 const support = () =>
   CONFIG.supportEmail ? `<a href="mailto:${esc(CONFIG.supportEmail)}">${esc(CONFIG.supportEmail)}</a>` : `${S()} (reply to your purchase email)`;
 
-export function layout(title: string, body: string, opts: { active?: "home" | "guide"; wizard?: boolean; refresh?: number } = {}) {
+export function layout(title: string, body: string, opts: { active?: "home" | "guide"; wizard?: boolean; js?: boolean; chat?: ChatMount; refresh?: number } = {}) {
   return `<!doctype html>
 <html lang="en">
 <head>
@@ -22,7 +23,8 @@ export function layout(title: string, body: string, opts: { active?: "home" | "g
 <title>${esc(title)}</title>
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
 <link rel="stylesheet" href="/styles.css">
-${opts.wizard ? `<script src="/wizard.js" defer></script>` : ""}
+${opts.chat ? chatHead() : ""}
+${opts.wizard || opts.js ? `<script src="/wizard.js" defer></script>` : ""}
 ${opts.refresh ? `<noscript><meta http-equiv="refresh" content="${opts.refresh}"></noscript>` : ""}
 </head>
 <body>
@@ -31,6 +33,7 @@ ${opts.refresh ? `<noscript><meta http-equiv="refresh" content="${opts.refresh}"
   <nav class="nav"><a href="/"${opts.active === "home" ? ' aria-current="page"' : ""}>Overview</a><a href="/guide"${opts.active === "guide" ? ' aria-current="page"' : ""} ${opts.wizard ? 'target="_blank" rel="noopener"' : ""}>Guide</a></nav>
 </div></header>
 <main class="wrap">${body}</main>
+${opts.chat ? chatBubble(opts.chat) : ""}
 <footer class="foot"><div class="wrap">&copy; ${new Date().getFullYear()} ${S()}. Your own AI receptionist agency, on your own accounts. Questions: ${support()}</div></footer>
 </body>
 </html>`;
@@ -127,21 +130,20 @@ export function guidePage() {
 <section class="hero small">
   <p class="eyebrow">Buyer guide</p>
   <h1>Setting up your AI receptionist agency</h1>
-  <p class="lead">Everything from opening your accounts to your first sign-in. The setup page does the work; this guide explains each account and key it asks for. Allow about ${RAILWAY ? "15" : "20"} minutes, plus any waiting for Telnyx's checks.</p>
+  <p class="lead">${RAILWAY ? "Two accounts, one token each, and you're live. Each guide below is five steps or fewer. Anything marked optional can wait." : "Everything from opening your accounts to your first sign-in. The setup page does the work; this guide explains each account and key it asks for. Allow about 20 minutes, plus any waiting for Telnyx's checks."}</p>
 </section>
 <div class="guide">
 <nav class="toc card" aria-label="On this page"><b>On this page</b><ol>${toc.map(([id, t]) => `<li><a href="#${id}">${t}</a></li>`).join("")}</ol></nav>
 <article class="gbody">
-${sec("requirements", "1. What you need", RAILWAY ? `<p>Two accounts are all it takes: <b>Railway</b> and <b>Telnyx</b>.</p>${ul([
-    "<b>A Railway account</b> on the Hobby plan (US$5 a month including US$5 of usage, with a card). Your agency and its database run here.",
-    "<b>A Telnyx account</b>, upgraded from trial and with credit. Telnyx provides phone numbers and carries the calls.",
-    "<b>A browser.</b> There's nothing to download or install on your computer.",
-  ])}<p><b>Optional extras</b>, which you can add during setup or any time later:</p>${ul([
-    "<b>Your own email.</b> A Resend account (or any SMTP service) so invites and notices come from your address. Without it, invite links show on screen for you to copy and send yourself.",
-    "<b>Your own domain</b>, from any registrar (GoDaddy, Namecheap, Crazy Domains, VentraIP, Cloudflare and so on), so your agency lives at app.yourcompany.com. Without it, your agency runs at the https address Railway gives it. Resend sends from a domain you own, so email goes with your domain.",
-    "<b>Calendar keys.</b> Google Cloud or Microsoft Entra keys, so receptionists can book into calendars.",
-    "<b>AI help for your team.</b> An OpenRouter key pasted into Railway variables switches on an <b>Ask for help</b> assistant in your dashboard.",
-  ])}` : ul([
+${sec("requirements", "1. What you need", RAILWAY ? `<p><b>Required</b> (about 15 minutes):</p>${ul([
+    "<b>A Railway account</b>, on the Hobby plan (US$5 a month, with a card). Your agency lives here.",
+    "<b>A Telnyx account</b>, upgraded, with at least US$10 of credit. It carries your calls. Australian phone numbers need proof of address and take 1 to 3 days to approve.",
+  ])}<p><b>Optional</b> (skip them now, add them later):</p>${ul([
+    "<b>Your own email</b> (Resend), so invites come from your address.",
+    "<b>Your own domain</b> (GoDaddy, Cloudflare and so on), so your agency lives at app.yourcompany.com.",
+    "<b>Calendar keys</b> (Google or Microsoft), so receptionists can book appointments.",
+    "<b>AI help for your team</b> (OpenRouter key), which switches on an <b>Ask for help</b> button in your dashboard.",
+  ])}`  : ul([
     "<b>A domain</b> you own, from any registrar (GoDaddy, Namecheap, Crazy Domains, VentraIP, Cloudflare and so on).",
     "<b>A DigitalOcean account</b> with a payment method. Your server is rented here.",
     "<b>A Telnyx account</b>, upgraded from trial and with credit. Telnyx provides phone numbers and carries the calls.",
@@ -150,13 +152,14 @@ ${sec("requirements", "1. What you need", RAILWAY ? `<p>Two accounts are all it 
     "<b>A browser.</b> There's nothing to download or install on your computer.",
   ]))}
 ${sec("accounts", "2. Get your accounts ready", RAILWAY ? `
-<h3>Hosting (Railway)</h3>${ht("railway-token")}
-<h3>Phones (Telnyx)</h3>${ht("telnyx-account")}${ht("telnyx-api-key")}
+<h2 class="gopt">Required</h2>
+<h3>Hosting: Railway</h3>${ht("railway-token")}
+<h3>Phones: Telnyx</h3>${ht("telnyx-account")}${ht("telnyx-api-key")}
 <h2 class="gopt">Optional extras</h2>
-<p>Skip these to install now. Each can be added later (see <a href="#later">Adding the extras later</a>).</p>
-<h3>Email (optional)</h3>${ht("resend")}
+<p>Skip these to install now. You can add each one later (see <a href="#later">Adding the extras later</a>).</p>
+<h3>Email: Resend (optional)</h3>${ht("resend")}
 <h3>Your own domain (optional)</h3>
-<p>The setup page offers two ways. <b>Let the setup handle DNS</b> (recommended): put your domain on a free Cloudflare account and change its nameservers at your registrar; the setup then adds every record for you. <b>I'll add the records myself</b>: keep DNS where it is, and the setup shows you each record to add.</p>
+<p>Two ways. <b>Let the setup add the records</b> (easiest): use the three Cloudflare guides in order. <b>Add the records yourself</b>: use the last guide.</p>
 ${ht("cloudflare-domain")}${ht("registrar-nameservers")}${ht("cloudflare-token")}${ht("registrar-dns-records")}
 <h3>Calendars (optional)</h3>${ht("google-oauth")}${ht("microsoft-oauth")}
 ${extra.map((h) => ht(h.id)).join("")}` : `
@@ -170,13 +173,13 @@ ${ht("cloudflare-domain")}${ht("registrar-nameservers")}${ht("cloudflare-token")
 ${extra.map((h) => ht(h.id)).join("")}`)}
 ${sec("wizard", "3. The setup page, step by step", RAILWAY ? `
 <ol class="glist steps-long">
-  <li><b>Welcome.</b> Open the private link from your purchase email. Your progress is saved, so you can stop and come back to it.</li>
-  <li><b>Brand.</b> Your brand name, which your clients see on every screen and email, and your owner email (you sign in with it).</li>
-  <li><b>Railway.</b> Paste your Railway token. We check it works and that the account is on the Hobby plan.</li>
-  <li><b>Telnyx.</b> Paste your Telnyx key. Every client's receptionist answers calls on your Telnyx account.</li>
-  <li><b>Optional extras.</b> Three cards: your own <b>email</b> (Resend), your own <b>domain</b>, and <b>calendars</b>. Press <b>Skip for now</b> on any of them, or <b>Skip all and continue</b>. Nothing here is needed to go live.</li>
-  <li><b>Install.</b> We make a project in your Railway account with a database and the app, and Railway builds it (about 5 minutes). Your agency is then live at the https address Railway gives it (it ends in <b>.up.railway.app</b>). If you added a domain, <b>app.your-domain</b> follows once its two records are in. If a build fails, <b>Try again</b> builds again in the same project, or <b>Delete the project</b> removes it.</li>
-  <li><b>Done.</b> Open your address and sign in with your owner email. Delete your Railway token (and your Cloudflare token, if you used one). The page lists any extras you skipped, with how to add each later.</li>
+  <li><b>Welcome.</b> Open the private link from your purchase email. Your progress is saved, so you can stop and come back.</li>
+  <li><b>Brand.</b> Type your brand name and owner email. You sign in with that email.</li>
+  <li><b>Hosting.</b> Paste your Railway token and press <b>Check</b>.</li>
+  <li><b>Phones.</b> Paste your Telnyx key and press <b>Check</b>.</li>
+  <li><b>Extras (optional).</b> Email, your own domain, calendars. Press <b>Skip all and continue</b> to go straight on.</li>
+  <li><b>Install.</b> Press the install button and wait about 5 minutes. If it stops, press <b>Try again</b>.</li>
+  <li><b>Done.</b> Open your address and sign in. Then delete your Railway token (and Cloudflare token, if you made one).</li>
 </ol>` : `
 <ol class="glist steps-long">
   <li><b>Welcome.</b> Open the private link from your purchase email. Your progress is saved, so you can stop and come back to it.</li>
@@ -195,30 +198,30 @@ ${sec("after", "4. After the install", ul([
     "The <b>Connections</b> page shows your Telnyx connection and credit (it warns you below US$5). Every client's receptionist runs on your Telnyx account.",
   ]))}
 ${RAILWAY ? sec("later", "5. Adding the extras later", `
-<p>Skipped email, your domain or calendars? Your agency works without them, and you can add each one whenever you like. Your setup link keeps listing the extras you skipped, with these steps.</p>
+<p>Your agency works without these. Add each whenever you like.</p>
 <h3>Your own email</h3>
 ${ul([
     "Open your dashboard, then <b>Settings</b>, then <b>Email and calendars</b>.",
-    "Paste your mail server address (for Resend: <code>smtps://resend:YOUR_RESEND_KEY@smtp.resend.com:465</code>) and the address emails come from, then press the test button.",
-    "Resend sends from a domain you own, so add the DNS records it shows you for that domain.",
-    "<b>Until email is set up</b>, invites show a link on screen for you to copy and send yourself. If you forget your own password, the reset link is printed in the app's <b>Logs</b> in Railway (your project, then the <b>app</b> service, then <b>Deployments</b>, then <b>View logs</b>).",
+    "Paste your mail server address (for Resend: <code>smtps://resend:YOUR_RESEND_KEY@smtp.resend.com:465</code>) and the address emails come from. Press <b>Send test email</b>.",
+    "Add the DNS records Resend shows for your domain.",
+    "Until then, invite links show on screen for you to copy and send.",
   ])}
 <h3>Your own domain</h3>
 ${ul([
-    "In Railway, open your project, the <b>app</b> service, then <b>Settings</b>, <b>Networking</b>, <b>Custom Domain</b>, and type <code>app.yourbusiness.com</code>.",
-    "Railway shows a CNAME and a TXT record. Add both where your domain's DNS is managed.",
-    "When Railway shows the domain as active, open the app service's <b>Variables</b> and change <code>PUBLIC_URL</code> to <code>https://app.yourbusiness.com</code>. Railway restarts the app.",
+    "In Railway, open your project, the <b>app</b> service, then <b>Settings</b>, <b>Networking</b>, <b>Custom Domain</b>. Type <code>app.yourbusiness.com</code>.",
+    "Add the two records Railway shows (a CNAME and a TXT) where your domain's DNS is managed.",
+    "When Railway says it's active, open <b>Variables</b> and change <code>PUBLIC_URL</code> to <code>https://app.yourbusiness.com</code>.",
   ])}
 <h3>Calendars</h3>
 ${ul([
-    "Make the Google Cloud or Microsoft Entra app (see the how-tos above). Its redirect address is your agency's address followed by <code>/api/oauth/google/callback</code> (or <code>/microsoft/callback</code>).",
+    "Make the Google or Microsoft app (see the guides above). Its redirect address is your agency's address followed by <code>/api/oauth/google/callback</code> (or <code>/microsoft/callback</code>).",
     "Open <b>Settings</b>, then <b>Email and calendars</b>, and paste the client ID and secret.",
   ])}
 <h3>AI help for your team</h3>
 ${ul([
-    "Make an account at openrouter.ai and create an API key. Add a few dollars of credit.",
-    "In Railway, open the <b>app</b> service, then <b>Variables</b>, and add <code>OPENROUTER_API_KEY</code> with your key. Railway restarts the app.",
-    "Your dashboard then shows an <b>Ask for help</b> button at the bottom right, where owners and admins can ask how to do things. Optionally set <code>OPENROUTER_MODEL</code> to choose a different model.",
+    "Make an account at openrouter.ai, create an API key and add a few dollars of credit.",
+    "In Railway, open the <b>app</b> service, then <b>Variables</b>, and add <code>OPENROUTER_API_KEY</code> with your key.",
+    "An <b>Ask for help</b> button then appears at the bottom right of your dashboard.",
   ])}`) + sec("backups", "6. Backups and updates", ul([
     "Your database is the <b>Postgres</b> service in your Railway project. Open it, then <b>Backups</b>, and turn on daily (and weekly) backups. Railway charges backups like volume storage.",
     "Your app's settings are the <b>app</b> service's <b>Variables</b> in Railway. Never change <code>MAILBOX_KEY</code>: it unlocks saved mailbox and calendar logins.",
@@ -233,7 +236,9 @@ ${ul([
   ])}`)}
 ${sec("problems", `${RAILWAY ? 7 : 6}. If something goes wrong`, `
 <dl class="faq">
-  <dt>"That token can only read"</dt><dd>Make a new DigitalOcean token with Full Access (or tick Write) and paste that one.</dd>
+  ${RAILWAY ? `<dt>"Railway didn't accept that token"</dt><dd>You made it with a workspace picked. On Railway's <b>Tokens</b> page make a new one and leave <b>Workspace</b> on <b>No workspace</b>.</dd>
+  <dt>"Your Railway account needs the Hobby plan"</dt><dd>Open <b>Plans</b> in Railway, choose <b>Hobby</b> and add your card. Then press <b>Check</b> again.</dd>` : ""}
+  ${RAILWAY ? "" : `<dt>"That token can only read"</dt><dd>Make a new DigitalOcean token with Full Access (or tick Write) and paste that one.</dd>`}
   <dt>Cloudflare is still waiting for the nameserver change</dt><dd>Check the two nameservers at your registrar match exactly. Most changes show within an hour; some registrars take up to a day.</dd>
   <dt>"This token can't change DNS records"</dt><dd>Create a Cloudflare token with Zone: Read and DNS: Edit for your domain, or choose to add the records yourself.</dd>
   <dt>"That Resend key can only send email"</dt><dd>Create a new Resend key with Full access. The setup needs it to add your sending domain.</dd>
@@ -255,5 +260,5 @@ ${ul([
     "<b>Support access: off unless you turn it on.</b> In <b>Settings</b>, then <b>Support</b>, you can let " + S() + " sign in to your dashboard to help you, for 24 hours, 7 days or until you turn it off. They sign in through a link that works once, for 60 seconds, as a read-only support person: they can look, not change anything, and can't see your keys or export your data. Every sign-in is recorded in your audit log and shown in Settings. Turn it off and any open support session ends straight away.",
     "Agencies installed before this existed share nothing and can't be signed in to.",
   ])}`)}
-</article></div>`, { active: "guide" });
+</article></div>`, { active: "guide", js: true, chat: { url: "/chat", view: "guide" } });
 }

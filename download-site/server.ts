@@ -5,16 +5,19 @@
 //   GET  /setup/<code>[?step=x]     the buyer's setup wizard (the old /download/<code> redirects here)
 //   GET  /setup/<code>/status       JSON for live progress (wizard.js)
 //   POST /setup/<code>/a/<action>   every wizard form (same-origin + per-session CSRF token)
+//   POST /setup/<code>/chat         "Need help?" question (JSON; same checks; only when OPENROUTER_API_KEY is set)
+//   POST /chat                      the same from the public /guide page (same-origin only; no code, so no setup context)
 //   GET  /p/<droplet token>/next    the buyer's new server asks for work ("wait", "go ...", "stop")
 //   GET  /p/<attempt token>/bundle  one-time app download for that install attempt
 //   POST /p/<attempt token>/log     install output, in order (?offset=<bytes already sent>)
 //   POST /p/<attempt token>/exit    install.sh finished (?code=<exit code>)
 //   POST /api/sync                  the buyer's app sends its health snapshot (Bearer sync token; sync.ts)
-//   GET  /guide /styles.css /favicon.svg /wizard.js /healthz
+//   GET  /guide /styles.css /favicon.svg /wizard.js /chat.js /chat.css /healthz
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { ANY_MOCK, CODE_RE, CONFIG, db, extractCode, findBuyer, productionGuard, siteUrlWarnings, type Buyer } from "./lib";
 import { loadContent } from "./content";
+import { chatEnabled, chatReply, parseChatBody } from "./chat";
 import { badCodePage, demoOfflinePage, forbiddenPage, guidePage, homePage, limitedPage, notFoundPage, revokedPage } from "./pages";
 import { actions, allow, canView, firstOpen, pBundle, pExit, pLog, pNext, startTicker } from "./setup";
 import { STEPS, csrfOk, getSetup, logRead, newSessionId, siteKey, updateSetup, type StepId } from "./store";
@@ -39,6 +42,8 @@ const ASSETS: Record<string, { body: Uint8Array; type: string }> = {
   "/styles.css": { body: readFileSync(join(import.meta.dir, "public/styles.css")), type: "text/css; charset=utf-8" },
   "/favicon.svg": { body: readFileSync(join(import.meta.dir, "public/favicon.svg")), type: "image/svg+xml" },
   "/wizard.js": { body: readFileSync(join(import.meta.dir, "public/wizard.js")), type: "text/javascript; charset=utf-8" },
+  "/chat.js": { body: readFileSync(join(import.meta.dir, "public/chat.js")), type: "text/javascript; charset=utf-8" },
+  "/chat.css": { body: readFileSync(join(import.meta.dir, "public/chat.css")), type: "text/css; charset=utf-8" },
   "/wizard.css": { body: readFileSync(join(import.meta.dir, "public/wizard.css")), type: "text/css; charset=utf-8" },
 };
 for (const w of [400, 500, 600, 700]) ASSETS[`/fonts/inter-latin-${w}-normal.woff2`] = { body: readFileSync(join(import.meta.dir, `public/fonts/inter-latin-${w}-normal.woff2`)), type: "font/woff2" };
@@ -146,6 +151,7 @@ function lookupBuyer(code: string, ip: string): { buyer?: Buyer; error?: Respons
 
 const SETUP = /^\/setup\/([^/]*)\/?$/;
 const STATUS = /^\/setup\/([^/]*)\/status$/;
+const CHAT = /^\/setup\/([^/]*)\/chat$/;
 const ACTION = /^\/setup\/([^/]*)\/a\/([a-z-]{2,40})$/;
 const PROV = /^\/p\/([ad]_[A-Za-z0-9_-]{32})\/(next|bundle|log|exit)$/;
 const OLD = /^\/download\/([^/]*)(?:\/.*)?$/;
@@ -230,6 +236,32 @@ async function handle(req: Request, srv: Bun.Server): Promise<Response> {
       return html(homePage("We couldn't find that code. Check you copied the whole link from your purchase email.", raw.slice(0, 300)), 404);
     }
     return redirect(`/setup/${code}`);
+  }
+
+  // ---- the help chat: JSON in, JSON out. Off (404) unless OPENROUTER_API_KEY is set. ----
+  const cm = method === "POST" && (path === "/chat" ? [path, ""] : path.match(CHAT));
+  if (cm) {
+    const json = (o: unknown, status = 200, h: Record<string, string> = {}) => respond(JSON.stringify(o), status, { "Content-Type": "application/json", "Cache-Control": "no-store", ...h });
+    if (!chatEnabled()) return json({ error: "Help chat is off." }, 404);
+    const code = cm[1];
+    let b: Buyer | undefined;
+    if (code) {
+      const r = lookupBuyer(code, ip);
+      if (r.error) return r.error;
+      b = r.buyer!;
+    }
+    if (!(req.headers.get("content-type") || "").startsWith("application/json")) return json({ error: "That didn't look right. Reload the page and try again." }, 415);
+    if (Number(req.headers.get("content-length") || 0) > 16 * 1024) return json({ error: "That was too long." }, 413);
+    const text = await req.text();
+    if (text.length > 16 * 1024) return json({ error: "That was too long." }, 413);
+    const body = parseChatBody(text);
+    const sid = cookie(req, "ws");
+    if (!sameOrigin(req) || (b && (!sid || !csrfOk(sid, code, body.t)))) return json({ error: "Please reload the page and try again." }, 403);
+    if (!body.ok) return json({ error: body.error }, 400);
+    const wait = (b ? allow(`chat:${b.id}`, 15, 10 * 60_000) : 0) || allow(`chatip:${ip}`, 30, 10 * 60_000) || allow("chat:all", 3000, 24 * 3600_000);
+    if (wait) return json({ error: `You've asked a lot in a short time. Please wait ${wait > 90 ? `${Math.ceil(wait / 60)} minutes` : `${wait} seconds`} and try again.` }, 429, { "Retry-After": String(wait) });
+    const r = await chatReply(body.messages, b ? { buyer: b, setup: getSetup(b.id), view: body.view } : {});
+    return r.ok ? json({ reply: r.reply }) : json({ error: r.error }, r.status);
   }
 
   // Old links from earlier emails keep working.

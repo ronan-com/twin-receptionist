@@ -290,3 +290,17 @@ legend { font-weight: 600; font-size: 15px; margin-bottom: 8px; padding: 0; }
   .guide { grid-template-columns: 230px 1fr; align-items: start; }
   .toc { position: sticky; top: 16px; }
 }
+
+/* ---------------- how-to steps in the guide: big numbers, one short sentence each ---------------- */
+.ght .md ol { list-style: none; counter-reset: st; margin: 12px 0 8px; padding: 0; }
+.ght .md ol > li { counter-increment: st; position: relative; padding: 6px 0 16px 54px; min-height: 40px; }
+.ght .md ol > li::before { content: counter(st); position: absolute; left: 0; top: 0; width: 38px; height: 38px; border-radius: 50%; display: grid; place-items: center; background: var(--brand); color: var(--brand-ink); font-size: 18px; font-weight: 700; }
+.ght .md ol > li::after { content: ""; position: absolute; left: 18px; top: 44px; bottom: 4px; width: 2px; background: var(--line); }
+.ght .md ol > li:last-child { padding-bottom: 6px; }
+.ght .md ol > li:last-child::after { display: none; }
+.ght .md blockquote { margin: 12px 0 4px; padding: 10px 14px; border-left: 4px solid var(--warn-line); background: var(--warn-bg); border-radius: 0 10px 10px 0; }
+.ght .md p { margin: 8px 0; }
+.cp { display: inline-flex; align-items: center; gap: 6px; max-width: 100%; vertical-align: middle; }
+.cp code { white-space: normal; word-break: break-all; }
+.cp .copy { flex: none; font: inherit; font-size: 12px; font-weight: 600; padding: 5px 8px; border-radius: 7px; border: 1px solid var(--line); background: var(--card); color: var(--brand); cursor: pointer; }
+h2.gopt { margin-top: 1.4em; }

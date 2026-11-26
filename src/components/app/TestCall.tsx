@@ -53,7 +53,7 @@ export function TestCall({ assistantId }: { assistantId: string }) {
       if (root && !root.querySelector("style[data-inline]")) {
         const style = document.createElement("style");
         style.setAttribute("data-inline", "");
-        style.textContent = "main{position:static!important;inset:auto!important;pointer-events:auto!important}main>div{position:static!important}";
+        style.textContent = ":host{display:block!important;width:100%!important;max-width:100%!important}main{position:static!important;inset:auto!important;pointer-events:auto!important;width:100%!important;max-width:100%!important}main>div{position:static!important;width:100%!important;max-width:100%!important;min-width:0!important;box-sizing:border-box!important}main *{max-width:100%!important;box-sizing:border-box}";
         root.appendChild(style);
       }
       if (root || ++tries > 40) window.clearInterval(pin);
@@ -100,7 +100,7 @@ export function TestCall({ assistantId }: { assistantId: string }) {
   }, [ready]);
 
   return (
-    <div className="mb-3 space-y-2 border-b border-hairline pb-3" ref={holder} data-test-call>
+    <div className="mb-3 min-w-0 space-y-2 overflow-hidden border-b border-hairline pb-3" ref={holder} data-test-call>
       <div className="text-[12.5px] font-medium text-ink">Test call</div>
       {!open ? (
         <Button
@@ -119,7 +119,7 @@ export function TestCall({ assistantId }: { assistantId: string }) {
         <>
           {phase === "starting" ? <p className="text-[12px] text-ink-muted" data-test-call-status="starting">Connecting the call… allow the microphone if your browser asks.</p> : null}
           {/* Hidden (not removed) while starting, so it can connect and be pressed. */}
-          {createElement("telnyx-ai-agent", { "agent-id": assistantId, style: phase === "starting" ? { visibility: "hidden", height: 0, display: "block", overflow: "hidden" } : undefined })}
+          {createElement("telnyx-ai-agent", { "agent-id": assistantId, style: phase === "starting" ? { visibility: "hidden", height: 0, display: "block", overflow: "hidden" } : { display: "block", width: "100%", maxWidth: "100%" } })}
         </>
       ) : (
         <p className="text-[12px] text-ink-muted">Loading the call…</p>

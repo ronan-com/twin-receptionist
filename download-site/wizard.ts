@@ -6,9 +6,9 @@ import { CONFIG, RAILWAY, type Buyer } from "./lib";
 import { DEMO, demoSample, isDemo } from "./demo";
 import { esc } from "./pages";
 import { howTo } from "./content";
-import { canView, hostOf, locked, oauthRedirect, stepDone, webUrl, zoneOf } from "./setup";
+import { agencyUrl, canView, hostOf, locked, oauthRedirect, stepDone, webUrl, zoneOf } from "./setup";
 import { DEFAULT_REGION, DEFAULT_SIZE } from "./providers";
-import { STEPS, csrfToken, logRead, secretHint, type DnsRecord, type SetupData, type StepId } from "./store";
+import { STEPS, csrfToken, isOptional, logRead, secretHint, type DnsRecord, type SetupData, type StepId } from "./store";
 
 // ---------------- icons (Lucide, MIT) ----------------
 const I: Record<string, string> = {
@@ -39,12 +39,13 @@ const bars = `<svg viewBox="0 0 26 18" aria-hidden="true"><g fill="none" stroke-
 const META: Record<StepId, { title: string; short: string; icon: string; hue: string }> = {
   welcome: { title: "Welcome", short: "What you'll need", icon: "sparkles", hue: "indigo" },
   brand: { title: "Brand", short: "Name and owner", icon: "tag", hue: "violet" },
-  domain: { title: "Domain", short: "Your web address", icon: "globe", hue: "cyan" },
+  domain: { title: "Domain", short: RAILWAY ? "Optional" : "Your web address", icon: "globe", hue: "cyan" },
   server: { title: "Server", short: "DigitalOcean", icon: "server", hue: "indigo" },
   railway: { title: "Hosting", short: "Railway", icon: "server", hue: "indigo" },
   phones: { title: "Phones", short: "Telnyx", icon: "phone", hue: "coral" },
-  email: { title: "Email", short: "Resend", icon: "mail", hue: "green" },
+  email: { title: "Email", short: "Optional", icon: "mail", hue: "green" },
   calendars: { title: "Calendars", short: "Optional", icon: "calendar", hue: "magenta" },
+  extras: { title: "Extras", short: "Optional, skip any", icon: "sparkles", hue: "cyan" },
   install: { title: "Install", short: RAILWAY ? "About 10 minutes" : "About 15 minutes", icon: "rocket", hue: "violet" },
   done: { title: "Live", short: "Your agency is live", icon: "party", hue: "green" },
 };
@@ -88,7 +89,9 @@ function head(c: Ctx, title: string, lead: string) {
 }
 function nav(c: Ctx, right: string, opts: { back?: boolean } = {}) {
   const i = STEPS.indexOf(c.view);
-  const back = opts.back !== false && i > 1 && c.view !== "done" ? `<a class="btn g" href="${base(c)}?step=${STEPS[i - 1]}">${icon("left")} Back</a>` : "<span></span>";
+  // An optional step goes back to the extras screen; the others to the step before, skipping optional ones.
+  const prev = isOptional(c.view) ? "extras" : [...STEPS.slice(0, i)].reverse().find((id) => !isOptional(id));
+  const back = opts.back !== false && i > 1 && c.view !== "done" && prev ? `<a class="btn g" href="${base(c)}?step=${prev}">${icon("left")} Back</a>` : "<span></span>";
   // Test sites only: a plain link to look at the next step without filling this one in.
   const skip = CONFIG.previewJump && i < STEPS.length - 1 ? `<a class="btn g" href="${base(c)}?step=${STEPS[i + 1]}">Skip (preview)</a>` : "";
   return `<div class="nav">${back}<div class="right">${skip}${right}</div></div>`;
@@ -97,11 +100,11 @@ const P = (c: Ctx) => esc(c.s.brand?.productName || CONFIG.productName);
 
 // ======================= screens =======================
 function welcome(c: Ctx) {
-  return `${head(c, "Let's set up your AI receptionist agency", `By the end your agency runs at app.your-domain, under your brand, on ${RAILWAY ? "your own Railway account" : "a server you own"}.`)}
+  return `${head(c, "Let's set up your AI receptionist agency", RAILWAY ? "By the end your agency is live under your brand, on your own Railway account. You only need two accounts: Railway and Telnyx." : "By the end your agency runs at app.your-domain, under your brand, on a server you own.")}
 <div class="tiles">
   <div class="tile indigo"><div class="ti">${icon("home")}</div><b>Yours to keep</b><span>Your brand, ${RAILWAY ? "hosting" : "server"}, accounts and clients. We keep no access.</span></div>
-  <div class="tile magenta"><div class="ti">${icon("clock")}</div><b>About 20 minutes</b><span>Close the page any time; this link picks up where you left off.</span></div>
-  <div class="tile coral"><div class="ti">${icon("key")}</div><b>Have these ready</b><span>Your domain, ${RAILWAY ? "Railway" : "DigitalOcean"}, Telnyx and Resend accounts.</span></div>
+  <div class="tile magenta"><div class="ti">${icon("clock")}</div><b>About ${RAILWAY ? "15" : "20"} minutes</b><span>Close the page any time; this link picks up where you left off.</span></div>
+  <div class="tile coral"><div class="ti">${icon("key")}</div><b>Have these ready</b><span>${RAILWAY ? "Railway (hosting) and Telnyx (phones). Email and your own domain are optional extras you can add now or later." : "Your domain, DigitalOcean, Telnyx and Resend accounts."}</span></div>
 </div>
 ${mainForm(c, "start", "")}
 ${nav(c, primary("Start"), { back: false })}`;
@@ -145,7 +148,7 @@ ${nav(c, `${mini(c, "domain-edit", "Change domain", "btn o")}${mini(c, "cf-reche
   const saved = d?.mode === "cloudflare" ? secretHint(c.b.id, "cf_token") : null;
   const replace = d?.mode === "cloudflare" && cf?.status === "active" && cf.existing && !d.confirmed
     ? `${notice("warn", `<b>app.${esc(d.zone!)}</b> already points somewhere else.`)}<label class="opt"><input type="checkbox" name="replace" value="1"><b>Replace it with my new server</b><small>Nothing else on your domain changes.</small></label>` : "";
-  return `${head(c, "Your web address", "Your dashboard will live at app.your-domain. Your main website stays as it is.")}
+  return `${head(c, RAILWAY ? "Your own web address (optional)" : "Your web address", RAILWAY ? "Your agency already works at the https address Railway gives it. Add your domain to use app.your-domain instead. Your main website stays as it is." : "Your dashboard will live at app.your-domain. Your main website stays as it is.")}
 <div class="body">${mainForm(c, "domain", `
   <label class="f" for="domain">Your domain</label>
   <input id="domain" name="domain" maxlength="253"${c.b.demo === 1 ? "" : " required"} autocapitalize="off" spellcheck="false" placeholder="yourbusiness.com.au" value="${esc(zone)}">
@@ -161,7 +164,7 @@ ${nav(c, `${mini(c, "domain-edit", "Change domain", "btn o")}${mini(c, "cf-reche
   </div>
   <div class="only-manual">${RAILWAY ? `<p class="hint">We'll show you each record to add, with a tick as it appears.</p>` : ""}${showMeHow(["registrar-dns-records"])}</div>
   ${replace}`)}</div>
-${nav(c, `${c.b.demo === 1 ? mini(c, "domain", "Skip this step", "btn o", "", `<input type="hidden" name="domain" value="">`) : ""}${primary("Continue")}`)}`;
+${nav(c, `${RAILWAY ? mini(c, "domain-skip", "Skip for now", "btn o") : c.b.demo === 1 ? mini(c, "domain", "Skip this step", "btn o", "", `<input type="hidden" name="domain" value="">`) : ""}${primary("Continue")}`)}`;
 }
 
 function railwayStep(c: Ctx) {
@@ -244,7 +247,7 @@ function email(c: Ctx) {
   <div class="two"><div><label class="f" for="user">Username</label><input id="user" name="user" required maxlength="200" autocapitalize="off" spellcheck="false" value="${val(c, "user", sm?.user || "")}"></div>
   <div>${secretIn("pass", "Password", secretHint(c.b.id, "smtp_password"), "Password")}</div></div>
   <label class="f" for="address">Send from</label><input id="address" name="address" type="email" required maxlength="200" placeholder="hello@yourbusiness.com" value="${val(c, "address", e.address || (zone ? `hello@${zone}` : ""))}">`)}</div>
-${nav(c, `${mini(c, "email-mode", "Use Resend instead", "linkbtn", "", `<input type="hidden" name="mode" value="resend">`)}${primary("Check and continue")}`)}`;
+${nav(c, `${mini(c, "email-mode", "Use Resend instead", "linkbtn", "", `<input type="hidden" name="mode" value="resend">`)}${skipEmail(c)}${primary("Check and continue")}`)}`;
   }
   const rs = e?.resend;
   if (RAILWAY && !c.s.domain?.confirmed) {
@@ -254,15 +257,15 @@ ${notice("ok", `Resend is connected. We add its records for <b>${esc(e.sendingDo
 ${mainForm(c, "email-continue", `<input type="hidden" name="later" value="1">`)}
 ${nav(c, `${mini(c, "email-mode", "Use another key or address", "linkbtn", "", `<input type="hidden" name="mode" value="resend"><input type="hidden" name="reset" value="1">`)}${primary("Continue")}`)}`;
     }
-    return `${head(c, "Send email from your domain", "Invites and notices go out through your own Resend account.")}
+    return `${head(c, "Send email from your own address (optional)", "Invites and notices go out through your own Resend account. Without it, invite links show on screen for you to copy and send yourself.")}
 <div class="body">${mainForm(c, "email", `
   ${secretIn("key", "re_...", secretHint(c.b.id, "resend_key"), "Resend API key")}
-  <p class="hint">Create it with <b>Full access</b>. Your agency only ever gets a send-only key.</p>
+  <p class="hint">Create it with <b>Full access</b>. Your agency only ever gets a send-only key. Resend sends from a domain you own, so adding email means adding your domain too.</p>
   <label class="f" for="address">Send from</label>
   <input id="address" name="address" type="email" required maxlength="200" placeholder="hello@mail.yourbusiness.com" value="${val(c, "address", e?.address || "")}">
   <p class="hint">A sub-domain like mail.yourbusiness.com keeps your main email separate.</p>
   ${showMeHow(["resend"])}`)}</div>
-${nav(c, `${mini(c, "email-mode", "Use another email service", "linkbtn", "", `<input type="hidden" name="mode" value="smtp">`)}${primary("Check and continue")}`)}`;
+${nav(c, `${mini(c, "email-mode", "Use another email service", "linkbtn", "", `<input type="hidden" name="mode" value="smtp">`)}${skipEmail(c)}${primary("Check and continue")}`)}`;
   }
   if (rs?.domainId && e?.checked) {
     const rows = [...(rs.records || []), ...(rs.dmarc ? [rs.dmarc] : [])];
@@ -279,7 +282,7 @@ ${manual ? recordTable(rows, true) + showMeHow(["registrar-dns-records"]) : ""}
 ${manual ? "" : `<details class="log"><summary>Show details</summary>${recordTable(rows, false)}</details>`}
 ${nav(c, `${mini(c, "email-continue", "Continue, finish later", "btn o", "", `<input type="hidden" name="later" value="1">`)}${mini(c, "email-recheck", `Check now ${icon("right")}`, "btn p")}`)}`;
   }
-  return `${head(c, "Send email from your domain", "Invites and notices go out through your own Resend account.")}
+  return `${head(c, RAILWAY ? "Send email from your own address (optional)" : "Send email from your domain", "Invites and notices go out through your own Resend account.")}
 <div class="body">${mainForm(c, "email", `
   ${secretIn("key", "re_...", secretHint(c.b.id, "resend_key"), "Resend API key")}
   <p class="hint">Create it with <b>Full access</b>.</p>
@@ -287,8 +290,10 @@ ${nav(c, `${mini(c, "email-continue", "Continue, finish later", "btn o", "", `<i
   <input id="address" name="address" type="email" maxlength="200" value="${val(c, "address", e?.address || `hello@mail.${zone}`)}">
   <p class="hint">A sub-domain like mail.${esc(zone)} keeps your main email separate.</p>
   ${showMeHow(["resend"])}`)}</div>
-${nav(c, `${mini(c, "email-mode", "Use another email service", "linkbtn", "", `<input type="hidden" name="mode" value="smtp">`)}${primary("Check and continue")}`)}`;
+${nav(c, `${mini(c, "email-mode", "Use another email service", "linkbtn", "", `<input type="hidden" name="mode" value="smtp">`)}${skipEmail(c)}${primary("Check and continue")}`)}`;
 }
+/** Railway: email is optional. */
+const skipEmail = (c: Ctx) => (RAILWAY ? mini(c, "email-skip", "Skip for now", "btn o") : "");
 
 function calendars(c: Ctx) {
   const cal = c.s.calendars || {};
@@ -299,10 +304,42 @@ function calendars(c: Ctx) {
   <input name="${p}Id" aria-label="${title} client ID" autocapitalize="off" spellcheck="false" maxlength="300" placeholder="${ph}" value="${val(c, `${p}Id`, cal[p]?.clientId || "")}">
   <input name="${p}Secret" type="password" aria-label="${title} client secret" autocomplete="off" maxlength="500" placeholder="${saved ? `Secret saved (${esc(saved)})` : "Client secret"}"></div>`;
   };
-  return `${head(c, "Calendar booking", "Optional: let receptionists book into Google or Outlook calendars.")}
+  if (RAILWAY && !hostOf(c.s)) {
+    return `${head(c, "Calendar booking (optional)", "Let receptionists book into Google or Outlook calendars.")}
+${notice("info", "Calendar sign-in needs a web address of your own to send people back to. Add your domain first, or skip this and add calendars later in your dashboard's Settings.")}
+${mainForm(c, "cal-skip", "")}
+${nav(c, `<a class="btn o" href="${base(c)}?step=domain">Add my domain</a>${primary("Skip for now")}`)}`;
+  }
+  return `${head(c, "Calendar booking (optional)", "Let receptionists book into Google or Outlook calendars.")}
 <div class="body">${mainForm(c, "calendars", `<div class="choice">${card("google", "Google", "Client ID")}${card("microsoft", "Microsoft", "Application (client) ID")}</div>
   ${showMeHow(["google-oauth", "microsoft-oauth"])}`)}</div>
 ${nav(c, `${mini(c, "cal-skip", "Skip for now")}${primary("Check and continue")}`)}`;
+}
+
+// ---------------- optional extras (Railway) ----------------
+/** What the buyer has added so far, for the extras screen and the Done screen. */
+const extrasState = (s: SetupData) => ({
+  email: !!s.email?.confirmed,
+  domain: !!s.domain?.host && !!s.domain.confirmed,
+  calendars: !!s.calendars?.google || !!s.calendars?.microsoft,
+});
+
+function extras(c: Ctx) {
+  const have = extrasState(c.s);
+  const card = (key: "email" | "domain" | "calendars", title: string, ico: string, text: string, step: StepId, skipAction: string) => {
+    const added = have[key];
+    return `<div class="xcard${added ? " added" : ""}"><div class="xh">${icon(ico)}<b>${title}</b><span class="tag">Optional</span></div><p>${text}</p>
+  <div class="xa">${added ? `<span class="st f">${icon("check")} Added</span><a class="btn o" href="${base(c)}?step=${step}">Change</a>`
+      : `<a class="btn o" href="${base(c)}?step=${step}">Add now</a>${mini(c, skipAction, "Skip for now", "linkbtn")}${c.s.skipped?.[key] ? `<span class="st w">Skipped: add it later</span>` : ""}`}</div></div>`;
+  };
+  return `${head(c, "Optional extras", `You can install without any of these. ${P(c)} works as soon as it's installed, at the https address Railway gives it. Add any of these now, or later.`)}
+<div class="xcards">
+${card("email", "Your own email", "mail", "Invites and notices sent from your address through Resend. Without it, invite links show on screen for you to copy and send yourself.", "email", "email-skip")}
+${card("domain", "Your own web address", "globe", "Use app.yourbusiness.com instead of the Railway address. We add the records for you with Cloudflare, or show you each one.", "domain", "domain-skip")}
+${card("calendars", "Calendar booking", "calendar", "Let receptionists book into Google or Outlook calendars. Needs your own web address.", "calendars", "cal-skip")}
+</div>
+${mainForm(c, "extras-continue", "")}
+${nav(c, primary(have.email || have.domain || have.calendars ? "Continue to install" : "Skip all and continue"))}`;
 }
 
 // ---------------- install ----------------
@@ -368,7 +405,7 @@ function railStage(s: SetupData): number {
   const rw = s.rw || {};
   if (s.phase === "creating" || s.phase === "create_failed") return !rw.projectId ? 0 : !rw.pgVolume ? 1 : !rw.deploymentId ? 2 : 3;
   if (s.phase === "deploying" || s.phase === "failed") return rw.deployStatus === "DEPLOYING" || rw.deployStatus === "CRASHED" ? 4 : 3;
-  if (s.phase === "domain") return rw.records?.every((r) => r.ok) ? 6 : 5;
+  if (s.phase === "domain") return !s.domain?.host ? 5 : rw.records?.every((r) => r.ok) ? 6 : 5;
   return 7;
 }
 
@@ -378,9 +415,9 @@ function installRailway(c: Ctx) {
   const manual = s.domain?.mode === "manual";
   if (s.phase === "idle") {
     const rows: [string, string][] = [
-      ["Dashboard", esc(host)], ["Hosting", `Railway${s.railway?.workspaceName ? ` · ${esc(s.railway.workspaceName)}` : ""} · from US$5/mo`],
-      ["Phones", `Telnyx ${esc(secretHint(c.b.id, "telnyx_key") || "")}`], ["Email from", esc(s.email?.from || "")],
-      ["DNS", manual ? "You add two records" : "Handled by the wizard"],
+      ["Address", host ? esc(host) : "Your Railway address (ready as soon as it's built)"], ["Hosting", `Railway${s.railway?.workspaceName ? ` · ${esc(s.railway.workspaceName)}` : ""} · from US$5/mo`],
+      ["Phones", `Telnyx ${esc(secretHint(c.b.id, "telnyx_key") || "")}`], ["Email", s.email?.from ? esc(s.email.from) : "Add later"],
+      ...(host ? [["DNS", manual ? "You add two records" : "Handled by the wizard"] as [string, string]] : [["Own domain", "Add later"] as [string, string]]),
     ];
     return `${head(c, "Ready to install", `We'll set up ${P(c)} in your Railway account. You can close the page while it runs.`)}
 <div class="summary">${rows.map(([k, v]) => `<div><span>${k}</span><b>${v}</b></div>`).join("")}</div>
@@ -389,7 +426,7 @@ ${nav(c, primary("Install"))}`;
   }
   const rw = s.rw || {};
   const stages = ["Creating your project in Railway", "Adding your database", "Adding the app and your settings", "Building the app (the longest step)", "Starting the app",
-    manual ? `Waiting for your records for ${host}` : `Connecting ${host}`, "Getting your security certificate"];
+    ...(host ? [manual ? `Waiting for your records for ${host}` : `Connecting ${host}`, "Getting your security certificate"] : ["Checking it answers"])];
   const at = railStage(s);
   const bad = s.phase === "failed" || s.phase === "create_failed";
   const list = `<ul class="stages">${stages.map((t, i) => {
@@ -408,6 +445,13 @@ ${list}${log}
 ${nav(c, `${del}${mini(c, s.phase === "failed" ? "install-retry" : "install-start", `Try again ${icon("right")}`, "btn p")}`, { back: false })}`;
   }
   if (isDemo(c.b) && s.phase === "domain") return doneRailway(c);
+  if (s.phase === "domain" && !host) {
+    return `${head(c, `${P(c)} is running`, "Checking it answers at its Railway address. A few seconds.")}
+${list}
+<p class="status"><span class="spin"></span>Almost there.</p>
+${log}
+${nav(c, del, { back: false })}`;
+  }
   if (s.phase === "domain") {
     const temp = isDemo(c.b) ? `${base(c)}/open` : webUrl(rw.serviceDomain);
     return `${head(c, `${P(c)} is running`, `Use your temporary address now. ${esc(host)} starts working once its records are in.`)}
@@ -446,6 +490,32 @@ ${notice("info", "We've deleted every key you gave us. We keep no access to your
 ${nav(c, `<a class="btn p" href="${esc(url)}" target="_blank" rel="noopener noreferrer">Open your dashboard ${icon("ext")}</a>`, { back: false })}`;
 }
 
+/** Done screen: what's still optional, with how to add each one later (their same setup link keeps showing this). */
+function laterCards(c: Ctx, url: string): string {
+  const s = c.s, have = extrasState(s);
+  const where = esc(url.replace(/^https?:\/\//, ""));
+  const cards: string[] = [];
+  const late = (ico: string, title: string, text: string, steps: string[]) =>
+    `<div class="xcard late"><div class="xh">${icon(ico)}<b>${title}</b><span class="tag">Optional</span></div><p>${text}</p><details><summary>How to add it later</summary><ol>${steps.map((x) => `<li>${x}</li>`).join("")}</ol></details></div>`;
+  if (!have.email) cards.push(late("mail", "Your own email", "Until then, invite links show on screen for you to copy and send yourself. Forgot your own password? The reset link is printed in the app's Logs in Railway.", [
+    "Make a Resend account and a domain you own (Resend sends from your domain).",
+    `Open your dashboard, then <b>Settings</b>, then <b>Email and calendars</b>.`,
+    "Paste your mail server address, like <code>smtps://resend:YOUR_RESEND_KEY@smtp.resend.com:465</code>, and the address emails come from. Press <b>Send a test</b>.",
+    "Add the DNS records Resend shows for your domain, where your DNS is managed. Resend tells you when they're verified.",
+  ]));
+  if (!have.domain) cards.push(late("globe", "Your own web address", `Right now your agency is at <b>${where}</b>. You can put it on app.yourbusiness.com whenever you like.`, [
+    "Open your project in <b>Railway</b>, click the <b>app</b> service, then <b>Settings</b>, then <b>Networking</b>, then <b>Custom Domain</b>. Type <code>app.yourbusiness.com</code>.",
+    "Railway shows you a CNAME and a TXT record. Add both where your domain's DNS is managed (your registrar, or Cloudflare with the proxy off).",
+    "When Railway shows the domain as active, open the app service's <b>Variables</b> and change <code>PUBLIC_URL</code> to <code>https://app.yourbusiness.com</code>. Railway restarts the app.",
+  ]));
+  if (!have.calendars) cards.push(late("calendar", "Calendar booking", "Let receptionists book into Google or Outlook calendars.", [
+    `In Google Cloud (or Microsoft Entra) make an OAuth app. Its redirect address is <code>${esc(url)}/api/oauth/google/callback</code> (Microsoft: <code>.../microsoft/callback</code>).`,
+    "Open your dashboard, then <b>Settings</b>, then <b>Email and calendars</b>, and paste the client ID and secret.",
+    `The setup guide's <a href="/guide#accounts" target="_blank" rel="noopener">calendar how-tos</a> walk through each one.`,
+  ]));
+  return cards.length ? `<h3 class="extras-head">Optional extras: add them whenever you like</h3><div class="xcards">${cards.join("")}</div>` : "";
+}
+
 function doneRailway(c: Ctx) {
   if (isDemo(c.b)) {
     return `${head(c, "Your agency is live", `${P(c)} is ready. This test uses a temporary address instead of your own domain.`)}
@@ -453,27 +523,31 @@ function doneRailway(c: Ctx) {
 ${nav(c, `<a class="btn p" href="${base(c)}/open">Open your dashboard ${icon("ext")}</a>`, { back: false })}`;
   }
   const s = c.s;
-  const url = s.resultUrl || `https://${hostOf(s)}`;
+  const url = s.resultUrl || agencyUrl(s);
   const temp = s.tempUrl || "";
+  const own = !!hostOf(s);
   const pending = !!s.domainPending;
+  const shown = pending && temp ? temp : url;
+  const have = extrasState(s);
   const { text, next } = logRead(c.b.id);
   return `${head(c, "Your agency is live", `${P(c)} is running in your own Railway account. Everything here is yours.`)}
-<div class="live"><div class="dot">● Live</div><a class="url" href="${esc(pending && temp ? temp : url)}" target="_blank" rel="noopener noreferrer">${esc(pending && temp ? temp : url)}</a>
-${pending ? `<p class="hint">Your temporary address. <b>${esc(hostOf(s))}</b> starts working by itself once the records below are in.</p>` : temp ? `<p class="hint">Also at your temporary address: <a href="${esc(temp)}" target="_blank" rel="noopener noreferrer">${esc(temp.replace(/^https?:\/\//, ""))}</a></p>` : ""}
+<div class="live"><div class="dot">● Live</div><a class="url" href="${esc(shown)}" target="_blank" rel="noopener noreferrer">${esc(shown)}</a>
+${pending ? `<p class="hint">Your temporary address. <b>${esc(hostOf(s))}</b> starts working by itself once the records below are in.</p>` : !own ? `<p class="hint">This is your agency's address from Railway. Bookmark it. You can add your own domain later.</p>` : temp ? `<p class="hint">Also at your Railway address: <a href="${esc(temp)}" target="_blank" rel="noopener noreferrer">${esc(temp.replace(/^https?:\/\//, ""))}</a></p>` : ""}
 <p class="hint"><b>First time in:</b> you'll see <b>Set up your agency</b>. Use <b>${esc(s.brand?.ownerEmail || "your owner email")}</b> and pick a password. Only that address can create the first account.</p></div>
 ${pending && s.finishRecords?.length ? `<div class="recbox"><b>Records for ${esc(hostOf(s))}</b>${recordTable(s.finishRecords, true)}</div>` : ""}
 <div class="checks"><b>Before you go</b>
   <div>${icon("check")}<span>Delete your Railway token. <a href="https://railway.com/account/tokens" target="_blank" rel="noopener noreferrer">Open Railway</a></span></div>
   ${s.domain?.mode === "cloudflare" ? `<div>${icon("check")}<span>Delete your Cloudflare token. <a href="https://dash.cloudflare.com/profile/api-tokens" target="_blank" rel="noopener noreferrer">Open Cloudflare</a></span></div>` : ""}
-  <div>${icon("check")}<span>${s.email?.mode === "resend" ? "Keep your Resend account: your agency sends email through it with its own send-only key." : "Keep your email login: your agency sends email with it."}</span></div>
+  ${have.email ? `<div>${icon("check")}<span>${s.email?.mode === "resend" ? "Keep your Resend account: your agency sends email through it with its own send-only key." : "Keep your email login: your agency sends email with it."}</span></div>` : ""}
   <div>${icon("check")}<span>Turn on backups for the Postgres volume in Railway (its Backups tab).</span></div>
 </div>
+${laterCards(c, shown)}
 ${notice("info", "We've deleted every key you gave us. We keep no access to your Railway project or accounts.")}
 <details class="log"><summary>Show details</summary><pre id="log" data-next="${next}">${esc(text.slice(-60000))}</pre></details>
-${nav(c, `<a class="btn p" href="${esc(pending && temp ? temp : url)}" target="_blank" rel="noopener noreferrer">Open your dashboard ${icon("ext")}</a>`, { back: false })}`;
+${nav(c, `<a class="btn p" href="${esc(shown)}" target="_blank" rel="noopener noreferrer">Open your dashboard ${icon("ext")}</a>`, { back: false })}`;
 }
 
-const SCREENS: Record<StepId, (c: Ctx) => string> = { welcome, brand, railway: railwayStep, domain: domainStep, server, phones, email, calendars, install, done };
+const SCREENS: Record<StepId, (c: Ctx) => string> = { welcome, brand, railway: railwayStep, domain: domainStep, server, phones, email, calendars, extras, install, done };
 
 export function statusRev(c: { b: Buyer; s: SetupData }): string {
   const s = c.s;
@@ -488,8 +562,10 @@ const isLive = (c: Ctx) =>
   (c.view === "domain" && !!c.s.domain?.cf?.zoneId && !!c.s.domain.cf.status && c.s.domain.cf.status !== "active") ||
   (c.view === "email" && !!c.s.email?.resend?.domainId && c.s.email.resend.status !== "verified");
 
+/** The steps shown in the rail: optional ones only while you're on them (they hang off the extras step). */
+const railSteps = (view: StepId) => STEPS.filter((id) => !isOptional(id) || id === view);
 function rail(c: Ctx) {
-  return `<aside class="rail"><h2>Set up ${esc(c.s.brand?.productName || "your agency")}</h2><ol>${STEPS.map((id, i) => {
+  return `<aside class="rail"><h2>Set up ${esc(c.s.brand?.productName || "your agency")}</h2><ol>${railSteps(c.view).map((id, i) => {
     const m = META[id];
     const isDone = stepDone(c.b, c.s, id) && id !== c.view && id !== "done";
     const can = canView(c.b, c.s, id) && id !== c.view && !(c.s.phase === "done" && id !== "done");
@@ -517,7 +593,8 @@ function screenOf(c: Ctx): string {
 export function wizardPage(b: Buyer, s: SetupData, code: string, sid: string, view: StepId, flash?: SetupData["flash"]) {
   const c: Ctx = { b, s, code, sid, view, flash };
   const live = isLive(c);
-  const i = STEPS.indexOf(view);
+  const mainSteps = STEPS.filter((id) => !isOptional(id));
+  const i = isOptional(view) ? mainSteps.indexOf("extras") : mainSteps.indexOf(view);
   const lockNote = locked(s) && s.phase !== "done" && !["install", "done", "welcome"].includes(view)
     ? notice("info", `Your server is already built with these settings. <a href="/setup/${esc(code)}?step=install">Go to Install</a>`) : "";
   const fl = flash ? notice(flash.kind === "ok" ? "ok" : flash.kind === "err" ? "err" : "info", esc(flash.text)).replace('class="notice ', 'class="notice flash ') : "";
@@ -542,7 +619,7 @@ ${live ? `<noscript><meta http-equiv="refresh" content="8"></noscript>` : ""}
 <div class="shell wiz" data-status="/setup/${esc(code)}/status" data-rev="${statusRev(c)}"${live ? ' data-live="1"' : ""}>
 ${rail(c)}
 <main>
-  <div class="phonebar"><div class="lab"><span>Step ${i + 1} of ${STEPS.length}</span><b>${META[view].title}</b></div><progress class="bar" max="${STEPS.length}" value="${i + 1}">${i + 1} of ${STEPS.length}</progress></div>
+  <div class="phonebar"><div class="lab"><span>Step ${i + 1} of ${mainSteps.length}</span><b>${META[view].title}</b></div><progress class="bar" max="${mainSteps.length}" value="${i + 1}">${i + 1} of ${mainSteps.length}</progress></div>
   <section class="card step-${view}">${b.demo === 1 ? notice("info", "<b>Test run.</b> Every account here is pretend: press Continue on each step. Nothing real is connected.") : ""}${lockNote}${withFlash(screenOf(c), fl)}</section>
   <p class="foot">${icon("shield")} Your keys are stored encrypted and deleted once your install is done.</p>
 </main>

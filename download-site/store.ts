@@ -75,11 +75,18 @@ export function redact(text: string, values: string[]): string {
 }
 
 // ---------------- wizard state ----------------
-export type StepId = "welcome" | "brand" | "railway" | "domain" | "server" | "phones" | "email" | "calendars" | "install" | "done";
-/** Railway (the default): accounts first, the domain last, since its records come from Resend and Railway. */
+export type StepId = "welcome" | "brand" | "railway" | "domain" | "server" | "phones" | "email" | "calendars" | "extras" | "install" | "done";
+/**
+ * Railway (the default): only Brand, Railway and Telnyx are needed. "extras" is one screen of
+ * optional cards (email, your own domain, calendars); each opens its own step, which can be skipped.
+ * DigitalOcean still needs a domain (its server gets an https certificate for it), so it keeps the long path.
+ */
 export const STEPS: StepId[] = RAILWAY
-  ? ["welcome", "brand", "railway", "phones", "email", "domain", "calendars", "install", "done"]
+  ? ["welcome", "brand", "railway", "phones", "extras", "email", "domain", "calendars", "install", "done"]
   : ["welcome", "brand", "domain", "server", "phones", "email", "calendars", "install", "done"];
+/** Steps that are never required: opened from the extras screen, and each one can be skipped. */
+export const OPTIONAL_STEPS: StepId[] = RAILWAY ? ["email", "domain", "calendars"] : [];
+export const isOptional = (id: StepId) => OPTIONAL_STEPS.includes(id);
 
 export interface DnsRecord {
   key: string; // stable id, e.g. "a", "dkim", "spf-mx"
@@ -148,6 +155,10 @@ export interface SetupData {
     confirmed?: boolean;
   };
   calendars?: { google?: { clientId: string }; microsoft?: { clientId: string }; done?: boolean };
+  /** Railway: the buyer pressed Continue on the optional extras screen (whatever they added or skipped). */
+  extrasDone?: boolean;
+  /** Railway: extras the buyer chose to leave for later. */
+  skipped?: { email?: boolean; domain?: boolean; calendars?: boolean };
   // the install
   phase: Phase;
   progress?: string[];

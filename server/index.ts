@@ -13,6 +13,7 @@ import {
   inviteInfo,
   removeMember,
   renameOrg,
+  memberResetLink,
   requestReset,
   requireRole,
   resetPassword,
@@ -530,8 +531,7 @@ async function route(req: Request, server?: { requestIP(r: Request): { address: 
     return withCookie({ ok: true }, clearCookie(req));
   }
   if (path === "/api/password-reset" && method === "POST") {
-    await requestReset(await body(req), appUrl(req));
-    return json({ ok: true });
+    return json({ ok: true, ...(await requestReset(await body(req), appUrl(req))) });
   }
   const resetMatch = path.match(/^\/api\/password-reset\/([A-Za-z0-9_-]{20,100})$/);
   if (resetMatch && method === "POST") {
@@ -851,6 +851,8 @@ async function route(req: Request, server?: { requestIP(r: Request): { address: 
     await revokeInvite(ctx, teamInvite[1]);
     return json(await team(ctx));
   }
+  const teamReset = path.match(/^\/api\/team\/members\/([a-f0-9-]{36})\/reset-link$/);
+  if (teamReset && method === "POST") return json(await memberResetLink(ctx, teamReset[1], appUrl(req)));
   const teamMember = path.match(/^\/api\/team\/members\/([a-f0-9-]{36})$/);
   if (teamMember) {
     if (method === "PUT") {

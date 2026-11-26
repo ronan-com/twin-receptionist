@@ -505,23 +505,53 @@ export async function acceptInvite(token: string, input: any): Promise<string> {
 
 // ---- Forgotten passwords ----
 
-export async function requestReset(input: any, base: string): Promise<void> {
-  const email = String(input?.email ?? "").trim().toLowerCase().slice(0, 254);
-  if (recentFailures(`reset:${email}`).length >= 3) return;
-  recentFailures(`reset:${email}`).push(Date.now());
-  const [u] = await sql`select id from users where email = ${email}`;
-  // Same answer either way, so this can't be used to find out who has an account.
-  if (!u) return;
+/** Makes a one-hour reset link for a user and emails it if mail is set up. Returns the link either way. */
+async function makeReset(userId: string, email: string, base: string): Promise<{ url: string; emailed: boolean }> {
   const token = newToken();
-  await sql`delete from password_resets where user_id = ${u.id}`;
+  await sql`delete from password_resets where user_id = ${userId}`;
   await sql`
     insert into password_resets (token_hash, user_id, expires_at)
-    values (${hashToken(token)}, ${u.id}, ${new Date(Date.now() + RESET_MINUTES * 60_000)})`;
-  await sendAccountEmail(
+    values (${hashToken(token)}, ${userId}, ${new Date(Date.now() + RESET_MINUTES * 60_000)})`;
+  const url = `${base}/reset/${token}`;
+  const emailed = await sendAccountEmail(
     email,
     `Reset your ${PRODUCT} password`,
-    `Someone asked to reset the password for this account. If it was you, choose a new one here:\n${base}/reset/${token}\n\nThe link works for ${RESET_MINUTES} minutes. If it wasn't you, ignore this email.`,
-  ).catch((err) => console.error("[mail] reset", err.message));
+    `Someone asked to reset the password for this account. If it was you, choose a new one here:\n${url}\n\nThe link works for ${RESET_MINUTES} minutes. If it wasn't you, ignore this email.`,
+  ).catch((err) => {
+    console.error("[mail] reset", err.message);
+    return false;
+  });
+  return { url, emailed };
+}
+
+/**
+ * "Forgot password". The answer is the same whether or not the email has an account (so it can't be
+ * used to find out who does), but it says whether this server can send email at all: without it the
+ * page can say "ask your owner for a reset link" instead of "check your inbox".
+ */
+export async function requestReset(input: any, base: string): Promise<{ emailsSetUp: boolean }> {
+  const emailsSetUp = mailerReady();
+  const email = String(input?.email ?? "").trim().toLowerCase().slice(0, 254);
+  if (recentFailures(`reset:${email}`).length >= 3) return { emailsSetUp };
+  recentFailures(`reset:${email}`).push(Date.now());
+  const [u] = await sql`select id from users where email = ${email}`;
+  if (!u) return { emailsSetUp };
+  await makeReset(u.id, email, base);
+  return { emailsSetUp };
+}
+
+/**
+ * An owner or admin makes a reset link for someone in their team and gets it back to copy, for
+ * servers where email isn't set up (or the email didn't arrive). Only for people in their own team;
+ * only an owner can do it for an owner.
+ */
+export async function memberResetLink(ctx: Ctx, userId: string, base: string): Promise<{ url: string; emailed: boolean; email: string }> {
+  requireRole(ctx, "admin");
+  const [m] = await sql`
+    select u.email, m.role from memberships m join users u on u.id = m.user_id where m.org_id = ${ctx.org!.id} and m.user_id = ${userId}`;
+  if (!m || m.role === "customer") throw new ValidationError("They're not in this team.");
+  if (m.role === "owner" && ctx.role !== "owner") throw new AuthError("Only an owner can reset an owner's password.", 403);
+  return { ...(await makeReset(userId, m.email, base)), email: m.email };
 }
 
 export async function resetPassword(token: string, input: any): Promise<string> {

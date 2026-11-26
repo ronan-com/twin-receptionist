@@ -5,18 +5,23 @@ Hi [BUYER NAME],
 Welcome to Chloe, your AI receptionist and tour-booking agency for childcare centres. Each centre you sign up becomes a client with its own receptionist.
 
 WHAT YOU GET
-- Your own agency dashboard at app.[THEIR DOMAIN], under your brand name, logo and colour.
+- Your own agency dashboard, under your brand name, logo and colour. It is live at the https address Railway gives it (it ends in .up.railway.app). You can put it on your own domain, app.[THEIR DOMAIN], whenever you like.
 - A receptionist for each centre. It answers routine parent questions, books centre tours into the centre's calendar, puts urgent calls through to staff and takes callback requests.
 - A login for each centre's staff, so they see only their own calls, bookings and callbacks.
 - Test calls from your browser for any receptionist, before it has a phone number.
 - The business pack in [BUYER FOLDER]: brand files, demo video, sales playbook, centre intake, approved answers, privacy wording, pricing, invoice templates and the operating guide.
 
 HAVE THESE READY
-- A domain you own (any registrar). Your dashboard will be app.[THEIR DOMAIN]. Your main website stays as it is.
-- A Railway account on the Hobby plan. US$5 a month, which includes US$5 of usage. It needs a card.
-- A Telnyx account, upgraded from trial, with some credit (minimum top-up US$10). Phone numbers and call minutes come out of that credit.
-- A Resend account for email. The free plan covers 3,000 emails a month.
-- Optional: a Google or Microsoft developer account, so centres can connect their calendars.
+Two accounts are all you need:
+- A Railway account on the Hobby plan (your hosting). US$5 a month, which includes US$5 of usage. It needs a card.
+- A Telnyx account (your phone numbers and calls), upgraded from trial, with some credit (minimum top-up US$10). Phone numbers and call minutes come out of that credit.
+
+Optional extras, which you can add during setup or any time later (the setup page lets you skip each one):
+- Your own email: a Resend account (the free plan covers 3,000 emails a month), so invites and notices come from your address. Without it, invite links show on screen for you to copy and send yourself.
+- Your own domain, from any registrar, so your dashboard is app.[THEIR DOMAIN]. Your main website stays as it is.
+- A Google or Microsoft developer account, so centres can connect their calendars.
+
+Also handy:
 - A password manager for the keys you'll create.
 - A work email you'll keep. Use it for every account.
 
@@ -25,17 +30,17 @@ Open Telnyx first. It can take up to two working days to approve a new card. Aus
 YOUR SETUP LINK
 [SETUP LINK]
 
-It opens on our setup site, setup.chloeeai.co. It's just for you, so please don't share it. It takes about 20 minutes of your time. You can close the page and come back to the link at any time.
+It opens on our setup site, setup.chloeeai.co. It's just for you, so please don't share it. It takes about 15 minutes of your time. You can close the page and come back to the link at any time.
 
-The wizard walks you through each account in turn: Brand, Hosting (Railway), Phones (Telnyx), Email (Resend), Domain and Calendars. Each step has a "Show me how" guide. Then you press Install and it sets up your agency in your own Railway account. That takes about 10 minutes.
+The wizard walks you through Brand, Railway (hosting) and Telnyx (phones). Each step has a "Show me how" guide. Then there is one screen of optional extras (email, your own domain, calendars) with a "Skip for now" button on each. Then you press Install and it sets up your agency in your own Railway account. That takes about 10 minutes, and your agency is live straight away.
 
 WHAT HAPPENS AFTER
-1. Open app.[THEIR DOMAIN] and click Create an account with [OWNER EMAIL]. Only that address can create the first account.
-2. Delete the Railway setup token, as the last screen asks, and turn on backups for your database in Railway.
+1. Open your agency address (the last screen shows it) and click Create an account with [OWNER EMAIL]. Only that address can create the first account.
+2. Delete the Railway setup token, as the last screen asks, and turn on backups for your database in Railway. The last screen also lists any extras you skipped, with how to add each one later.
 3. Follow the attached Owner quickstart: set your logo and colour, create your first centre's receptionist, check its answers with the director, test-call it, then invite the centre's staff.
 
 WHO OWNS WHAT
-Everything runs in accounts in your name: your domain, your Railway project and database, your Telnyx phone account, your Resend email and your calendar apps. You pay each provider directly.
+Everything runs in accounts in your name: your Railway project and database, your Telnyx phone account, and any domain, Resend email or calendar apps you add. You pay each provider directly.
 
 Once your install finishes, our setup site deletes every key you gave it. We have no login to your dashboard, your Railway project or any of your accounts, and we don't see your calls or your centres' data.
 

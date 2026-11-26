@@ -95,7 +95,7 @@ try {
   await w.goto(l2);
   const sub = async (action, fill = {}) => { await w.$eval(`form[action$='/a/${action}']`, (f, fill) => { for (const [k, v] of Object.entries(fill)) f.querySelector(`[name='${k}']`).value = v; }, fill); const id = await w.$eval(`form[action$='/a/${action}']`, (f) => f.id); await click(w, id ? `button[form='${id}']` : `form[action$='/a/${action}'] button`); };
   await sub("start"); await sub("brand", { productName: "Sam's Desk", ownerEmail: "sam@samdesk.test" }); await sub("railway", { token: "mock-rail-token-ok" }); await sub("phones", { key: "platform-fake-sam-0001" });
-  check("admin: (Sam reached Email in the wizard)", (await text(w, "h1")) === "Send email from your domain", await text(w, "h1"));
+  check("admin: (Sam reached the optional extras in the wizard)", (await text(w, "h1")) === "Optional extras", await text(w, "h1"));
 
   // ---- list, search, filter ----
   await p.goto(`${SITE}/admin`);

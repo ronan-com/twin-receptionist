@@ -39,17 +39,40 @@ deploy/            compose.yml + Caddyfile + .env.example for our small server
 `/setup/<code>` (old `/download/<code>` links redirect there). One screen per step; how-tos sit
 behind **Show me how** (from `handoff-content/providers/<id>.md`).
 
+**Only Railway and Telnyx are required.** Email (Resend), the buyer's own domain and calendars are
+optional: one **Optional extras** screen sits between Telnyx and Install, with a card for each
+(**Add now** / **Skip for now**) and **Skip all and continue**. The agency is live at Railway's own
+`https://<x>.up.railway.app` address straight after install; `PUBLIC_URL` is set to that when there
+is no custom domain (the service domain is created before the app's variables for this reason).
+
 | Step | What they do | What we check |
 |---|---|---|
 | Welcome | Read three tiles, press Start | |
 | Brand | Brand name, owner email (`FIRST_ADMIN_EMAIL`), optional logo (shrunk to a small PNG in the page) and colour | email format; logo is a real PNG under 30 KB |
 | Hosting | Railway **account token** (Account Settings > Tokens, Workspace: *No workspace*) | `me { email workspaces }`, then plan: refuses Free / no card ("needs the Hobby plan") |
 | Phones | Telnyx key (becomes the app's `TELNYX_API_KEY`; every client runs on it) | `GET /v2/balance`; trial warning |
-| Email | Resend key (Full access) + the from address, e.g. `hello@mail.<domain>` | key works; the sending domain is added to Resend (an existing one is reused) |
-| Domain | Their domain. **Let the wizard handle DNS** (Cloudflare token) or **I'll add the records myself** | Cloudflare: token valid, zone found by name, `active` (else the two nameservers and polling; `moved` is reported), token can write DNS, asks before replacing an existing `app.` record; then writes Resend's records (+ DMARC `p=none` if missing). Manual: shows those records with live ticks from public DNS and Resend's own check |
-| Calendars | Optional Google / Microsoft client id + secret, or Skip | token endpoint check |
+| Extras | Three skippable cards, then Continue | Resend and calendars need a domain (see below) |
+| Email (optional) | Resend key (Full access) + the from address, e.g. `hello@mail.<domain>`; or **Skip for now** | key works; the sending domain is added to Resend (an existing one is reused) |
+| Domain (optional) | Their domain. **Let the wizard handle DNS** (Cloudflare token) or **I'll add the records myself**; or **Skip for now** | Cloudflare: token valid, zone found by name, `active` (else the two nameservers and polling; `moved` is reported), token can write DNS, asks before replacing an existing `app.` record; then writes Resend's records if email was added (+ DMARC `p=none` if missing). Manual: shows those records with live ticks from public DNS and Resend's own check |
+| Calendars (optional) | Google / Microsoft client id + secret, or Skip. Needs a domain (the redirect URI is on it) | token endpoint check |
 | Install | Press Install | see below |
-| Done | Their link (or the temporary address), sign in with the owner email, delete the Railway and Cloudflare tokens, turn on Postgres backups | |
+| Done | Their address, sign in with the owner email, delete the Railway (and Cloudflare) token, turn on Postgres backups. Skipped extras are listed as **Optional extras** with how to add each later | |
+
+Rules between the extras: Resend sends from a domain the buyer owns, so adding email without a
+domain (or calendars without a domain) is refused at Continue / Install with a plain message; skipping
+the domain is refused while email or calendars are set (skip those first). With no email, the app's
+`SMTP_URL` / `MAIL_FROM` are empty: sign-up and sign-in work, invite links show on screen for the
+owner to copy, and password-reset links are written to the app's Railway log (and an owner/admin
+can mint one for a team member: `POST /api/team/members/:id/reset-link`, returns `{ url }`).
+
+**Adding the extras later.** The Done screen (the same setup link) lists each skipped extra with its
+steps: email and calendars in the app's **Settings > Email and calendars**, the domain in Railway
+(Networking > Custom Domain, then set `PUBLIC_URL`). There is no "re-run a step against the live
+install": we hold no Railway token after install, by design.
+
+The DigitalOcean path keeps its long order (the droplet's https certificate needs a domain), so
+nothing is optional there. **Test runs** (admin "Start a test run") use the Railway path above, so
+they also only need Brand, Railway and Telnyx (all pretend) and may skip the extras.
 
 ### What Install does on Railway
 
@@ -62,14 +85,14 @@ retry carries on where it stopped.
    variables Railway's own template sets (random password), then `volumeCreate` at
    `/var/lib/postgresql/data`.
 3. The app: `serviceCreate` (empty), `variableCollectionUpsert` (`skipDeploys`):
-   `PRODUCT_NAME`, `BRAND_LOGO_PNG` / `BRAND_COLOUR` (if chosen), `PUBLIC_URL=https://app.<domain>`, `FIRST_ADMIN_EMAIL`, `TELNYX_API_KEY`,
-   `SMTP_URL`, `MAIL_FROM`, `MAILBOX_KEY` (new random 32 bytes), `SINGLE_AGENCY=1`, OAuth keys if
+   `PRODUCT_NAME`, `BRAND_LOGO_PNG` / `BRAND_COLOUR` (if chosen), `PUBLIC_URL=https://app.<domain>` (or the temporary address with no domain), `FIRST_ADMIN_EMAIL`, `TELNYX_API_KEY`,
+   `SMTP_URL`, `MAIL_FROM` (empty if email was skipped), `MAILBOX_KEY` (new random 32 bytes), `SINGLE_AGENCY=1`, OAuth keys if
    given, `HOST=0.0.0.0`, `API_PORT=PORT=8791`, `DATABASE_URL=${{Postgres.DATABASE_URL}}`,
    `RAILWAY_DOCKERFILE_PATH=deploy/Dockerfile`. `SMTP_URL` uses a **send-only Resend key for that
    one domain** that we create (`POST /api-keys`, `sending_access`), never the Full access key.
    `serviceInstanceUpdate`: `dockerfilePath`, `healthcheckPath=/api/health`, restart on failure.
-4. `serviceDomainCreate` (target port 8791): the **temporary address** `https://<x>.up.railway.app`.
-5. `customDomainCreate` for `app.<domain>`: Railway answers with a CNAME target and a TXT
+4. `serviceDomainCreate` (target port 8791), done before step 3's variables: the **temporary address** `https://<x>.up.railway.app`, which is the agency's address when there is no custom domain.
+5. Only with a domain: `customDomainCreate` for `app.<domain>`: Railway answers with a CNAME target and a TXT
    ownership check. Cloudflare path: we write both (DNS only). Manual path: the Install screen
    shows both, with live ticks (public DNS + Railway's own status), and says what it finds if a
    value is wrong.
@@ -81,7 +104,8 @@ retry carries on where it stopped.
 7. We poll `deployment(id) { status }` and copy `buildLogs` / `deploymentLogs` (redacted) into
    **Show details**. `SUCCESS`: the agency is running at its temporary address straight away.
    `FAILED` / `CRASHED`: the page shows the reason in one line.
-8. We poll `customDomain { status { certificateStatus } }` and the app's `/api/health`. When the
+8. No domain: we poll the temporary address's `/api/health` and finish when it answers. With a domain:
+   we poll `customDomain { status { certificateStatus } }` and `/api/health`. When the
    certificate is `VALID`, setup finishes by itself. **Finish now** finishes without waiting:
    Railway issues the certificate on its own once the records are in, and the Done page lists them.
 

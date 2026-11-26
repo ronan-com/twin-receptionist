@@ -53,12 +53,13 @@ describe("demo buyer", () => {
     // Anything (even nothing, even rubbish) is accepted on every account step.
     expect(await run(b, "railway", { token: "not a real token" })).toBeNull();
     expect(await run(b, "phones", {})).toBeNull();
-    expect(await run(b, "email", { key: "garbage", address: "also garbage" })).toBeNull();
-    expect(await run(b, "domain", { domain: "", mode: "cloudflare", token: "x" })).toBeNull();
-    expect(await run(b, "calendars", { googleId: "x", googleSecret: "y", microsoftId: "z", microsoftSecret: "w" })).toBeNull();
+    // The slim path: Brand, Railway, Telnyx, then the optional extras screen, then Install.
+    expect(getSetup(b.id).step).toBe("extras");
+    expect(await run(b, "extras-continue")).toBeNull();
     const s = getSetup(b.id);
     expect(s.step).toBe("install");
-    expect(s.domain?.host).toMatch(/^app\.demo-.+\.test$/);
+    expect(s.email).toBeUndefined();
+    expect(s.domain).toBeUndefined();
     expect(await run(b, "install-start")).toBeNull();
     const t0 = Date.now();
     while (getSetup(b.id).phase !== "done" && Date.now() - t0 < 25_000) await Bun.sleep(300);
@@ -70,6 +71,21 @@ describe("demo buyer", () => {
     for (const n of ["railway_token", "telnyx_key", "resend_key", "cf_token", "smtp_password", "google_secret", "microsoft_secret"] as const) expect(hasSecret(b.id, n)).toBe(false);
   }, 40_000);
 
+  test("the extras can still be added in a test run, and each one skipped", async () => {
+    spy();
+    const b = addBuyer("Demo 10:02", "demo-3@example.com", true);
+    await run(b, "start"); await run(b, "brand", { productName: "Y", ownerEmail: "y@y.test" });
+    await run(b, "railway"); await run(b, "phones");
+    expect(await run(b, "email", { key: "garbage", address: "also garbage" })).toBeNull();
+    expect(getSetup(b.id).step).toBe("extras");
+    expect(await run(b, "domain", { domain: "", mode: "cloudflare", token: "x" })).toBeNull();
+    expect(await run(b, "calendars", { googleId: "x", googleSecret: "y", microsoftId: "z", microsoftSecret: "w" })).toBeNull();
+    expect(await run(b, "extras-continue")).toBeNull();
+    expect(getSetup(b.id).step).toBe("install");
+    expect(getSetup(b.id).domain?.host).toMatch(/^app\.demo-.+\.test$/);
+    expect(calls).toEqual([]);
+  });
+
   test("smtp, test email and rechecks are pretend too", async () => {
     spy();
     const b = addBuyer("Demo 10:01", "demo-2@example.com", true);
@@ -80,6 +96,30 @@ describe("demo buyer", () => {
     expect((await run(b, "email-test"))?.kind).toBe("ok");
     await run(b, "email-recheck"); await run(b, "cf-recheck");
     expect(calls).toEqual([]);
+  });
+});
+
+describe("real buyer, optional extras", () => {
+  test("can reach Install with only Railway and Telnyx, and extras can be skipped", async () => {
+    const b = addBuyer("Slim Buyer", "slim@example.com");
+    await run(b, "start");
+    await run(b, "brand", { productName: "Slim Co", ownerEmail: "slim@slim.test" });
+    // Stand-in for a passed Railway and Telnyx check (those are covered by the key tests).
+    const { updateSetup } = await import("../store");
+    updateSetup(b.id, (s) => { s.railway = { confirmed: true }; s.phones = { confirmed: true }; s.step = "extras"; });
+    const { putSecret } = await import("../store");
+    putSecret(b.id, "railway_token", "railway-test-token-0000");
+    expect((await run(b, "email-skip"))).toBeNull();
+    expect((await run(b, "domain-skip"))).toBeNull();
+    expect((await run(b, "cal-skip"))).toBeNull();
+    expect(getSetup(b.id).step).toBe("extras");
+    expect((await run(b, "install-start"))?.kind).toBe("err"); // extras screen not continued yet
+    expect(await run(b, "extras-continue")).toBeNull();
+    expect(getSetup(b.id).step).toBe("install");
+    expect(getSetup(b.id).skipped).toEqual({ email: true, domain: true, calendars: true });
+    // Email through Resend with no domain is refused with a plain message.
+    updateSetup(b.id, (s) => { s.email = { mode: "resend", confirmed: true, from: "X <a@mail.slim.test>" }; });
+    expect((await run(b, "install-start"))?.text).toMatch(/domain/i);
   });
 });
 

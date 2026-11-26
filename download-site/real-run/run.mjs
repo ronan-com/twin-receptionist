@@ -7,8 +7,10 @@
 //     NODE_PATH=... node download-site/real-run/run.mjs --dry-run
 //
 // What it does: signs in to the setup site's /admin, makes (or reuses) the "Test Buyer" and its
-// private link, drives the wizard step by step (brand, Railway, Telnyx, Resend, domain with the
-// "I'll add the records myself" path, calendars skipped, Install), prints exactly which DNS
+// private link, drives the wizard step by step (brand, Railway, Telnyx, then every optional extra
+// skipped, Install). Only Railway and Telnyx are required, so that is the default path and the agency
+// is checked at its Railway address (*.up.railway.app). With --with-email and/or --with-domain it also
+// adds Resend and the domain (the "I'll add the records myself" path), prints exactly which DNS
 // records to add and polls dig every 30 s until they resolve, prints the install log as it grows,
 // then on Done opens the installed dashboard, creates / signs in the owner and checks the brand
 // name, logo and colour. Stops at the first failure with one clear message. Safe to rerun: it
@@ -19,6 +21,8 @@
 //   TELNYX_API_KEY                  /home/ronan/aibiz/.env (or the environment)
 //   admin password                  /home/ronan/aibiz/.secrets/transfer-admin.txt (or ADMIN_PASSWORD)
 // Options / env:
+//   --with-email         also add Resend (needs RESEND_API_KEY; implies --with-domain: Resend sends from your domain)
+//   --with-domain        also add the custom domain app.<TEST_DOMAIN> (manual DNS records, polled with dig)
 //   --dry-run            use local fakes (mock/serve.ts) with fake keys; DNS records are "added" by the script
 //   OWNER_EMAIL          buyer + owner email (required for a real run; dry run uses owner@chloe-dry.test)
 //   TEST_DOMAIN          default t1.chloeeai.co (dashboard goes to app.<TEST_DOMAIN>); dry run default chloeeai.co
@@ -45,6 +49,8 @@ const args = process.argv.slice(2);
 const flag = (n) => args.includes(n);
 const argVal = (n) => { const i = args.indexOf(n); return i >= 0 ? args[i + 1] : undefined; };
 const DRY = flag("--dry-run");
+const WITH_EMAIL = flag("--with-email");
+const WITH_DOMAIN = flag("--with-domain") || WITH_EMAIL;
 const SECRETS = "/home/ronan/aibiz/.secrets";
 const SHOTS = argVal("--shots") || "/tmp/claude-1000/-home-ronan-aibiz/532e431f-da0f-47af-8632-947a62e67253/scratchpad/real-run";
 const DOMAIN = (process.env.TEST_DOMAIN || (DRY ? "chloeeai.co" : "t1.chloeeai.co")).toLowerCase();
@@ -63,7 +69,7 @@ const stamp = () => `[${String(Math.round((Date.now() - t0) / 1000)).padStart(5)
 const say = (...a) => console.log(stamp(), ...a);
 
 // ---------------- summary ----------------
-const summary = { mode: DRY ? "dry-run" : "real", startedAt: new Date().toISOString(), domain: DOMAIN, brand: BRAND, steps: [], ok: null, stoppedAt: null, error: null };
+const summary = { mode: DRY ? "dry-run" : "real", startedAt: new Date().toISOString(), domain: WITH_DOMAIN ? DOMAIN : null, withEmail: WITH_EMAIL, brand: BRAND, steps: [], ok: null, stoppedAt: null, error: null };
 const summaryFile = join(SHOTS, DRY ? "summary-dry-run.json" : "summary.json");
 const saveSummary = () => writeFileSync(summaryFile, JSON.stringify(summary, null, 2));
 class Stop extends Error {}
@@ -102,7 +108,7 @@ function loadKeys() {
     resend: process.env.RESEND_API_KEY || f1.RESEND_API_KEY || "",
     telnyx: process.env.TELNYX_API_KEY || f2.TELNYX_API_KEY || "",
   };
-  const missing = [["RAILWAY_TOKEN", k.railway, `${SECRETS}/test-install.env`], ["RESEND_API_KEY", k.resend, `${SECRETS}/test-install.env`], ["TELNYX_API_KEY", k.telnyx, "/home/ronan/aibiz/.env"]].filter((x) => !x[1]);
+  const missing = [["RAILWAY_TOKEN", k.railway, `${SECRETS}/test-install.env`], ...(WITH_EMAIL ? [["RESEND_API_KEY", k.resend, `${SECRETS}/test-install.env`]] : []), ["TELNYX_API_KEY", k.telnyx, "/home/ronan/aibiz/.env"]].filter((x) => !x[1]);
   if (missing.length) throw new Error(`missing ${missing.map((m) => `${m[0]} (expected in ${m[2]})`).join(", ")}`);
   return k;
 }
@@ -340,6 +346,7 @@ async function adminStage(page) {
 async function wizardStage(p, link, logo64) {
   await p.goto(link, { waitUntil: "load" });
   const done = new Set();
+  const visited = new Set(); // extras already opened from the extras screen
   let last = "", repeats = 0;
   for (let guard = 0; guard < 60; guard++) {
     const sc = await screen(p);
@@ -370,6 +377,13 @@ async function wizardStage(p, link, logo64) {
       case "email": await once("Resend key and sender", async () => { await shot(p, "email"); await submit(p, "email", { key: keys.resend, address: `hello@mail.${DOMAIN}` }); return `sender hello@mail.${DOMAIN}`; }); break;
       case "domain": await once("domain (add-the-records-myself)", async () => { await shot(p, "domain"); await submit(p, "domain", { domain: DOMAIN, mode: "manual" }); return `${DOMAIN}, dashboard at app.${DOMAIN}`; }); break;
       case "domain-continue": await once("email DNS records", async () => emailRecords(p)); break;
+      case "extras-continue": {
+        // The optional extras screen: skipped by default; with the flags, open the ones asked for first.
+        const want = [WITH_EMAIL && "email", WITH_DOMAIN && "domain"].filter((x) => x && !visited.has(x))[0];
+        if (want) { visited.add(want); await step(`wizard: open the ${want} extra`, async () => { await shot(p, "extras"); await p.goto(`${link}?step=${want}`, { waitUntil: "load" }); }); break; }
+        await once(WITH_DOMAIN ? "extras added, continue" : "optional extras skipped (Skip all and continue)", async () => { await shot(p, "extras"); await submit(p, "extras-continue"); });
+        break;
+      }
       case "calendars": await once("calendars (skipped)", async () => { await shot(p, "calendars"); await submit(p, "cal-skip"); }); break;
       case "install-start": await once("install summary and Install", async () => { await shot(p, "install-summary"); await submit(p, "install-start"); }); break;
       default: throw new Stop(`unexpected screen "${sc.h1}" (form: ${sc.action || "none"}): ${sc.err || ""} Screenshot: ${await shot(p, "unexpected")}`);
@@ -380,7 +394,7 @@ async function wizardStage(p, link, logo64) {
 
 async function emailRecords(p) {
   const recs = await tableRows(p);
-  if (!recs.length) return "no email records needed";
+  if (!recs.length) { await submit(p, "domain-continue"); return "no email records needed"; }
   await shot(p, "email-records");
   const sendDomain = `mail.${DOMAIN}`;
   const odd = recs.filter((r) => !(r.name === `resend._domainkey.${sendDomain}` || r.name === `send.${sendDomain}` || r.name === `_dmarc.${DOMAIN}` || r.name === `_dmarc.${sendDomain}`));
@@ -456,8 +470,9 @@ async function appChecks(page0, ctx, link) {
   const p = page0;
   await p.goto(link, { waitUntil: "load" });
   const urls = await p.$$eval(".live a", (as) => as.map((a) => a.href.replace(/\/$/, "")));
-  const finalHost = `https://app.${DOMAIN}`;
-  const temp = urls.find((u) => !u.startsWith(finalHost)) || urls[0];
+  const finalHost = WITH_DOMAIN ? `https://app.${DOMAIN}` : "";
+  const temp = urls.find((u) => !finalHost || !u.startsWith(finalHost)) || urls[0];
+  if (!WITH_DOMAIN && !/^https?:\/\/[^/]+\.up\.railway\.app$|^http:\/\/localhost:\d+$/.test(temp || "")) throw new Stop(`the Done page's address isn't Railway's own (${temp})`);
   if (!temp) throw new Stop("no dashboard address on the Done page");
   await shot(p, "done-page");
   const state = loadState();
@@ -526,7 +541,7 @@ async function appChecks(page0, ctx, link) {
     await shot(app, "dashboard-after-login");
     return "ok";
   });
-  if (!DRY) {
+  if (!DRY && WITH_DOMAIN) {
     await step("custom domain: app." + DOMAIN + " (informational)", async () => {
       const r = await fetch(`${finalHost}/api/health`, { signal: AbortSignal.timeout(15000) }).then((x) => x.text()).catch((e) => `unreachable: ${e.cause?.code || e.message}`);
       return /"ok":\s*true/.test(r) ? `${finalHost} answers` : `${finalHost} doesn't answer yet (${r.slice(0, 80)}); fine until the records and certificate are ready`;

@@ -13,7 +13,7 @@ import {
   railway, railwayUpload, recordLive, resendDomain, resendSend, resendSendingKey, resendStatus, resendVerify, smtpSend, smtpUrl,
 } from "./providers";
 import {
-  STEPS, buyerByAttemptToken, buyerByDropletToken, deleteAllSecrets, getSecret, getSetup, hasSecret, logAppend, logBytes,
+  STEPS, isOptional, buyerByAttemptToken, buyerByDropletToken, deleteAllSecrets, getSecret, getSetup, hasSecret, logAppend, logBytes,
   logClear, logRead, newToken, putSecret, redact, saveSetup, secretValues, setAttemptToken, setDropletToken, updateSetup,
   activeSetups, deleteSecret, staleSecretBuyers, type DnsRecord, type SetupData, type StepId,
 } from "./store";
@@ -49,34 +49,49 @@ export function stepDone(b: Buyer, s: SetupData, id: StepId): boolean {
   switch (id) {
     case "welcome": return s.step !== "welcome" || !!s.brand;
     case "brand": return !!s.brand;
-    case "domain": return !!s.domain?.confirmed && !!s.domain.host;
+    case "domain": return (!!s.domain?.confirmed && !!s.domain.host) || !!s.skipped?.domain;
     case "server": return !!s.server?.chosen && (b.demo === 1 || hasSecret(b.id, "do_token") || s.phase !== "idle");
     case "railway": return !!s.railway?.confirmed && (b.demo === 1 || hasSecret(b.id, "railway_token") || s.phase !== "idle");
     case "phones": return !!s.phones?.confirmed;
-    case "email": return !!s.email?.confirmed;
-    case "calendars": return !!s.calendars?.done;
+    case "email": return !!s.email?.confirmed || !!s.skipped?.email;
+    case "calendars": return !!s.calendars?.done || !!s.skipped?.calendars;
+    case "extras": return !!s.extrasDone;
     case "install": return s.phase === "done";
     case "done": return s.phase === "done";
   }
 }
-export const firstOpen = (b: Buyer, s: SetupData): StepId => STEPS.find((id) => !stepDone(b, s, id)) || "done";
-export const canView = (b: Buyer, s: SetupData, id: StepId) => CONFIG.previewJump || STEPS.indexOf(id) <= STEPS.indexOf(firstOpen(b, s));
+/** The first step still to do. Optional steps never hold anyone up. */
+export const firstOpen = (b: Buyer, s: SetupData): StepId => STEPS.find((id) => !isOptional(id) && !stepDone(b, s, id)) || "done";
+/** An optional step opens from the extras screen, so it's viewable as soon as extras is. */
+export const canView = (b: Buyer, s: SetupData, id: StepId) => CONFIG.previewJump || STEPS.indexOf(isOptional(id) ? "extras" : id) <= STEPS.indexOf(firstOpen(b, s));
 /** Settings are baked into the server when it's made; after that they can't change here. */
 export const locked = (s: SetupData) => s.phase !== "idle";
 const nextStep = (b: Buyer, s: SetupData, from: StepId) => {
+  // Finishing (or skipping) an optional step goes back to the extras screen.
+  if (isOptional(from)) { s.step = "extras"; return; }
   const i = STEPS.indexOf(from);
-  s.step = STEPS.slice(i + 1).find((id) => !stepDone(b, s, id) || id === "done") || "done";
+  s.step = STEPS.slice(i + 1).find((id) => !isOptional(id) && (!stepDone(b, s, id) || id === "done")) || "done";
 };
 
 export const zoneOf = (s: SetupData) => s.domain?.zone || "";
 export const hostOf = (s: SetupData) => s.domain?.host || "";
 export const oauthRedirect = (s: SetupData, p: "google" | "microsoft") => `https://${hostOf(s) || "app.your-domain"}/api/oauth/${p}/callback`;
+/** Where the finished agency answers: the buyer's own domain if they added one, else Railway's own address. */
+export const agencyUrl = (s: SetupData) => (hostOf(s) ? `https://${hostOf(s)}` : s.resultUrl || s.tempUrl || webUrl(s.rw?.serviceDomain));
 /** Railway's own address for the app: https, except the local fake (localhost:<port>). */
 export const webUrl = (domain?: string) => (!domain ? "" : /^(localhost|127\.)/.test(domain) ? `http://${domain}` : `https://${domain}`);
 
 // ======================= actions =======================
 type Form = Record<string, string>;
 export type Action = (b: Buyer, f: Form) => Promise<Flash | null> | Flash | null;
+
+/** Email through Resend and calendar sign-in both need the buyer's own domain. Nothing else does. */
+function extrasProblem(b: Buyer, s: SetupData): string | null {
+  if (!RAILWAY || hostOf(s) || b.demo === 1) return null;
+  if (s.email?.mode === "resend" && s.email.confirmed) return "Email through Resend sends from your own domain, so add your domain too, or skip Email for now.";
+  if (s.calendars?.google || s.calendars?.microsoft) return "Calendar sign-in needs your own domain, so add your domain too, or skip Calendars for now.";
+  return null;
+}
 
 const LOCKED_MSG = "Your server has already been made with these settings. To change them, delete the server on the Install step first.";
 function guard(b: Buyer, step: StepId): Flash | null {
@@ -309,10 +324,34 @@ export const actions: Record<string, Action> = {
     return null;
   },
 
+  // ---- Optional extras (Railway): email, your own domain, calendars. Each can be skipped. ----
+  "email-skip"(b) {
+    const g = guard(b, "email"); if (g) return g;
+    deleteSecret(b.id, "resend_key"); deleteSecret(b.id, "smtp_password");
+    updateSetup(b.id, (s) => { delete s.email; s.skipped = { ...s.skipped, email: true }; nextStep(b, s, "email"); });
+    return null;
+  },
+  "domain-skip"(b) {
+    const g = guard(b, "domain"); if (g) return g;
+    const s = getSetup(b.id);
+    if (s.email?.mode === "resend" && s.email.confirmed) return err("Email through Resend sends from your own domain, so it needs the domain's records. Either add your domain, or skip Email for now first.");
+    if (s.calendars?.google || s.calendars?.microsoft) return err("Calendar sign-in needs your own domain. Either add your domain, or skip Calendars for now first.");
+    deleteSecret(b.id, "cf_token");
+    updateSetup(b.id, (s) => { delete s.domain; s.skipped = { ...s.skipped, domain: true }; nextStep(b, s, "domain"); });
+    return null;
+  },
+  "extras-continue"(b) {
+    const g = guard(b, "extras"); if (g) return g;
+    const p = extrasProblem(b, getSetup(b.id)); if (p) return err(p);
+    updateSetup(b.id, (s) => { s.extrasDone = true; nextStep(b, s, "extras"); });
+    return null;
+  },
+
   // ---- Calendars (optional): whatever is filled in is checked, one button ----
   async calendars(b, f) {
     const g = guard(b, "calendars"); if (g) return g;
     const s = getSetup(b.id);
+    if (!hostOf(s) && (f.googleId || f.googleSecret || f.microsoftId || f.microsoftSecret)) return err("Calendar sign-in needs your own web address to send people back to. Add your domain first, or skip this for now and add calendars later in Settings.");
     const pairs = [
       { p: "google" as const, name: "google_secret" as const, id: str(f.googleId, 300), secret: str(f.googleSecret, 500) },
       { p: "microsoft" as const, name: "microsoft_secret" as const, id: str(f.microsoftId, 300), secret: str(f.microsoftSecret, 500) },
@@ -336,7 +375,7 @@ export const actions: Record<string, Action> = {
   "cal-skip"(b) {
     const g = guard(b, "calendars"); if (g) return g;
     deleteSecret(b.id, "google_secret"); deleteSecret(b.id, "microsoft_secret");
-    updateSetup(b.id, (s) => { s.calendars = { done: true }; nextStep(b, s, "calendars"); });
+    updateSetup(b.id, (s) => { s.calendars = { done: true }; s.skipped = { ...s.skipped, calendars: true }; nextStep(b, s, "calendars"); });
     return null;
   },
 
@@ -345,8 +384,9 @@ export const actions: Record<string, Action> = {
     const g = guard(b, "install"); if (g) return g;
     const s = getSetup(b.id);
     if (!["idle", "create_failed"].includes(s.phase)) return null;
-    const missing = STEPS.slice(0, STEPS.indexOf("install")).find((id) => !stepDone(b, s, id));
+    const missing = STEPS.slice(0, STEPS.indexOf("install")).find((id) => !isOptional(id) && !stepDone(b, s, id));
     if (missing) return err("Finish the earlier steps first.");
+    const p = extrasProblem(b, s); if (p) return err(p);
     if (RAILWAY ? !hasSecret(b.id, "railway_token") : !hasSecret(b.id, "do_token")) return err(RAILWAY ? "Your Railway token is missing. Go back to the Railway step and check it again." : "Your DigitalOcean token is missing. Go back to the Server step and check it again.");
     if (!currentPackage()) return err("The app isn't ready to install yet. We've been told; please try again later or contact support.");
     const wait = allow(`install:${b.id}`, 6, 10 * MIN); if (wait) return tooMany(wait);
@@ -358,7 +398,7 @@ export const actions: Record<string, Action> = {
   "install-finish"(b) {
     const g = guard(b, "install"); if (g) return g;
     const s = getSetup(b.id);
-    if (!RAILWAY || s.phase !== "domain") return null;
+    if (!RAILWAY || s.phase !== "domain" || !hostOf(s)) return null;
     if (busy.has(b.id)) return err("One moment: we're still checking. Try again in a few seconds.");
     finish(b.id, `https://${hostOf(s)}`);
     return null;
@@ -463,7 +503,7 @@ const demoActions: Record<string, Action> = {
     const g = guard(b, "install"); if (g) return g;
     const s = getSetup(b.id);
     if (!["idle", "create_failed", "failed"].includes(s.phase)) return null;
-    const missing = STEPS.slice(0, STEPS.indexOf("install")).find((id) => !stepDone(b, s, id));
+    const missing = STEPS.slice(0, STEPS.indexOf("install")).find((id) => !isOptional(id) && !stepDone(b, s, id));
     if (missing) return err("Finish the earlier steps first.");
     updateSetup(b.id, (s) => { s.phase = "creating"; s.error = undefined; s.progress = []; s.rw = {}; s.step = "install"; });
     kick(b.id);
@@ -870,13 +910,14 @@ function finish(id: number, url: string) {
     server: s.server ? { region: s.server.region, size: s.server.size, price: s.server.price, chosen: true, sshPublicKey: s.server.sshPublicKey ? "yes" : undefined } : undefined,
     phones: { confirmed: true }, email: s.email ? { mode: s.email.mode, address: s.email.address, from: s.email.from, confirmed: true, resend: s.email.resend ? { status: s.email.resend.status } : undefined } : undefined,
     calendars: s.calendars ? { google: s.calendars.google, microsoft: s.calendars.microsoft, done: true } : undefined,
+    skipped: s.skipped, extrasDone: s.extrasDone,
     dropletId: s.dropletId, ip: s.ip, attempt: s.attempt, attemptVersion: s.attemptVersion,
     serverCreatedAt: s.serverCreatedAt, installedAt: now(), purgedAt: now(), resultUrl: url, sshKeyAdded: s.sshKeyAdded,
     railway: s.railway ? { workspaceName: s.railway.workspaceName, confirmed: true } : undefined,
     rw: s.rw ? { projectId: s.rw.projectId, serviceDomain: s.rw.serviceDomain, certStatus: s.rw.certStatus, domainOk: s.rw.domainOk } : undefined,
     tempUrl: s.rw?.serviceDomain ? webUrl(s.rw.serviceDomain) : undefined,
-    domainPending: RAILWAY && !demo ? !s.rw?.domainOk : undefined,
-    finishRecords: RAILWAY && !demo && !s.rw?.domainOk ? (s.rw?.records || []).map(({ cfId, ...r }) => r) : undefined,
+    domainPending: RAILWAY && !demo && !!s.domain?.host ? !s.rw?.domainOk : undefined,
+    finishRecords: RAILWAY && !demo && !!s.domain?.host && !s.rw?.domainOk ? (s.rw?.records || []).map(({ cfId, ...r }) => r) : undefined,
   };
   saveSetup(id, kept);
   console.log(`[setup] buyer ${id}: installed; ${removed} secrets deleted`);
@@ -1022,21 +1063,24 @@ function railRecords(cd: any, host: string, zone: string, old: DnsRecord[] = [])
 const bareValue = (v: unknown) => String(v ?? "").trim().replace(/^"([\s\S]*)"$/, "$1");
 
 async function railwayVars(id: number, s: SetupData, token: string): Promise<Record<string, string>> {
-  let smtp: string;
-  if (s.email?.mode === "resend") {
+  // Email is optional. Without it the app still works: invite links show on screen for the owner to copy.
+  let smtp = "";
+  if (!s.email) smtp = "";
+  else if (s.email.mode === "resend") {
     const key = getSecret(id, "resend_key");
     if (!key || !s.email.resend?.domainId) throw new ProviderError("Your Resend key is missing. Go back to the Email step and check it again.");
     // The server gets a send-only key for this one domain, never the Full access key.
     const send = await resendSendingKey(key, `${s.brand!.productName} server`, s.email.resend.domainId);
     smtp = `smtps://resend:${send}@smtp.resend.com:465`;
-  } else smtp = smtpUrl(s.email!.smtp!.host, s.email!.smtp!.port, s.email!.smtp!.user, getSecret(id, "smtp_password") || "");
+  } else smtp = smtpUrl(s.email.smtp!.host, s.email.smtp!.port, s.email.smtp!.user, getSecret(id, "smtp_password") || "");
   const v: Record<string, string> = {
     PRODUCT_NAME: s.brand!.productName,
-    PUBLIC_URL: `https://${hostOf(s)}`,
+    // Their own domain if they added one; otherwise Railway's own https address, which works straight away.
+    PUBLIC_URL: hostOf(s) ? `https://${hostOf(s)}` : webUrl(s.rw?.serviceDomain),
     FIRST_ADMIN_EMAIL: s.brand!.ownerEmail,
     TELNYX_API_KEY: getSecret(id, "telnyx_key") || "",
     SMTP_URL: smtp,
-    MAIL_FROM: s.email!.from || "",
+    MAIL_FROM: s.email?.from || "",
     // Encrypts saved mailbox and calendar logins in the database. Lives only in Railway.
     MAILBOX_KEY: randomBytes(32).toString("base64"),
     SINGLE_AGENCY: "1",
@@ -1103,6 +1147,12 @@ async function tickRailCreate(id: number) {
       setRw(id, (r) => { r.appId = String(svc.id); });
       return;
     }
+    // Railway's own address first: with no custom domain it is the app's PUBLIC_URL.
+    if (!rw.serviceDomain) {
+      const d = (await railway(token, "mutation($input: ServiceDomainCreateInput!) { serviceDomainCreate(input: $input) { id domain } }", { input: { serviceId: rw.appId, environmentId: rw.environmentId, targetPort: APP_PORT } })).serviceDomainCreate;
+      setRw(id, (r) => { r.serviceDomain = String(d.domain); });
+      return;
+    }
     if (!rw.varsSet) {
       const vars = await railwayVars(id, s, token);
       await railway(token, "mutation($input: VariableCollectionUpsertInput!) { variableCollectionUpsert(input: $input) }", { input: { ...base, serviceId: rw.appId, variables: vars, skipDeploys: true } });
@@ -1116,17 +1166,12 @@ async function tickRailCreate(id: number) {
       setRw(id, (r) => { r.settingsSet = true; });
       return;
     }
-    if (!rw.serviceDomain) {
-      const d = (await railway(token, "mutation($input: ServiceDomainCreateInput!) { serviceDomainCreate(input: $input) { id domain } }", { input: { serviceId: rw.appId, environmentId: rw.environmentId, targetPort: APP_PORT } })).serviceDomainCreate;
-      setRw(id, (r) => { r.serviceDomain = String(d.domain); });
-      return;
-    }
-    if (!rw.customDomainId) {
+    if (hostOf(s) && !rw.customDomainId) {
       const cd = (await railway(token, `mutation($input: CustomDomainCreateInput!) { customDomainCreate(input: $input) { ${DOMAIN_FIELDS} } }`, { input: { ...base, serviceId: rw.appId, domain: hostOf(s), targetPort: APP_PORT } })).customDomainCreate;
       setRw(id, (r) => { r.customDomainId = String(cd.id); r.records = railRecords(cd, hostOf(s), zoneOf(s)); });
       return;
     }
-    if (s.domain?.mode === "cloudflare" && !rw.cfWritten && rw.records?.length) {
+    if (hostOf(s) && s.domain?.mode === "cloudflare" && !rw.cfWritten && rw.records?.length) {
       const cfTok = getSecret(id, "cf_token");
       if (!cfTok) return fail(id, "create_failed", "Your Cloudflare token is missing. Check it again on the Domain step.");
       const recs = rw.records.map((r) => ({ ...r }));
@@ -1186,6 +1231,15 @@ async function tickRailDeploy(id: number) {
 
 async function tickRailDomain(id: number) {
   const s = getSetup(id);
+  if (!hostOf(s)) {
+    // No custom domain: the agency lives at Railway's own address. Done as soon as it answers.
+    if (!due(`rw-dom:${id}`, fast ? 1500 : 5000)) return;
+    const temp = webUrl(s.rw?.serviceDomain);
+    const healthy = !!temp && (await fetch(`${temp}/api/health`, { signal: AbortSignal.timeout(8000) }).then((r) => r.ok).catch(() => false));
+    setRw(id, (r) => { r.healthy = healthy; });
+    if (healthy) { progress(id, `${temp} is ready`); finish(id, temp); }
+    return;
+  }
   const token = getSecret(id, "railway_token");
   if (!token || !s.rw?.customDomainId) return;
   if (!due(`rw-dom:${id}`, fast ? 2000 : 15_000)) return;

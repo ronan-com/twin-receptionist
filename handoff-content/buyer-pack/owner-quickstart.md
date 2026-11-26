@@ -1,6 +1,6 @@
 # Chloe owner quickstart
 
-Use this once your setup link has finished and app.[THEIR DOMAIN] is live. Menu and button names below are the ones in your dashboard.
+Use this once your setup link has finished and your agency is live. Your address is on the last setup screen: the https address Railway gave it (ending .up.railway.app), or app.[THEIR DOMAIN] if you added your own domain. Only two accounts are needed to get here: Railway and Telnyx. Email (Resend) and your own domain are optional extras, covered in section 10. Menu and button names below are the ones in your dashboard.
 
 Use fictional family details for every test.
 
@@ -8,13 +8,13 @@ Use fictional family details for every test.
 
 ## 1. First sign-in (2 minutes)
 
-1. Open `https://app.[THEIR DOMAIN]`.
+1. Open your agency address (the one on the last setup screen).
 2. Click **Create an account**. Use the owner email you gave the setup wizard. Only that address can create the first account.
 3. Choose a password of at least 10 characters. Save it in your password manager.
 
 This is the owner account. It sees every centre and every call. After it exists, new people join by invite only.
 
-Forgot it later? Click **Forgot password?** on the sign-in page. The reset link works for 60 minutes.
+Forgot it later? Click **Forgot password?** on the sign-in page. The reset link works for 60 minutes. It arrives by email once email is set up (section 10). Until then it is written to the app's log in Railway.
 
 ## 2. Set your brand (5 minutes)
 
@@ -94,7 +94,7 @@ Do this inside the centre's workspace (centre's page, **Open and edit**).
 
 Tours are offered inside the receptionist's active hours, one appointment length at a time, skipping anything already busy in that calendar. To block a time, add a busy event to the calendar.
 
-Google or Microsoft only appears here if you set it up in the setup wizard's Calendars step, or later under **Settings**, **Email and calendars**.
+Google or Microsoft only appears here once you have set it up, in the setup wizard's optional Calendars step or later under **Settings**, **Email and calendars**.
 
 ## 6. Test-call the receptionist
 
@@ -116,7 +116,7 @@ On the centre's page, under **Customers with access**:
 
 1. Enter the person's work email in **Invite customer (email)**.
 2. Pick **Manager** (can change the receptionist) or **Viewer** (can only look).
-3. Click **Invite customer**. The invite is emailed. The link is also shown, so you can send it yourself.
+3. Click **Invite customer**. The invite is emailed if email is set up. The link is always shown, so you can copy it and send it yourself. Until you add your own email, that is how invites work.
 
 Or click **Send onboarding link**. It invites the director as a manager to finish setting up in their own workspace.
 
@@ -140,17 +140,25 @@ Staff handle changes and cancellations in the calendar.
 2. **Telnyx account level.** Profile, Account Level should say Paid.
 3. **The number.** On the centre's page, check it's listed under **Phone number**. In Telnyx, check it's active and not still waiting for approval.
 4. **Paused.** A paused receptionist or centre shows **Paused**. Click **Resume**.
-5. **The app.** Open `https://app.[THEIR DOMAIN]/api/health`. If it doesn't answer, open the app in Railway and read the latest deployment's logs. Check Railway hasn't stopped it for a usage limit or failed payment.
+5. **The app.** Open your agency address followed by `/api/health`. If it doesn't answer, open the app in Railway and read the latest deployment's logs. Check Railway hasn't stopped it for a usage limit or failed payment.
 
 While calls are down, have the centre switch its forwarding back to its original route. Switch it back to the receptionist only after a test call works.
 
 **A booking fails.** The receptionist takes a callback instead, so check **Follow-ups**. In the centre's **Settings**, **Integrations**, check the calendar still shows Connected. If not, sign in again.
 
-**Nobody gets emails.** **Settings**, **Email and calendars**, **Send test email**. In Resend, check your domain still shows Verified.
+**Nobody gets emails.** Check email is set up (section 10). Then **Settings**, **Email and calendars**, **Send test email**. In Resend, check your domain still shows Verified.
 
 **Locked out.** Use **Forgot password?**. If the email doesn't arrive, the reset link is written to the app's log in Railway.
 
 **Your dashboard shows problems.** **Overview**, Needs attention, and **System / QA** list failed calls and background problems.
+
+## 10. Optional extras you can add later
+
+Your agency works without these. Your setup link keeps listing whichever you skipped, with the same steps.
+
+- **Your own email.** **Settings**, **Email and calendars**: paste the mail server address (for Resend, `smtps://resend:YOUR_KEY@smtp.resend.com:465`) and the address emails come from, then **Send test email**. Resend sends from a domain you own, so add the DNS records it shows. Until then, invite links show on screen for you to copy and send, and password reset links are written to the app's log in Railway.
+- **Your own domain.** In Railway: the **app** service, **Settings**, **Networking**, **Custom Domain**, type `app.yourbusiness.com`. Add the CNAME and TXT records Railway shows. When it shows active, change the app service's `PUBLIC_URL` variable to `https://app.yourbusiness.com`.
+- **Calendars.** Make a Google Cloud or Microsoft Entra app (its redirect address is your agency address plus `/api/oauth/google/callback`, or `/microsoft/callback`), then paste the client ID and secret under **Settings**, **Email and calendars**.
 
 Backups, logs, costs and settings are in the operating guide (operating-guide.md). What you own and how to keep access is in the ownership checklist (ownership-checklist.md).
 

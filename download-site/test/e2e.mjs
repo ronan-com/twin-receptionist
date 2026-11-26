@@ -138,7 +138,7 @@ const tableRows = (p, sel = "table.records tbody tr") => p.$$eval(sel, (rows) =>
   return { type: c[0].querySelector("b").textContent, prio: (c[0].textContent.match(/priority (\d+)/) || [])[1], name: c[1].querySelector("code").textContent, value: c[2].querySelector("code").textContent };
 }));
 
-// Walk a buyer to the Install screen (Railway order: Railway, Phones, Email, Domain, Calendars).
+// Walk a buyer to the Install screen (Railway order: Railway, Phones, then the optional extras screen; here every extra is added: Email, Domain, Calendars).
 async function setupBuyer(p, o, snap = async () => {}) {
   await p.goto(o.link, { waitUntil: "load" });
   await snap("welcome");
@@ -180,14 +180,19 @@ async function setupBuyer(p, o, snap = async () => {}) {
     await snap("phones-bad-key");
   }
   await submit(p, "phones", { key: o.telnyx });
-  check(`${o.tag}: reached Email`, (await h1(p)) === "Send email from your domain", await h1(p));
+  check(`${o.tag}: reached the optional extras screen`, (await h1(p)) === "Optional extras", await h1(p));
+  await snap("extras");
+  await p.goto(`${o.link}?step=email`, { waitUntil: "load" });
+  check(`${o.tag}: reached Email`, (await h1(p)) === "Send email from your own address (optional)", await h1(p));
   await snap("email");
   if (o.errors) {
     await submit(p, "email", { key: "re_mock_sending_only_key", address: `hello@mail.${o.zone}` });
     check("A: a send-only Resend key gets the Full access message", /Full access/.test(await flash(p)), await flash(p));
   }
   await submit(p, "email", { key: "re_mock_full_access_key", address: `hello@mail.${o.zone}` });
-  check(`${o.tag}: reached Domain, prefilled with the email's domain`, (await h1(p)) === "Your web address" && (await p.$eval("#domain", (e) => e.value).catch(() => "")) === o.zone, `${await h1(p)} ${await p.$eval("#domain", (e) => e.value).catch(() => "")}`);
+  check(`${o.tag}: email done, back on the extras screen`, (await h1(p)) === "Optional extras", await h1(p));
+  await p.goto(`${o.link}?step=domain`, { waitUntil: "load" });
+  check(`${o.tag}: reached Domain, prefilled with the email's domain`, (await h1(p)) === "Your own web address (optional)" && (await p.$eval("#domain", (e) => e.value).catch(() => "")) === o.zone, `${await h1(p)} ${await p.$eval("#domain", (e) => e.value).catch(() => "")}`);
   await snap("domain");
   if (o.manual) {
     await submit(p, "domain", { domain: o.zone, mode: "manual" });
@@ -216,7 +221,9 @@ async function setupBuyer(p, o, snap = async () => {}) {
     const z = (await mockState()).zones.find((x) => x.name === o.zone);
     check(`${o.tag}: Cloudflare got Resend's records (SPF quoted once, not twice) and DMARC`, z.records.some((r) => r.type === "MX") && z.records.some((r) => r.content === '"v=spf1 include:amazonses.com ~all"') && z.records.some((r) => /^_dmarc\./.test(r.name)), z.records.map((r) => `${r.type} ${r.name} ${r.content.slice(0, 40)}`).join(" | "));
   }
-  check(`${o.tag}: reached Calendars`, (await h1(p)) === "Calendar booking", await h1(p));
+  check(`${o.tag}: domain done, back on the extras screen`, (await h1(p)) === "Optional extras", await h1(p));
+  await p.goto(`${o.link}?step=calendars`, { waitUntil: "load" });
+  check(`${o.tag}: reached Calendars`, (await h1(p)) === "Calendar booking (optional)", await h1(p));
   await snap("calendars");
   if (o.google) {
     await submit(p, "calendars", { googleId: "1234-abc.apps.googleusercontent.com", googleSecret: "nope" });
@@ -225,6 +232,7 @@ async function setupBuyer(p, o, snap = async () => {}) {
   } else {
     await submit(p, "cal-skip");
   }
+  await submit(p, "extras-continue");
   check(`${o.tag}: reached Install`, (await h1(p)) === "Ready to install", await h1(p));
   await snap("install-summary");
 }
@@ -477,7 +485,7 @@ async function main() {
     check("D: an existing record at app.<domain> asks before replacing it", /already points somewhere/.test(await text(p, ".notice.warn")) && !!(await p.$("input[name=replace]")), await text(p, ".notice.warn"));
     await shot(p, "D-domain-replace-existing");
     await submit(p, "domain", { domain: "delta-reception.test", mode: "cloudflare", replace: "1" });
-    check("D: agreeing to replace it moves on", (await h1(p)) === "Calendar booking", await h1(p));
+    check("D: agreeing to replace it moves on", (await h1(p)) === "Optional extras", await h1(p));
     const D2 = linkOf(admin("add-buyer", "Gina Gamma", "gina@example.com"));
     const q = await newPage(await browser.createBrowserContext());
     await q.goto(D2);
@@ -493,7 +501,7 @@ async function main() {
     check("D: the page notices when the nameserver change goes through", true);
     await shot(q, "D-domain-nameservers-active");
     await submit(q, "domain", { domain: "gamma-reception.test", mode: "cloudflare" });
-    check("D: continues once Cloudflare is active", (await h1(q)) === "Calendar booking", await h1(q));
+    check("D: continues once Cloudflare is active", (await h1(q)) === "Optional extras", await h1(q));
     const msg = await q.evaluate(async () => {
       const t = document.querySelector("input[name=t]").value;
       for (let i = 0; i < 20; i++) {

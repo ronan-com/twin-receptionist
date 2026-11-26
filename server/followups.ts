@@ -128,9 +128,12 @@ export type FollowupStatusInputs = {
   smsNumber: string | null | undefined;
   /** Whether this server can send email. */
   emailReady: boolean;
+  /** The voice engine (default telnyx): Vapi receptionists text from a Twilio number. */
+  engine?: "telnyx" | "vapi";
 };
 
 const SMS_NEEDED = { label: "Needs a phone number that can send texts", detail: "Texts are sent from the receptionist's own mobile number. Request a mobile number under Call handling." };
+const SMS_NEEDED_VAPI = { label: "Needs a Twilio number that can send texts", detail: "Texts are sent from a Twilio mobile number this receptionist answers. Connect Twilio under Connections, then add a Twilio mobile number under Call handling." };
 const EMAIL_NEEDED = { label: "Needs email set up", detail: "This server has no email service yet. The platform admin sets it up under Settings, Email and calendars." };
 const QUIET = "Texts never go out between 8pm and 8am; they wait until morning.";
 
@@ -141,7 +144,7 @@ function channelStatus(i: FollowupStatusInputs, sms: boolean, email: boolean): {
   if (sms && i.smsNumber === undefined) {
     return { status: { state: "error", label: "Couldn't check", detail: "The phone service didn't answer. Messages will go out once it does." }, note: "" };
   }
-  const problems = [sms && !i.smsNumber ? SMS_NEEDED : null, email && !i.emailReady ? EMAIL_NEEDED : null].filter(Boolean) as { label: string; detail: string }[];
+  const problems = [sms && !i.smsNumber ? (i.engine === "vapi" ? SMS_NEEDED_VAPI : SMS_NEEDED) : null, email && !i.emailReady ? EMAIL_NEEDED : null].filter(Boolean) as { label: string; detail: string }[];
   const wanted = Number(sms) + Number(email);
   if (problems.length === wanted) {
     return { status: { state: "needs_setup", label: problems[0].label, detail: problems.map((p) => p.detail).join(" ") }, note: "" };

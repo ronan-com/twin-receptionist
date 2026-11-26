@@ -7,7 +7,8 @@ import { mailerReady, sendAccountEmail } from "./mailer";
 import { ValidationError } from "./prompt";
 import { isDemo } from "./sandbox";
 import { getClient } from "./store";
-import { runAsOrg, telnyx } from "./telnyx";
+import { runAsOrg } from "./telnyx";
+import { sendSms } from "./sms";
 
 // Finds what is due each minute (called from the loop in server/automations.ts that
 // already drives text-back) and sends it: appointment reminders, missed-call follow-ups
@@ -82,13 +83,7 @@ async function dispatch(client: Business, o: Out): Promise<string> {
     },
     send: async () => {
       if (o.channel === "sms") {
-        await telnyx("POST", `/ai/assistants/${client.assistantId}/chat/sms`, {
-          from,
-          to: o.to,
-          text: o.text,
-          should_create_conversation: true,
-          conversation_metadata: { twin_followup: o.kind },
-        });
+        await sendSms(client, { from: from!, to: o.to!, text: o.text, meta: { twin_followup: o.kind } });
       } else if (!(await sendAccountEmail(o.to!, o.subject, o.text))) throw new Error("Email isn't set up");
     },
   });
@@ -362,12 +357,6 @@ export async function sendTest(
   if (isDemo(client.assistantId)) throw new ValidationError("Demo receptionists don't send texts. Try the email test, or use a connected receptionist.");
   const from = await smsNumberOf(client);
   if (!from) throw new ValidationError("This receptionist needs a mobile number that can send texts first. Request one under Call handling.");
-  await telnyx("POST", `/ai/assistants/${client.assistantId}/chat/sms`, {
-    from,
-    to,
-    text: `[Test] ${msg.text}`,
-    should_create_conversation: true,
-    conversation_metadata: { twin_followup: "test" },
-  });
+  await sendSms(client, { from, to, text: `[Test] ${msg.text}`, meta: { twin_followup: "test" } });
   return { sentTo: to };
 }

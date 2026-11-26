@@ -2,6 +2,7 @@ import { demoExtras, recentConversations } from "./calls";
 import { sql } from "./db";
 import { recordIncident, resolveIncidents } from "./incidents";
 import { isDemo } from "./sandbox";
+import { asProvider } from "./voice/config";
 import { runAsOrg } from "./telnyx";
 
 // Keeps call_log up to date: every minute, for each receptionist, the most recent
@@ -15,9 +16,9 @@ const PER_RECEPTIONIST = 50;
 // Demo calls share ids across receptionists, so their provider id carries the receptionist's id.
 export const demoProviderId = (callId: string, clientId: string) => `${callId}-${clientId}`;
 
-export async function syncReceptionist(c: { id: string; org_id: string; assistant_id: string }): Promise<number> {
+export async function syncReceptionist(c: { id: string; org_id: string; assistant_id: string; voice_provider?: string | null }): Promise<number> {
   const demo = isDemo(c.assistant_id);
-  const convos = await runAsOrg(c.org_id, () => recentConversations(c.assistant_id, PER_RECEPTIONIST));
+  const convos = await runAsOrg(c.org_id, () => recentConversations({ assistantId: c.assistant_id, voiceProvider: asProvider(c.voice_provider) }, PER_RECEPTIONIST));
   let n = 0;
   for (const v of convos) {
     // The text simulator's practice conversations are not real traffic.
@@ -27,9 +28,9 @@ export async function syncReceptionist(c: { id: string; org_id: string; assistan
     const started = new Date(v.startedAt);
     const seconds = demo ? extra.seconds : ended ? Math.max(0, Math.round((ended.getTime() - started.getTime()) / 1000)) : null;
     await sql`
-      insert into call_log (org_id, client_id, provider_call_id, channel, from_number, to_number, started_at, ended_at,
+      insert into call_log (org_id, client_id, provider_call_id, provider, channel, from_number, to_number, started_at, ended_at,
         duration_seconds, status, outcome, summary)
-      values (${c.org_id}, ${c.id}, ${demo ? demoProviderId(v.id, c.id) : v.id}, ${v.channel || "call"}, ${v.from || null},
+      values (${c.org_id}, ${c.id}, ${demo ? demoProviderId(v.id, c.id) : v.id}, ${asProvider(c.voice_provider)}, ${v.channel || "call"}, ${v.from || null},
         ${v.to || null}, ${started}, ${ended}, ${seconds}, 'completed', ${extra.outcome}, ${extra.summary})
       on conflict (provider_call_id) do update set
         ended_at = coalesce(excluded.ended_at, call_log.ended_at),
@@ -44,10 +45,10 @@ export async function syncReceptionist(c: { id: string; org_id: string; assistan
 
 export async function syncAllCalls(): Promise<void> {
   const rows = await sql`
-    select c.id, c.org_id, c.data->>'assistantId' as assistant_id
+    select c.id, c.org_id, c.data->>'assistantId' as assistant_id, c.data->>'voiceProvider' as voice_provider
     from clients c join orgs o on o.id = c.org_id
     where o.suspended_at is null and coalesce(c.data->>'assistantId', '') <> ''`;
-  for (const c of rows as { id: string; org_id: string; assistant_id: string }[]) {
+  for (const c of rows as { id: string; org_id: string; assistant_id: string; voice_provider: string | null }[]) {
     try {
       await syncReceptionist(c);
       await resolveIncidents("call_sync", c.id);

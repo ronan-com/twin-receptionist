@@ -10,7 +10,7 @@ const dir = resolve(import.meta.dir, "../../handoff-content/providers");
 
 test("each guide: 5 steps or fewer, short steps, a Stuck? line", () => {
   const files = readdirSync(dir).filter((f) => f.endsWith(".md"));
-  expect(files.length).toBe(12);
+  expect(files.length).toBe(14);
   for (const f of files) {
     const body = readFileSync(join(dir, f), "utf8").replace(/^---\n[\s\S]*?\n---\n/, "");
     const steps = body.split("\n").filter((l) => /^\d+\.\s/.test(l));

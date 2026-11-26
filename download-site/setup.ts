@@ -9,7 +9,7 @@ import { join } from "node:path";
 import { CONFIG, PACKAGES_DIR, RAILWAY, currentPackage, db, listPackages, now, slug, type Buyer } from "./lib";
 import {
   DEFAULT_REGION, DEFAULT_SIZE, ProviderError, cfCanEdit, cfEnsure, cfFindZone, cfHasDmarc, cfRecords, cfZone, checkCloudflare,
-  checkDigitalOcean, checkGoogle, checkMicrosoft, checkRailway, checkResend, checkSmtp, checkTelnyx, doApi, lookup, normalizeDomain,
+  checkDigitalOcean, checkGoogle, checkMicrosoft, checkRailway, checkResend, checkSmtp, checkTelnyx, checkTwilio, checkVapi, doApi, lookup, normalizeDomain,
   railway, railwayUpload, recordLive, resendDomain, resendSend, resendSendingKey, resendStatus, resendVerify, smtpSend, smtpUrl,
 } from "./providers";
 import {
@@ -221,9 +221,46 @@ export const actions: Record<string, Action> = {
     return null;
   },
 
-  // ---- Phones (Telnyx): the buyer's key is the app's main Telnyx key ----
+  // ---- Phones: Telnyx (the default) or Vapi. The buyer's key is the app's main phone key ----
   async phones(b, f) {
     const g = guard(b, "phones"); if (g) return g;
+    const vapi = f.provider === "vapi";
+    if (vapi) {
+      // Vapi: a private and a public key. A Telnyx key is optional: email replies still use Telnyx's AI service.
+      const vKey = str(f.vapiKey, 300) || getSecret(b.id, "vapi_key") || "";
+      const vPublic = str(f.vapiPublic, 300) || getSecret(b.id, "vapi_public") || "";
+      if (!vKey) return err("Paste your Vapi private API key.", f);
+      if (!vPublic) return err("Paste your Vapi public key too.", f);
+      const tKey = str(f.key, 300);
+      const wait = checkLimit(b); if (wait) return tooMany(wait);
+      const r = await checkVapi(vKey, vPublic);
+      if (!r.ok) return err(r.message, f);
+      if (tKey) {
+        const t = await checkTelnyx(tKey);
+        if (!t.ok) return err(t.message, f);
+        putSecret(b.id, "telnyx_key", tKey);
+      }
+      // Optional Twilio account: where Australian numbers come from, and what sends the texts.
+      let twilioSid = getSetup(b.id).phones?.twilioSid || "";
+      const newSid = str(f.twilioSid, 60);
+      const newToken = str(f.twilioToken, 300);
+      if (newSid || newToken) {
+        const sid = newSid || twilioSid;
+        const token = newToken || getSecret(b.id, "twilio_token") || "";
+        const w = await checkTwilio(sid, token);
+        if (!w.ok) return err(w.message, f);
+        putSecret(b.id, "twilio_token", token);
+        twilioSid = sid;
+      }
+      putSecret(b.id, "vapi_key", vKey);
+      putSecret(b.id, "vapi_public", vPublic);
+      updateSetup(b.id, (s) => {
+        s.brand!.ownPhoneAccount = false;
+        s.phones = { provider: "vapi", checked: true, confirmed: true, ...(twilioSid ? { twilioSid } : {}) };
+        nextStep(b, s, "phones");
+      });
+      return null;
+    }
     const key = str(f.key, 300) || getSecret(b.id, "telnyx_key") || "";
     if (!key) return err("Paste your Telnyx API key.", f);
     const wait = checkLimit(b); if (wait) return tooMany(wait);
@@ -232,7 +269,7 @@ export const actions: Record<string, Action> = {
     putSecret(b.id, "telnyx_key", key);
     updateSetup(b.id, (s) => {
       s.brand!.ownPhoneAccount = false;
-      s.phones = { balance: r.balance, checked: true, confirmed: true };
+      s.phones = { balance: r.balance, checked: true, confirmed: true, provider: "telnyx" };
       nextStep(b, s, "phones");
     });
     return null;
@@ -470,7 +507,7 @@ const demoActions: Record<string, Action> = {
   },
   phones(b) {
     const g = guard(b, "phones"); if (g) return g;
-    updateSetup(b.id, (s) => { s.brand!.ownPhoneAccount = false; s.phones = { balance: "demo", checked: true, confirmed: true }; nextStep(b, s, "phones"); });
+    updateSetup(b.id, (s) => { s.brand!.ownPhoneAccount = false; s.phones = { balance: "demo", checked: true, confirmed: true, provider: "telnyx" }; nextStep(b, s, "phones"); });
     return null;
   },
   email(b, f) {
@@ -673,6 +710,20 @@ function brandSettings(s: SetupData): Record<string, string> {
   return v;
 }
 
+/** The phone keys the installed app is given: Telnyx's, or Vapi's with VOICE_PROVIDER=vapi. */
+export function phoneSettings(id: number, s: SetupData): Record<string, string> {
+  if (s.phones?.provider !== "vapi") return { TELNYX_API_KEY: getSecret(id, "telnyx_key") || "" };
+  return {
+    VOICE_PROVIDER: "vapi",
+    VAPI_API_KEY: getSecret(id, "vapi_key") || "",
+    VAPI_PUBLIC_KEY: getSecret(id, "vapi_public") || "",
+    // Optional with Vapi: only email replies use it.
+    TELNYX_API_KEY: getSecret(id, "telnyx_key") || "",
+    // Optional with Vapi: Twilio numbers and the texts sent from them.
+    ...(s.phones?.twilioSid && getSecret(id, "twilio_token") ? { TWILIO_ACCOUNT_SID: s.phones.twilioSid, TWILIO_AUTH_TOKEN: getSecret(id, "twilio_token") || "" } : {}),
+  };
+}
+
 /**
  * Settings for the health heartbeat and Support access (sync.ts). The app sends counts and health to us
  * with SUPPORT_SYNC_TOKEN (we keep only its hash), and we call it with SUPPORT_CALL_TOKEN. The buyer sees
@@ -691,7 +742,7 @@ function buildSettings(id: number, s: SetupData): string {
     PRODUCT_NAME: s.brand!.productName,
     DOMAIN: hostOf(s),
     FIRST_ADMIN_EMAIL: s.brand!.ownerEmail,
-    TELNYX_API_KEY: getSecret(id, "telnyx_key") || "",
+    ...phoneSettings(id, s),
     ...brandSettings(s),
     ...supportSettings(id),
     OWN_PHONE_ACCOUNT: "", // the buyer is the agency: every client runs on their Telnyx key
@@ -923,7 +974,7 @@ function finish(id: number, url: string) {
     brand: s.brand ? { productName: s.brand.productName, ownerEmail: s.brand.ownerEmail, ownPhoneAccount: s.brand.ownPhoneAccount, ...(demo ? { logo: s.brand.logo, colour: s.brand.colour } : {}) } : undefined,
     domain: s.domain ? { mode: s.domain.mode, zone: s.domain.zone, sub: s.domain.sub, host: s.domain.host, confirmed: true } : undefined,
     server: s.server ? { region: s.server.region, size: s.server.size, price: s.server.price, chosen: true, sshPublicKey: s.server.sshPublicKey ? "yes" : undefined } : undefined,
-    phones: { confirmed: true }, email: s.email ? { mode: s.email.mode, address: s.email.address, from: s.email.from, confirmed: true, resend: s.email.resend ? { status: s.email.resend.status } : undefined } : undefined,
+    phones: { confirmed: true, provider: s.phones?.provider }, email: s.email ? { mode: s.email.mode, address: s.email.address, from: s.email.from, confirmed: true, resend: s.email.resend ? { status: s.email.resend.status } : undefined } : undefined,
     calendars: s.calendars ? { google: s.calendars.google, microsoft: s.calendars.microsoft, done: true } : undefined,
     skipped: s.skipped, extrasDone: s.extrasDone,
     dropletId: s.dropletId, ip: s.ip, attempt: s.attempt, attemptVersion: s.attemptVersion,
@@ -1093,7 +1144,7 @@ async function railwayVars(id: number, s: SetupData, token: string): Promise<Rec
     // Their own domain if they added one; otherwise Railway's own https address, which works straight away.
     PUBLIC_URL: hostOf(s) ? `https://${hostOf(s)}` : webUrl(s.rw?.serviceDomain),
     FIRST_ADMIN_EMAIL: s.brand!.ownerEmail,
-    TELNYX_API_KEY: getSecret(id, "telnyx_key") || "",
+    ...phoneSettings(id, s),
     SMTP_URL: smtp,
     MAIL_FROM: s.email?.from || "",
     // Encrypts saved mailbox and calendar logins in the database. Lives only in Railway.

@@ -155,7 +155,7 @@ function AgenciesPage() {
                         {a.sandbox ? <StatusBadge tone="warning">Test lab</StatusBadge> : null}
                       </div>
                       <div className="text-[12px] text-ink-muted">
-                        {a.clients} client{a.clients === 1 ? "" : "s"} · {a.members} {a.members === 1 ? "person" : "people"} · since {fmtDate(a.createdAt)} · phone: {a.telnyx === "own" ? "own key" : a.telnyx === "platform" ? "platform account" : "not set up"}
+                        {a.clients} client{a.clients === 1 ? "" : "s"} · {a.members} {a.members === 1 ? "person" : "people"} · since {fmtDate(a.createdAt)} · phone: {a.provider === "vapi" ? "Vapi · " : ""}{a.telnyx === "own" ? "own key" : a.telnyx === "platform" ? "platform account" : "not set up"}
                       </div>
                       <div className="break-words text-[12px] text-ink-muted">
                         {a.owners.length ? `Owner: ${a.owners.join(", ")}` : "No owner yet"}

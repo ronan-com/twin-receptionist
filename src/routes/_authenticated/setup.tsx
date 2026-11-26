@@ -10,7 +10,8 @@ import { ErrorState, Notice } from "@/components/app/primitives";
 import { Skeleton } from "@/components/ui/skeleton";
 import { fmtCredit, phoneAccountQuery, phoneApi } from "@/lib/api/phone";
 import { useWorkspace } from "@/lib/app/workspace";
-import type { PhoneAccount } from "@/lib/shared";
+import type { PhoneAccount, VoiceProviderId } from "@/lib/shared";
+import { EngineChoice, PhoneKeyFields, engineName, keysReady, type PhoneKeyValue } from "@/components/app/PhoneKeyFields";
 import { cn } from "@/lib/utils";
 import { PRODUCT } from "@/lib/app/product";
 
@@ -20,6 +21,8 @@ import { PRODUCT } from "@/lib/app/product";
 
 const TELNYX_SIGNUP = "https://telnyx.com/sign-up";
 const TELNYX_PORTAL = "https://portal.telnyx.com/";
+const VAPI_SIGNUP = "https://dashboard.vapi.ai/";
+const VAPI_KEYS = "https://dashboard.vapi.ai/org/api-keys";
 
 export const Route = createFileRoute("/_authenticated/setup")({
   beforeLoad: ({ context }) => {
@@ -66,11 +69,14 @@ function SetupPage() {
   const q = useQuery({ ...phoneAccountQuery(), enabled: !!orgId });
   const [step, setStep] = useState(0);
   const [loaded, setLoaded] = useState(false);
+  // Which voice engine this agency is connecting. Telnyx is the default; the server says what it already uses.
+  const [engine, setEngine] = useState<VoiceProviderId>("telnyx");
 
   // Start where they left off; an agency that's already connected lands on the last step.
   useEffect(() => {
     if (loaded || !q.data || !orgId) return;
     setStep(q.data.mode === "own" ? LAST : savedStep(orgId));
+    setEngine(q.data.provider);
     setLoaded(true);
   }, [q.data, orgId, loaded]);
 
@@ -128,7 +134,7 @@ function SetupPage() {
                 <Skeleton className="h-28" />
               </div>
             ) : !canConnect ? (
-              <StepShell step={0} title="Your agency isn't set up yet" lead="The owner of your agency needs to connect its Telnyx account first. Ask them to sign in and finish set-up, then come back.">
+              <StepShell step={0} title="Your agency isn't set up yet" lead="The owner of your agency needs to connect its phone account first. Ask them to sign in and finish set-up, then come back.">
                 <Button variant="outline" onClick={() => void q.refetch()}>
                   Check again
                 </Button>
@@ -136,9 +142,9 @@ function SetupPage() {
             ) : (
               <div key={step} className="animate-in fade-in slide-in-from-bottom-2 duration-300">
                 {step === 0 ? <Welcome name={ws.org?.name ?? "your agency"} onNext={() => go(1)} /> : null}
-                {step === 1 ? <AccountStep onBack={() => go(0)} onNext={() => go(2)} /> : null}
-                {step === 2 ? <CreditStep onBack={() => go(1)} onNext={() => go(3)} /> : null}
-                {step === 3 ? <ConnectStep account={q.data} onBack={() => go(2)} onDone={() => go(LAST)} /> : null}
+                {step === 1 ? <AccountStep engine={engine} onEngine={setEngine} onBack={() => go(0)} onNext={() => go(2)} /> : null}
+                {step === 2 ? <CreditStep engine={engine} onBack={() => go(1)} onNext={() => go(3)} /> : null}
+                {step === 3 ? <ConnectStep account={q.data} engine={engine} onEngine={setEngine} onBack={() => go(2)} onDone={() => go(LAST)} /> : null}
                 {step === LAST ? <Done account={q.data} onBack={() => go(3)} /> : null}
               </div>
             )}
@@ -288,9 +294,42 @@ function Welcome({ name, onNext }: { name: string; onNext: () => void }) {
   );
 }
 
-function AccountStep({ onBack, onNext }: { onBack: () => void; onNext: () => void }) {
+function AccountStep({ engine, onEngine, onBack, onNext }: { engine: VoiceProviderId; onEngine: (e: VoiceProviderId) => void; onBack: () => void; onNext: () => void }) {
+  if (engine === "vapi") {
+    return (
+      <StepShell step={1} title="Create your Vapi account" lead="Vapi is the voice service behind your receptionists. The account is free to open and it's yours: you can see every call and charge there.">
+        <div className="mb-6">
+          <EngineChoice value={engine} onChange={onEngine} />
+        </div>
+        <HowTo
+          hue="violet"
+          items={[
+            <>Open the Vapi dashboard and sign up with your work email.</>,
+            <>Open <b className="font-semibold">Billing</b> and add a card or credit, so calls aren't cut off.</>,
+            <>
+              Vapi gives away free <b className="font-semibold">US</b> numbers only. For an Australian number, use a Twilio account (connect it under Connections, optional) or keep a Telnyx number ready: you connect it to each receptionist later.
+            </>,
+          ]}
+        />
+        <div className="mt-6">
+          <OpenLink href={VAPI_SIGNUP}>Open Vapi</OpenLink>
+        </div>
+        <Notice tone="info" className="mt-6" title="What's different on Vapi">
+          Texts after calls go out through Twilio, from a Twilio mobile number the receptionist answers. The text simulator is a Telnyx feature and isn't available.
+        </Notice>
+        <Nav onBack={onBack}>
+          <Button onClick={onNext} className="h-10 px-5" data-action="setup-next">
+            I have an account <ArrowRight />
+          </Button>
+        </Nav>
+      </StepShell>
+    );
+  }
   return (
     <StepShell step={1} title="Create your Telnyx account" lead="Telnyx is the phone company behind your receptionists. The account is free to open and it's yours: you can see every call and charge there.">
+      <div className="mb-6">
+        <EngineChoice value={engine} onChange={onEngine} />
+      </div>
       <HowTo
         hue="violet"
         items={[
@@ -317,7 +356,19 @@ function AccountStep({ onBack, onNext }: { onBack: () => void; onNext: () => voi
   );
 }
 
-function CreditStep({ onBack, onNext }: { onBack: () => void; onNext: () => void }) {
+function CreditStep({ engine, onBack, onNext }: { engine: VoiceProviderId; onBack: () => void; onNext: () => void }) {
+  if (engine === "vapi") {
+    return (
+      <StepShell step={2} title="Add credit to it" lead="Vapi charges per minute of calls. With no credit, calls don't connect.">
+        <HowTo hue="magenta" items={[<>In Vapi, open <b className="font-semibold">Billing</b>.</>, <>Add a card and switch on automatic top-ups.</>]} />
+        <Nav onBack={onBack}>
+          <Button onClick={onNext} className="h-10 px-5" data-action="setup-next">
+            Credit added <ArrowRight />
+          </Button>
+        </Nav>
+      </StepShell>
+    );
+  }
   return (
     <StepShell step={2} title="Add credit to it" lead="Telnyx takes its charges for numbers and call minutes from credit on your account. With no credit, calls don't connect.">
       <HowTo
@@ -349,12 +400,13 @@ function CreditStep({ onBack, onNext }: { onBack: () => void; onNext: () => void
   );
 }
 
-function ConnectStep({ account, onBack, onDone }: { account: PhoneAccount; onBack: () => void; onDone: () => void }) {
+function ConnectStep({ account, engine, onEngine, onBack, onDone }: { account: PhoneAccount; engine: VoiceProviderId; onEngine: (e: VoiceProviderId) => void; onBack: () => void; onDone: () => void }) {
   const qc = useQueryClient();
-  const [key, setKey] = useState("");
-  const [show, setShow] = useState(false);
+  const [keys, setKeys] = useState<PhoneKeyValue>({ provider: engine, key: "", publicKey: "" });
+  const value: PhoneKeyValue = { ...keys, provider: engine };
+  const name = engineName(engine);
   const connect = useMutation({
-    mutationFn: () => phoneApi.connect(key.trim()),
+    mutationFn: () => phoneApi.connect(value.key.trim(), engine === "vapi" ? { provider: "vapi", publicKey: value.publicKey.trim() } : { provider: "telnyx" }),
     onSuccess: async (acct) => {
       qc.setQueryData(phoneAccountQuery().queryKey, acct);
       // The console lets them in once the session says the account is connected.
@@ -364,60 +416,85 @@ function ConnectStep({ account, onBack, onDone }: { account: PhoneAccount; onBac
   });
 
   return (
-    <StepShell step={3} title="Connect your account" lead="One key links your Telnyx account to this dashboard. We check it with Telnyx straight away, so you'll know it works.">
-      <HowTo
-        hue="coral"
-        items={[
-          <>
-            In Telnyx, click your profile icon, then <b className="font-semibold">Account Settings</b>, then <b className="font-semibold">API Keys</b>.
-          </>,
-          <>
-            Click <b className="font-semibold">Create API Key</b>, give it a name and leave Expiration on <b className="font-semibold">No Expiration</b>.
-          </>,
-          <>
-            Copy it straight away. It starts with <code className="rounded bg-canvas-2 px-1 py-0.5 font-mono text-[12.5px]">KEY</code> and is only shown once.
-          </>,
-          <>Paste it below.</>,
-        ]}
-      />
-      <div className="mt-5">
-        <OpenLink href={TELNYX_PORTAL}>Open Telnyx</OpenLink>
+    <StepShell
+      step={3}
+      title="Connect your account"
+      lead={engine === "vapi" ? "Two keys link your Vapi account to this dashboard. We check the private one with Vapi straight away, so you'll know it works." : "One key links your Telnyx account to this dashboard. We check it with Telnyx straight away, so you'll know it works."}
+    >
+      <div className="mb-6">
+        <EngineChoice
+          value={engine}
+          onChange={(e) => {
+            onEngine(e);
+            setKeys({ provider: e, key: "", publicKey: "" });
+            connect.reset();
+          }}
+        />
       </div>
+      {engine === "vapi" ? (
+        <>
+          <HowTo
+            hue="coral"
+            items={[
+              <>
+                In the Vapi dashboard open <b className="font-semibold">API Keys</b> (under Org Settings).
+              </>,
+              <>
+                Copy the <b className="font-semibold">Private Key</b>. It's the one used by servers.
+              </>,
+              <>
+                Copy the <b className="font-semibold">Public Key</b> too. Browsers use it for the test call, and it's safe to expose.
+              </>,
+              <>Paste both below.</>,
+            ]}
+          />
+          <div className="mt-5">
+            <OpenLink href={VAPI_KEYS}>Open Vapi API keys</OpenLink>
+          </div>
+        </>
+      ) : (
+        <>
+          <HowTo
+            hue="coral"
+            items={[
+              <>
+                In Telnyx, click your profile icon, then <b className="font-semibold">Account Settings</b>, then <b className="font-semibold">API Keys</b>.
+              </>,
+              <>
+                Click <b className="font-semibold">Create API Key</b>, give it a name and leave Expiration on <b className="font-semibold">No Expiration</b>.
+              </>,
+              <>
+                Copy it straight away. It starts with <code className="rounded bg-canvas-2 px-1 py-0.5 font-mono text-[12.5px]">KEY</code> and is only shown once.
+              </>,
+              <>Paste it below.</>,
+            ]}
+          />
+          <div className="mt-5">
+            <OpenLink href={TELNYX_PORTAL}>Open Telnyx</OpenLink>
+          </div>
+        </>
+      )}
 
       <form
         className="mt-7 rounded-[12px] border border-hairline bg-canvas-2 p-4"
         onSubmit={(e) => {
           e.preventDefault();
-          if (key.trim()) connect.mutate();
+          if (keysReady(value)) connect.mutate();
         }}
       >
-        <label htmlFor="setup-key" className="mb-1.5 block text-[12.5px] font-medium text-ink">
-          Your Telnyx API key
-        </label>
-        <div className="flex flex-col gap-2 sm:flex-row">
-          <div className="relative min-w-0 flex-1">
-            <Input
-              id="setup-key"
-              type={show ? "text" : "password"}
-              value={key}
-              onChange={(e) => {
-                setKey(e.target.value);
-                if (connect.error) connect.reset();
-              }}
-              placeholder="KEY…"
-              autoComplete="off"
-              spellCheck={false}
-              className="h-10 bg-white pr-10 font-mono text-[13px]"
-              data-field="api-key"
-            />
-            <button type="button" onClick={() => setShow((v) => !v)} aria-label={show ? "Hide key" : "Show key"} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-ink-muted hover:text-ink">
-              {show ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-            </button>
-          </div>
-          <Button type="submit" className="h-10 px-5" disabled={!key.trim() || connect.isPending} data-action="setup-connect">
+        <PhoneKeyFields
+          value={value}
+          onChange={(v) => {
+            setKeys(v);
+            if (connect.error) connect.reset();
+          }}
+          idPrefix="setup"
+        />
+        <div className="mt-3">
+          <Button type="submit" className="h-10 px-5" disabled={!keysReady(value) || connect.isPending} data-action="setup-connect">
             {connect.isPending ? (
               <>
-                <Loader2 className="animate-spin" /> Checking with Telnyx…
+                <Loader2 className="animate-spin" /> Checking with {name}…
               </>
             ) : (
               <>Check and connect</>
@@ -431,8 +508,8 @@ function ConnectStep({ account, onBack, onDone }: { account: PhoneAccount; onBac
         ) : null}
         {account.testKey ? (
           <div className="mt-3 flex flex-col gap-2 rounded-[6px] border border-dashed border-[#c9c5ff] bg-white px-3 py-2 text-[12px] text-ink-muted sm:flex-row sm:items-center sm:justify-between" data-note="test-key">
-            <span>Local test server: this pretend key passes the check, no Telnyx account needed.</span>
-            <button type="button" className="shrink-0 font-mono font-medium text-indigo hover:underline" onClick={() => setKey(account.testKey!)} data-action="use-test-key">
+            <span>Local test server: this pretend key passes the check, no {name} account needed.</span>
+            <button type="button" className="shrink-0 font-mono font-medium text-indigo hover:underline" onClick={() => setKeys({ provider: engine, key: account.testKey!, publicKey: account.testKey!.replace("KEYTEST", "PUBTEST") })} data-action="use-test-key">
               Use {account.testKey}
             </button>
           </div>
@@ -449,7 +526,7 @@ function Done({ account, onBack }: { account: PhoneAccount; onBack: () => void }
   const connected = account.mode === "own";
   if (!connected) {
     return (
-      <StepShell step={LAST} title="One step left" lead="Your Telnyx account isn't connected yet. Go back and paste your key to finish.">
+      <StepShell step={LAST} title="One step left" lead="Your phone account isn't connected yet. Go back and paste your key to finish.">
         <Nav onBack={onBack}>
           <span />
         </Nav>
@@ -457,27 +534,33 @@ function Done({ account, onBack }: { account: PhoneAccount; onBack: () => void }
     );
   }
   return (
-    <StepShell step={LAST} title="You're connected" lead="Your Telnyx account is linked. Add your first client and you can hear its receptionist from the browser in a couple of minutes.">
+    <StepShell step={LAST} title="You're connected" lead={`Your ${engineName(account.provider)} account is linked. Add your first client and you can hear its receptionist from the browser in a couple of minutes.`}>
       <div className="grid gap-3 sm:grid-cols-2">
         <div className="animate-in zoom-in-95 fade-in rounded-[12px] border border-[#c8eedf] bg-[linear-gradient(160deg,#f1fbf7,#fff_75%)] p-4 duration-500" data-card="connected">
           <div className="flex items-center gap-2 text-[13px] font-semibold text-[#0e6245]">
             <span className="flex h-6 w-6 items-center justify-center rounded-full bg-[#0e9f6e] text-white">
               <Check className="h-3.5 w-3.5" />
             </span>
-            Telnyx account connected
+            {engineName(account.provider)} account connected
           </div>
           <p className="mt-2 text-[12.5px] text-ink-muted">
-            Telnyx key ending <span className="font-mono text-ink">{account.last4}</span>
+            {engineName(account.provider)} key ending <span className="font-mono text-ink">{account.last4}</span>
           </p>
         </div>
         <div className={cn("animate-in zoom-in-95 fade-in rounded-[12px] border p-4 duration-700", account.lowCredit ? "border-[#ffe1b0] bg-[#fff9ee]" : "border-hairline bg-canvas-2")} data-card="credit">
           <div className="text-[12px] text-ink-muted">Credit on your account</div>
-          <div className="mt-0.5 text-[24px] font-semibold tracking-[-0.02em] text-ink">{account.balance ? fmtCredit(account.balance) : "—"}</div>
+          {account.provider === "vapi" ? (
+            <p className="mt-1 text-[13px] text-ink">See your balance in the Vapi dashboard.</p>
+          ) : (
+            <div className="mt-0.5 text-[24px] font-semibold tracking-[-0.02em] text-ink">{account.balance ? fmtCredit(account.balance) : "—"}</div>
+          )}
           {account.lowCredit ? <p className="mt-1 text-[12px] text-[#8a4b00]">That's low. Top up in Telnyx before you take real calls.</p> : null}
         </div>
       </div>
       <Notice tone="info" className="mt-4" title="Before real callers can get through">
-        Your Telnyx account needs to be upgraded from trial, and each phone number needs Telnyx's approval. Australian numbers need proof of address and take about three days.
+        {account.provider === "vapi"
+          ? "Vapi only gives away US numbers. For an Australian number, buy or bring a Twilio number (connect Twilio under Connections first), or bring a Telnyx one: you connect it from each client's page."
+          : "Your Telnyx account needs to be upgraded from trial, and each phone number needs Telnyx's approval. Australian numbers need proof of address and take about three days."}
       </Notice>
       <Nav>
         <Button asChild variant="outline" className="h-10">

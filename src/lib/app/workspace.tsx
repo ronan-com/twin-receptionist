@@ -181,7 +181,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         canEdit: false,
         canManage: false,
         isOwner: false,
-        readOnlyReason: session.viewing.support ? `You're viewing ${business.name} in a support session. This view is read only.` : `You're viewing ${business.name} as the platform team. This view is read only.`,
+        readOnlyReason: session.viewing.support ? `You're viewing ${business.name} in a support session. This view is read only.` : `You're viewing ${business.name} as ${session.user.platformAdmin ? "the platform team" : "their agency"}. This view is read only.`,
       };
     }
     const m = memberships.find((x) => x.business_id === business.id);

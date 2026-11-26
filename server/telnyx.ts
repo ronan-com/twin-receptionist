@@ -12,6 +12,8 @@ const scope = new AsyncLocalStorage<{ orgId: string | null }>();
 
 export const runAsOrg = <T>(orgId: string | null, fn: () => T): T => scope.run({ orgId }, fn);
 export const enterOrg = (orgId: string | null): void => scope.enterWith({ orgId });
+/** The org the current work runs for (null: the install itself). Used by every voice engine. */
+export const currentOrg = (): string | null => scope.getStore()?.orgId ?? null;
 
 const keyCache = new Map<string, { key: string; at: number }>();
 export const forgetKey = (orgId: string) => keyCache.delete(orgId);

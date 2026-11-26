@@ -7,7 +7,12 @@ import { recordIncident, resolveIncidents } from "./incidents";
 import { ValidationError, greetingOf } from "./prompt";
 import { isDemo } from "./sandbox";
 import { getClient, orgOfClient } from "./store";
-import { runAsOrg, telnyx } from "./telnyx";
+import { currentOrg, runAsOrg } from "./telnyx";
+import { sendSms } from "./sms";
+import { twilioSmsNumber } from "./twilio";
+import { providerOfClient } from "./voice/config";
+import { voiceFor } from "./voice";
+import { UNMAPPED } from "./voice/vapiMap";
 import type { FollowupSettings } from "../src/lib/followups";
 import { defaultFollowups, followupStatuses, normaliseFollowups } from "./followups";
 import { textingState } from "./texting";
@@ -222,21 +227,33 @@ const say = (n: string) => n.replace(/^\+61/, "0");
 /** Transfers come from the receptionist's own number (Telnyx requires a from number). */
 export const transferFrom = (client: Business): string | null => (client.phoneNumbers ?? []).find((n) => /^\+61\d{9}$/.test(n)) ?? null;
 
-export function transferTool(client: Business, a: AutomationSettings) {
-  const from = transferFrom(client);
-  if (!a.transfer.enabled || !a.transfer.number || !from || a.transfer.number === from) return null;
+/** The transfer in engine-neutral form (what to say, who to ring), or null when it's off. */
+export function transferSpec(a: AutomationSettings) {
+  if (!a.transfer.enabled || !a.transfer.number) return null;
   const reasons = [
     a.transfer.onRequest && "the caller asks to speak to a person",
     a.transfer.urgent && "it is urgent",
     a.transfer.cantHelp && "you can't help with what they need",
   ].filter(Boolean);
   return {
+    description: `Put the caller through to ${a.transfer.name} when ${reasons.join(", or ")}. Only on a phone call.`,
+    name: a.transfer.name,
+    to: a.transfer.number,
+    takeMessageOnVoicemail: a.transfer.voicemail === "take_message",
+  };
+}
+
+export function transferTool(client: Business, a: AutomationSettings) {
+  const from = transferFrom(client);
+  const spec = transferSpec(a);
+  if (!spec || !from || a.transfer.number === from) return null;
+  return {
     type: "transfer",
     transfer: {
-      description: `Put the caller through to ${a.transfer.name} when ${reasons.join(", or ")}. Only on a phone call.`,
-      targets: [{ name: a.transfer.name, to: a.transfer.number }],
+      description: spec.description,
+      targets: [{ name: spec.name, to: spec.to }],
       from,
-      ...(a.transfer.voicemail === "take_message"
+      ...(spec.takeMessageOnVoicemail
         ? { voicemail_detection: { detection_mode: "premium", on_voicemail_detected: { action: "stop_transfer" } } }
         : {}),
     },
@@ -245,9 +262,10 @@ export function transferTool(client: Business, a: AutomationSettings) {
 
 const usesOpenNow = (a: AutomationSettings) => a.hoursMode.enabled || (a.transfer.enabled && a.transfer.when === "hours");
 
-export function automationInstructions(client: Business, a: AutomationSettings): string {
+export function automationInstructions(client: Business, a: AutomationSettings, engine: "telnyx" | "vapi" = "telnyx"): string {
   const lines: string[] = [];
-  const tool = transferTool(client, a);
+  // Telnyx needs the receptionist's own number to transfer from; Vapi doesn't.
+  const tool = engine === "vapi" ? transferSpec(a) : transferTool(client, a);
   if (usesOpenNow(a)) {
     lines.push(
       `- Open right now: "{{twin_open_now}}" ("yes" or "no"). If it says "unknown", work it out from the current local time and the opening hours above.`,
@@ -428,11 +446,7 @@ export async function applyAutomations(client: Business, deps: AutomationDeps): 
   }
   try {
     const synced = await deps.syncAssistant(client);
-    const res = await telnyx<any>("GET", `/ai/assistants/${client.assistantId}`);
-    const current = (res.data ?? res)?.telephony_settings ?? {};
-    const row = await loadAutomations(client.id);
-    const greet = synced.settings.paused ? {} : overlayPayload(synced, row.settings, { greeting: synced.settings.greeting }, { publicUrl: publicUrl(), token: row.token });
-    await telnyx("POST", `/ai/assistants/${client.assistantId}`, { ...greet, ...telephonyPayload(row.settings, current) });
+    await voiceFor(synced).applyAutomations(synced);
     await markApplied(client.id, null);
     await resolveIncidents("automations_apply", client.id);
     return null;
@@ -472,6 +486,8 @@ export type StatusInputs = {
   publicUrl: string;
   /** Whether these settings have ever reached the phone provider. */
   applied: boolean;
+  /** The voice engine this receptionist runs on (default telnyx). */
+  engine?: "telnyx" | "vapi";
   /** Whether this server can send email (for reminders and review requests). */
   emailReady?: boolean;
 };
@@ -483,26 +499,29 @@ export function statusFor(client: Business, a: AutomationSettings, i: StatusInpu
   const transfer: AutomationStatus = (() => {
     if (!a.transfer.enabled) return off();
     if (!a.transfer.number) return { state: "needs_setup", label: "Needs a number", detail: "Add the number to put callers through to." };
-    if (!i.demo && !transferFrom(client)) {
+    if (!i.demo && i.engine !== "vapi" && !transferFrom(client)) {
       return { state: "needs_setup", label: "Needs a phone number", detail: "Transfers start once this receptionist has a phone number. Connect one under Call handling." };
     }
     const when = a.transfer.when === "hours" ? "during opening hours" : "any time";
     return { state: "on", label: `On · to ${say(a.transfer.number)}`, detail: `Callers are put through ${when}${demoNote}.` };
   })();
 
+  const vapi = i.engine === "vapi";
   const textBack: AutomationStatus = (() => {
     if (!a.textBack.enabled) return off();
     if (!a.textBack.afterCall && !a.textBack.missedCall) return { state: "needs_setup", label: "Choose when to text", detail: "Turn on texts after calls, after missed calls, or both." };
     if (i.demo) return { state: "on", label: "On (demo)", detail: "Demo receptionists never send texts." };
     if (i.smsNumber === undefined) return { state: "error", label: "Couldn't check", detail: "The phone service didn't answer. Texts will go out once it does." };
     if (!i.smsNumber) {
-      return { state: "needs_setup", label: "Needs a mobile number", detail: "Texts are sent from the receptionist's own mobile number. Request a mobile number under Call handling." };
+      return vapi
+        ? { state: "needs_setup", label: "Needs a Twilio mobile number", detail: UNMAPPED.textBack }
+        : { state: "needs_setup", label: "Needs a mobile number", detail: "Texts are sent from the receptionist's own mobile number. Request a mobile number under Call handling." };
     }
     return { state: "on", label: `On · from ${say(i.smsNumber)}`, detail: "Each caller gets at most one text every 12 hours." };
   })();
 
   const recording: AutomationStatus = (() => {
-    if (!i.demo && !i.applied) {
+    if (!i.demo && !i.applied && !vapi) {
       return {
         state: "needs_setup",
         label: "Not set yet",
@@ -518,8 +537,10 @@ export function statusFor(client: Business, a: AutomationSettings, i: StatusInpu
 
   const callLimits: AutomationStatus = {
     state: "on",
-    label: `Up to ${a.callLimits.maxMinutes} min · ends after ${a.callLimits.idleSeconds}s of silence`,
-    detail: "Voicemail detection on incoming calls isn't available from the phone service (it only works on calls it makes), so it's offered on transfers instead.",
+    label: vapi ? `Up to ${a.callLimits.maxMinutes} min` : `Up to ${a.callLimits.maxMinutes} min · ends after ${a.callLimits.idleSeconds}s of silence`,
+    detail: vapi
+      ? `${UNMAPPED.silenceLimit} ${UNMAPPED.voicemail}`
+      : "Voicemail detection on incoming calls isn't available from the phone service (it only works on calls it makes), so it's offered on transfers instead.",
   };
 
   const hoursMode: AutomationStatus = (() => {
@@ -532,12 +553,14 @@ export function statusFor(client: Business, a: AutomationSettings, i: StatusInpu
     return { state: "on", label: openNow(client.settings) ? "On · open now" : "On · closed now", detail: `${what} ${how}` };
   })();
 
-  return { transfer, textBack, recording, language, callLimits, hoursMode, ...followupStatuses(client, a, { demo: i.demo, smsNumber: i.smsNumber, emailReady: Boolean(i.emailReady) }) };
+  return { transfer, textBack, recording, language, callLimits, hoursMode, ...followupStatuses(client, a, { demo: i.demo, smsNumber: i.smsNumber, emailReady: Boolean(i.emailReady), engine: i.engine }) };
 }
 
 export async function smsNumberOf(client: Business): Promise<string | null | undefined> {
   if (isDemo(client.assistantId)) return null;
   try {
+    // Vapi has no texting of its own: a Twilio number of the agency's that it answers sends them.
+    if (providerOfClient(client) === "vapi") return await twilioSmsNumber(currentOrg(), client.phoneNumbers ?? []);
     const t = await textingState(client);
     return t.numbers.find((n) => /^\+614\d{8}$/.test(n)) ?? null;
   } catch {
@@ -555,7 +578,7 @@ export async function automationsState(client: Business, canEdit: boolean) {
     where client_id = ${client.id} order by created_at desc limit 10`;
   return {
     settings: row.settings,
-    status: statusFor(client, row.settings, { demo, smsNumber, publicUrl: publicUrl(), applied: Boolean(row.appliedAt), emailReady: followups.emailReady }),
+    status: statusFor(client, row.settings, { demo, smsNumber, publicUrl: publicUrl(), applied: Boolean(row.appliedAt), emailReady: followups.emailReady, engine: providerOfClient(client) }),
     canEdit,
     demo,
     appliedAt: row.appliedAt,
@@ -699,13 +722,7 @@ async function textBackOne(call: any): Promise<void> {
   const from = await smsNumberOf(client);
   if (!from) return void (await finish("skipped", "No mobile number for texts"));
   try {
-    await telnyx("POST", `/ai/assistants/${client.assistantId}/chat/sms`, {
-      from,
-      to: call.from_number,
-      text: choice.text,
-      should_create_conversation: true,
-      conversation_metadata: { twin_text_back: kind },
-    });
+    await sendSms(client, { from, to: call.from_number, text: choice.text, meta: { twin_text_back: kind } });
     await finish("sent", "");
   } catch (err) {
     await finish("failed", (err as Error).message);

@@ -49,7 +49,7 @@ function AdminVoicesPage() {
     },
     { key: "gender", header: "Gender", hideBelow: "sm", cell: (v) => <span className="text-ink-muted">{titleCase(v.gender) || "—"}</span> },
     { key: "accent", header: "Accent", hideBelow: "md", cell: (v) => <span className="text-ink-muted">{v.accent} · {v.language}</span> },
-    { key: "provider", header: "Provider", hideBelow: "lg", cell: () => <span className="text-ink-muted">Telnyx</span> },
+    { key: "provider", header: "Provider", hideBelow: "lg", cell: (v) => <span className="text-ink-muted">{v.provider === "vapi" ? (v.id.startsWith("azure:") ? "Vapi (Azure)" : "Vapi") : "Telnyx"}</span> },
     {
       key: "used",
       header: "Used by",
@@ -67,7 +67,7 @@ function AdminVoicesPage() {
 
   return (
     <div className="space-y-5" data-page="admin-voices">
-      <PageHeader eyebrow={platform ? "Platform console" : "Agency console"} title="Voices" description="Voices come from the phone provider's Australian catalogue. Every voice here can be picked for any receptionist." />
+      <PageHeader eyebrow={platform ? "Platform console" : "Agency console"} title="Voices" description="Voices come from your voice engine: Telnyx's Australian catalogue, or Vapi's (Australian voices from Azure, plus Vapi's own). Every voice here can be picked for any receptionist." />
 
       <MetricGrid cols={3}>
         <MetricCard label="Voices" value={fmtNumber(all.length)} icon={AudioLines} loading={q.isPending} />

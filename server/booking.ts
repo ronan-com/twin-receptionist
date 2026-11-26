@@ -312,63 +312,76 @@ export function tokenMatches(setup: BookingSetup | undefined, given: string | nu
 
 // ---- Telnyx tool definitions ------------------------------------------------------
 
+// The three tools in provider-neutral form: what each is for and what it takes. Each
+// voice engine (server/voice/) turns these into its own tool format. `action` is the
+// last part of the tool's address, /hooks/<clientId>/<action>.
+export type BookingToolDef = {
+  name: "check_availability" | "book_appointment" | "request_callback";
+  description: string;
+  action: "availability" | "book" | "callback";
+  properties: Record<string, { type: "string"; description: string }>;
+  required: string[];
+};
+
+const channel = {
+  type: "string" as const,
+  description: 'How they are talking to you: "call" for a phone call, "sms" for text messages.',
+};
+
+export const BOOKING_TOOL_DEFS: BookingToolDef[] = [
+  {
+    name: "check_availability",
+    description: "Get the free appointment times on one day. Call it before offering any times.",
+    action: "availability",
+    properties: { date: { type: "string", description: "The day to check, as YYYY-MM-DD in the business's time zone." } },
+    required: ["date"],
+  },
+  {
+    name: "book_appointment",
+    description: "Book a time from check_availability, once you have their name and mobile number and they have agreed to the time.",
+    action: "book",
+    properties: {
+      start: { type: "string", description: "The start value of the chosen slot, exactly as check_availability returned it." },
+      name: { type: "string", description: "Their full name." },
+      phone: { type: "string", description: "Their mobile number." },
+      service: { type: "string", description: "What the appointment is for, from the list of services." },
+      email: { type: "string", description: "Their email address, if they gave one, for their confirmation. Optional." },
+      notes: { type: "string", description: "Anything else the team should know. Optional." },
+      channel,
+    },
+    required: ["start", "name", "phone", "service", "channel"],
+  },
+  {
+    name: "request_callback",
+    description: "Ask the team to call someone back: when they want a person, have a question you can't answer, or a booking couldn't be made.",
+    action: "callback",
+    properties: {
+      name: { type: "string", description: "Their name." },
+      phone: { type: "string", description: "The number to call back." },
+      reason: { type: "string", description: "What it's about, in a few words." },
+      preferred_time: { type: "string", description: "When suits them for the call back, if they said. Optional." },
+      message: { type: "string", description: "Their message for the team. Optional." },
+      channel,
+    },
+    required: ["name", "phone", "reason", "channel"],
+  },
+];
+
 export function bookingTools(client: Business, base: string) {
   const headers = [{ name: "X-Twin-Key", value: client.booking!.token }];
   const url = (action: string) => `${base}/hooks/${client.id}/${action}`;
-  const channel = {
-    type: "string",
-    description: 'How they are talking to you: "call" for a phone call, "sms" for text messages.',
-  };
-  const tool = (name: string, description: string, action: string, properties: Record<string, unknown>, required: string[]) => ({
+  return BOOKING_TOOL_DEFS.map((d) => ({
     type: "webhook",
     timeout_ms: 10000,
     webhook: {
-      name,
-      description,
-      url: url(action),
+      name: d.name,
+      description: d.description,
+      url: url(d.action),
       method: "POST",
       headers,
-      body_parameters: { type: "object", properties, required },
+      body_parameters: { type: "object", properties: d.properties, required: d.required },
     },
-  });
-  return [
-    tool(
-      "check_availability",
-      "Get the free appointment times on one day. Call it before offering any times.",
-      "availability",
-      { date: { type: "string", description: "The day to check, as YYYY-MM-DD in the business's time zone." } },
-      ["date"],
-    ),
-    tool(
-      "book_appointment",
-      "Book a time from check_availability, once you have their name and mobile number and they have agreed to the time.",
-      "book",
-      {
-        start: { type: "string", description: "The start value of the chosen slot, exactly as check_availability returned it." },
-        name: { type: "string", description: "Their full name." },
-        phone: { type: "string", description: "Their mobile number." },
-        service: { type: "string", description: "What the appointment is for, from the list of services." },
-        email: { type: "string", description: "Their email address, if they gave one, for their confirmation. Optional." },
-        notes: { type: "string", description: "Anything else the team should know. Optional." },
-        channel,
-      },
-      ["start", "name", "phone", "service", "channel"],
-    ),
-    tool(
-      "request_callback",
-      "Ask the team to call someone back: when they want a person, have a question you can't answer, or a booking couldn't be made.",
-      "callback",
-      {
-        name: { type: "string", description: "Their name." },
-        phone: { type: "string", description: "The number to call back." },
-        reason: { type: "string", description: "What it's about, in a few words." },
-        preferred_time: { type: "string", description: "When suits them for the call back, if they said. Optional." },
-        message: { type: "string", description: "Their message for the team. Optional." },
-        channel,
-      },
-      ["name", "phone", "reason", "channel"],
-    ),
-  ];
+  }));
 }
 
 // Free times over the next few open days, as plain lines for an email reply.

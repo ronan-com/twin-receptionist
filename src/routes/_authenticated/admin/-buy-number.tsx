@@ -49,7 +49,7 @@ export function BuyNumber({ clientId, timezone, onBought }: { clientId: string; 
       <Button type="button" size="sm" variant="outline" className="h-8 w-full text-[12.5px]" onClick={() => setOpen(true)} data-action="buy-number">
         <Phone /> Add a number
       </Button>
-      <p className="mt-1.5 text-[11.5px] text-ink-muted">Buy one (charged to your Telnyx account each month) or use one you already own there.</p>
+      <p className="mt-1.5 text-[11.5px] text-ink-muted">Buy one (charged to your Telnyx account each month) or use one you already own there. Twilio numbers work with the Vapi voice engine.</p>
 
       <Dialog
         open={open}

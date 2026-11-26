@@ -8,6 +8,7 @@ import { importLegacyData } from "./legacy";
 import { mailerReady, sendAccountEmail } from "./mailer";
 import { ValidationError } from "./prompt";
 import { UI_PRODUCT } from "./product";
+import { accountMode, providerOfOrg } from "./voice/config";
 import { supportAccessOpen, supportSeller } from "./supportAccess";
 
 // People sign in with an email and password. Each person belongs to one or more
@@ -225,8 +226,7 @@ export async function account(ctx: Ctx): Promise<Account> {
     where m.user_id = ${ctx.user.id} order by o.name`;
   let telnyx: Account["telnyx"] = "none";
   if (ctx.org) {
-    const [t] = await sql`select telnyx_key is not null as own, platform_telnyx from orgs where id = ${ctx.org.id}`;
-    telnyx = t?.own ? "own" : t?.platform_telnyx ? "platform" : "none";
+    telnyx = await accountMode(ctx.org.id, await providerOfOrg(ctx.org.id));
   }
   const consoleKind = consoleOf(ctx);
   return {

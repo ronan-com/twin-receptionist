@@ -48,6 +48,8 @@ export const AUTOMATIONS = `Automations (on each receptionist, each has a switch
 
 export const NUMBERS_PLATFORM = `Phone numbers on this account: the agency does not buy numbers itself. On a client's page, request a number (Number Requests page shows progress); the platform team connects it. Never name the phone provider and never mention prices or costs of numbers. Australian numbers need proof of address, and mobiles also need ID, so approval takes about 1 to 3 days. Until then a number shows as ordered, not connected. Browser test calls work without any number.`;
 
+export const NUMBERS_TWILIO = `Twilio numbers (optional): an agency can connect its own Twilio account under Connections (Account SID plus Auth Token, or an API Key). Twilio numbers work with the Vapi voice engine only, so a receptionist on Telnyx keeps Telnyx numbers. On a Vapi receptionist's page, Add a number lets you buy a Twilio number or use one already on the account; the agency pays Twilio directly. Australian numbers need a regulatory bundle (business details and proof of address) approved in the Twilio console first, usually 1 to 3 business days; until then the page shows it as waiting for approval. A Twilio mobile number that can text also sends that receptionist's follow-up texts (after-call, reminders, missed calls, reviews). Vapi receptionists have no Telnyx texting.`;
+
 export const NUMBERS_OWN = `Phone numbers on this account: the agency has its own phone account (Telnyx), connected under Connections (or set during install). To get a number, open the client's page and click Buy a number; the monthly price is shown before confirming and is charged to the agency's own phone account, so keep credit topped up (auto recharge helps). Australian numbers need proof of address in Telnyx, and mobiles also need ID; approval takes about 1 to 3 days. Until then a number shows as ordered, not connected. Browser test calls work without any number. Once a number is connected, ring it from a mobile to test, and only then forward the client's public number to it (note the client's original forwarding first so it can be restored).`;
 
 export const NUMBERS_NONE = `Phone numbers on this account: the agency has not connected its phone account yet. It must connect one first (Connections, or the Setup screen) before numbers can be bought. Australian numbers need proof of address, and mobiles also need ID; approval takes about 1 to 3 days. Browser test calls work without any number.`;
@@ -63,7 +65,7 @@ export const HOWTOS = `Common how-tos:
 - Every day: check failed or missed calls and open follow-ups. Every week: place a test call to each client and review unanswered questions.`;
 
 export function numbersFor(mode: PhoneMode, singleAgency: boolean): string {
-  if (singleAgency || mode === "own") return NUMBERS_OWN;
+  if (singleAgency || mode === "own") return `${NUMBERS_OWN} ${NUMBERS_TWILIO}`;
   if (mode === "platform") return NUMBERS_PLATFORM;
   return NUMBERS_NONE;
 }

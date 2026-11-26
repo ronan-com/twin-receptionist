@@ -11,6 +11,7 @@ import { UI_PRODUCT } from "./product";
 import { ValidationError } from "./prompt";
 import { json, readBody } from "./routes/http";
 import { hasKey } from "./telnyx";
+import { installProvider } from "./voice/config";
 import { ACCESS_KEY, DURATIONS, SYNC_KEY, accessOpen, readAccess, readSync, supportSeller, syncAllowed, syncEnabled, type AccessSetting, type Duration, type SyncSetting } from "./supportAccess";
 import { putSetting } from "./store";
 
@@ -207,7 +208,7 @@ export async function buildSnapshot(): Promise<Record<string, any>> {
     sentAt: new Date().toISOString(),
     appVersion: appVersion(),
     publicUrl: base,
-    health: { ok: dbOk && (c.open_incidents ?? 0) === 0, db: dbOk, phoneKey: hasKey(), openIncidents: c.open_incidents ?? 0 },
+    health: { ok: dbOk && (c.open_incidents ?? 0) === 0, db: dbOk, phoneKey: installProvider() === "vapi" ? Boolean(process.env.VAPI_API_KEY) : hasKey(), openIncidents: c.open_incidents ?? 0 },
     counts: {
       agencies: c.agencies, clients: c.clients, receptionists: c.receptionists, numbers: c.numbers,
       calls24h: c.calls24h, calls7d: c.calls7d, calls30d: c.calls30d, bookings7d: c.bookings7d, errors24h: c.errors24h,

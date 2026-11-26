@@ -18,6 +18,7 @@ import { isDemo } from "../sandbox";
 import { getClient, orgOfClient, saveClient } from "../store";
 import { json, readBody, type ClientAccess, type ClientRouteArgs } from "./http";
 import { UI_PRODUCT } from "../product";
+import { providerOfClient } from "../voice/config";
 
 // Area S (workspace, manage): receptionist settings, knowledge, call handling,
 // integrations, team and the business profile, for one business.
@@ -143,7 +144,7 @@ async function answeredAgent(c: Business, orgSuspended: boolean, voices?: Voice[
     profile: s.profile ?? {},
     phone_numbers: c.phoneNumbers ?? [],
     speaking_speed: 1,
-    provider: "telnyx",
+    provider: providerOfClient(c),
     provider_agent_id: isDemo(c.assistantId) ? null : c.assistantId,
     provider_config_id: null,
     llm_model: null,
@@ -196,7 +197,8 @@ async function answeredAgent(c: Business, orgSuspended: boolean, voices?: Voice[
 // What the carrier says about each of the receptionist's numbers, by number. Best effort:
 // a number that's still being approved isn't answering yet. Empty when the carrier can't be asked.
 async function carrierStatuses(c: Business): Promise<Map<string, string>> {
-  if (isDemo(c.assistantId) || !(c.phoneNumbers ?? []).length) return new Map();
+  // Vapi numbers have no approval step to report on.
+  if (isDemo(c.assistantId) || providerOfClient(c) !== "telnyx" || !(c.phoneNumbers ?? []).length) return new Map();
   try {
     return new Map((await connectedNumbers(await voiceAppFor(c.assistantId))).map((n) => [n.phoneNumber, n.status]));
   } catch {
@@ -220,7 +222,7 @@ async function answeredNumbers(c: Business) {
     routing_mode: "ai_receptionist",
     capabilities: { voice: true, sms: e164.startsWith("+614") },
     country: countryOfNumber(e164) ?? "AU",
-    provider: "telnyx",
+    provider: providerOfClient(c),
     health: degraded ? "degraded" : "healthy",
     last_health_check_at: iso(c.updatedAt),
     forward_to: null,
@@ -246,7 +248,7 @@ async function answeredNumbers(c: Business) {
       routing_mode: "ai_receptionist",
       capabilities: { voice: true, sms: r.type === "mobile" },
       country: countryForTimezone(c.settings.timezone),
-      provider: "telnyx",
+      provider: providerOfClient(c),
       health: "unknown",
       last_health_check_at: null,
       forward_to: null,

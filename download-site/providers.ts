@@ -13,6 +13,7 @@ export const CF_API = (process.env.CF_API_BASE || (CONFIG.mockCF ? M(3) + "/clie
 export const RESEND_API = (process.env.RESEND_API_BASE || (CONFIG.mockResend ? M(4) : "https://api.resend.com")).replace(/\/$/, "");
 export const RAILWAY_API = (process.env.RAILWAY_API_BASE || (CONFIG.mockRailway ? M(6) : "https://backboard.railway.com")).replace(/\/$/, "");
 const TELNYX_API = "https://api.telnyx.com";
+const VAPI_API = "https://api.vapi.ai";
 const UA = "receptionist-setup/1.0";
 
 export type Check<T = {}> = ({ ok: true; message: string } & T) | { ok: false; message: string };
@@ -297,6 +298,46 @@ export async function checkTelnyx(key: string): Promise<Check<{ balance: string 
   const d = json.data || {};
   const balance = `${Number(d.available_credit ?? d.balance ?? 0).toFixed(2)} ${d.currency || "USD"}`;
   return { ok: true, message: `Telnyx key works. Available credit: ${balance}.`, balance };
+}
+
+// ======================= Vapi =======================
+// Phones can run on Vapi instead of Telnyx. The private key is checked with one cheap read;
+// the public key (the browser test call uses it) can only be checked for its shape.
+export async function checkVapi(key: string, publicKey: string): Promise<Check<{}>> {
+  if (!key) return { ok: false, message: "Paste your Vapi private API key first." };
+  if (hasSpace(key) || hasSpace(publicKey)) return { ok: false, message: "That key has spaces in it: copy just the key." };
+  if (!publicKey) return { ok: false, message: "Paste your Vapi public key too. It's the other key on the same API Keys page." };
+  if (key === publicKey) return { ok: false, message: "Those two are the same key. The private key and the public key are different ones on Vapi's API Keys page." };
+  const bad = "Vapi didn't accept that private key: copy it again from API Keys in the Vapi dashboard, or make a new one.";
+  if (CONFIG.mockTelnyx) {
+    // Test mode: never calls Vapi. Only pretend keys (platform-fake-...) pass.
+    return key.startsWith("platform-fake-") ? { ok: true, message: "Vapi key works (test mode)." } : { ok: false, message: bad };
+  }
+  const { status, json } = await call("Vapi", `${VAPI_API}/assistant?limit=1`, { headers: { Authorization: `Bearer ${key}`, Accept: "application/json", "User-Agent": UA } }).catch((e) => ({ status: -1, json: { e } }));
+  if (status === -1) return { ok: false, message: (json.e as Error).message };
+  if (status === 401 || status === 403) return { ok: false, message: bad };
+  if (status !== 200) return { ok: false, message: `Vapi had a problem (error ${status}). Wait a minute and try again.` };
+  return { ok: true, message: "Vapi key works." };
+}
+
+// ======================= Twilio (optional, with Vapi) =======================
+// Another place phone numbers can come from. Checked with one read of the account.
+export async function checkTwilio(accountSid: string, authToken: string): Promise<Check<{ name: string }>> {
+  if (!accountSid && !authToken) return { ok: false, message: "Paste your Twilio Account SID and Auth Token." };
+  if (!/^AC[0-9a-f]{32}$/i.test(accountSid)) return { ok: false, message: "That isn't a Twilio Account SID. It starts with AC and is 34 characters; it's on the front page of the Twilio console." };
+  if (!authToken || hasSpace(authToken)) return { ok: false, message: "Paste the Twilio Auth Token (one line, no spaces)." };
+  const bad = "Twilio didn't accept those: copy the Account SID and Auth Token again from the front page of the Twilio console.";
+  if (CONFIG.mockTelnyx) {
+    // Test mode: never calls Twilio. Only a pretend account passes.
+    return accountSid === "AC" + "0".repeat(32) ? { ok: true, message: "Twilio works (test mode).", name: "Test account" } : { ok: false, message: bad };
+  }
+  const auth = Buffer.from(`${accountSid}:${authToken}`).toString("base64");
+  const { status, json } = await call("Twilio", `https://api.twilio.com/2010-04-01/Accounts/${accountSid}.json`, { headers: { Authorization: `Basic ${auth}`, Accept: "application/json", "User-Agent": UA } }).catch((e) => ({ status: -1, json: { e } }));
+  if (status === -1) return { ok: false, message: (json.e as Error).message };
+  if (status === 401 || status === 403 || status === 404) return { ok: false, message: bad };
+  if (status !== 200) return { ok: false, message: `Twilio had a problem (error ${status}). Wait a minute and try again.` };
+  if (json?.status && json.status !== "active") return { ok: false, message: `That Twilio account is ${json.status}. Reactivate it in Twilio first.` };
+  return { ok: true, message: "Twilio works.", name: String(json?.friendly_name ?? "") };
 }
 
 // ======================= Resend =======================

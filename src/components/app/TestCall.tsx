@@ -1,6 +1,7 @@
 import { createElement, useEffect, useRef, useState } from "react";
 import { Mic } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { VapiTestCall } from "./VapiTestCall";
 
 // The widget's own start button, inside its shadow root (it is the only button
 // before a call; the in-call controls appear once the call is up).
@@ -14,7 +15,13 @@ function startButton(el: Element): HTMLButtonElement | null {
  * connected, so the widget's own "Talk to…" button never needs pressing. The
  * widget's in-call controls (mute, hang up, transcript) stay as they are.
  */
-export function TestCall({ assistantId, big = false }: { assistantId: string; big?: boolean }) {
+export function TestCall({ assistantId, provider, clientId, big = false }: { assistantId: string; provider?: string; clientId?: string; big?: boolean }) {
+  // A Vapi receptionist is called with Vapi's web SDK; everything else is the Telnyx widget below, as it always was.
+  if (provider === "vapi" && clientId) return <VapiTestCall assistantId={assistantId} clientId={clientId} big={big} />;
+  return <TelnyxTestCall assistantId={assistantId} big={big} />;
+}
+
+function TelnyxTestCall({ assistantId, big }: { assistantId: string; big: boolean }) {
   const holder = useRef<HTMLDivElement>(null);
   const [open, setOpen] = useState(false);
   const [ready, setReady] = useState(false);

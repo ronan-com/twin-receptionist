@@ -6,21 +6,23 @@ import { Building2, CalendarCheck, Check, CircleAlert, ExternalLink, KeyRound, L
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
 import type { Hue } from "@/components/app/hues";
 import { ErrorState, Notice, PageHeader, PageSkeleton, Panel } from "@/components/app/primitives";
 import { StatusBadge } from "@/components/app/StatusBadge";
 import { fmtCredit, phoneAccountQuery, phoneApi } from "@/lib/api/phone";
 import { fmtDate } from "@/lib/app/format";
 import type { PhoneAccount } from "@/lib/shared";
+import { EngineChoice, PhoneKeyFields, engineName, keysReady, type PhoneKeyValue } from "@/components/app/PhoneKeyFields";
 import { cn } from "@/lib/utils";
 import { READ_ONLY_HINT, useConsole } from "./-shared";
+import { TwilioCard } from "./-twilio-card";
 import { PRODUCT } from "@/lib/app/product";
 
 // Connections: what the agency has plugged in. The phone account is the one that
 // matters (nothing answers without it); the rest are counts with a way in.
 
 const TELNYX_PORTAL = "https://portal.telnyx.com/";
+const VAPI_DASHBOARD = "https://dashboard.vapi.ai/";
 
 export const Route = createFileRoute("/_authenticated/admin/connections")({
   head: () => ({ meta: [{ title: `Connections — ${PRODUCT} admin` }] }),
@@ -28,7 +30,7 @@ export const Route = createFileRoute("/_authenticated/admin/connections")({
 });
 
 function ConnectionsPage() {
-  const { platform, readOnly } = useConsole();
+  const { platform, readOnly, canManage, role, ws } = useConsole();
   const q = useQuery(phoneAccountQuery());
 
   if (q.error) return <ErrorState message={(q.error as Error).message} onRetry={() => void q.refetch()} />;
@@ -51,6 +53,8 @@ function ConnectionsPage() {
 
       <PhoneCard account={a} platform={platform} />
 
+      <TwilioCard engine={a.provider} canManage={canManage} isOwner={role === "owner" || ws.isPlatformAdmin} readOnly={readOnly} />
+
       <div className="grid gap-3 md:grid-cols-3">
         <CountCard icon={Building2} hue="indigo" label="Clients" count={a.counts.clients} hint="Businesses you run receptionists for." to="/admin/clients" cta="Open clients" />
         <CountCard
@@ -58,7 +62,7 @@ function ConnectionsPage() {
           hue="cyan"
           label="Phone numbers"
           count={a.counts.numbers}
-          hint={a.mode === "own" || a.installed ? "Bought on your Telnyx account, from each client's page." : "Each number rings one receptionist."}
+          hint={a.provider === "vapi" ? "Buy or bring a Twilio number (or bring a Telnyx one) from each client's page." : a.mode === "own" || a.installed ? "Bought on your Telnyx account, from each client's page." : "Each number rings one receptionist."}
           to="/admin/phone-numbers"
           cta="Open numbers"
         />
@@ -75,19 +79,21 @@ function PhoneCard({ account: a, platform }: { account: PhoneAccount; platform: 
   const qc = useQueryClient();
   const [replacing, setReplacing] = useState(false);
   const [removing, setRemoving] = useState(false);
-  const [key, setKey] = useState("");
+  const [keys, setKeys] = useState<PhoneKeyValue>({ provider: a.provider, key: "", publicKey: "" });
+  const name = engineName(a.provider);
+  const portal = a.provider === "vapi" ? VAPI_DASHBOARD : TELNYX_PORTAL;
 
   const done = async (acct: PhoneAccount) => {
     qc.setQueryData(phoneAccountQuery().queryKey, acct);
     await qc.refetchQueries({ queryKey: ["session"] });
   };
   const replace = useMutation({
-    mutationFn: () => phoneApi.connect(key.trim()),
+    mutationFn: () => phoneApi.connect(keys.key.trim(), keys.provider === "vapi" ? { provider: "vapi", publicKey: keys.publicKey.trim() } : { provider: "telnyx" }),
     onSuccess: async (acct) => {
       await done(acct);
       setReplacing(false);
-      setKey("");
-      toast.success("Key replaced", { description: "Checked with Telnyx and saved." });
+      setKeys({ provider: acct.provider, key: "", publicKey: "" });
+      toast.success(keys.provider === acct.provider && keys.provider === a.provider ? "Key replaced" : `Now using ${engineName(acct.provider)}`, { description: `Checked with ${engineName(acct.provider)} and saved.` });
     },
   });
   const disconnect = useMutation({
@@ -95,7 +101,7 @@ function PhoneCard({ account: a, platform }: { account: PhoneAccount; platform: 
     onSuccess: async (acct) => {
       await done(acct);
       setRemoving(false);
-      toast.success("Telnyx account disconnected");
+      toast.success(`${name} account disconnected`);
     },
     onError: (e: Error) => toast.error("Couldn't disconnect", { description: e.message }),
   });
@@ -112,7 +118,7 @@ function PhoneCard({ account: a, platform }: { account: PhoneAccount; platform: 
           </span>
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
-              <h2 className="text-[16px] font-semibold text-ink">{a.mode === "platform" && !a.installed ? "Phone account" : "Telnyx account"}</h2>
+              <h2 className="text-[16px] font-semibold text-ink">{a.mode === "platform" && !a.installed ? "Phone account" : `${name} account`}</h2>
               {a.mode === "own" ? (
                 <StatusBadge tone={healthy ? "success" : "danger"} dot>
                   {healthy ? "Connected" : "Needs attention"}
@@ -129,22 +135,26 @@ function PhoneCard({ account: a, platform }: { account: PhoneAccount; platform: 
             </div>
             {a.mode === "own" ? (
               <p className="mt-1 text-[13px] text-ink-muted">
-                Your own Telnyx account · key ending <span className="font-mono text-ink">{a.last4}</span>
+                Your own {name} account · key ending <span className="font-mono text-ink">{a.last4}</span>
                 {a.connectedAt ? ` · connected ${fmtDate(a.connectedAt)}` : ""}
               </p>
             ) : a.mode === "platform" ? (
               <p className="mt-1 max-w-[560px] text-[13px] text-ink-muted">
                 {a.installed
-                  ? "Your Telnyx account, set when this server was installed (TELNYX_API_KEY). Numbers you buy for clients are charged to it."
+                  ? `Your ${name} account, set when this server was installed (${a.provider === "vapi" ? "VAPI_API_KEY" : "TELNYX_API_KEY"}). ${a.provider === "vapi" ? "Calls are charged to it." : "Numbers you buy for clients are charged to it."}`
                   : platform ? "The platform's own phone account, set on the server. Agencies that bring their own connect it in Setup." : "Your phone service is set up and run for you. There's nothing to connect here."}
               </p>
             ) : (
-              <p className="mt-1 max-w-[560px] text-[13px] text-ink-muted">Nothing can answer calls until you connect your Telnyx account. Set-up walks you through it.</p>
+              <p className="mt-1 max-w-[560px] text-[13px] text-ink-muted">Nothing can answer calls until you connect your {name} account. Set-up walks you through it.</p>
             )}
           </div>
         </div>
 
-        {a.mode === "own" ? (
+        {a.mode === "own" && a.provider === "vapi" ? (
+          <div className="shrink-0 text-[12.5px] text-ink-muted" data-card="credit">
+            Credit and usage are in your Vapi dashboard.
+          </div>
+        ) : a.mode === "own" ? (
           <div className="flex shrink-0 items-end gap-6">
             <div data-card="credit">
               <div className="text-[11.5px] text-ink-muted">Credit</div>
@@ -161,7 +171,7 @@ function PhoneCard({ account: a, platform }: { account: PhoneAccount; platform: 
       {a.mode === "own" ? (
         <div className="space-y-3 border-t border-[var(--hue-line)] bg-white/70 px-5 py-3.5">
           {a.problem ? (
-            <Notice tone="danger" title="Telnyx isn't accepting your key">
+            <Notice tone="danger" title={`${name} isn't accepting your key`}>
               {a.problem} Until it's fixed, changes to your receptionists won't save.
             </Notice>
           ) : a.lowCredit ? (
@@ -171,8 +181,8 @@ function PhoneCard({ account: a, platform }: { account: PhoneAccount; platform: 
           ) : null}
           <div className="flex flex-wrap items-center gap-2">
             <Button asChild size="sm" variant="outline" className="h-8 text-[12.5px]">
-              <a href={TELNYX_PORTAL} target="_blank" rel="noreferrer noopener">
-                Open Telnyx <ExternalLink />
+              <a href={portal} target="_blank" rel="noreferrer noopener">
+                Open {name} <ExternalLink />
               </a>
             </Button>
             <Button asChild size="sm" variant="ghost" className="h-8 text-[12.5px]">
@@ -199,7 +209,7 @@ function PhoneCard({ account: a, platform }: { account: PhoneAccount; platform: 
         onOpenChange={(open) => {
           setReplacing(open);
           if (!open) {
-            setKey("");
+            setKeys({ provider: a.provider, key: "", publicKey: "" });
             replace.reset();
           }
         }}
@@ -207,17 +217,20 @@ function PhoneCard({ account: a, platform }: { account: PhoneAccount; platform: 
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Replace your API key</DialogTitle>
-            <DialogDescription>Use a key from the same Telnyx account. Your receptionists live in that account, so a key from another one won't reach them.</DialogDescription>
+            <DialogDescription>
+              Use a key from the same {name} account. Your receptionists live in that account, so a key from another one won't reach them. To use {a.provider === "vapi" ? "Telnyx" : "Vapi"} for new receptionists instead, choose it below: receptionists you already have stay on {name}.
+            </DialogDescription>
           </DialogHeader>
           <form
             id="replace-key"
             onSubmit={(e) => {
               e.preventDefault();
-              if (key.trim()) replace.mutate();
+              if (keysReady(keys)) replace.mutate();
             }}
-            className="space-y-2"
+            className="space-y-3"
           >
-            <Input type="password" value={key} onChange={(e) => setKey(e.target.value)} placeholder="KEY…" autoComplete="off" spellCheck={false} aria-label="New Telnyx API key" className="font-mono text-[13px]" data-field="api-key" />
+            <EngineChoice value={keys.provider} onChange={(provider) => setKeys({ provider, key: "", publicKey: "" })} />
+            <PhoneKeyFields value={keys} onChange={setKeys} idPrefix="replace" />
             {replace.error ? (
               <div role="alert" className="rounded-[6px] border border-[#ffd0d0] bg-[#fff7f7] px-3 py-2 text-[12.5px] text-[#a41d1d]">
                 {(replace.error as Error).message}
@@ -228,7 +241,7 @@ function PhoneCard({ account: a, platform }: { account: PhoneAccount; platform: 
             <Button variant="outline" onClick={() => setReplacing(false)}>
               Cancel
             </Button>
-            <Button type="submit" form="replace-key" disabled={!key.trim() || replace.isPending}>
+            <Button type="submit" form="replace-key" disabled={!keysReady(keys) || replace.isPending}>
               {replace.isPending ? "Checking…" : "Check and save"}
             </Button>
           </DialogFooter>
@@ -238,9 +251,9 @@ function PhoneCard({ account: a, platform }: { account: PhoneAccount; platform: 
       <AlertDialog open={removing} onOpenChange={setRemoving}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Disconnect your Telnyx account?</AlertDialogTitle>
+            <AlertDialogTitle>Disconnect your {name} account?</AlertDialogTitle>
             <AlertDialogDescription>
-              This dashboard will stop managing your receptionists: you won't be able to change them, add clients or see new calls until you connect a key again. Nothing is deleted in Telnyx.
+              This dashboard will stop managing your receptionists: you won't be able to change them, add clients or see new calls until you connect a key again. Nothing is deleted in {name}.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -285,13 +298,15 @@ function Health({ account: a }: { account: PhoneAccount }) {
   if (a.mode === "platform") return null;
   const connected = a.mode === "own" && !a.problem;
   const rows: { ok: boolean; warn?: boolean; label: string; detail: string }[] = [
-    { ok: connected, label: "Telnyx account connected", detail: connected ? "Telnyx accepts your key." : a.problem || "Connect your Telnyx key in Setup." },
-    {
-      ok: connected && !a.lowCredit,
-      warn: connected && a.lowCredit,
-      label: "Enough credit for calls",
-      detail: !connected ? "Checked once your account is connected." : a.lowCredit ? `Only ${fmtCredit(a.balance)} left. Top up in Telnyx.` : `${fmtCredit(a.balance)} available.`,
-    },
+    { ok: connected, label: `${engineName(a.provider)} account connected`, detail: connected ? `${engineName(a.provider)} accepts your key.` : a.problem || `Connect your ${engineName(a.provider)} key in Setup.` },
+    a.provider === "vapi"
+      ? { ok: connected, label: "Credit for calls", detail: "Check your balance in the Vapi dashboard. If it runs out, receptionists stop answering." }
+      : {
+          ok: connected && !a.lowCredit,
+          warn: connected && a.lowCredit,
+          label: "Enough credit for calls",
+          detail: !connected ? "Checked once your account is connected." : a.lowCredit ? `Only ${fmtCredit(a.balance)} left. Top up in Telnyx.` : `${fmtCredit(a.balance)} available.`,
+        },
     { ok: a.counts.clients > 0, label: "First client added", detail: a.counts.clients > 0 ? `${a.counts.clients} so far.` : "Add a client to make its receptionist." },
     { ok: a.counts.numbers > 0, label: "A phone number connected", detail: a.counts.numbers > 0 ? `${a.counts.numbers} connected.` : "Until then, receptionists can only be tested from the browser." },
   ];

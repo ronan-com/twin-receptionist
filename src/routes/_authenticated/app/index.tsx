@@ -170,7 +170,7 @@ function HomePage() {
         ) : null}
         {canTest && agent?.provider_agent_id ? (
           <div className="mt-4">
-            <TestCall assistantId={agent.provider_agent_id} big />
+            <TestCall assistantId={agent.provider_agent_id} provider={agent.provider ?? undefined} clientId={ws.businessId!} big />
           </div>
         ) : null}
       </section>

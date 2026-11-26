@@ -34,7 +34,7 @@ import { isLocal } from "./auth";
 import { migrate, sql } from "./db";
 import { checkEmail, connectEmail, connectedClientIds, disconnectEmail, emailStatus } from "./email";
 import { SAMPLE_OWNED, attachNumber, detachNumber, ownedUnassigned, sampleOwned } from "./ownNumbers";
-import { availableNumbers, buyNumber, callSummary, checkBuyable, connectedNumbers, openOrders, sampleNumbers, searchFor, voiceAppFor } from "./numbers";
+import { checkBuyable, sampleNumbers, searchFor } from "./numbers";
 import { ValidationError, buildInstructions, greetingOf, knowledgeFor, normaliseSettings } from "./prompt";
 import { clientsWithBooking, getClient, getOrgClient, insertClient, listClients, orgOfClient, removeClient, saveClient } from "./store";
 import { TelnyxError, enterOrg, hasKey, runAsOrg, telnyx } from "./telnyx";
@@ -58,7 +58,8 @@ import { changeBrand, ownBrand, serveAsset, uploadAsset } from "./brand";
 import { accessibleClients, customerClientId, setFollowUpStage, customersFor, inviteCustomer, removeCustomer, revokeCustomerInvite } from "./customers";
 import { createRequest, declineRequest, listRequests, markDone, pendingCount, pendingRequest, requestsForClient, settleRequests } from "./numberRequests";
 import { createAgency, exitView, inviteAgencyOwner, viewAs, isSuspended, listAgencies, telnyxSettings, updateAgency } from "./agencies";
-import { canBuyNumbers, canUseOwnNumbers, checkKey, connectPhoneAccount, countCheck, disconnectPhoneAccount, phoneAccount, pretendAccount, requirePhoneAccount } from "./phoneAccount";
+import { canBuyNumbers, canUseOwnNumbers, canUseTwilio, checkKey, checkVapiKeys, connectPhoneAccount, connectTwilio, countCheck, disconnectPhoneAccount, disconnectTwilio, phoneAccount, pretendAccount, requirePhoneAccount, testTwilio, twilioAccount } from "./phoneAccount";
+import { availableTwilioNumbers, isTestTwilio, requireTwilio, twilioNumbersFor, twilioRegulatory } from "./twilio";
 import { previewEmail, sendSimText, startTextSim } from "./simulator";
 import {
   connectFromLink,
@@ -74,7 +75,6 @@ import {
   availability,
   book,
   bookingLive,
-  bookingTools,
   callback,
   loadPublicUrl,
   newToken,
@@ -90,90 +90,31 @@ import { oauthAvailable } from "./oauth";
 import { refresh as loadPlatformSettings } from "./platformSettings";
 import { platformSettingsRoutes } from "./platformSettingsApi";
 import type { BookingProvider, BookingState } from "../src/lib/shared";
-import {
-  connectNumberForTexts,
-  enableTexting,
-  removeTextingProfile,
-  sendTestText,
-  textingProfileId,
-  textingState,
-} from "./texting";
+import { connectNumberForTexts, enableTexting, sendTestText, textingState } from "./texting";
+import { BOOKING_TOOL_DEFS } from "./booking";
+import { VapiError, installProvider, providerOfClient } from "./voice/config";
+import { voiceFor, voiceForOrg } from "./voice";
+import type { VoiceProvider } from "./voice/provider";
+import { toolAllowed } from "./voice/tools";
+import { startVapiHours } from "./voice/vapiHours";
+import { vapiEvents, vapiToolHook } from "./voice/vapiWebhook";
 
 const PORT = Number(process.env.API_PORT ?? 8791);
-const MODEL = "zai-org/GLM-5.3-Flash";
-
-// Voices that suit a front desk, shown first in the picker.
-const RECOMMENDED = [
-  "Grace - Helpful Hand",
-  "Bronte - Trusted Guide",
-  "Ella - Caring Scout",
-  "Eleanor - Composed Clarifier",
-  "Arlo - Service Specialist",
-  "Cooper - Friendly Mate",
-  "Heath - Calm & Composed",
-  "Fraser - Trusted Communicator",
-];
-
-let voiceCache: Voice[] | null = null;
-
-// Local tests run with a fake provider key: one stand-in voice (see fakeProvider).
-const DEMO_VOICE: Voice = { id: "demo-voice", name: "Grace - Helpful Hand", label: "Demo voice", gender: "female", recommended: true };
-
+// The voices on offer: the agency's voice engine's list (Telnyx's Australian voices, or Vapi's).
 async function loadVoices(): Promise<Voice[]> {
-  if (fakeProvider()) return [DEMO_VOICE];
-  if (voiceCache) return voiceCache;
-  const res = await telnyx<{ voices?: any[]; data?: any[] }>("GET", "/text-to-speech/voices");
-  const all = res.voices ?? res.data ?? [];
-  const seen = new Set<string>();
-  const voices: Voice[] = [];
-  for (const v of all) {
-    const australian = v.language === "en-AU" || v.accent === "Australian";
-    if (v.provider !== "telnyx" || !v.hosted || !australian || seen.has(v.name)) continue;
-    seen.add(v.name);
-    voices.push({
-      id: v.id,
-      name: v.name,
-      label: v.label ?? "",
-      gender: v.gender ?? "",
-      recommended: RECOMMENDED.includes(v.name),
-    });
-  }
-  voices.sort(
-    (a, b) =>
-      Number(b.recommended) - Number(a.recommended) ||
-      RECOMMENDED.indexOf(a.name) - RECOMMENDED.indexOf(b.name) ||
-      a.name.localeCompare(b.name),
-  );
-  voiceCache = voices;
-  return voices;
+  return (await voiceForOrg()).voices();
 }
 
-async function voiceNames(): Promise<Map<string, string>> {
-  return new Map((await loadVoices()).map((v) => [v.id, v.name]));
+async function voiceNames(provider: VoiceProvider): Promise<Map<string, string>> {
+  return new Map((await provider.voices()).map((v) => [v.id, v.name]));
 }
-
-const HANGUP = {
-  type: "hangup",
-  hangup: { description: "End the call once the caller has said goodbye or has nothing else to ask." },
-};
 
 // The script, with the business's published knowledge items (server/routes/manage.ts).
 async function instructionsFor(client: Business, settings = client.settings): Promise<string> {
   return buildInstructions(settings, bookingLive(client) ? { minutes: client.booking!.minutes } : null, await knowledgeFor(client.id));
 }
 
-// Which booking tools the receptionist is given. Paused: only take-a-message. The profile's
-// booking mode narrows it too: "request" can look at times but not book them, "message_only"
-// only takes messages.
-function toolAllowed(s: Settings, name: string): boolean {
-  if (s.paused) return name === "request_callback";
-  const mode = s.profile?.bookingMode;
-  if (mode === "message_only") return name === "request_callback";
-  if (mode === "request") return name !== "book_appointment";
-  return true;
-}
-
-// Pushes the script and tools that match the client's booking setup to Telnyx.
+// Pushes the script and tools that match the client's booking setup to the voice engine.
 // A demo receptionist has no assistant: its script is only saved.
 async function syncAssistant(client: Business): Promise<Business> {
   if (isDemo(client.assistantId)) {
@@ -183,9 +124,8 @@ async function syncAssistant(client: Business): Promise<Business> {
   }
   const instructions = await instructionsFor(client);
   // Paused by the business: only the take-a-message tool stays (server/prompt.ts).
-  const booking = bookingLive(client) ? bookingTools(client, publicUrl()).filter((t: any) => toolAllowed(client.settings, t.webhook?.name)) : [];
-  const tools = [HANGUP, ...booking];
-  await telnyx("POST", `/ai/assistants/${client.assistantId}`, await withAutomations(client, { instructions, tools }));
+  const allowed = BOOKING_TOOL_DEFS.map((d) => d.name).filter((n) => toolAllowed(client.settings, n));
+  await voiceFor(client).syncAssistant(client, instructions, allowed);
   const next = { ...client, instructions, updatedAt: new Date().toISOString() };
   await saveClient(next);
   return next;
@@ -318,23 +258,6 @@ async function hook(req: Request, clientId: string, action: string): Promise<Res
   return json({ error: "Not found" }, 404);
 }
 
-function assistantFields(s: Settings, instructions: string) {
-  const who = s.receptionistName || "your receptionist";
-  return {
-    name: `${s.businessName} · ${UI_PRODUCT}`,
-    description: `Created by the ${UI_PRODUCT} setup.`,
-    instructions,
-    greeting: greetingOf(s),
-    voice_settings: { voice: s.voiceId, voice_speed: 1.0 },
-    widget_settings: {
-      theme: "dark",
-      position: "static",
-      default_state: "expanded",
-      start_call_text: `Talk to ${who}`,
-    },
-  };
-}
-
 // Also used by the self-serve business sign-up (server/routes/signup.ts). A "quick"
 // create (sign-up, or "Create a business" in the Answered UI) fills what a short form
 // doesn't ask: Answered's industry label becomes ours, the industry's usual hours,
@@ -343,7 +266,8 @@ function assistantFields(s: Settings, instructions: string) {
 async function createClient(orgId: string, input: unknown, opts: { quick?: boolean } = {}): Promise<Business> {
   // An agency that must bring its own phone account connects it first (Setup).
   await requirePhoneAccount(orgId);
-  const voices = await voiceNames();
+  const provider = await voiceForOrg(orgId);
+  const voices = await voiceNames(provider);
   const src = { ...((input ?? {}) as Record<string, unknown>) };
   if (opts.quick) {
     src.industry = industryKeyOf(src.industry);
@@ -359,40 +283,28 @@ async function createClient(orgId: string, input: unknown, opts: { quick?: boole
     await insertClient(orgId, demo);
     return demo;
   }
-  const created = await telnyx<{ id?: string; data?: { id: string } }>("POST", "/ai/assistants", {
-    ...assistantFields(settings, instructions),
-    model: MODEL,
-    transcription: { model: "deepgram/flux", language: "en" },
-    tools: [HANGUP],
-    enabled_features: ["telephony"],
-    // Lets the browser test call connect without a phone number.
-    telephony_settings: { supports_unauthenticated_web_calls: true },
-    tags: ["twin-receptionist"],
-  });
-  const assistantId = created.data?.id ?? created.id;
-  if (!assistantId) throw new TelnyxError(502, "The phone service did not return an assistant ID.");
+  const id = crypto.randomUUID();
+  const assistantId = await provider.createAssistant(settings, instructions, id);
 
   const now = new Date().toISOString();
   const client: Business = {
-    id: crypto.randomUUID(),
+    id,
     assistantId,
     settings,
     instructions,
+    ...(provider.id === "vapi" ? { voiceProvider: "vapi" as const } : {}),
     createdAt: now,
     updatedAt: now,
   };
   await insertClient(orgId, client);
-  // Texting is free until a number is attached, so switch it on straight away.
-  // A failure here shouldn't lose the receptionist: the texts card can retry.
-  await enableTexting(assistantId).catch((err) => console.error(`[texting ${client.id}]`, err.message));
   return client;
 }
 
 async function updateClient(existing: Business, input: unknown): Promise<Business> {
-  const settings = normaliseSettings(input, await voiceNames(), existing.settings);
+  const settings = normaliseSettings(input, await voiceNames(voiceFor(existing)), existing.settings);
   const instructions = await instructionsFor(existing, settings);
-  // Telnyx updates an assistant with POST, not PATCH. (The demo receptionist has none.)
-  if (!isDemo(existing.assistantId)) await telnyx("POST", `/ai/assistants/${existing.assistantId}`, await withAutomations({ ...existing, settings }, assistantFields(settings, instructions)));
+  // (The demo receptionist has no assistant.)
+  if (!isDemo(existing.assistantId)) await voiceFor(existing).updateAssistant(existing, settings, instructions);
   const client: Business = { ...existing, settings, instructions, updatedAt: new Date().toISOString() };
   await saveClient(client);
   return client;
@@ -404,20 +316,14 @@ async function numberState(ctx: Ctx, client: Business): Promise<NumberState> {
     const recorded = (client.phoneNumbers ?? []).map((n) => ({ id: n, phoneNumber: n, status: "active", type: typeOfNumber(n) }));
     return { numbers: recorded, pending: [], balance: null, canBuy: await canBuyNumbers(ctx), canUseOwn: await canUseOwnNumbers(ctx), requests: await requestsForClient(client.id) };
   }
-  const voiceApp = await voiceAppFor(client.assistantId);
-  const [numbers, pending, balance] = await Promise.all([
-    connectedNumbers(voiceApp),
-    openOrders(client.id),
-    // The balance is whoever's money pays for the numbers: an agency sees its own,
-    // the platform's is only for the platform team.
-    telnyxSettings(ctx).then((t) => t.balance),
-  ]);
+  const engine = voiceFor(client);
+  const { numbers, pending, balance } = await engine.numbers.state(ctx, client);
   // Remember the connected numbers so the client list can show them without asking Telnyx again.
   const current = numbers.map((n) => n.phoneNumber);
   if (JSON.stringify(current) !== JSON.stringify(client.phoneNumbers ?? [])) {
     await saveClient({ ...client, phoneNumbers: current });
   }
-  return { numbers, pending, balance, canBuy: await canBuyNumbers(ctx), canUseOwn: await canUseOwnNumbers(ctx), requests: await requestsForClient(client.id) };
+  return { provider: engine.id, support: engine.numbers.support(), numbers, pending, balance, canBuy: await canBuyNumbers(ctx), canUseOwn: engine.id === "telnyx" && (await canUseOwnNumbers(ctx)), requests: await requestsForClient(client.id) };
 }
 
 // Numbers on the agency's own Telnyx account that none of its receptionists answers.
@@ -427,11 +333,25 @@ async function ownedNumbers(ctx: Ctx, orgId: string) {
   return ownedUnassigned(await listClients(orgId));
 }
 
+// Numbers on the agency's connected Twilio account, with the receptionist that answers each, and
+// where Australian numbers stand with Twilio's regulatory bundle (the "waiting for approval" part).
+async function twilioNumbers(ctx: Ctx, orgId: string) {
+  if (!(await canUseTwilio(ctx))) throw new AuthError("Only an owner or admin of an agency with a Twilio account connected can use its numbers. Connect Twilio under Connections.", 403);
+  const creds = await requireTwilio(orgId);
+  const taken = new Map<string, string>();
+  for (const c of await listClients(orgId)) {
+    for (const n of c.phoneNumbers ?? []) taken.set(n, c.settings.receptionistName || c.settings.businessName || "another receptionist");
+  }
+  const [numbers, reg] = await Promise.all([twilioNumbersFor(creds, taken), twilioRegulatory(creds, "AU")]);
+  return { numbers, regulatory: { approved: reg.approved, inReview: reg.inReview, consoleUrl: reg.consoleUrl }, test: isTestTwilio(creds) };
+}
+
 // Connects or releases a number the agency already owns, then refreshes the receptionist's
 // script and tools (the transfer and greeting lines mention its number).
 async function changeOwnNumber(ctx: Ctx, orgId: string, client: Business, action: "attach" | "detach", input: any) {
   if (!(await canUseOwnNumbers(ctx))) throw new AuthError("Only an owner or admin of an agency on its own Telnyx account can use numbers it already owns.", 403);
   requireRole(ctx, "admin");
+  if (providerOfClient(client) !== "telnyx") throw new ValidationError("This receptionist runs on Vapi. Bring a Twilio number under Call handling instead.");
   let movedFrom = "";
   if (isDemo(client.assistantId)) {
     // A demo receptionist (local test servers): the number is only recorded.
@@ -552,6 +472,11 @@ async function route(req: Request, server?: { requestIP(r: Request): { address: 
 
   const hookMatch = path.match(/^\/hooks\/([a-f0-9-]{36})\/(availability|book|callback)$/);
   if (hookMatch && method === "POST") return hook(req, hookMatch[1], hookMatch[2]);
+  // Vapi: its tool calls (the same hook behind an envelope) and its end-of-call reports.
+  const vapiTool = path.match(/^\/hooks\/([a-f0-9-]{36})\/vapi\/(availability|book|callback)$/);
+  if (vapiTool && method === "POST") return vapiToolHook(req, vapiTool[1], vapiTool[2], hook);
+  const vapiEvent = path.match(/^\/hooks\/vapi\/([a-f0-9-]{36})$/);
+  if (vapiEvent && method === "POST") return vapiEvents(req, vapiEvent[1]);
   if (path.startsWith("/hooks/automations/")) return (await automationHooks(req, path)) ?? json({ error: "Not found" }, 404);
   // The website chat widget's public API (CORS-limited to the business's own websites).
   if (path.startsWith("/api/webchat/")) return (await webchatPublic(req, path, undefined, server)) ?? json({ error: "Not found" }, 404);
@@ -706,9 +631,9 @@ async function route(req: Request, server?: { requestIP(r: Request): { address: 
           return json({ requests: await listRequests(ctx), pending: await pendingCount() });
         }
         // Bought on our account; each agency's receptionist still lives under its own team.
-        const order = await buyNumber(await voiceAppFor(client.assistantId), client.id, input);
+        const order = await voiceFor(client).numbers.buy(client, input);
         await markDone(r.id, order.phoneNumbers[0] ?? String(input.phoneNumber));
-        if (order.status === "success") {
+        if (order.status === "success" && voiceFor(client).id === "telnyx") {
           const fresh = (await getClient(client.id)) ?? client;
           // Australian mobiles only: US numbers need 10DLC registration in Telnyx before they can text.
           for (const n of order.phoneNumbers.filter((p) => p.startsWith("+614"))) {
@@ -781,6 +706,19 @@ async function route(req: Request, server?: { requestIP(r: Request): { address: 
   // Everything below that talks to Telnyx uses this team's own account.
   enterOrg(orgId);
 
+  // The agency's Twilio account (Connections, optional): checked with Twilio before it's saved.
+  if (path === "/api/twilio-account" || path === "/api/twilio-account/test") {
+    if (ctx.role === "customer" && !ctx.user.platformAdmin) return json({ error: "Not allowed." }, 403);
+    if (path.endsWith("/test")) {
+      if (method !== "POST") return json({ error: "Not found" }, 404);
+      return json(await testTwilio(ctx, await body(req)));
+    }
+    if (method === "GET") return json(await twilioAccount(ctx));
+    if (method === "PUT") return json(await connectTwilio(ctx, await body(req)));
+    if (method === "DELETE") return json(await disconnectTwilio(ctx));
+    return json({ error: "Not found" }, 404);
+  }
+
   // The agency's own phone account (Setup and Connections): its Telnyx key, checked
   // against Telnyx before it's saved. Not for business users.
   if (path === "/api/phone-account" || path === "/api/phone-account/test") {
@@ -789,7 +727,12 @@ async function route(req: Request, server?: { requestIP(r: Request): { address: 
       if (method !== "POST") return json({ error: "Not found" }, 404);
       requireRole(ctx, "admin");
       countCheck(orgId);
-      const checked = await checkKey((await body(req)).key);
+      const input = await body(req);
+      if (input?.provider === "vapi") {
+        await checkVapiKeys(input.key, input.publicKey);
+        return json({ ok: true, balance: null });
+      }
+      const checked = await checkKey(input.key);
       return json({ ok: true, balance: checked.balance });
     }
     if (method === "GET") return json(await phoneAccount(ctx));
@@ -861,7 +804,7 @@ async function route(req: Request, server?: { requestIP(r: Request): { address: 
     if (!client) return json({ error: "Not found" }, 404);
     if (portal[2] === "calls") {
       // Test calls and the text simulator are the agency's, not the customer's.
-      const calls = (await listCalls(client.assistantId, 100)).filter((c) => !c.simulated && c.channel !== "web");
+      const calls = (await listCalls(client, 100)).filter((c) => !c.simulated && c.channel !== "web");
       return json({ calls, receptionist: client.settings.receptionistName || "" });
     }
     if (portal[2] === "receptionist") {
@@ -949,6 +892,15 @@ async function route(req: Request, server?: { requestIP(r: Request): { address: 
 
   if (path === "/api/voices" && method === "GET") return json({ voices: await loadVoices() });
 
+  // What the browser test call needs: Telnyx's agent id, or Vapi's public key and assistant id.
+  const webCall = path.match(/^\/api\/clients\/([a-f0-9-]{36})\/web-call$/);
+  if (webCall && method === "GET") {
+    const found = await clientAccessFor(ctx, orgId, webCall[1]);
+    if (!found) return json({ error: "That business isn't shared with you." }, 404);
+    if (found.orgId !== orgId) enterOrg(found.orgId);
+    return json(await voiceFor(found.client).webCall(found.client.assistantId));
+  }
+
   if (path === "/api/public-url" && method === "GET") return json({ url: publicUrl() });
 
   if (path === "/api/numbers/available" && method === "GET") {
@@ -958,11 +910,19 @@ async function route(req: Request, server?: { requestIP(r: Request): { address: 
     const { country, type } = searchFor(url.searchParams.get("country"), url.searchParams.get("type"));
     // Local test servers with a pretend phone account: sample numbers, nothing asked of Telnyx.
     if (await pretendAccount(orgId)) return json({ numbers: sampleNumbers(type, country) });
-    return json({ numbers: await availableNumbers(type, country) });
+    return json({ numbers: await (await voiceForOrg(orgId)).numbers.search(type, country) });
   }
 
   // Numbers the agency already owns on its Telnyx account (not answering for any receptionist yet).
   if (path === "/api/numbers/owned" && method === "GET") return json({ numbers: await ownedNumbers(ctx, orgId) });
+
+  // Twilio: the agency's connected account (optional). Its numbers, and numbers it can buy there.
+  if (path === "/api/numbers/twilio" && method === "GET") return json(await twilioNumbers(ctx, orgId));
+  if (path === "/api/numbers/twilio/available" && method === "GET") {
+    if (!(await canUseTwilio(ctx))) throw new AuthError("Connect your Twilio account under Connections first.", 403);
+    const { country, type } = searchFor(url.searchParams.get("country"), url.searchParams.get("type"));
+    return json({ numbers: await availableTwilioNumbers(await requireTwilio(orgId), type, country) });
+  }
 
   if (path === "/api/clients") {
     if (method === "GET") return json({ clients: await listClients(orgId) });
@@ -1007,17 +967,7 @@ async function route(req: Request, server?: { requestIP(r: Request): { address: 
       if (method === "PUT") return json({ client: await updateClient(client, await req.json()) });
       if (method === "DELETE") {
         requireRole(ctx, "admin");
-        const demo = isDemo(client.assistantId);
-        const profileId = demo ? null : await textingProfileId(client.assistantId).catch(() => null);
-        if (!demo) await telnyx("DELETE", `/ai/assistants/${client.assistantId}`).catch((err) => {
-          // Already gone on Telnyx's side is fine; anything else should surface.
-          if (!(err instanceof TelnyxError && err.status === 404)) throw err;
-        });
-        if (profileId) {
-          await removeTextingProfile(profileId, client.assistantId).catch((err) =>
-            console.error(`[texting ${client.id}] couldn't remove messaging profile`, err.message),
-          );
-        }
+        if (!isDemo(client.assistantId)) await voiceFor(client).deleteAssistant(client);
         // Its mailbox, calendar, appointments and request log go with it (foreign keys cascade).
         await removeClient(client.id);
         return json({ ok: true });
@@ -1032,12 +982,18 @@ async function route(req: Request, server?: { requestIP(r: Request): { address: 
     } else if (match[2] === "/email/check") {
       if (method === "POST") return json(await checkEmail(client));
     } else if (match[2] === "/texting") {
+      // Texting is a Telnyx feature: a Vapi receptionist has none.
+      if (providerOfClient(client) === "vapi") {
+        if (method === "GET") return json({ enabled: false, numbers: [], waiting: [] });
+        throw new ValidationError("Telnyx texting isn't used with Vapi. Follow-up texts go out from a Twilio number instead.");
+      }
       if (method === "GET") return json(await textingState(client));
       if (method === "POST") {
         await enableTexting(client.assistantId);
         return json(await textingState(client));
       }
     } else if (match[2] === "/texting/numbers") {
+      if (providerOfClient(client) === "vapi") throw new ValidationError("Telnyx texting isn't used with Vapi. Follow-up texts go out from a Twilio number instead.");
       if (method === "POST") return json(await connectNumberForTexts((await getClient(client.id)) ?? client, await req.json()));
     } else if (match[2] === "/connect-link") {
       if (method === "POST") return json(await createConnectLink(client));
@@ -1081,6 +1037,9 @@ async function route(req: Request, server?: { requestIP(r: Request): { address: 
           throw err;
         }
       }
+    } else if ((match[2] === "/simulator/texts" || match[2] === "/simulator/texts/send" || match[2] === "/texting/test") && providerOfClient(client) === "vapi") {
+      // The text simulator and test texts run on Telnyx's chat and messaging.
+      throw new ValidationError("Telnyx texting isn't used with Vapi. Follow-up texts go out from a Twilio number instead.");
     } else if (match[2] === "/simulator/texts") {
       if (method === "POST") return json(await startTextSim(client));
     } else if (match[2] === "/simulator/texts/send") {
@@ -1104,26 +1063,36 @@ async function route(req: Request, server?: { requestIP(r: Request): { address: 
       if (method === "POST") {
         // Numbers cost money every month. On the platform's account, agencies ask
         // (number-requests) and the platform team buys; on its own account an agency buys.
-        if (!(await canBuyNumbers(ctx))) throw new AuthError("Request a number and we'll set it up.", 403);
+        const input = (await req.json()) as { source?: unknown; accountSid?: unknown; apiKeySid?: unknown; phoneNumber?: unknown; number?: unknown; confirm?: unknown };
+        // A Twilio number on the agency's connected Twilio account: the agency pays Twilio, so it's the
+        // agency's owners and admins whatever the phone account behind the voice engine is.
+        const fromTwilio = typeof input?.source === "string" && input.source.startsWith("twilio") && !input.accountSid && !input.apiKeySid;
+        if (fromTwilio) {
+          if (!isDemo(client.assistantId) && providerOfClient(client) !== "vapi") throw new ValidationError("Twilio numbers work with the Vapi voice engine. This receptionist runs on Telnyx.");
+          if (!(await canUseTwilio(ctx))) throw new AuthError("Connect your Twilio account under Connections first. Owners and admins can do that.", 403);
+        } else if (!(await canBuyNumbers(ctx))) throw new AuthError("Request a number and we'll set it up.", 403);
         requireRole(ctx, "admin");
         // A demo receptionist (test lab, local test servers): nothing is bought, the number is only recorded.
         if (isDemo(client.assistantId)) {
-          const picked = (await req.json()) as { phoneNumber?: unknown; confirm?: unknown };
-          const number = String(picked.phoneNumber ?? "");
+          const picked = input;
+          const number = String(picked.phoneNumber ?? picked.number ?? "");
           checkBuyable(number);
-          if (picked.confirm !== true) throw new ValidationError("Confirm the purchase first.");
+          // A number the agency already has costs nothing new; a purchase needs its confirmation.
+          if (input.source !== "twilio" && picked.confirm !== true) throw new ValidationError("Confirm the purchase first.");
           const withNumber = { ...client, phoneNumbers: [...new Set([...(client.phoneNumbers ?? []), number])], updatedAt: new Date().toISOString() };
           await saveClient(withNumber);
           if (singleAgency()) await settleRequests(client.id, number);
           await audit(ctx, "number.buy", { number, demo: true }, { clientId: client.id });
           return json({ order: { id: `demo-${number}`, status: "success", requirementsMet: true, phoneNumbers: [number], createdAt: withNumber.updatedAt }, ...(await numberState(ctx, withNumber)) }, 201);
         }
-        const order = await buyNumber(await voiceAppFor(client.assistantId), client.id, await req.json());
+        // Vapi: a number the agency already has is brought over (import); Telnyx: bought.
+        const order = await (voiceFor(client).id === "vapi" ? voiceFor(client).numbers.attach(client, input) : voiceFor(client).numbers.buy(client, input));
         await audit(ctx, "number.buy", { number: order.phoneNumbers[0] ?? "" }, { clientId: client.id });
         if (singleAgency() && order.phoneNumbers[0]) await settleRequests(client.id, order.phoneNumbers[0]);
         const state = await numberState(ctx, client);
         // A mobile that's live straight away also takes texts. Others can be added from the texts card.
-        if (order.status === "success") {
+        // (Texting is Telnyx's: a Vapi receptionist has none.)
+        if (order.status === "success" && voiceFor(client).id === "telnyx") {
           const fresh = (await getClient(client.id)) ?? client;
           // Australian mobiles only: US numbers need 10DLC registration in Telnyx before they can text.
           for (const n of order.phoneNumbers.filter((p) => p.startsWith("+614"))) {
@@ -1136,7 +1105,7 @@ async function route(req: Request, server?: { requestIP(r: Request): { address: 
       }
     } else if (method === "GET") {
       if (match[3]) return json(await callDetail(client, match[3]));
-      return json({ calls: await listCalls(client.assistantId) });
+      return json({ calls: await listCalls(client) });
     }
   }
 
@@ -1170,6 +1139,10 @@ Bun.serve({
     } catch (err) {
       if (err instanceof ValidationError) return json({ error: err.message }, 400);
       if (err instanceof AuthError) return json({ error: err.message }, err.status);
+      if (err instanceof VapiError) {
+        console.error(`[vapi ${err.status}] ${err.message}`);
+        return json({ error: err.message }, err.status >= 500 ? 502 : 400);
+      }
       if (err instanceof TelnyxError) {
         console.error(`[telnyx ${err.status}] ${err.message}`);
         return json({ error: err.message }, err.status >= 500 ? 502 : 400);
@@ -1186,6 +1159,8 @@ Bun.serve({
 startCallSync();
 // Text-back after calls (server/automations.ts).
 startAutomations();
+// Vapi receptionists: rewrite the greeting when the business opens or closes (server/voice/vapiHours.ts).
+startVapiHours();
 // Health and usage counts to the setup provider, unless the owner turned it off (server/supportSync.ts).
 startSupportSync();
 
@@ -1208,4 +1183,4 @@ setInterval(async () => {
   }
 }, 60_000);
 
-console.log(`Twin Receptionist on http://${HOST}:${PORT} (Telnyx key ${hasKey() ? "loaded" : "MISSING"})`);
+console.log(`Twin Receptionist on http://${HOST}:${PORT} (voice engine ${installProvider()}; Telnyx key ${hasKey() ? "loaded" : "MISSING"}${installProvider() === "vapi" ? `; Vapi key ${process.env.VAPI_API_KEY ? "loaded" : "MISSING"}` : ""})`);

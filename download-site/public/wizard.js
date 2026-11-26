@@ -88,6 +88,7 @@
   // Confirm prompts and no double-submits
   document.addEventListener("submit", function (e) {
     const f = e.target;
+    if (f.classList && f.classList.contains("chat-form")) return; // the help chat handles its own sends
     const b = e.submitter || f.querySelector("button[type=submit]") || document.querySelector('button[form="' + f.id + '"]');
     const msg = b && b.getAttribute("data-confirm");
     if (msg && !window.confirm(msg)) { e.preventDefault(); return; }

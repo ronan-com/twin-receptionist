@@ -10,7 +10,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { useWorkspace } from "@/lib/app/workspace";
 import { InitialsAvatar } from "./primitives";
-import { PRODUCT } from "@/lib/app/product";
+import { OTHER_BRAND, PRODUCT } from "@/lib/app/product";
 
 export function UserMenu() {
   const { user, profile, isInternalAdmin, internalRole, isGuestDemo, signOut, console: consoleKind, org, viewing, exitView } = useWorkspace();
@@ -58,11 +58,13 @@ export function UserMenu() {
             </Link>
           </DropdownMenuItem>
         ) : null}
-        <DropdownMenuItem asChild>
-          <Link to="/" className="cursor-pointer">
-            <ExternalLink className="mr-2 h-4 w-4" /> answeredai.co
-          </Link>
-        </DropdownMenuItem>
+        {OTHER_BRAND ? null : (
+          <DropdownMenuItem asChild>
+            <Link to="/" className="cursor-pointer">
+              <ExternalLink className="mr-2 h-4 w-4" /> answeredai.co
+            </Link>
+          </DropdownMenuItem>
+        )}
         <DropdownMenuSeparator />
         <DropdownMenuItem onSelect={() => void signOut()} className="cursor-pointer text-destructive focus:text-destructive">
           <LogOut className="mr-2 h-4 w-4" /> {isGuestDemo ? "Exit demo" : "Sign out"}

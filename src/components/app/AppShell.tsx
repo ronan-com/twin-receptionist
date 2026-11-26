@@ -11,6 +11,7 @@ import { AgencyMark } from "./AgencyMark";
 import { UserMenu } from "./UserMenu";
 import { useGetStarted } from "@/components/onboarding/GetStarted";
 import { TOUR_NAV_EVENT } from "@/components/onboarding/Tour";
+import { OTHER_BRAND } from "@/lib/app/product";
 
 export interface AppShellProps {
   nav: NavItem[];
@@ -247,7 +248,7 @@ export function AppShell({ nav, variant, brandTo, sidebarHeader, topbarRight, ba
                 ) : null}
                 <div className="font-semibold text-ink">Need a hand?</div>
                 <p className="mt-1 text-ink-muted">
-                  Email <a className="text-indigo hover:underline" href="mailto:support@answeredai.co">support@answeredai.co</a> and a human will reply within one business day.
+                  {OTHER_BRAND ? <>Contact whoever set up your account and they'll help you out.</> : <>Email <a className="text-indigo hover:underline" href="mailto:support@answeredai.co">support@answeredai.co</a> and a human will reply within one business day.</>}
                 </p>
                 <div className="mt-3 space-y-1">
                   <div className="text-ink-muted">Keyboard shortcuts</div>

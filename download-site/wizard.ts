@@ -172,7 +172,7 @@ function railwayStep(c: Ctx) {
   return `${head(c, "Connect Railway", "Your agency runs in your own Railway account. You pay Railway directly, from US$5 a month.")}
 <div class="body">${mainForm(c, "railway", `
   ${secretIn("token", "Paste your Railway token", saved, "Railway account token")}
-  <p class="hint">Railway needs the <b>Hobby</b> plan (it asks for a card). Make the token with <b>No workspace</b>.</p>
+  <p class="hint">Railway's free trial (US$5 of credit) is enough to start. Add a card in Railway (Hobby plan, US$5 a month) before the credit runs out. Make the token with <b>No workspace</b>.</p>
   ${showMeHow(["railway-token"])}`)}</div>
 ${nav(c, primary("Check and continue"))}`;
 }

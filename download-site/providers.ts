@@ -250,10 +250,13 @@ export async function checkRailway(token: string): Promise<Check<{ email: string
       }
     } catch (e) { if (e instanceof ProviderError && e.status === 401) throw e; }
     const paid = all.find((w) => (w.plan === "HOBBY" || w.plan === "PRO") && w.hasCard !== false);
+    // Railway's free trial (US$5 of credit) is enough to set up and try the agency.
+    const trial = paid ? undefined : all.find((w) => w.trialing);
     const known = all.some((w) => w.plan);
-    if (!paid && known) return { ok: false, message: RAILWAY_PLAN_MSG };
-    const ws = paid || all[0];
-    return { ok: true, message: `Connected to Railway${me.email ? ` (${me.email})` : ""}.`, email: String(me.email || ""), workspace: ws };
+    if (!paid && !trial && known) return { ok: false, message: RAILWAY_PLAN_MSG };
+    const ws = paid || trial || all[0];
+    const note = trial ? " You're on Railway's free trial (US$5 of credit). Add a card in Railway before it runs out, or your agency stops." : "";
+    return { ok: true, message: `Connected to Railway${me.email ? ` (${me.email})` : ""}.${note}`, email: String(me.email || ""), workspace: ws };
   } catch (e: any) {
     return { ok: false, message: e instanceof ProviderError ? e.message : "Something went wrong checking Railway. Try again." };
   }

@@ -231,7 +231,12 @@ function NewReceptionistPage() {
               </ReviewRow>
               <ReviewRow label="It answers with">“{greeting}”</ReviewRow>
               <ReviewRow label="Urgent calls">
-                {urgent.number.trim() ? `Put through to ${urgent.name.trim() || "the team"} on ${urgent.number.trim()}${urgent.onRequest ? ", and when a caller asks for a person" : ""}` : "It takes a message"}
+                {urgent.number.trim() ? (
+                  <>
+                    {`Put through to ${urgent.name.trim() || "the team"} on ${urgent.number.trim()}${urgent.onRequest ? ", and when a caller asks for a person" : ""}`}
+                    <span className="block text-ink-muted">Transfers start once this receptionist has a phone number.</span>
+                  </>
+                ) : "It takes a message"}
               </ReviewRow>
               {settings.avoid?.length ? <ReviewRow label="Passed to staff">{settings.avoid.join(", ")}</ReviewRow> : null}
               {settings.industry === "childcare" ? (
@@ -503,7 +508,7 @@ function UrgentStep({ value, onChange, urgent, onUrgent }: StepProps & { urgent:
         <p className="text-[12.5px] text-ink-muted">Optional. With a number here, it puts urgent callers through to a person during active hours instead of only taking a message.</p>
       </div>
       <div className="grid gap-4 sm:grid-cols-2">
-        <Field label="Phone number" htmlFor="w-urgent" hint="An Australian mobile or landline. Calls are put through once the receptionist has its own number.">
+        <Field label="Phone number" htmlFor="w-urgent" hint="An Australian mobile or landline. Transfers start once this receptionist has a phone number.">
           <Input id="w-urgent" type="tel" maxLength={20} placeholder="e.g. 0412 345 678" value={urgent.number} onChange={(e) => onUrgent({ number: e.target.value })} />
         </Field>
         <Field label="Whose number is it?" htmlFor="w-urgent-name" hint="Callers hear “putting you through to …”.">

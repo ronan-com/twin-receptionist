@@ -16,13 +16,18 @@ import { Field, FormSection, SaveBar } from "@/components/app/forms";
 import { fmtDateTime, fmtNumber, fmtRelative, humanize } from "@/lib/app/format";
 import { usageQuery } from "@/lib/app/queries";
 import { getAudit, getBilling, updateAccount, updateBusiness } from "@/lib/api/manage";
-import { asBusinessHours, DAY_KEYS, DAY_LABELS, DEFAULT_HOURS, type Business, type BusinessHours } from "@/lib/app/types";
+import { asBusinessHours, asRecord, asStringArray, DAY_KEYS, DAY_LABELS, DEFAULT_HOURS, type Business, type BusinessHours } from "@/lib/app/types";
 import { useWorkspace } from "@/lib/app/workspace";
 import { mergeFormOnRefresh } from "@/lib/app/business-logic";
 import { ALWAYS_FROM, ALWAYS_TO, TIMEZONES } from "@/lib/shared";
 import { PRODUCT } from "@/lib/app/product";
+import { ProfileEditor } from "@/components/app/profile/ProfileEditor";
+import { cleanProfile, profileOf, settingsToneFor, totalProgress } from "@/components/app/profile/helpers";
+import { saveReceptionist, type ReceptionistRow } from "@/components/app/receptionist/model";
+import { agentsQuery } from "@/lib/app/queries";
+import type { ReceptionProfile } from "@/lib/profile";
 
-const SETTINGS_TABS = ["business", "hours", "branding", "account", "billing", "activity"] as const;
+const SETTINGS_TABS = ["business", "hours", "handling", "branding", "account", "billing", "activity"] as const;
 type SettingsTab = (typeof SETTINGS_TABS)[number];
 
 export const Route = createFileRoute("/_authenticated/app/settings")({
@@ -183,6 +188,7 @@ function SettingsPage() {
         <TabsList className="h-9 w-full justify-start overflow-x-auto rounded-[6px] bg-canvas-2 p-1 sm:w-auto">
           <TabsTrigger value="business" className="text-[12.5px]">Business</TabsTrigger>
           <TabsTrigger value="hours" className="text-[12.5px]">Hours</TabsTrigger>
+          <TabsTrigger value="handling" className="text-[12.5px]" data-settings-tab="handling">Call handling details</TabsTrigger>
           <TabsTrigger value="branding" className="text-[12.5px]">Branding</TabsTrigger>
           <TabsTrigger value="account" className="text-[12.5px]">Your account</TabsTrigger>
           <TabsTrigger value="billing" className="text-[12.5px]">Plan & usage</TabsTrigger>
@@ -333,6 +339,10 @@ function SettingsPage() {
           </Panel>
         </TabsContent>
 
+        <TabsContent value="handling" className="mt-3">
+          <CallHandlingDetails />
+        </TabsContent>
+
         <TabsContent value="branding" className="mt-3">
           <BrandingEditor />
         </TabsContent>
@@ -416,6 +426,64 @@ function SettingsPage() {
       <p className="text-[11.5px] text-ink-muted">
         Need another number? See <Link to="/app/phone-numbers" className="text-indigo hover:underline">Call handling</Link>. To close this business, contact {b.org_name || "support"}.
       </p>
+    </div>
+  );
+}
+
+// The detailed receptionist setup (tone, booking rules, services and prices, what it asks,
+// policies, house rules): the same editor as the new-receptionist wizard. Common questions
+// aren't here: once the receptionist exists they live under Knowledge.
+function CallHandlingDetails() {
+  const ws = useWorkspace();
+  const qc = useQueryClient();
+  const businessId = ws.businessId;
+  const canEdit = ws.access.canEdit;
+  const agentsQ = useQuery(agentsQuery(businessId));
+  const agent = agentsQ.data?.[0] as (ReceptionistRow & { profile?: ReceptionProfile }) | undefined;
+  const saved = useMemo(() => profileOf(agent), [agent]);
+  const savedKey = JSON.stringify(saved);
+  const [draft, setDraft] = useState<ReceptionProfile>(saved);
+  const [baseline, setBaseline] = useState(savedKey);
+  const loaded = useRef<string | null>(null);
+
+  // Load once per receptionist; later refreshes only move the baseline unless nothing was edited.
+  useEffect(() => {
+    if (!agent) return;
+    if (loaded.current !== agent.id) {
+      loaded.current = agent.id;
+      setDraft(saved);
+    } else if (JSON.stringify(draft) === baseline) setDraft(saved);
+    setBaseline(savedKey);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [agent?.id, savedKey]);
+
+  const dirty = JSON.stringify(draft) !== baseline;
+  const save = useMutation({
+    mutationFn: async () => {
+      if (!businessId) throw new Error("No business selected.");
+      const profile = cleanProfile(draft);
+      return saveReceptionist(businessId, { profile, ...(profile.tone ? { tone: settingsToneFor(profile.tone) } : {}) } as Parameters<typeof saveReceptionist>[1]);
+    },
+    onSuccess: async (res) => {
+      toast.success(res.applied ? "Saved and applied to your receptionist" : "Call handling saved");
+      await qc.invalidateQueries({ queryKey: ["agents", businessId] });
+      await qc.invalidateQueries({ queryKey: ["audit", businessId] });
+    },
+    onError: (e) => toast.error("Couldn't save", { description: e.message }),
+  });
+
+  if (agentsQ.isPending) return <div className="h-40 animate-pulse rounded-[6px] bg-canvas-2" />;
+  if (!agent) return <Notice tone="info">This business doesn't have a receptionist yet.</Notice>;
+  const progress = totalProgress(draft, false);
+  return (
+    <div className="space-y-4" data-page="call-handling-details">
+      <Panel title="Call handling details" description={`How ${agent.name || "your receptionist"} sounds, books, quotes and handles urgent calls. ${progress.set} of ${progress.total} details set.`}>
+        <ProfileEditor value={draft} onChange={setDraft} disabled={!canEdit} showFaqs={false} services={asStringArray(asRecord(agent.booking_rules)["services"])} />
+        <p className="mt-3 text-[12px] text-ink-muted">
+          Common questions and answers are managed under <Link to="/app/knowledge" className="text-indigo hover:underline">Knowledge</Link>.
+        </p>
+      </Panel>
+      <SaveBar dirty={dirty} saving={save.isPending} onSave={() => save.mutate()} onReset={() => setDraft(JSON.parse(baseline) as ReceptionProfile)} disabled={!canEdit} disabledReason={ws.access.readOnlyReason} />
     </div>
   );
 }

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
@@ -51,9 +51,31 @@ function ConnectionsPage() {
       />
       {readOnly ? <Notice tone="info">{READ_ONLY_HINT}</Notice> : null}
 
-      <PhoneCard account={a} platform={platform} />
-
-      <TwilioCard engine={a.provider} canManage={canManage} isOwner={role === "owner" || ws.isPlatformAdmin} readOnly={readOnly} />
+      <PhoneCard
+        account={a}
+        platform={platform}
+        backup={(openEngine) => (
+          <details className="rounded-[12px] border border-dashed border-hairline bg-white" data-section="backup-options">
+            <summary className="cursor-pointer select-none px-5 py-3 text-[13px] font-medium text-ink-muted">Other options (backup)</summary>
+            <div className="space-y-4 border-t border-hairline p-4">
+              {readOnly || !canManage || a.mode !== "own" ? null : (
+                <div className="flex flex-col gap-3 rounded-[10px] border border-hairline p-4 sm:flex-row sm:items-center sm:justify-between" data-card="vapi-option">
+                  <div className="min-w-0">
+                    <div className="text-[14px] font-semibold text-ink">{a.provider === "vapi" ? "Vapi (backup option) is your voice engine" : "Use Vapi instead of Telnyx for voice"}</div>
+                    <p className="mt-0.5 max-w-[560px] text-[12.5px] text-ink-muted">
+                      {a.provider === "vapi" ? "New receptionists run on Vapi. Telnyx is the recommended engine; you can switch back at any time." : "A backup option. New receptionists run on your Vapi account. Receptionists you already have stay on Telnyx."}
+                    </p>
+                  </div>
+                  <Button size="sm" variant="outline" className="h-8 shrink-0 text-[12.5px]" onClick={() => openEngine(a.provider === "vapi" ? "telnyx" : "vapi")} data-action={a.provider === "vapi" ? "use-telnyx" : "use-vapi"}>
+                    {a.provider === "vapi" ? "Switch back to Telnyx" : "Use Vapi"}
+                  </Button>
+                </div>
+              )}
+              <TwilioCard engine={a.provider} canManage={canManage} isOwner={role === "owner" || ws.isPlatformAdmin} readOnly={readOnly} />
+            </div>
+          </details>
+        )}
+      />
 
       <div className="grid gap-3 md:grid-cols-3">
         <CountCard icon={Building2} hue="indigo" label="Clients" count={a.counts.clients} hint="Businesses you run receptionists for." to="/admin/clients" cta="Open clients" />
@@ -74,7 +96,7 @@ function ConnectionsPage() {
   );
 }
 
-function PhoneCard({ account: a, platform }: { account: PhoneAccount; platform: boolean }) {
+function PhoneCard({ account: a, platform, backup }: { account: PhoneAccount; platform: boolean; backup?: (openEngine: (id: PhoneKeyValue["provider"]) => void) => ReactNode }) {
   const { readOnly, canManage, role, ws } = useConsole();
   const qc = useQueryClient();
   const [replacing, setReplacing] = useState(false);
@@ -106,10 +128,15 @@ function PhoneCard({ account: a, platform }: { account: PhoneAccount; platform: 
     onError: (e: Error) => toast.error("Couldn't disconnect", { description: e.message }),
   });
 
+  const openEngine = (provider: PhoneKeyValue["provider"]) => {
+    setKeys({ provider, key: "", publicKey: "" });
+    setReplacing(true);
+  };
   const healthy = a.mode === "own" && !a.problem;
   const hue: Hue = a.mode === "none" ? "amber" : a.problem ? "coral" : "green";
 
   return (
+    <>
     <section data-hue={hue} data-card="phone-account" data-mode={a.mode} className="overflow-hidden rounded-[12px] border border-[var(--hue-line)] bg-[linear-gradient(135deg,var(--hue-faint),#fff_55%)]">
       <div className="flex flex-col gap-5 p-5 lg:flex-row lg:items-center lg:justify-between">
         <div className="flex min-w-0 gap-4">
@@ -218,7 +245,7 @@ function PhoneCard({ account: a, platform }: { account: PhoneAccount; platform: 
           <DialogHeader>
             <DialogTitle>Replace your API key</DialogTitle>
             <DialogDescription>
-              Use a key from the same {name} account. Your receptionists live in that account, so a key from another one won't reach them. To use {a.provider === "vapi" ? "Telnyx" : "Vapi"} for new receptionists instead, choose it below: receptionists you already have stay on {name}.
+              Use a key from the same {name} account. Your receptionists live in that account, so a key from another one won't reach them. To use {a.provider === "vapi" ? "Telnyx (recommended)" : "Vapi (a backup option)"} for new receptionists instead, choose it below: receptionists you already have stay on {name}.
             </DialogDescription>
           </DialogHeader>
           <form
@@ -272,6 +299,8 @@ function PhoneCard({ account: a, platform }: { account: PhoneAccount; platform: 
         </AlertDialogContent>
       </AlertDialog>
     </section>
+    {backup?.(openEngine)}
+    </>
   );
 }
 

@@ -1,6 +1,6 @@
 ---
 id: vapi-api-key
-title: Find your Vapi API keys
+title: Backup option: find your Vapi API keys
 time: 1 minute
 cost: Free
 link: https://dashboard.vapi.ai/org/api-keys
@@ -8,13 +8,13 @@ verified: 2026-11-27
 sources: [https://docs.vapi.ai/api-reference/assistants/create, https://docs.vapi.ai/sdk/web]
 ---
 ## What it's for
-Your receptionist app needs two Vapi keys. The **private** key lets the app create and run receptionists on your Vapi account. The **public** key lets the browser test call start. The wizard checks the private key with Vapi before saving anything.
+**Backup option** (Telnyx is the recommended way). Your receptionist app needs two Vapi keys. The **private** key lets the app create and run receptionists on your Vapi account. The **public** key lets the browser test call start. The wizard checks the private key with Vapi before saving anything.
 
 ## Steps
 1. In the Vapi dashboard, open **API Keys** (under Org Settings).
 2. Copy the **Private Key**.
 3. Copy the **Public Key** as well.
-4. Paste both into the wizard.
+4. Paste both into the wizard, on the Vapi screen under Other options (backup).
 
 ## What to paste into the wizard
 The private key in the first box and the public key in the second. Each is one line, with no spaces.

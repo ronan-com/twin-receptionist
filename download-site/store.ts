@@ -75,18 +75,22 @@ export function redact(text: string, values: string[]): string {
 }
 
 // ---------------- wizard state ----------------
-export type StepId = "welcome" | "brand" | "railway" | "domain" | "server" | "phones" | "email" | "calendars" | "extras" | "install" | "done";
+export type StepId = "welcome" | "brand" | "railway" | "domain" | "server" | "phones" | "email" | "calendars" | "extras" | "vapi" | "twilio" | "install" | "done";
 /**
  * Railway (the default): only Brand, Railway and Telnyx are needed. "extras" is one screen of
  * optional cards (email, your own domain, calendars); each opens its own step, which can be skipped.
  * DigitalOcean still needs a domain (its server gets an https certificate for it), so it keeps the long path.
  */
 export const STEPS: StepId[] = RAILWAY
-  ? ["welcome", "brand", "railway", "phones", "extras", "email", "domain", "calendars", "install", "done"]
-  : ["welcome", "brand", "domain", "server", "phones", "email", "calendars", "install", "done"];
+  ? ["welcome", "brand", "railway", "phones", "extras", "email", "domain", "calendars", "vapi", "twilio", "install", "done"]
+  : ["welcome", "brand", "domain", "server", "phones", "vapi", "twilio", "email", "calendars", "install", "done"];
 /** Steps that are never required: opened from the extras screen, and each one can be skipped. */
-export const OPTIONAL_STEPS: StepId[] = RAILWAY ? ["email", "domain", "calendars"] : [];
+export const OPTIONAL_STEPS: StepId[] = RAILWAY ? ["email", "domain", "calendars", "vapi", "twilio"] : ["vapi", "twilio"];
+/** The backup phone options (Vapi, Twilio) are optional in both flows: Telnyx is the main path. */
+export const BACKUP_STEPS: StepId[] = ["vapi", "twilio"];
 export const isOptional = (id: StepId) => OPTIONAL_STEPS.includes(id);
+/** The screen optional steps hang off and go back to: the extras screen (Railway), or Phones (DigitalOcean has no extras screen). */
+export const OPTIONAL_HUB: StepId = RAILWAY ? "extras" : "phones";
 
 export interface DnsRecord {
   key: string; // stable id, e.g. "a", "dkim", "spf-mx"
@@ -135,7 +139,13 @@ export interface SetupData {
     chosen?: boolean;
   };
   // provider: the voice engine chosen on the phones step (missing means Telnyx).
-  phones?: { balance?: string; checked?: boolean; confirmed?: boolean; provider?: "telnyx" | "vapi"; /** Optional Twilio account (with Vapi): the Account SID; its token is the twilio_token secret. */ twilioSid?: string };
+  // Telnyx is the main path. provider is kept in step with the backup choice below (vapi when Vapi is confirmed).
+  // deferred: the buyer has no Telnyx account yet and went on to the backup options instead.
+  phones?: { balance?: string; checked?: boolean; confirmed?: boolean; provider?: "telnyx" | "vapi"; deferred?: boolean; /** Legacy: a Twilio Account SID saved on the phones step. Now see twilio. */ twilioSid?: string };
+  /** Backup option: Vapi instead of Telnyx for voice. Its keys are the vapi_key and vapi_public secrets. */
+  vapi?: { confirmed?: boolean };
+  /** Backup option: a Twilio account for numbers and texts (with Vapi). Its token is the twilio_token secret. */
+  twilio?: { sid?: string; confirmed?: boolean };
   railway?: { email?: string; workspaceId?: string; workspaceName?: string; plan?: string; confirmed?: boolean };
   /** What we made in the buyer's Railway account (ids only). */
   rw?: {
@@ -159,7 +169,7 @@ export interface SetupData {
   /** Railway: the buyer pressed Continue on the optional extras screen (whatever they added or skipped). */
   extrasDone?: boolean;
   /** Railway: extras the buyer chose to leave for later. */
-  skipped?: { email?: boolean; domain?: boolean; calendars?: boolean };
+  skipped?: { email?: boolean; domain?: boolean; calendars?: boolean; vapi?: boolean; twilio?: boolean };
   /**
    * "Update your agency" (Railway, after Done): the buyer pastes a Railway token again and we send the newest
    * app to the same project. ask = token screen, running = deploying, failed = nothing changed, done = last result.

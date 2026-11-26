@@ -4,7 +4,7 @@
 
 **Where the code is (private repo `ronan-com/twin-receptionist`):**
 - `own-phone-account` — stable, **this is what's live** (1.0.5). Start from here.
-- `demo-flow` — finished-ish work on top, plus three WIP commits (listed below).
+- `demo-flow` — finished-ish work on top, plus three WIP commits (`444f443`, `05e2a24`, `94c95ce`, listed below). May not compile until `admin-web.ts` is reconciled.
 - `wip-unfinished` — a snapshot of 23 uncommitted files (done-for-you setup, help-ticket wiring, DNS and hosts). May not compile.
 
 Read `REVIEW-NOTES.md` first for the product, branches and what's live. This file is the **to-do list and the safe way to finish**. Credits ran out on the previous session, so some work is committed but unfinished.
@@ -43,7 +43,11 @@ All of this is **not release-ready**. Tests passed on pieces in isolation; the p
    - Done and tested alone: setup-site `download-site/tickets.ts` + `public/tickets.css` (12 tests), app `server/tickets.ts` + migration `024_support_tickets.sql` (12 tests), `SupportDialog.tsx` and "Contact support" in the help menus.
    - The wiring is only in `wip-unfinished`: `download-site/admin-web.ts` (Buyers → Agencies rename, real agencies only, collapsed "Test runs (N)" at the bottom, `/admin/agencies` aliases, Help tickets routes and badge), `download-site/server.ts` (`/api/tickets`, body limit raised to 3 MB), `server/index.ts` (`/api/tickets`, `startTicketSync()`).
    - Not built: the agency "Support requests" page and nav item, regenerating `routeTree.gen.ts`. The frontend was never type-checked.
-3. **Done-for-you onboarding from admin** — only in `wip-unfinished`. Fill a buyer's steps for them, write DNS via Cloudflare or GoDaddy, install for them, serve the buyer's setup link on their own domain (Caddy on-demand TLS; changing the shared `/opt/twin/Caddyfile` needs care). It was mid-build and has a failing `hosts` test. Treat it as a draft.
+3. **Done-for-you onboarding from admin** — committed on `demo-flow` as `94c95ce` (the `admin-web.ts` panel is only in `wip-unfinished`).
+   - Done: `download-site/assist.ts`, `assist-web.ts`, `dns.ts`, `hosts.ts`, `ctx.ts` — admin fills any wizard step via the wizard's own actions; GoDaddy and Cloudflare DNS writers; install-for-them, send-owner-login, DNS check, audit log; the buyer's wizard shows "Set up by your provider" and a done/left note; the setup link on the buyer's own domain (`/api/tls-allowed`, host routing with the buyer's brand, Caddy on-demand TLS block in the template, `deploy/Caddyfile` and `ensure-ondemand-tls.sh` called from `remote-deploy.sh`). 18 tests passed before the last split; not re-run on the commit.
+   - **Not reachable yet:** the admin panel and routes live in `download-site/admin-web.ts` in `wip-unfinished`, mixed with the help-ticket edits. Someone has to merge those hunks. Commit `444f443` already imports `./assist-web` and `./hosts` from `admin-web.ts`, so `demo-flow` may not compile until that is resolved.
+   - Gaps: GoDaddy writing is Railway-only (the DigitalOcean path only gets Cloudflare); "Delete the project" doesn't delete GoDaddy records; the `real-run --dry-run` never completed (`run.mjs` was edited to accept the "Agencies" heading).
+   - **Unverified:** nothing ran against real Cloudflare, GoDaddy or Caddy. Check that `on_demand_tls` is accepted by the Caddy on the AWS server before deploying, and never change the shared `/opt/twin/Caddyfile` without a backup and `caddy validate`.
 
 **Needs Jesse's approval before release:** stats sharing and support access being **on by default**, and support being able to **edit** (not just view) an agency, change the "you own everything" promise in the buyer email. Add that line to `REVIEW-NOTES.md` when finishing.
 

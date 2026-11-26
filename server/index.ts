@@ -46,6 +46,7 @@ import { audit } from "./audit";
 import { OTHER_BRAND, UI_PRODUCT, brandedIndex } from "./product";
 import { agencySnapshot, consoleRoutes, isClientPaused } from "./routes/console";
 import { assistantRoute } from "./assistant";
+import { webchatAdmin, webchatPublic } from "./webchat";
 import { manageRoutes, setManageDeps } from "./routes/manage";
 import { signupRoutes } from "./routes/signup";
 import { automationHooks, automationRoutes } from "./routes/automations";
@@ -551,6 +552,8 @@ async function route(req: Request, server?: { requestIP(r: Request): { address: 
   const hookMatch = path.match(/^\/hooks\/([a-f0-9-]{36})\/(availability|book|callback)$/);
   if (hookMatch && method === "POST") return hook(req, hookMatch[1], hookMatch[2]);
   if (path.startsWith("/hooks/automations/")) return (await automationHooks(req, path)) ?? json({ error: "Not found" }, 404);
+  // The website chat widget's public API (CORS-limited to the business's own websites).
+  if (path.startsWith("/api/webchat/")) return (await webchatPublic(req, path, undefined, server)) ?? json({ error: "Not found" }, 404);
 
   // Logos and backgrounds: public by random id.
   const brandAsset = path.match(/^\/brand\/([a-f0-9-]{36})$/);
@@ -797,6 +800,7 @@ async function route(req: Request, server?: { requestIP(r: Request): { address: 
   }
 
   if (path.startsWith("/api/automations/")) return (await automationRoutes({ req, url, path, method, ctx, orgId, appUrl: appUrl(req) }, { clientAccessFor, syncAssistant })) ?? json({ error: "Not found" }, 404);
+  if (path.startsWith("/api/website-chat/")) return (await webchatAdmin({ req, url, path, method, ctx, orgId, appUrl: appUrl(req) }, { clientAccessFor, publicUrl })) ?? json({ error: "Not found" }, 404);
   const area = path.match(/^\/api\/(workspace|manage|console)(\/.*)?$/);
   if (area) {
     const base: RouteArgs = { req, url, path, method, ctx, orgId, appUrl: appUrl(req) };

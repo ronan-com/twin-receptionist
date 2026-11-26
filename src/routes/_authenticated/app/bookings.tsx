@@ -173,7 +173,7 @@ function BookingsPage() {
       header: "Booked by",
       hideBelow: "lg",
       cell: (a) => (
-        <StatusBadge tone={isAiBooking(a.source) ? "indigo" : "muted"}>{isAiBooking(a.source) ? "Receptionist" : humanize(a.source)}</StatusBadge>
+        <StatusBadge tone={isAiBooking(a.source) ? "indigo" : "muted"}>{a.source === "website_chat" ? "Website chat" : isAiBooking(a.source) ? "Receptionist" : humanize(a.source)}</StatusBadge>
       ),
     },
     {

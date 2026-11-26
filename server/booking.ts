@@ -255,7 +255,7 @@ async function bookNow(client: Business, input: any): Promise<unknown> {
       start,
       end,
       title: `${service || "Appointment"} · ${name}`,
-      description: `Name: ${name}\nPhone: ${phone}\n${email ? `Email: ${email}\n` : ""}Service: ${service || "not given"}\n${notes ? `Notes: ${notes}\n` : ""}Booked by the AI receptionist by ${channel === "sms" ? "text" : "phone"}.`,
+      description: `Name: ${name}\nPhone: ${phone}\n${email ? `Email: ${email}\n` : ""}Service: ${service || "not given"}\n${notes ? `Notes: ${notes}\n` : ""}Booked by the AI receptionist ${channel === "sms" ? "by text" : channel === "web" ? "in the website chat" : "by phone"}.`,
     });
     const when = `${sayDay(date)} at ${sayTime(isoLocal(start, s.timezone).slice(11, 16))}`;
     const booked: BookingRequest = { ...entry, status: "booked", note: notes };

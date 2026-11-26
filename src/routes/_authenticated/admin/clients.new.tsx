@@ -2,7 +2,7 @@ import { useEffect, useState, type KeyboardEvent } from "react";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { ArrowLeft, Check, Loader2, X } from "lucide-react";
+import { ArrowLeft, Check, Loader2, Plus, Search, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -12,34 +12,52 @@ import { PageHeader, Panel, Notice, ErrorState } from "@/components/app/primitiv
 import { Field } from "@/components/app/forms";
 import { cn } from "@/lib/utils";
 import { companyApi, createReceptionist, getVoices } from "@/lib/api/console";
+import { saveAutomations } from "@/lib/api/automations";
+import { createKnowledge } from "@/lib/api/manage";
 import {
+  CHILDCARE_STARTER_ANSWERS,
   DAYS,
   INDUSTRIES,
   TIMEZONES,
+  alwaysOpen,
+  article,
   blankSettings,
+  businessNoun,
   defaultGreeting,
   defaultHours,
   describeHours,
+  greetingsFor,
   industry,
+  isAlwaysOpen,
+  starterTitle,
   type DayKey,
   type IndustryKey,
   type Settings,
 } from "@/lib/shared";
 import { READ_ONLY_HINT, useConsole } from "./-shared";
-import { named } from "@/lib/app/product";
+import { PRODUCT } from "@/lib/app/product";
 
-// The receptionist setup wizard (ported from the old Twin Setup page): four short
-// steps, then the existing POST /api/clients creates the phone assistant.
+// The receptionist setup wizard (ported from the old Twin Setup page): five short
+// steps, then the existing POST /api/clients creates the phone assistant. An urgent
+// number then turns on the transfer automation, and a childcare centre gets the
+// starter answers from the centre onboarding pack as knowledge for the director to check.
 export const Route = createFileRoute("/_authenticated/admin/clients/new")({
   validateSearch: (s: Record<string, unknown>): { company?: string } => (typeof s.company === "string" && /^[a-f0-9-]{36}$/.test(s.company) ? { company: s.company } : {}),
-  head: () => ({ meta: [{ title: named("New receptionist — Answered admin") }] }),
+  head: () => ({ meta: [{ title: `New receptionist — ${PRODUCT} admin` }] }),
   component: NewReceptionistPage,
 });
 
-const STEPS = ["Client and business", "Hours and services", "Voice", "Review"];
+const STEPS = ["Client and business", "Hours and services", "Voice", "Urgent calls", "Review"];
+const REVIEW = STEPS.length - 1;
 const NEW = "new";
 
-function problem(step: number, s: Settings): string {
+// Who urgent calls are put through to (the transfer automation, server/automations.ts).
+type Urgent = { number: string; name: string; onRequest: boolean };
+// Australian mobile or landline, as server/automations.ts auNumber accepts it.
+const AU_NUMBER = /^(\+?61|0)[2-478]\d{8}$/;
+const compact = (n: string) => n.replace(/[\s().-]/g, "");
+
+function problem(step: number, s: Settings, urgent: Urgent): string {
   if (step === 0 && s.businessName.trim().length < 2) return "Enter the business name.";
   if (step === 1) {
     if (s.services.length === 0) return "Add at least one service callers can ask for.";
@@ -47,6 +65,7 @@ function problem(step: number, s: Settings): string {
     if (!Object.values(s.hours).some((h) => h.open)) return "Mark at least one day as open.";
   }
   if (step === 2 && !s.voiceId) return "Choose a voice.";
+  if (step === 3 && urgent.number.trim() && !AU_NUMBER.test(compact(urgent.number))) return "Enter an Australian phone number for urgent calls, like 0412 345 678 or 07 3123 4567.";
   return "";
 }
 
@@ -56,6 +75,7 @@ function NewReceptionistPage() {
   const qc = useQueryClient();
   const [step, setStep] = useState(0);
   const [settings, setSettings] = useState<Settings>(blankSettings);
+  const [urgent, setUrgent] = useState<Urgent>({ number: "", name: "", onRequest: true });
   const [error, setError] = useState("");
   const [creating, setCreating] = useState(false);
   const search = Route.useSearch();
@@ -92,7 +112,7 @@ function NewReceptionistPage() {
   };
 
   function next() {
-    const issue = problem(step, settings);
+    const issue = problem(step, settings, urgent);
     if (issue) return setError(issue);
     setError("");
     setStep(step + 1);
@@ -107,10 +127,25 @@ function NewReceptionistPage() {
       const target = companyId === NEW ? await companyApi.create({ name: settings.businessName.trim(), industry: settings.industry }) : companyId;
       const created = await createReceptionist(settings);
       await companyApi.attach(target, created.id);
+      // The receptionist exists now: a problem below is reported, not a reason to stop.
+      const missed: string[] = [];
+      if (urgent.number.trim()) {
+        await saveAutomations(created.id, {
+          transfer: { enabled: true, number: compact(urgent.number), name: urgent.name.trim() || "the team", urgent: true, onRequest: urgent.onRequest },
+        }).catch((err) => missed.push(`the urgent number (${(err as Error).message})`));
+      }
+      if (settings.industry === "childcare") {
+        for (const a of CHILDCARE_STARTER_ANSWERS) {
+          await createKnowledge(created.id, { title: starterTitle(a.question), type: "faq", question: starterTitle(a.question), answer: a.answer, content: null, status: "published" }).catch(() => {
+            if (!missed.includes("some starter answers")) missed.push("some starter answers");
+          });
+        }
+      }
       await qc.invalidateQueries({ queryKey: ["admin"] });
       await qc.invalidateQueries({ queryKey: ["console"] });
       await qc.invalidateQueries({ queryKey: ["businesses"] });
-      toast.success(`${settings.businessName.trim()} is ready`, { description: "Share it with the business, or request a phone number." });
+      if (missed.length) toast.warning(`${settings.businessName.trim()} is ready, but ${missed.join(" and ")} couldn't be saved`, { description: "Add them from the receptionist's page." });
+      else toast.success(`${settings.businessName.trim()} is ready`, { description: "Share it with the business, or request a phone number." });
       void navigate({ to: "/admin/clients/$businessId", params: { businessId: target } });
     } catch (err) {
       setError((err as Error).message);
@@ -136,11 +171,11 @@ function NewReceptionistPage() {
       </Link>
       <PageHeader
         eyebrow={`Step ${step + 1} of ${STEPS.length}`}
-        title={step === 3 ? "Check the details" : "New receptionist"}
+        title={step === REVIEW ? "Check the details" : "New receptionist"}
         description={platform ? `Created in ${orgName || "your own team"}. Agencies create their own from their console.` : `For a business ${orgName || "your agency"} looks after.`}
       />
 
-      <ol className="grid grid-cols-4 gap-2" aria-label="Setup progress">
+      <ol className="grid grid-cols-5 gap-2" aria-label="Setup progress">
         {STEPS.map((label, i) => (
           <li key={label} className="min-w-0">
             <span className={cn("block h-1 rounded-full", i <= step ? "bg-indigo" : "bg-hairline")} />
@@ -173,17 +208,21 @@ function NewReceptionistPage() {
           {step === 2 ? (
             voicesQ.error ? <ErrorState message={(voicesQ.error as Error).message} onRetry={() => void voicesQ.refetch()} /> : <VoiceStep value={settings} onChange={patch} voices={voices} loading={voicesQ.isPending} />
           ) : null}
-          {step === 3 ? (
+          {step === 3 ? <UrgentStep value={settings} onChange={patch} urgent={urgent} onUrgent={(p) => { setError(""); setUrgent((u) => ({ ...u, ...p })); }} /> : null}
+          {step === REVIEW ? (
             <dl className="divide-y divide-hairline text-[13px]" data-review>
               <ReviewRow label="Client">{chosen ? chosen.name : `${settings.businessName} (new)`}</ReviewRow>
               <ReviewRow label="Business">
                 {settings.businessName}
-                <span className="text-ink-muted"> · {industry(settings.industry).label}{settings.suburb ? ` · ${settings.suburb}` : ""}</span>
+                <span className="text-ink-muted"> · {kindOf(settings)}{settings.suburb ? ` · ${settings.suburb}` : ""}</span>
+                {settings.sayName ? <span className="block text-ink-muted">Said “{settings.sayName}”</span> : null}
+                {settings.about ? <span className="block text-ink-muted">{settings.about}</span> : null}
               </ReviewRow>
-              <ReviewRow label="Hours">
+              <ReviewRow label="Active">
                 {describeHours(settings.hours).map((line) => (
                   <span key={line} className="block">{line}</span>
                 ))}
+                {settings.closures?.trim() ? <span className="block text-ink-muted">Closures: {settings.closures}</span> : null}
               </ReviewRow>
               <ReviewRow label="Callers can ask for">{settings.services.join(", ")}</ReviewRow>
               <ReviewRow label="Voice">
@@ -191,9 +230,16 @@ function NewReceptionistPage() {
                 <span className="text-ink-muted"> · {settings.tone === "friendly" ? "Friendly" : "Professional"}</span>
               </ReviewRow>
               <ReviewRow label="It answers with">“{greeting}”</ReviewRow>
+              <ReviewRow label="Urgent calls">
+                {urgent.number.trim() ? `Put through to ${urgent.name.trim() || "the team"} on ${urgent.number.trim()}${urgent.onRequest ? ", and when a caller asks for a person" : ""}` : "It takes a message"}
+              </ReviewRow>
+              {settings.avoid?.length ? <ReviewRow label="Passed to staff">{settings.avoid.join(", ")}</ReviewRow> : null}
+              {settings.industry === "childcare" ? (
+                <ReviewRow label="Starter answers">{CHILDCARE_STARTER_ANSWERS.length} answers from the centre pack, each marked for the director to check</ReviewRow>
+              ) : null}
             </dl>
           ) : null}
-          {step === 3 ? <p className="text-[12px] text-ink-muted">Creating it takes a few seconds. You can change any of this afterwards and test it from your browser straight away.</p> : null}
+          {step === REVIEW ? <p className="text-[12px] text-ink-muted">Creating it takes a few seconds. You can change any of this afterwards and test it from your browser straight away.</p> : null}
 
           {error ? (
             <div role="alert" className="rounded-[6px] border border-[#ffd0d0] bg-[#fff7f7] px-3 py-2 text-[12.5px] text-[#a41d1d]">
@@ -209,7 +255,7 @@ function NewReceptionistPage() {
             ) : (
               <span />
             )}
-            {step < 3 ? (
+            {step < REVIEW ? (
               <Button type="button" onClick={next} data-action="continue">
                 Continue
               </Button>
@@ -237,9 +283,73 @@ function ReviewRow({ label, children }: { label: string; children: React.ReactNo
 
 type StepProps = { value: Settings; onChange: (p: Partial<Settings>) => void };
 
+/** The business type as shown: the preset's label, or its own words for "Something else". */
+const kindOf = (s: Settings) => (s.industry === "other" && s.industryLabel?.trim() ? s.industryLabel.trim() : industry(s.industry).label);
+
+// Adds a line to a short list (services, topics) on Enter, ignoring repeats.
+function ListInput({ items, max, each, onAdd, label, placeholder }: { items: string[]; max: number; each: number; onAdd: (item: string) => void; label: string; placeholder: string }) {
+  const [draft, setDraft] = useState("");
+  const full = items.length >= max;
+  const add = () => {
+    const next = draft.trim();
+    if (!next || full) return;
+    if (!items.some((s) => s.toLowerCase() === next.toLowerCase())) onAdd(next);
+    setDraft("");
+  };
+  const onKey = (e: KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      add();
+    }
+  };
+  return (
+    <div className="flex gap-2">
+      <Input maxLength={each} placeholder={full ? `That's the maximum of ${max}` : placeholder} disabled={full} value={draft} onChange={(e) => setDraft(e.target.value)} onKeyDown={onKey} aria-label={label} />
+      <Button type="button" variant="outline" onClick={add} disabled={full || !draft.trim()}>
+        Add
+      </Button>
+    </div>
+  );
+}
+
+function Chips({ items, onRemove, list }: { items: string[]; onRemove: (item: string) => void; list: string }) {
+  return (
+    <ul className="flex flex-wrap gap-1.5" data-list={list}>
+      {items.map((s) => (
+        <li key={s} className="inline-flex items-center gap-1 rounded-full border border-hairline bg-canvas-2 py-0.5 pl-2.5 pr-1 text-[12.5px] text-ink">
+          {s}
+          <button type="button" aria-label={`Remove ${s}`} className="rounded-full p-0.5 text-ink-muted hover:bg-white hover:text-ink" onClick={() => onRemove(s)}>
+            <X className="h-3 w-3" />
+          </button>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+// One-tap additions: the suggestions not already in the list.
+function Suggestions({ items, taken, max, onAdd, list }: { items: string[]; taken: string[]; max: number; onAdd: (item: string) => void; list: string }) {
+  const left = items.filter((x, i) => items.indexOf(x) === i && !taken.some((t) => t.toLowerCase() === x.toLowerCase()));
+  if (left.length === 0 || taken.length >= max) return null;
+  return (
+    <div className="flex flex-wrap items-center gap-1.5" data-suggestions={list}>
+      <span className="text-[12px] text-ink-muted">Suggestions:</span>
+      {left.map((x) => (
+        <button key={x} type="button" onClick={() => onAdd(x)} className="inline-flex items-center gap-1 rounded-full border border-dashed border-hairline bg-white px-2.5 py-0.5 text-[12.5px] text-ink-muted hover:border-indigo hover:text-indigo">
+          <Plus className="h-3 w-3" /> {x}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 function BusinessStep({ value, onChange }: StepProps) {
+  const [query, setQuery] = useState("");
   // During setup the hours and services follow the industry's preset.
-  const pick = (key: IndustryKey) => onChange({ industry: key, services: [...industry(key).services], hours: defaultHours(key) });
+  const pick = (key: IndustryKey) => onChange({ industry: key, services: [...industry(key).services], hours: defaultHours(key), ...(key === "other" ? {} : { industryLabel: "" }) });
+  const q = query.trim().toLowerCase();
+  // "Something else" is always there, last.
+  const shown = INDUSTRIES.filter((i) => i.key === "other" || !q || [i.label, i.noun, ...i.services].some((t) => t.toLowerCase().includes(q)));
   return (
     <>
       <div>
@@ -249,10 +359,17 @@ function BusinessStep({ value, onChange }: StepProps) {
       <Field label="Business name" htmlFor="w-name" required>
         <Input id="w-name" maxLength={80} placeholder="e.g. Bright Smile Dental" value={value.businessName} onChange={(e) => onChange({ businessName: e.target.value })} autoFocus />
       </Field>
+      <Field label="How do you say the business name?" htmlFor="w-sayname" hint="Optional. Only if it isn't obvious, written the way it sounds.">
+        <Input id="w-sayname" maxLength={80} placeholder="e.g. Kee-OR-a" value={value.sayName ?? ""} onChange={(e) => onChange({ sayName: e.target.value })} />
+      </Field>
       <div className="grid gap-1.5">
         <span id="w-industry" className="text-[12.5px] font-medium text-ink">What kind of business is it?</span>
+        <div className="relative">
+          <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-ink-muted" />
+          <Input className="pl-8" placeholder="Search, e.g. vet, café, plumber" value={query} onChange={(e) => setQuery(e.target.value)} aria-label="Search business types" />
+        </div>
         <div className="grid grid-cols-1 gap-2 sm:grid-cols-2" role="radiogroup" aria-labelledby="w-industry">
-          {INDUSTRIES.map((i) => (
+          {shown.map((i) => (
             <button
               key={i.key}
               type="button"
@@ -269,6 +386,14 @@ function BusinessStep({ value, onChange }: StepProps) {
           ))}
         </div>
       </div>
+      {value.industry === "other" ? (
+        <Field label="What kind of business is it?" htmlFor="w-kind" hint="In a few words. The receptionist describes the business this way.">
+          <Input id="w-kind" maxLength={60} placeholder="e.g. florist, wedding photographer" value={value.industryLabel ?? ""} onChange={(e) => onChange({ industryLabel: e.target.value })} />
+        </Field>
+      ) : null}
+      <Field label="What does the business do?" htmlFor="w-about" hint="Optional. A sentence or two the receptionist can use when callers ask.">
+        <Textarea id="w-about" rows={2} maxLength={400} placeholder="e.g. Family dental clinic for all ages, with gentle care for nervous patients." value={value.about ?? ""} onChange={(e) => onChange({ about: e.target.value })} />
+      </Field>
       <div className="grid gap-4 sm:grid-cols-2">
         <Field label="Suburb or town" htmlFor="w-suburb">
           <Input id="w-suburb" maxLength={60} placeholder="e.g. Paddington" value={value.suburb} onChange={(e) => onChange({ suburb: e.target.value })} />
@@ -291,73 +416,113 @@ function BusinessStep({ value, onChange }: StepProps) {
   );
 }
 
+// Extra one-tap services offered for every type of business.
+const GENERAL_SERVICES = ["Request a call back", "Opening hours and directions", "Change or cancel a booking", "Message for the team"];
+
 function HoursStep({ value, onChange }: StepProps) {
-  const [draft, setDraft] = useState("");
-  const full = value.services.length >= 12;
+  const always = isAlwaysOpen(value.hours);
   const setDay = (day: DayKey, p: Partial<Settings["hours"][DayKey]>) => onChange({ hours: { ...value.hours, [day]: { ...value.hours[day], ...p } } });
-  const add = () => {
-    const next = draft.trim();
-    if (!next || full) return;
-    if (!value.services.some((s) => s.toLowerCase() === next.toLowerCase())) onChange({ services: [...value.services, next] });
-    setDraft("");
+  // Back to set times: the business type's usual hours (or 8 to 5 if those are 24/7 too).
+  const specific = () => {
+    if (!always) return;
+    const preset = defaultHours(value.industry);
+    onChange({ hours: isAlwaysOpen(preset) ? defaultHours("other") : preset });
   };
-  const onKey = (e: KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === "Enter") {
-      e.preventDefault();
-      add();
-    }
-  };
+  const preset = industry(value.industry);
   return (
     <>
       <div>
-        <h2 className="text-[15px] font-semibold text-ink">When are they open?</h2>
-        <p className="text-[12.5px] text-ink-muted">It only offers times inside these hours.</p>
+        <h2 className="text-[15px] font-semibold text-ink">When would you like the AI receptionist to be active?</h2>
+        <p className="text-[12.5px] text-ink-muted">It only operates within these hours.</p>
       </div>
-      <ul className="divide-y divide-hairline rounded-[6px] border border-hairline">
-        {DAYS.map((d) => {
-          const h = value.hours[d.key];
-          return (
-            <li key={d.key} className="flex flex-wrap items-center justify-between gap-2 px-3 py-2 text-[13px]">
-              <label className="flex w-32 items-center gap-2">
-                <Switch checked={h.open} onCheckedChange={(open) => setDay(d.key, { open })} aria-label={`${d.label} open`} />
-                <span className={h.open ? "text-ink" : "text-ink-muted"}>{d.label}</span>
-              </label>
-              {h.open ? (
-                <span className="flex items-center gap-2">
-                  <Input type="time" aria-label={`${d.label} opens`} value={h.from} onChange={(e) => setDay(d.key, { from: e.target.value })} className="h-8 w-[110px]" />
-                  <span className="text-ink-muted">to</span>
-                  <Input type="time" aria-label={`${d.label} closes`} value={h.to} onChange={(e) => setDay(d.key, { to: e.target.value })} className="h-8 w-[110px]" />
-                </span>
-              ) : (
-                <span className="text-ink-muted">Closed</span>
-              )}
-            </li>
-          );
-        })}
-      </ul>
-      <div>
-        <h2 className="text-[15px] font-semibold text-ink">What do callers ask for?</h2>
-        <p className="text-[12.5px] text-ink-muted">Common ones for a {industry(value.industry).noun}. Remove any that don't apply and add the business's own.</p>
-      </div>
-      <ul className="flex flex-wrap gap-1.5" data-list="services">
-        {value.services.map((s) => (
-          <li key={s} className="inline-flex items-center gap-1 rounded-full border border-hairline bg-canvas-2 py-0.5 pl-2.5 pr-1 text-[12.5px] text-ink">
-            {s}
-            <button type="button" aria-label={`Remove ${s}`} className="rounded-full p-0.5 text-ink-muted hover:bg-white hover:text-ink" onClick={() => onChange({ services: value.services.filter((x) => x !== s) })}>
-              <X className="h-3 w-3" />
-            </button>
-          </li>
+      <div className="inline-flex rounded-[6px] border border-hairline p-0.5" role="radiogroup" aria-label="When it's active">
+        {[
+          { on: always, label: "Always on (24/7)", pick: () => onChange({ hours: alwaysOpen() }), id: "always" },
+          { on: !always, label: "Set specific times", pick: specific, id: "times" },
+        ].map((o) => (
+          <button key={o.id} type="button" role="radio" aria-checked={o.on} data-hours={o.id} onClick={o.pick} className={cn("flex-1 whitespace-nowrap rounded-[4px] px-3 py-1.5 text-[13px]", o.on ? "bg-indigo text-white" : "text-ink-muted hover:text-ink")}>
+            {o.label}
+          </button>
         ))}
-      </ul>
-      <div className="flex gap-2">
-        <Input maxLength={60} placeholder={full ? "That's the maximum of 12" : "Add another, then press Enter"} disabled={full} value={draft} onChange={(e) => setDraft(e.target.value)} onKeyDown={onKey} aria-label="Add a service" />
-        <Button type="button" variant="outline" onClick={add} disabled={full || !draft.trim()}>
-          Add
-        </Button>
       </div>
+      {always ? (
+        <p className="rounded-[6px] border border-hairline bg-canvas-2 px-3 py-2 text-[12.5px] text-ink">It answers every call, any time of day, every day of the week.</p>
+      ) : (
+        <ul className="divide-y divide-hairline rounded-[6px] border border-hairline">
+          {DAYS.map((d) => {
+            const h = value.hours[d.key];
+            return (
+              <li key={d.key} className="flex flex-wrap items-center justify-between gap-2 px-3 py-2 text-[13px]">
+                <label className="flex w-32 items-center gap-2">
+                  <Switch checked={h.open} onCheckedChange={(open) => setDay(d.key, { open })} aria-label={`${d.label} open`} />
+                  <span className={h.open ? "text-ink" : "text-ink-muted"}>{d.label}</span>
+                </label>
+                {h.open ? (
+                  <span className="flex items-center gap-2">
+                    <Input type="time" aria-label={`${d.label} opens`} value={h.from} onChange={(e) => setDay(d.key, { from: e.target.value })} className="h-8 w-[110px]" />
+                    <span className="text-ink-muted">to</span>
+                    <Input type="time" aria-label={`${d.label} closes`} value={h.to} onChange={(e) => setDay(d.key, { to: e.target.value })} className="h-8 w-[110px]" />
+                  </span>
+                ) : (
+                  <span className="text-ink-muted">Closed</span>
+                )}
+              </li>
+            );
+          })}
+        </ul>
+      )}
+      <Field label="Closures and public holidays" htmlFor="w-closures" hint="Optional. One per line. On these days callers are told the business is closed.">
+        <Textarea id="w-closures" rows={3} maxLength={600} placeholder={"e.g. Closed all national public holidays\nClosed 24 December to 6 January"} value={value.closures ?? ""} onChange={(e) => onChange({ closures: e.target.value })} />
+      </Field>
+      <div>
+        <h2 className="text-[15px] font-semibold text-ink">What can callers ask it for?</h2>
+        <p className="text-[12.5px] text-ink-muted">Common ones for {article(businessNoun(value))} {businessNoun(value)}. Remove any that don't apply and add the business's own.</p>
+      </div>
+      <Chips list="services" items={value.services} onRemove={(s) => onChange({ services: value.services.filter((x) => x !== s) })} />
+      <Suggestions list="services" items={[...preset.services, ...GENERAL_SERVICES]} taken={value.services} max={12} onAdd={(x) => onChange({ services: [...value.services, x] })} />
+      <ListInput items={value.services} max={12} each={60} label="Add a service" placeholder="Add another, then press Enter" onAdd={(x) => onChange({ services: [...value.services, x] })} />
       <Field label="Anything else callers often ask?" htmlFor="w-notes" hint="Optional. Parking, payment options, how long appointments take…">
         <Textarea id="w-notes" rows={4} maxLength={1500} value={value.notes} onChange={(e) => onChange({ notes: e.target.value })} />
       </Field>
+    </>
+  );
+}
+
+// Topics staff should handle, offered as one-tap additions.
+const TOPIC_SUGGESTIONS: Partial<Record<IndustryKey, string[]>> = {
+  childcare: ["Private child or family matters", "Collection or custody arrangements", "Health or medical matters", "Complaints"],
+};
+const GENERAL_TOPICS = ["Complaints", "Refunds and billing disputes", "Job applications", "Media enquiries"];
+
+function UrgentStep({ value, onChange, urgent, onUrgent }: StepProps & { urgent: Urgent; onUrgent: (p: Partial<Urgent>) => void }) {
+  const topics = value.avoid ?? [];
+  return (
+    <>
+      <div>
+        <h2 className="text-[15px] font-semibold text-ink">Who should urgent calls go to?</h2>
+        <p className="text-[12.5px] text-ink-muted">Optional. With a number here, it puts urgent callers through to a person during active hours instead of only taking a message.</p>
+      </div>
+      <div className="grid gap-4 sm:grid-cols-2">
+        <Field label="Phone number" htmlFor="w-urgent" hint="An Australian mobile or landline. Calls are put through once the receptionist has its own number.">
+          <Input id="w-urgent" type="tel" maxLength={20} placeholder="e.g. 0412 345 678" value={urgent.number} onChange={(e) => onUrgent({ number: e.target.value })} />
+        </Field>
+        <Field label="Whose number is it?" htmlFor="w-urgent-name" hint="Callers hear “putting you through to …”.">
+          <Input id="w-urgent-name" maxLength={40} placeholder="the team" value={urgent.name} onChange={(e) => onUrgent({ name: e.target.value })} />
+        </Field>
+      </div>
+      {urgent.number.trim() ? (
+        <label className="flex items-center gap-2 text-[13px] text-ink">
+          <Switch checked={urgent.onRequest} onCheckedChange={(onRequest) => onUrgent({ onRequest })} aria-label="Also when a caller asks for a person" />
+          Also put callers through when they ask for a person
+        </label>
+      ) : null}
+      <div>
+        <h2 className="text-[15px] font-semibold text-ink">Topics to pass to staff</h2>
+        <p className="text-[12.5px] text-ink-muted">Optional. It won't discuss these on the phone. It offers to pass a message to the team instead.</p>
+      </div>
+      <Chips list="topics" items={topics} onRemove={(t) => onChange({ avoid: topics.filter((x) => x !== t) })} />
+      <Suggestions list="topics" items={[...(TOPIC_SUGGESTIONS[value.industry] ?? []), ...GENERAL_TOPICS]} taken={topics} max={12} onAdd={(x) => onChange({ avoid: [...topics, x] })} />
+      <ListInput items={topics} max={12} each={80} label="Add a topic" placeholder="Add a topic, then press Enter" onAdd={(x) => onChange({ avoid: [...topics, x] })} />
     </>
   );
 }
@@ -425,7 +590,21 @@ function VoiceStep({ value, onChange, voices, loading }: StepProps & { voices: {
           </button>
         ) : null}
       </div>
-      <Field label="Greeting" htmlFor="w-greeting" hint="Leave blank to use the suggested greeting. Keep the part that says it's an AI assistant and that the call is recorded.">
+      <div className="grid gap-1.5">
+        <span id="w-greetings" className="text-[12.5px] font-medium text-ink">Ready-made greetings</span>
+        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2" role="radiogroup" aria-labelledby="w-greetings" data-list="greetings">
+          {greetingsFor(value.industry, value.businessName, value.receptionistName).map((g) => {
+            const on = (value.greeting.trim() || defaultGreeting(value.businessName, value.receptionistName)) === g.text;
+            return (
+              <button key={g.label} type="button" role="radio" aria-checked={on} onClick={() => onChange({ greeting: g.text })} className={cn("rounded-[6px] border px-3 py-2 text-left", on ? "border-indigo bg-[#efeeff]" : "border-hairline bg-white hover:bg-canvas-2")}>
+                <span className="block text-[12.5px] font-medium text-ink">{g.label}</span>
+                <span className="block text-[12px] leading-4 text-ink-muted">{g.text}</span>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+      <Field label="Greeting" htmlFor="w-greeting" hint="Pick one above or write your own. Leave blank to use the standard one. Keep the part that says it's an AI assistant and that the call is recorded.">
         <Textarea id="w-greeting" rows={3} maxLength={300} placeholder={defaultGreeting(value.businessName, value.receptionistName)} value={value.greeting} onChange={(e) => onChange({ greeting: e.target.value })} />
       </Field>
     </>

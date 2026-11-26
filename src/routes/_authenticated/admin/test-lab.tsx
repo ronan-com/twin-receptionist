@@ -9,10 +9,10 @@ import { ErrorState, Notice, PageHeader, Panel } from "@/components/app/primitiv
 import { platformApi } from "@/lib/api/console";
 import type { TestLogin } from "@/lib/shared";
 import { LinkBox, useConsole } from "./-shared";
-import { named } from "@/lib/app/product";
+import { PRODUCT } from "@/lib/app/product";
 
 export const Route = createFileRoute("/_authenticated/admin/test-lab")({
-  head: () => ({ meta: [{ title: named("Test lab — Answered admin") }] }),
+  head: () => ({ meta: [{ title: `Test lab — ${PRODUCT} admin` }] }),
   component: TestLabPage,
 });
 

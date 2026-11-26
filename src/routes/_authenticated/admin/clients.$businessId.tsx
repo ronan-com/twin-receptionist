@@ -20,13 +20,13 @@ import { AutomationChips, AutomationIcon, CallSheet, LinkBox, READ_ONLY_HINT, us
 import { BrandEditor } from "./-brand";
 import { BuyNumber } from "./-buy-number";
 import { TestCall } from "@/components/app/TestCall";
-import { named } from "@/lib/app/product";
+import { PRODUCT } from "@/lib/app/product";
 
 // A client: one company the agency looks after, with everything under it (its
 // receptionists and their automations, calls, bookings, customers and branding).
 // The path id is the company's (old links with a receptionist's id open its company).
 export const Route = createFileRoute("/_authenticated/admin/clients/$businessId")({
-  head: () => ({ meta: [{ title: named("Client — Answered admin") }] }),
+  head: () => ({ meta: [{ title: `Client — ${PRODUCT} admin` }] }),
   component: ClientDetailPage,
 });
 

@@ -175,6 +175,8 @@ try {
     await ag.waitForSelector('[data-step="2"]');
     await sleep(500);
     await click(ag, '[data-action="continue"]');
+    await ag.waitForSelector('[data-step="3"]');
+    await click(ag, '[data-action="continue"]');
     await ag.waitForSelector("[data-review]");
     await click(ag, '[data-action="create-receptionist"]');
     await ag.waitForSelector("[data-company]", { timeout: 30000 });

@@ -8,7 +8,7 @@ import {
   PhoneIncoming,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { PRODUCT, named } from "@/lib/app/product";
+import { PRODUCT } from "@/lib/app/product";
 
 const stages = [
   {
@@ -16,7 +16,7 @@ const stages = [
     icon: PhoneIncoming,
     title: "Call answered",
     detail:
-      named("Answered identified Alex as a new patient and captured the reason for the call."),
+      `${PRODUCT} identified Alex as a new patient and captured the reason for the call.`,
   },
   {
     label: "Booking",

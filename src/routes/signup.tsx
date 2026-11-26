@@ -12,7 +12,7 @@ import { INDUSTRIES } from "@/lib/app/constants";
 import { sessionQuery } from "@/lib/app/workspace";
 import { TIMEZONES } from "@/lib/shared";
 import { cn } from "@/lib/utils";
-import { named } from "@/lib/app/product";
+import { PRODUCT } from "@/lib/app/product";
 
 type Kind = "business" | "agency";
 
@@ -20,7 +20,7 @@ export const Route = createFileRoute("/signup")({
   validateSearch: (search: Record<string, unknown>): { as?: Kind } => ({
     as: search.as === "business" || search.as === "agency" ? (search.as as Kind) : undefined,
   }),
-  head: () => ({ meta: [{ title: named("Create your account — Answered") }, { name: "robots", content: "noindex" }] }),
+  head: () => ({ meta: [{ title: `Create your account — ${PRODUCT}` }, { name: "robots", content: "noindex" }] }),
   component: SignupPage,
 });
 

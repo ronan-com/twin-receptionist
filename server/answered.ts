@@ -2,21 +2,23 @@ import type { Business as Receptionist, IndustryKey } from "../src/lib/shared";
 import type { Ctx } from "./accounts";
 import { iso, sql } from "./db";
 
-// The Answered UI's view of our data. Its screens expect Answered's row shapes
+// The workspace UI's view of our data. Its screens expect the row shapes it was built with
 // (src/lib/app/types.ts, snake_case). A "business" there is one receptionist here
 // (a row of `clients`), and a business membership is a `client_access` row.
 
-// Answered's industry list (src/lib/app/constants.ts INDUSTRIES) to ours and back.
+// The workspace's industry list (src/lib/app/constants.ts INDUSTRIES) to ours and back.
+// Several of ours share one of its labels (a vet and a physio are both "Healthcare"),
+// so a label maps back to the closest general one.
 const FROM_ANSWERED: Record<string, IndustryKey> = {
   Dental: "dental",
   Healthcare: "health",
   Trades: "trades",
-  Legal: "professional",
-  Accounting: "professional",
+  Legal: "legal",
+  Accounting: "accounting",
   "Real estate": "property",
   "Salon & beauty": "beauty",
-  Fitness: "other",
-  Hospitality: "other",
+  Fitness: "gym",
+  Hospitality: "cafe",
   Automotive: "auto",
   "Property management": "property",
   "Professional services": "professional",
@@ -32,6 +34,19 @@ const TO_ANSWERED: Record<IndustryKey, string> = {
   auto: "Automotive",
   professional: "Professional services",
   childcare: "Childcare",
+  cafe: "Hospitality",
+  vet: "Healthcare",
+  gym: "Fitness",
+  physio: "Healthcare",
+  legal: "Legal",
+  accounting: "Accounting",
+  cleaning: "Trades",
+  plumbing: "Trades",
+  hotel: "Hospitality",
+  retail: "Other",
+  tutoring: "Other",
+  grooming: "Salon & beauty",
+  removalist: "Trades",
   other: "Other",
 };
 
@@ -41,7 +56,7 @@ export const industryLabelOf = (key: IndustryKey | string | undefined) => TO_ANS
 
 const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 40) || "business";
 
-// Answered's Business row (businesses table) for one receptionist, plus a few of our own fields.
+// The workspace's Business row (businesses table) for one receptionist, plus a few of our own fields.
 export function answeredBusiness(
   r: Receptionist,
   extra: { orgId: string; orgName: string; sandbox: boolean; suspended: boolean },
@@ -74,7 +89,7 @@ export function answeredBusiness(
     created_by: null,
     created_at: iso(r.createdAt),
     updated_at: iso(r.updatedAt),
-    // Ours (not in Answered's row):
+    // Ours (not in the workspace's row):
     org_id: extra.orgId,
     org_name: extra.orgName,
     receptionist_name: s.receptionistName,
@@ -83,12 +98,12 @@ export function answeredBusiness(
 }
 export type AnsweredBusiness = ReturnType<typeof answeredBusiness>;
 
-// manager ≈ Answered's admin, viewer ≈ read_only (docs/ANSWERED_UI_PORT.md).
+// manager ≈ the workspace's admin, viewer ≈ read_only (docs/ANSWERED_UI_PORT.md).
 export const membershipRole = (role: string) => (role === "manager" ? "admin" : "read_only");
 
 /**
- * The businesses this person works with in the Answered workspace (/app), with their
- * memberships in Answered's shape:
+ * The businesses this person works with in the workspace (/app), with their
+ * memberships in the workspace's shape:
  *  - a business user: every receptionist shared with them, in any org
  *  - the platform team viewing as a business: that one (no membership: read-only staff view)
  *  - agency staff and the platform team: their current org's receptionists (no membership)

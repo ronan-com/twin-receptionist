@@ -21,7 +21,7 @@ import type { Lead, LeadStage } from "@/lib/app/types";
 import { useWorkspace } from "@/lib/app/workspace";
 import { isFollowUpDone, instantToLocalInput, resolveLocalInput, tzAbbrev, tzDateTime, tzDayKey } from "@/lib/app/business-logic";
 import { cn } from "@/lib/utils";
-import { named } from "@/lib/app/product";
+import { PRODUCT } from "@/lib/app/product";
 
 export const Route = createFileRoute("/_authenticated/app/leads")({
   validateSearch: (search: Record<string, unknown>): { lead?: string } => ({
@@ -29,7 +29,7 @@ export const Route = createFileRoute("/_authenticated/app/leads")({
   }),
   head: () => ({
     meta: [
-      { title: named("Follow-ups — Answered") },
+      { title: `Follow-ups — ${PRODUCT}` },
       { name: "description", content: "Everyone who asked your receptionist to get back to them, with what they wanted and what happens next." },
     ],
   }),

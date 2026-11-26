@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { brandVars, textOn } from "@/components/app/WorkspaceBrand";
 import type { BrandChange } from "@/lib/api/console";
 import type { Brand } from "@/lib/shared";
-import { named } from "@/lib/app/product";
+import { PRODUCT } from "@/lib/app/product";
 
 // The branding editor (not a route): logo, background and colours, with a live preview
 // of the customer workspace. Used for the agency default (Settings) and per company.
@@ -191,7 +191,7 @@ export function BrandEditor({ brand, fallback, canManage, previewName, upload, s
             </div>
           </div>
         </div>
-        <p className="mt-1.5 text-[11.5px] text-ink-muted">Unsaved colours show here first. Blank fields use {fallback ? "your agency's branding" : named("Answered's defaults")}.</p>
+        <p className="mt-1.5 text-[11.5px] text-ink-muted">Unsaved colours show here first. Blank fields use {fallback ? "your agency's branding" : `${PRODUCT}'s defaults`}.</p>
       </div>
     </div>
   );

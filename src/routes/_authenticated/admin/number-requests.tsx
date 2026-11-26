@@ -15,10 +15,10 @@ import { adminBusinessesQuery } from "@/lib/app/queries";
 import { getConsoleNumberRequests, platformApi, requestNumberFor } from "@/lib/api/console";
 import { formatNumber, type AdminNumberRequest, type AvailableNumber } from "@/lib/shared";
 import { READ_ONLY_HINT, useConsole } from "./-shared";
-import { named } from "@/lib/app/product";
+import { PRODUCT } from "@/lib/app/product";
 
 export const Route = createFileRoute("/_authenticated/admin/number-requests")({
-  head: () => ({ meta: [{ title: named("Number requests — Answered admin") }] }),
+  head: () => ({ meta: [{ title: `Number requests — ${PRODUCT} admin` }] }),
   component: NumberRequestsPage,
 });
 

@@ -24,6 +24,19 @@ export type IndustryKey =
   | "auto"
   | "professional"
   | "childcare"
+  | "cafe"
+  | "vet"
+  | "gym"
+  | "physio"
+  | "legal"
+  | "accounting"
+  | "cleaning"
+  | "plumbing"
+  | "hotel"
+  | "retail"
+  | "tutoring"
+  | "grooming"
+  | "removalist"
   | "other";
 
 export type Tone = "friendly" | "professional" | "calm" | "upbeat" | "direct";
@@ -47,6 +60,14 @@ export type Settings = {
   greeting: string;
   tone: Tone;
   notes: string;
+  /** What the business is, in its own words, when the industry is "other" ("florist"). */
+  industryLabel?: string;
+  /** "What does the business do?", in a sentence or two. */
+  about?: string;
+  /** How to say the business name, when it isn't obvious ("Kia-ora", "Bow-Jay"). */
+  sayName?: string;
+  /** Public holidays and temporary closures, as the business writes them. */
+  closures?: string;
   // Receptionist depth (all optional: older records don't have them). See server/prompt.ts.
   personality?: string;
   dialect?: Dialect;
@@ -325,7 +346,10 @@ type IndustryPreset = {
   customer: string;
   booking: string;
   services: string[];
-  weekend: "closed" | "sat-morning" | "sat-full";
+  // Weekday hours when they aren't 8am to 5pm; "always" is open 24/7.
+  weekdays?: [string, string] | "always";
+  // "every-day": Saturday and Sunday open the same hours as weekdays.
+  weekend: "closed" | "sat-morning" | "sat-full" | "every-day";
   // Advice the receptionist must never give for this industry.
   guardrail: string;
 };
@@ -412,9 +436,161 @@ export const INDUSTRIES: IndustryPreset[] = [
     customer: "parent",
     booking: "centre tour",
     services: ["Book a centre tour", "Enrolment or waitlist enquiry", "Fees and subsidy question", "Message for the director"],
+    weekdays: ["06:30", "18:30"],
     weekend: "closed",
     guardrail:
       "Never discuss an individual child, who may collect a child, custody or family arrangements, or health and medical matters: offer a call back from the director instead. A tour is a visit only: never promise a place, an enrolment, a start date or a fee unless the centre's approved answers say so. If a child may be in danger right now, tell the caller to call triple zero.",
+  },
+  {
+    key: "cafe",
+    label: "Café or restaurant",
+    noun: "café",
+    customer: "customer",
+    booking: "table booking",
+    services: ["Book a table", "Takeaway or order enquiry", "Functions and catering", "Dietary or menu question"],
+    weekdays: ["07:00", "15:00"],
+    weekend: "every-day",
+    guardrail:
+      "Never say a dish is safe for an allergy or intolerance: say the team can talk them through the ingredients. Do not take card details over the phone.",
+  },
+  {
+    key: "vet",
+    label: "Vet clinic",
+    noun: "vet clinic",
+    customer: "pet owner",
+    booking: "appointment",
+    services: ["Check-up or vaccination", "Sick or injured pet", "Desexing or surgery enquiry", "Repeat medication or food"],
+    weekdays: ["08:00", "18:00"],
+    weekend: "sat-morning",
+    guardrail:
+      "Never give veterinary advice or say whether a pet needs to be seen. If a pet can't breathe, is bleeding heavily, has collapsed, has been hit by a car or has eaten something poisonous, tell them to come in straight away or go to the nearest emergency vet, and that the team will call back as a priority.",
+  },
+  {
+    key: "gym",
+    label: "Gym or fitness studio",
+    noun: "gym",
+    customer: "member",
+    booking: "class or session",
+    services: ["Membership enquiry", "Book a class", "Personal training", "Pause or cancel a membership"],
+    weekdays: ["05:30", "21:00"],
+    weekend: "every-day",
+    guardrail:
+      "Do not give medical, injury or diet advice. Do not change, pause or cancel a membership on the call: take the request for the team.",
+  },
+  {
+    key: "physio",
+    label: "Physio or chiropractor",
+    noun: "clinic",
+    customer: "patient",
+    booking: "appointment",
+    services: ["Initial assessment", "Follow-up treatment", "Sports injury", "Workers' comp or insurance enquiry"],
+    weekdays: ["07:30", "18:30"],
+    weekend: "sat-morning",
+    guardrail:
+      "Never give medical advice or comment on pain, injuries or treatment. In an emergency, tell the caller to call triple zero.",
+  },
+  {
+    key: "legal",
+    label: "Law firm",
+    noun: "law firm",
+    customer: "client",
+    booking: "consultation",
+    services: ["New matter enquiry", "Book a consultation", "Update on an existing matter", "Documents or signing"],
+    weekend: "closed",
+    guardrail:
+      "Never give legal advice or comment on the caller's matter, deadlines or chances. Take the details for a lawyer to follow up, and keep what they say private.",
+  },
+  {
+    key: "accounting",
+    label: "Accountant or bookkeeper",
+    noun: "accounting practice",
+    customer: "client",
+    booking: "appointment",
+    services: ["Tax return appointment", "New client enquiry", "BAS or bookkeeping", "Question for my accountant"],
+    weekend: "closed",
+    guardrail:
+      "Do not give tax, financial or accounting advice, or say what someone owes or will get back. Take the question for an accountant to follow up.",
+  },
+  {
+    key: "cleaning",
+    label: "Cleaning service",
+    noun: "cleaning business",
+    customer: "customer",
+    booking: "clean",
+    services: ["Quote for a clean", "Regular home or office clean", "End-of-lease or bond clean", "Carpet or window cleaning"],
+    weekend: "sat-morning",
+    guardrail:
+      "Do not quote a firm price or promise a bond-back result. Take the details (the size of the place and what's needed) for the team to quote.",
+  },
+  {
+    key: "plumbing",
+    label: "Plumber or electrician",
+    noun: "plumbing and electrical business",
+    customer: "customer",
+    booking: "job booking",
+    services: ["Emergency call-out", "Blocked drain or leak", "Power or wiring fault", "Hot water", "Quote request"],
+    weekdays: ["07:00", "17:00"],
+    weekend: "sat-morning",
+    guardrail:
+      "Do not diagnose faults or tell the caller how to fix something themselves. For a gas leak, sparking, a fire or an electric shock, tell them to get to safety and call triple zero first. Treat flooding or no power as an urgent job.",
+  },
+  {
+    key: "hotel",
+    label: "Hotel or accommodation",
+    noun: "hotel",
+    customer: "guest",
+    booking: "booking",
+    services: ["Room booking or availability", "Change or cancel a booking", "Check-in and check-out times", "Message for reception"],
+    weekdays: "always",
+    weekend: "every-day",
+    guardrail:
+      "Do not take card details over the phone, confirm a room or rate that isn't written above, or say whether someone is staying. Take the request for reception.",
+  },
+  {
+    key: "retail",
+    label: "Shop or retail store",
+    noun: "shop",
+    customer: "customer",
+    booking: "enquiry",
+    services: ["Is it in stock?", "Order or delivery enquiry", "Returns or exchanges", "Opening hours and location"],
+    weekdays: ["09:00", "17:30"],
+    weekend: "sat-full",
+    guardrail: "Do not promise stock, prices or refunds unless they are written above. Take the details for the team to check.",
+  },
+  {
+    key: "tutoring",
+    label: "Tutoring or coaching",
+    noun: "tutoring centre",
+    customer: "caller",
+    booking: "lesson",
+    services: ["Book a trial lesson", "Subjects and year levels", "Change or cancel a lesson", "Fees enquiry"],
+    weekdays: ["09:00", "18:00"],
+    weekend: "sat-morning",
+    guardrail:
+      "Do not discuss an individual student's progress or results, or promise results. Offer a call back from the tutor.",
+  },
+  {
+    key: "grooming",
+    label: "Pet grooming",
+    noun: "pet grooming salon",
+    customer: "customer",
+    booking: "grooming appointment",
+    services: ["Wash and groom", "Clip or full groom", "Nail trim", "Puppy's first groom"],
+    weekend: "sat-full",
+    guardrail:
+      "Do not give advice about a pet's skin, ears or health: suggest they check with their vet, and offer to have the groomer call back.",
+  },
+  {
+    key: "removalist",
+    label: "Removalist",
+    noun: "removalist",
+    customer: "customer",
+    booking: "move",
+    services: ["Quote for a move", "Book a moving date", "Packing and boxes", "Storage enquiry"],
+    weekdays: ["07:00", "17:00"],
+    weekend: "sat-full",
+    guardrail:
+      "Do not quote a firm price or promise a date before the team confirms it. Take the moving date, both addresses and what's being moved.",
   },
   {
     key: "other",
@@ -432,15 +608,33 @@ export function industry(key: IndustryKey): IndustryPreset {
   return INDUSTRIES.find((i) => i.key === key) ?? INDUSTRIES[INDUSTRIES.length - 1];
 }
 
+export const ALWAYS_FROM = "00:00";
+export const ALWAYS_TO = "23:59";
+
+/** Open every day, all day ("Always on (24/7)"). */
+export function alwaysOpen(): Hours {
+  const day = (): DayHours => ({ open: true, from: ALWAYS_FROM, to: ALWAYS_TO });
+  return { mon: day(), tue: day(), wed: day(), thu: day(), fri: day(), sat: day(), sun: day() };
+}
+
+const allDay = (h: DayHours | undefined) => Boolean(h?.open && h.from === ALWAYS_FROM && h.to === ALWAYS_TO);
+
+/** True when every day is open 00:00 to 23:59. */
+export const isAlwaysOpen = (hours: Hours) => DAYS.every((d) => allDay(hours[d.key]));
+
 export function defaultHours(key: IndustryKey): Hours {
-  const weekday: DayHours = key === "childcare" ? { open: true, from: "06:30", to: "18:30" } : { open: true, from: "08:00", to: "17:00" };
-  const preset = industry(key).weekend;
+  const preset = industry(key);
+  if (preset.weekdays === "always") return alwaysOpen();
+  const [from, to] = preset.weekdays ?? ["08:00", "17:00"];
+  const weekday: DayHours = { open: true, from, to };
   const sat: DayHours =
-    preset === "sat-full"
-      ? { open: true, from: "09:00", to: "16:00" }
-      : preset === "sat-morning"
-        ? { open: true, from: "09:00", to: "12:00" }
-        : { open: false, from: "09:00", to: "12:00" };
+    preset.weekend === "every-day"
+      ? { ...weekday }
+      : preset.weekend === "sat-full"
+        ? { open: true, from: "09:00", to: "16:00" }
+        : preset.weekend === "sat-morning"
+          ? { open: true, from: "09:00", to: "12:00" }
+          : { open: false, from: "09:00", to: "12:00" };
   return {
     mon: { ...weekday },
     tue: { ...weekday },
@@ -448,7 +642,7 @@ export function defaultHours(key: IndustryKey): Hours {
     thu: { ...weekday },
     fri: { ...weekday },
     sat,
-    sun: { open: false, from: "09:00", to: "12:00" },
+    sun: preset.weekend === "every-day" ? { ...weekday } : { open: false, from: "09:00", to: "12:00" },
   };
 }
 
@@ -458,6 +652,70 @@ export function defaultGreeting(businessName: string, receptionistName: string):
   const intro = who ? `I'm ${who}, the AI assistant here` : "I'm the AI assistant here";
   return `Hi, you've reached ${biz}. ${intro}, and this call is recorded. How can I help?`;
 }
+
+/** "a" or "an" before a word. */
+export const article = (word: string) => (/^[aeiou]/i.test(word.trim()) ? "an" : "a");
+
+/** What the business is called in the script: its preset's noun, or its own words for "Something else". */
+export function businessNoun(s: Pick<Settings, "industry" | "industryLabel">): string {
+  const label = s.industry === "other" ? (s.industryLabel ?? "").trim() : "";
+  if (!label) return industry(s.industry).noun;
+  // "Florist" -> "florist", but "NDIS provider" stays as it is.
+  return /^[A-Z][a-z]/.test(label) ? label[0].toLowerCase() + label.slice(1) : label;
+}
+
+const EMERGENCY_LINE: Partial<Record<IndustryKey, string>> = {
+  dental: "If you're in pain or it's urgent, tell me straight away.",
+  health: "If this is a medical emergency, please hang up and call triple zero.",
+  physio: "If this is a medical emergency, please hang up and call triple zero.",
+  vet: "If your pet needs urgent care, tell me straight away.",
+  trades: "If it's an emergency, tell me straight away.",
+  plumbing: "If it's an emergency, like a burst pipe or no power, tell me straight away.",
+};
+
+/**
+ * Ready-made greetings for the setup wizard. Each one says it's an AI and that the
+ * call is recorded, like defaultGreeting.
+ */
+export function greetingsFor(key: IndustryKey, businessName: string, receptionistName: string): { label: string; text: string }[] {
+  const biz = businessName.trim() || "our office";
+  const who = receptionistName.trim();
+  const intro = who ? `I'm ${who}, the AI assistant here` : "I'm the AI assistant here";
+  const preset = industry(key);
+  const out = [{ label: "Standard", text: defaultGreeting(businessName, receptionistName) }];
+  if (key === "childcare") {
+    const me = who ? `I'm ${who}, the centre's AI receptionist` : "I'm the centre's AI receptionist";
+    out.unshift({
+      label: "Childcare centre",
+      text: `Thanks for calling ${biz}. ${me}, and this call is recorded. I can help with enrolments, tours and general questions. If you'd prefer to speak with the team, just let me know.`,
+    });
+  }
+  const emergency = EMERGENCY_LINE[key];
+  if (emergency) out.push({ label: "Urgent calls first", text: `Hi, you've reached ${biz}. ${intro}, and this call is recorded. ${emergency} Otherwise, how can I help?` });
+  out.push({
+    label: "Bookings first",
+    text: `Hi, you've reached ${biz}. ${intro}, and this call is recorded. I can help with ${article(preset.booking)} ${preset.booking} or answer any questions. What can I do for you?`,
+  });
+  return out;
+}
+
+/**
+ * Starter answers for a childcare centre, from the approved-answers sheet in the
+ * centre onboarding pack. Added to a new childcare receptionist's knowledge for the
+ * director to check and replace with their approved wording.
+ */
+export const CHILDCARE_STARTER_ANSWERS: { topic: string; question: string; answer: string }[] = [
+  { topic: "Tours", question: "Can I visit?", answer: "Offer available tours from the designated calendar. Confirm only after booking succeeds." },
+  { topic: "Availability", question: "Is there a place for my child?", answer: "Ask the enrolments team to call back. A tour does not reserve a place." },
+  { topic: "Fees", question: "What will it cost?", answer: "Use the current fee sheet approved by the director or offer a callback." },
+  { topic: "Hours and parking", question: "When are you open and where do I go?", answer: "Use verified opening times, closures, address and arrival instructions for this centre." },
+  { topic: "Family matters", question: "Can I change collection arrangements?", answer: "Refer to authorised staff. Avoid collecting private child or family details in the call summary." },
+  { topic: "Urgent", question: "I need somebody urgently.", answer: "Use the director-approved urgent call instructions and fixed staff fallback." },
+  { topic: "Booking changes", question: "Can I cancel or move my visit?", answer: "Take the minimum callback details and pass the change to the centre team." },
+];
+
+/** How a starter answer is titled, so the director knows to check it. */
+export const starterTitle = (question: string) => `${question} (starter answer: director to check)`;
 
 // "17:00" -> "5pm", "08:30" -> "8:30am"
 export function sayTime(hhmm: string): string {
@@ -470,6 +728,7 @@ export function sayTime(hhmm: string): string {
 
 // Groups consecutive days with the same hours: "Monday to Friday 8am to 5pm".
 export function describeHours(hours: Hours): string[] {
+  if (isAlwaysOpen(hours)) return ["Open 24 hours, 7 days (24/7)"];
   const lines: string[] = [];
   let i = 0;
   while (i < DAYS.length) {
@@ -483,7 +742,7 @@ export function describeHours(hours: Hours): string[] {
       j++;
     }
     const range = j === i ? start.label : `${start.label} to ${DAYS[j].label}`;
-    lines.push(a.open ? `${range}: ${sayTime(a.from)} to ${sayTime(a.to)}` : `${range}: closed`);
+    lines.push(!a.open ? `${range}: closed` : allDay(a) ? `${range}: open 24 hours` : `${range}: ${sayTime(a.from)} to ${sayTime(a.to)}`);
     i = j + 1;
   }
   return lines;
@@ -536,7 +795,7 @@ export type Account = {
   viewing?: Viewing;
   // Logo and background for this team's screens (a business's own, in its customer view).
   brand?: Brand;
-  // The Answered UI: "platform"/"agency" use the console (/admin), business users (null) the workspace (/app).
+  // Which screens: "platform"/"agency" use the console (/admin), business users (null) the workspace (/app).
   console: "platform" | "agency" | null;
   home: "/admin" | "/app";
   // A business user's access to each receptionist shared with them in this org.

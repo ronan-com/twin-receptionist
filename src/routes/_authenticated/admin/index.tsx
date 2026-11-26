@@ -15,10 +15,10 @@ import { platformApi, getAdminAppointmentsLeads, getAdminRecentActivity, getCons
 import type { AppointmentStatus, LeadStage } from "@/lib/app/types";
 import { HUE_HEX, dailyCounts, hueFor, type Hue } from "@/components/app/hues";
 import { BizCell, CallSheet, useConsole } from "./-shared";
-import { named } from "@/lib/app/product";
+import { PRODUCT } from "@/lib/app/product";
 
 export const Route = createFileRoute("/_authenticated/admin/")({
-  head: () => ({ meta: [{ title: named("Admin overview — Answered") }] }),
+  head: () => ({ meta: [{ title: `Admin overview — ${PRODUCT}` }] }),
   component: AdminOverview,
 });
 

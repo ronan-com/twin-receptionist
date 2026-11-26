@@ -15,7 +15,7 @@ import { fmtDate } from "@/lib/app/format";
 import type { PhoneAccount } from "@/lib/shared";
 import { cn } from "@/lib/utils";
 import { READ_ONLY_HINT, useConsole } from "./-shared";
-import { named } from "@/lib/app/product";
+import { PRODUCT } from "@/lib/app/product";
 
 // Connections: what the agency has plugged in. The phone account is the one that
 // matters (nothing answers without it); the rest are counts with a way in.
@@ -23,7 +23,7 @@ import { named } from "@/lib/app/product";
 const TELNYX_PORTAL = "https://portal.telnyx.com/";
 
 export const Route = createFileRoute("/_authenticated/admin/connections")({
-  head: () => ({ meta: [{ title: named("Connections — Answered admin") }] }),
+  head: () => ({ meta: [{ title: `Connections — ${PRODUCT} admin` }] }),
   component: ConnectionsPage,
 });
 

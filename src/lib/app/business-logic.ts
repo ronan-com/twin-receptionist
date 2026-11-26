@@ -7,7 +7,7 @@
  */
 import type { Appointment, Integration, Lead, KnowledgeItem, PhoneNumber, Agent, Business, UnansweredQuestion } from "./types";
 import type { CallDetail, CallListRow } from "./types";
-import { PRODUCT, named } from "@/lib/app/product";
+import { PRODUCT } from "@/lib/app/product";
 
 /* ------------------------------------------------------------------ */
 /* 1. Booking source                                                    */
@@ -94,7 +94,7 @@ export function bookingSync(appointment: BookingSyncInput, calendar: CalendarCon
 
   if (!appointment.integration_id) {
     if (!calendar.connected && !calendar.errored) {
-      return { state: "not_connected", label: "Local record only", detail: named("No calendar is connected, so this booking lives in Answered only.") };
+      return { state: "not_connected", label: "Local record only", detail: `No calendar is connected, so this booking lives in ${PRODUCT} only.` };
     }
     return { state: "local_only", label: "Local record only", detail: "This booking was not sent to your connected calendar." };
   }
@@ -243,7 +243,7 @@ export function resolveLocalInput(input: string, tz: string | null | undefined):
     return {
       iso: new Date(valid[0]!).toISOString(),
       kind: "fold",
-      note: named("The clocks go back on this date, so this time happens twice. Answered has used the first, earlier one."),
+      note: `The clocks go back on this date, so this time happens twice. ${PRODUCT} has used the first, earlier one.`,
     };
   }
   return { iso: new Date(valid[0]!).toISOString(), kind: "ok", note: "" };
@@ -505,7 +505,7 @@ export function buildSetupChecklist(input: ChecklistInput): { steps: ChecklistSt
     {
       id: "telephony",
       title: "Connect your phone number",
-      description: named("Answered staff provision the number and point it at your receptionist."),
+      description: `${PRODUCT} staff provision the number and point it at your receptionist.`,
       done: !!liveNumber,
       staffOwned: true,
       href: "/app/phone-numbers",
@@ -523,7 +523,7 @@ export function buildSetupChecklist(input: ChecklistInput): { steps: ChecklistSt
     {
       id: "calendar",
       title: "Connect your calendar (optional)",
-      description: named("Bookings land straight in your calendar instead of Answered only."),
+      description: `Bookings land straight in your calendar instead of ${PRODUCT} only.`,
       done: cal.connected,
       staffOwned: false,
       href: "/app/integrations",

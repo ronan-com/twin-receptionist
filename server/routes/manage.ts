@@ -1,6 +1,6 @@
 import { DAYS, TIMEZONES, countryForTimezone, countryOfNumber, formatNumber, type Business, type DayKey, type Hours, type Settings, type Voice } from "../../src/lib/shared";
 import { createInvite, emailOf, type Ctx } from "../accounts";
-import { answeredBusiness, industryKeyOf, membershipRole } from "../answered";
+import { answeredBusiness, industryKeyOf, industryLabelOf, membershipRole } from "../answered";
 import { audit } from "../audit";
 import { changeBrand, ownBrand, resolveBrand, uploadAsset } from "../brand";
 import { availability, bookingLive } from "../booking";
@@ -525,7 +525,8 @@ function applyBusiness(s: Settings, b: any): Settings {
   const next = { ...s };
   if (!b || typeof b !== "object") return next;
   if (b.name !== undefined) next.businessName = str(b.name, 80);
-  if (b.industry !== undefined) next.industry = industryKeyOf(b.industry);
+  // Several types share one label; only change the type when the label really changed.
+  if (b.industry !== undefined && b.industry !== industryLabelOf(s.industry)) next.industry = industryKeyOf(b.industry);
   if (b.city !== undefined) next.suburb = str(b.city, 60);
   if (b.address_line1 !== undefined) next.address = str(b.address_line1, 140);
   if (b.timezone !== undefined) next.timezone = timezoneOf(b.timezone);

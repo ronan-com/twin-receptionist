@@ -14,10 +14,10 @@ import { fmtNumber, fmtPhone, fmtRelative } from "@/lib/app/format";
 import { agentsQuery, phoneNumbersQuery } from "@/lib/app/queries";
 import { requestNumber } from "@/lib/api/manage";
 import { useWorkspace } from "@/lib/app/workspace";
-import { named } from "@/lib/app/product";
+import { PRODUCT } from "@/lib/app/product";
 
 export const Route = createFileRoute("/_authenticated/app/phone-numbers")({
-  head: () => ({ meta: [{ title: named("Call handling — Answered") }] }),
+  head: () => ({ meta: [{ title: `Call handling — ${PRODUCT}` }] }),
   component: PhoneNumbersPage,
 });
 

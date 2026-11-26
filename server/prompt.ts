@@ -2,6 +2,8 @@ import {
   DAYS,
   INDUSTRIES,
   TIMEZONES,
+  article,
+  businessNoun,
   defaultGreeting,
   defaultHours,
   describeHours,
@@ -108,6 +110,36 @@ function depthFields(src: Record<string, unknown>, current: Partial<Settings>): 
   return out;
 }
 
+/**
+ * The setup wizard's optional business details (what it does, how to say its name,
+ * closures, and what it is when none of the types fit). Left out: kept as they are.
+ */
+function aboutFields(src: Record<string, unknown>, current: Partial<Settings>, industryKey: IndustryKey): Partial<Settings> {
+  const has = (k: string) => Object.prototype.hasOwnProperty.call(src, k);
+  const oneLine = (v: unknown, max: number) => clean(String(v ?? "").replace(/\r?\n+/g, " "), max);
+  const out: Partial<Settings> = {};
+  // Only "Something else" has its own label; picking a type replaces it.
+  const label = industryKey !== "other" ? "" : has("industryLabel") ? oneLine(src.industryLabel, 60).replace(/[.!?]+$/, "") : (current.industryLabel ?? "");
+  if (label) out.industryLabel = label;
+  const about = has("about") ? oneLine(src.about, 400) : (current.about ?? "");
+  if (about) out.about = about;
+  const sayName = has("sayName") ? oneLine(src.sayName, 80) : (current.sayName ?? "");
+  if (sayName) out.sayName = sayName;
+  // One closure per line or separated by semicolons.
+  const closures = has("closures")
+    ? clean(
+        String(src.closures ?? "")
+          .split(/\r?\n|;/)
+          .map((x) => x.trim())
+          .filter(Boolean)
+          .join("; "),
+        600,
+      )
+    : (current.closures ?? "");
+  if (closures) out.closures = closures;
+  return out;
+}
+
 /** What callers hear first: the greeting, or the pause message while paused. */
 export function greetingOf(s: Settings): string {
   return s.paused ? s.paused.message : s.greeting;
@@ -149,6 +181,7 @@ export function normaliseSettings(input: unknown, voiceNames: Map<string, string
     greeting,
     tone: TONES.includes(src.tone as Tone) ? (src.tone as Tone) : "friendly",
     notes: clean(String(src.notes ?? "").replace(/\r/g, ""), 1500),
+    ...aboutFields(src, current, industryKey),
     ...depthFields(src, current),
   };
 }
@@ -189,6 +222,7 @@ export function knowledgeSection(items: KnowledgeEntry[]): string {
 
 export function buildInstructions(s: Settings, booking: { minutes: number } | null = null, knowledge: KnowledgeEntry[] = []): string {
   const preset = industry(s.industry);
+  const noun = businessNoun(s);
   const where = s.suburb ? ` in ${s.suburb}, Australia` : " in Australia";
   const who = s.receptionistName ? `Your name is ${s.receptionistName}. ` : "";
   const tone = TONE_LINE[s.tone] ?? TONE_LINE.friendly;
@@ -196,13 +230,16 @@ export function buildInstructions(s: Settings, booking: { minutes: number } | nu
   const personality = s.personality ? `\n- Personality: ${s.personality}` : "";
 
   const info: string[] = describeHours(s.hours).map((line) => `- ${line}`);
+  if (s.closures) info.push(`- Closures and public holidays: ${s.closures}. On these days the business is closed, whatever the usual hours say.`);
   if (s.address) info.push(`- Address: ${s.address}`);
 
-  if (s.paused) return pausedInstructions(s, preset.noun, where, who, english, tone, info, booking !== null);
+  if (s.paused) return pausedInstructions(s, noun, where, who, english, tone, info, booking !== null);
 
   const notes = s.notes
     ? `\nMore about the business (use this to answer questions)\n${s.notes}\n`
     : "";
+  const about = s.about ? `\n\nWhat the business does: ${s.about}` : "";
+  const sayName = s.sayName ? `\n- Say the business name like this: "${s.sayName}".` : "";
   const answers =
     s.faqStyle === "detailed"
       ? "- When answering a question, give the full answer from what's written here, then check it covered what they needed."
@@ -219,12 +256,12 @@ export function buildInstructions(s: Settings, booking: { minutes: number } | nu
     ? `\n   Then ask these questions, one at a time, and include the answers in the request:\n${s.questions.map((q) => `   - ${q}`).join("\n")}`
     : "";
 
-  return `You are the receptionist for ${s.businessName}, a ${preset.noun}${where}. ${who}It is {{telnyx_current_time_${s.timezone}}} local time.
+  return `You are the receptionist for ${s.businessName}, ${article(noun)} ${noun}${where}. ${who}It is {{telnyx_current_time_${s.timezone}}} local time.${about}
 
 You answer both phone calls and text messages. This conversation's channel is "{{telnyx_conversation_channel}}": "sms_chat" or "web_chat" means you are texting, anything else means a voice call.
 
 How you speak on a call
-- ${english}. ${tone}${personality}
+- ${english}. ${tone}${personality}${sayName}
 - One or two short sentences per turn. Ask one question at a time and wait for the answer.
 - If the caller interrupts, stop talking and listen.
 - Say times the natural way ("two fifteen in the afternoon"), never in 24-hour format.
@@ -275,7 +312,7 @@ Rules
 // greeting itself, see greetingOf), take a message, never book. Only request_callback
 // stays on the assistant (server/index.ts syncAssistant); the hooks refuse the rest.
 function pausedInstructions(s: Settings, noun: string, where: string, who: string, english: string, tone: string, info: string[], callback: boolean): string {
-  return `You are the receptionist for ${s.businessName}, a ${noun}${where}. ${who}It is {{telnyx_current_time_${s.timezone}}} local time.
+  return `You are the receptionist for ${s.businessName}, ${article(noun)} ${noun}${where}. ${who}It is {{telnyx_current_time_${s.timezone}}} local time.
 
 The business has paused its receptionist for now. You have already told the caller: "${s.paused!.message}"
 

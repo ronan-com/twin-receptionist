@@ -57,12 +57,12 @@ import {
   tzDateTime,
 } from "@/lib/app/business-logic";
 import { cn } from "@/lib/utils";
-import { PRODUCT, named } from "@/lib/app/product";
+import { PRODUCT } from "@/lib/app/product";
 
 export const Route = createFileRoute("/_authenticated/app/")({
   head: () => ({
     meta: [
-      { title: named("Dashboard — Answered") },
+      { title: `Dashboard — ${PRODUCT}` },
       {
         name: "description",
         content:
@@ -296,7 +296,7 @@ function OverviewPage() {
               ? ""
               : " Your plan has no overage rate on file, so an extra charge cannot be estimated."}
           {
-            named(" This is an estimate from measured call usage shown inside Answered, not an invoice and not a message sent to you.")
+            ` This is an estimate from measured call usage shown inside ${PRODUCT}, not an invoice and not a message sent to you.`
           }
           {period.partialBoundary
             ? " Some usage records span the period boundary, so the total is close but not exact."

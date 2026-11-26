@@ -29,7 +29,7 @@ import { asBusinessHours, asRecord, asStringArray, type BusinessHours } from "@/
 import { useWorkspace } from "@/lib/app/workspace";
 import { TIMEZONES } from "@/lib/shared";
 import { cn } from "@/lib/utils";
-import { named } from "@/lib/app/product";
+import { PRODUCT } from "@/lib/app/product";
 
 // First-run onboarding (area S): a step-by-step set-up for a business manager whose
 // receptionist is still "pending" (clients.data.onboarding): a business that signed
@@ -38,7 +38,7 @@ import { named } from "@/lib/app/product";
 // left, can be put off ("I'll finish later"), and finishing marks it done.
 
 export const Route = createFileRoute("/_authenticated/app/onboarding")({
-  head: () => ({ meta: [{ title: named("Set up your receptionist — Answered") }] }),
+  head: () => ({ meta: [{ title: `Set up your receptionist — ${PRODUCT}` }] }),
   component: OnboardingPage,
 });
 

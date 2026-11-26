@@ -63,7 +63,7 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
   errorComponent: ErrorComponent,
 });
 
-const DEFAULT_TITLE = OTHER_BRAND ? PRODUCT : "Answered — The AI Receptionist";
+const DEFAULT_TITLE = OTHER_BRAND ? PRODUCT : `${PRODUCT} — The AI Receptionist`;
 
 // The deepest route's head() title becomes the document title.
 function useDocumentTitle() {

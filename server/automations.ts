@@ -206,7 +206,8 @@ function localParts(at: Date, tz: string): { day: (typeof DAYS)[number]["key"]; 
 export function openNow(settings: Pick<Settings, "hours" | "timezone">, at = new Date()): boolean {
   const { day, hhmm } = localParts(at, settings.timezone);
   const h = settings.hours[day];
-  return Boolean(h?.open && hhmm >= h.from && hhmm < h.to);
+  // Closing at 23:59 means open to midnight (how "open 24 hours" is stored).
+  return Boolean(h?.open && hhmm >= h.from && (hhmm < h.to || h.to === "23:59"));
 }
 
 const hasHours = (hours: Hours) => DAYS.some((d) => hours[d.key]?.open);

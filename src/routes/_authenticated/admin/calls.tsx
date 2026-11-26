@@ -16,10 +16,10 @@ import { rangeKey } from "@/lib/app/queries";
 import { downloadCsv } from "@/lib/app/csv";
 import { getConsoleCalls, type ConsoleCall } from "@/lib/api/console";
 import { BizCell, CallSheet, useConsole } from "./-shared";
-import { named } from "@/lib/app/product";
+import { PRODUCT } from "@/lib/app/product";
 
 export const Route = createFileRoute("/_authenticated/admin/calls")({
-  head: () => ({ meta: [{ title: named("Calls — Answered admin") }] }),
+  head: () => ({ meta: [{ title: `Calls — ${PRODUCT} admin` }] }),
   component: AdminCallsPage,
 });
 

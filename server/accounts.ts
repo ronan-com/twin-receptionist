@@ -6,6 +6,7 @@ import { iso, sql } from "./db";
 import { importLegacyData } from "./legacy";
 import { mailerReady, sendAccountEmail } from "./mailer";
 import { ValidationError } from "./prompt";
+import { UI_PRODUCT } from "./product";
 
 // People sign in with an email and password. Each person belongs to one or more
 // organisations (an agency, the sales team, or a single business), with a role:
@@ -24,8 +25,8 @@ export type Ctx = {
 };
 
 const COOKIE = "twin_sid";
-// The product name in account emails ("Answered" on the Answered build).
-const PRODUCT = process.env.PRODUCT_NAME || "Twin Receptionist";
+// The product name in account emails: the same name the screens show (PRODUCT_NAME).
+const PRODUCT = UI_PRODUCT;
 const SESSION_DAYS = 30;
 const INVITE_DAYS = 7;
 const RESET_MINUTES = 60;

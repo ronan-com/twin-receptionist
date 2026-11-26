@@ -8,6 +8,7 @@ import { ErrorState, Notice, Panel } from "@/components/app/primitives";
 import { StatusBadge } from "@/components/app/StatusBadge";
 import { Field } from "@/components/app/forms";
 import { fmtDate } from "@/lib/app/format";
+import { PRODUCT } from "@/lib/app/product";
 import { platformSettingsApi, platformSettingsQuery, type PlatformService } from "@/lib/api/platformSettings";
 import type { PlatformServiceState, PlatformSettings, PlatformTestResult } from "@/lib/shared";
 import { LinkBox } from "./-shared";
@@ -193,7 +194,7 @@ function MailCard({ s }: { s: PlatformSettings }) {
                 />
               </Field>
               <Field label="Send from" htmlFor="pm-from" hint="A name and an address your email service has verified.">
-                <Input id="pm-from" value={from} onChange={(e) => setFrom(e.target.value)} placeholder="Answered <no-reply@example.com>" maxLength={200} autoComplete="off" className="h-9" data-field="mail-from" />
+                <Input id="pm-from" value={from} onChange={(e) => setFrom(e.target.value)} placeholder={`${PRODUCT} <no-reply@example.com>`} maxLength={200} autoComplete="off" className="h-9" data-field="mail-from" />
               </Field>
             </div>
             <Buttons busy={busy} st={st} testLabel={test.isPending ? "Sending…" : "Send test email"} onTest={() => test.mutate(input())} onClear={() => clear.mutate()}>

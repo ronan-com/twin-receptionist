@@ -12,7 +12,7 @@ import { fmtCredit, phoneAccountQuery, phoneApi } from "@/lib/api/phone";
 import { useWorkspace } from "@/lib/app/workspace";
 import type { PhoneAccount } from "@/lib/shared";
 import { cn } from "@/lib/utils";
-import { named } from "@/lib/app/product";
+import { PRODUCT } from "@/lib/app/product";
 
 // Agency set-up: a new agency connects its own phone account (Telnyx) before it can
 // make receptionists. Five short steps; the key is checked with Telnyx and stored
@@ -30,7 +30,7 @@ export const Route = createFileRoute("/_authenticated/setup")({
     // SINGLE_AGENCY: the Telnyx key comes from the install, so there's nothing to set up here.
     if (s.singleAgency) throw redirect({ to: "/admin", replace: true });
   },
-  head: () => ({ meta: [{ title: named("Set up your agency — Answered") }, { name: "robots", content: "noindex" }] }),
+  head: () => ({ meta: [{ title: `Set up your agency — ${PRODUCT}` }, { name: "robots", content: "noindex" }] }),
   component: SetupPage,
 });
 

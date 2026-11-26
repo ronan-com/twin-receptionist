@@ -15,7 +15,7 @@ import { brandApi, getInternalAdmins, grantPlatformAdmin, revokePlatformAdmin, t
 import type { Brand } from "@/lib/shared";
 import { BrandEditor } from "./-brand";
 import { LinkBox, READ_ONLY_HINT, useConsole } from "./-shared";
-import { named } from "@/lib/app/product";
+import { PRODUCT } from "@/lib/app/product";
 import { EmailCalendarsSection } from "./-email-calendars";
 
 const TABS = ["team", "branding", "account", "platform", "email"] as const;
@@ -23,7 +23,7 @@ type Tab = (typeof TABS)[number];
 
 export const Route = createFileRoute("/_authenticated/admin/settings")({
   validateSearch: (s: Record<string, unknown>): { tab?: Tab } => (TABS.includes(s.tab as Tab) ? { tab: s.tab as Tab } : {}),
-  head: () => ({ meta: [{ title: named("Settings — Answered admin") }] }),
+  head: () => ({ meta: [{ title: `Settings — ${PRODUCT} admin` }] }),
   component: AdminSettingsPage,
 });
 

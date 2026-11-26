@@ -41,7 +41,7 @@ import { callDetail, listCalls } from "./calls";
 import { startCallSync } from "./callsync";
 import { industryKeyOf, workspaceBusinesses } from "./answered";
 import { audit } from "./audit";
-import { OTHER_BRAND, brandedIndex } from "./product";
+import { OTHER_BRAND, UI_PRODUCT, brandedIndex } from "./product";
 import { consoleRoutes, isClientPaused } from "./routes/console";
 import { manageRoutes, setManageDeps } from "./routes/manage";
 import { signupRoutes } from "./routes/signup";
@@ -297,8 +297,8 @@ async function hook(req: Request, clientId: string, action: string): Promise<Res
 function assistantFields(s: Settings, instructions: string) {
   const who = s.receptionistName || "your receptionist";
   return {
-    name: `${s.businessName} · ${process.env.PRODUCT_NAME || "Twin Receptionist"}`,
-    description: `Created by the ${process.env.PRODUCT_NAME || "Twin Receptionist"} setup.`,
+    name: `${s.businessName} · ${UI_PRODUCT}`,
+    description: `Created by the ${UI_PRODUCT} setup.`,
     instructions,
     greeting: greetingOf(s),
     voice_settings: { voice: s.voiceId, voice_speed: 1.0 },

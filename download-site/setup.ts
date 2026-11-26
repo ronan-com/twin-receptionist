@@ -13,7 +13,7 @@ import {
   railway, railwayUpload, recordLive, resendDomain, resendSend, resendSendingKey, resendStatus, resendVerify, smtpSend, smtpUrl,
 } from "./providers";
 import {
-  STEPS, isOptional, buyerByAttemptToken, buyerByDropletToken, deleteAllSecrets, getSecret, getSetup, hasSecret, logAppend, logBytes,
+  STEPS, OPTIONAL_HUB, isOptional, buyerByAttemptToken, buyerByDropletToken, deleteAllSecrets, getSecret, getSetup, hasSecret, logAppend, logBytes,
   logClear, logRead, newToken, putSecret, redact, saveSetup, secretValues, setAttemptToken, setDropletToken, updateSetup,
   activeSetups, deleteSecret, staleSecretBuyers, type DnsRecord, type SetupData, type StepId,
 } from "./store";
@@ -53,7 +53,9 @@ export function stepDone(b: Buyer, s: SetupData, id: StepId): boolean {
     case "domain": return (!!s.domain?.confirmed && !!s.domain.host) || !!s.skipped?.domain;
     case "server": return !!s.server?.chosen && (b.demo === 1 || hasSecret(b.id, "do_token") || s.phase !== "idle");
     case "railway": return !!s.railway?.confirmed && (b.demo === 1 || hasSecret(b.id, "railway_token") || s.phase !== "idle");
-    case "phones": return !!s.phones?.confirmed;
+    case "phones": return !!s.phones?.confirmed || !!s.phones?.deferred || !!s.vapi?.confirmed;
+    case "vapi": return !!s.vapi?.confirmed || !!s.skipped?.vapi;
+    case "twilio": return !!s.twilio?.confirmed || !!s.skipped?.twilio;
     case "email": return !!s.email?.confirmed || !!s.skipped?.email;
     case "calendars": return !!s.calendars?.done || !!s.skipped?.calendars;
     case "extras": return !!s.extrasDone;
@@ -64,16 +66,19 @@ export function stepDone(b: Buyer, s: SetupData, id: StepId): boolean {
 /** The first step still to do. Optional steps never hold anyone up. */
 export const firstOpen = (b: Buyer, s: SetupData): StepId => STEPS.find((id) => !isOptional(id) && !stepDone(b, s, id)) || "done";
 /** An optional step opens from the extras screen, so it's viewable as soon as extras is. */
-export const canView = (b: Buyer, s: SetupData, id: StepId) => CONFIG.previewJump || STEPS.indexOf(isOptional(id) ? "extras" : id) <= STEPS.indexOf(firstOpen(b, s));
+export const canView = (b: Buyer, s: SetupData, id: StepId) => CONFIG.previewJump || STEPS.indexOf(isOptional(id) ? OPTIONAL_HUB : id) <= STEPS.indexOf(firstOpen(b, s));
 /** Settings are baked into the server when it's made; after that they can't change here. */
 export const locked = (s: SetupData) => s.phase !== "idle";
 const nextStep = (b: Buyer, s: SetupData, from: StepId) => {
   // Finishing (or skipping) an optional step goes back to the extras screen.
-  if (isOptional(from)) { s.step = "extras"; return; }
+  if (isOptional(from)) { s.step = OPTIONAL_HUB; return; }
   const i = STEPS.indexOf(from);
   s.step = STEPS.slice(i + 1).find((id) => !isOptional(id) && (!stepDone(b, s, id) || id === "done")) || "done";
 };
 
+/** Telnyx is the default; Vapi only when the buyer added it as the backup option (or an older setup chose it). */
+export const useVapi = (s: SetupData) => !!s.vapi?.confirmed || s.phones?.provider === "vapi";
+export const twilioSidOf = (s: SetupData) => s.twilio?.sid || s.phones?.twilioSid || "";
 export const zoneOf = (s: SetupData) => s.domain?.zone || "";
 export const hostOf = (s: SetupData) => s.domain?.host || "";
 export const oauthRedirect = (s: SetupData, p: "google" | "microsoft") => `https://${hostOf(s) || "app.your-domain"}/api/oauth/${p}/callback`;
@@ -92,6 +97,12 @@ function extrasProblem(b: Buyer, s: SetupData): string | null {
   if (s.email?.mode === "resend" && s.email.confirmed) return "Email through Resend sends from your own domain, so add your domain too, or skip Email for now.";
   if (s.calendars?.google || s.calendars?.microsoft) return "Calendar sign-in needs your own domain, so add your domain too, or skip Calendars for now.";
   return null;
+}
+
+/** Telnyx is needed, unless the buyer switched to Vapi in the backup options. */
+function phonesProblem(b: Buyer, s: SetupData): string | null {
+  if (s.phones?.confirmed || s.vapi?.confirmed) return null;
+  return "Telnyx is needed for your phones. Go back to Phones and add your Telnyx key, or add Vapi under Other options (backup).";
 }
 
 const LOCKED_MSG = "Your server has already been made with these settings. To change them, delete the server on the Install step first.";
@@ -221,46 +232,9 @@ export const actions: Record<string, Action> = {
     return null;
   },
 
-  // ---- Phones: Telnyx (the default) or Vapi. The buyer's key is the app's main phone key ----
+  // ---- Phones: Telnyx is the main path. The buyer's key is the app's main phone key ----
   async phones(b, f) {
     const g = guard(b, "phones"); if (g) return g;
-    const vapi = f.provider === "vapi";
-    if (vapi) {
-      // Vapi: a private and a public key. A Telnyx key is optional: email replies still use Telnyx's AI service.
-      const vKey = str(f.vapiKey, 300) || getSecret(b.id, "vapi_key") || "";
-      const vPublic = str(f.vapiPublic, 300) || getSecret(b.id, "vapi_public") || "";
-      if (!vKey) return err("Paste your Vapi private API key.", f);
-      if (!vPublic) return err("Paste your Vapi public key too.", f);
-      const tKey = str(f.key, 300);
-      const wait = checkLimit(b); if (wait) return tooMany(wait);
-      const r = await checkVapi(vKey, vPublic);
-      if (!r.ok) return err(r.message, f);
-      if (tKey) {
-        const t = await checkTelnyx(tKey);
-        if (!t.ok) return err(t.message, f);
-        putSecret(b.id, "telnyx_key", tKey);
-      }
-      // Optional Twilio account: where Australian numbers come from, and what sends the texts.
-      let twilioSid = getSetup(b.id).phones?.twilioSid || "";
-      const newSid = str(f.twilioSid, 60);
-      const newToken = str(f.twilioToken, 300);
-      if (newSid || newToken) {
-        const sid = newSid || twilioSid;
-        const token = newToken || getSecret(b.id, "twilio_token") || "";
-        const w = await checkTwilio(sid, token);
-        if (!w.ok) return err(w.message, f);
-        putSecret(b.id, "twilio_token", token);
-        twilioSid = sid;
-      }
-      putSecret(b.id, "vapi_key", vKey);
-      putSecret(b.id, "vapi_public", vPublic);
-      updateSetup(b.id, (s) => {
-        s.brand!.ownPhoneAccount = false;
-        s.phones = { provider: "vapi", checked: true, confirmed: true, ...(twilioSid ? { twilioSid } : {}) };
-        nextStep(b, s, "phones");
-      });
-      return null;
-    }
     const key = str(f.key, 300) || getSecret(b.id, "telnyx_key") || "";
     if (!key) return err("Paste your Telnyx API key.", f);
     const wait = checkLimit(b); if (wait) return tooMany(wait);
@@ -269,8 +243,82 @@ export const actions: Record<string, Action> = {
     putSecret(b.id, "telnyx_key", key);
     updateSetup(b.id, (s) => {
       s.brand!.ownPhoneAccount = false;
-      s.phones = { balance: r.balance, checked: true, confirmed: true, provider: "telnyx" };
+      s.phones = { balance: r.balance, checked: true, confirmed: true, provider: useVapi(s) ? "vapi" : "telnyx" };
       nextStep(b, s, "phones");
+    });
+    return null;
+  },
+  // No Telnyx account yet: go on to the backup options (Vapi) instead. Install still needs one of the two.
+  "phones-backup"(b) {
+    const g = guard(b, "phones"); if (g) return g;
+    updateSetup(b.id, (s) => { s.phones = { ...s.phones, deferred: true }; s.step = OPTIONAL_HUB; });
+    return null;
+  },
+
+  // ---- Backup option: Vapi instead of Telnyx for voice (added from the last optional screen) ----
+  async vapi(b, f) {
+    const g = guard(b, "vapi"); if (g) return g;
+    // Vapi: a private and a public key. A Telnyx key is optional here: email replies still use Telnyx's AI service.
+    const vKey = str(f.vapiKey, 300) || getSecret(b.id, "vapi_key") || "";
+    const vPublic = str(f.vapiPublic, 300) || getSecret(b.id, "vapi_public") || "";
+    if (!vKey) return err("Paste your Vapi private API key.", f);
+    if (!vPublic) return err("Paste your Vapi public key too.", f);
+    const tKey = str(f.key, 300);
+    const wait = checkLimit(b); if (wait) return tooMany(wait);
+    const r = await checkVapi(vKey, vPublic);
+    if (!r.ok) return err(r.message, f);
+    if (tKey) {
+      const t = await checkTelnyx(tKey);
+      if (!t.ok) return err(t.message, f);
+      putSecret(b.id, "telnyx_key", tKey);
+    }
+    putSecret(b.id, "vapi_key", vKey);
+    putSecret(b.id, "vapi_public", vPublic);
+    updateSetup(b.id, (s) => {
+      s.brand!.ownPhoneAccount = false;
+      s.vapi = { confirmed: true };
+      s.phones = { ...s.phones, provider: "vapi" };
+      if (s.skipped) delete s.skipped.vapi;
+      nextStep(b, s, "vapi");
+    });
+    return null;
+  },
+  "vapi-skip"(b) {
+    const g = guard(b, "vapi"); if (g) return g;
+    deleteSecret(b.id, "vapi_key"); deleteSecret(b.id, "vapi_public");
+    updateSetup(b.id, (s) => {
+      delete s.vapi;
+      if (s.phones) s.phones = { ...s.phones, provider: "telnyx" };
+      s.skipped = { ...s.skipped, vapi: true };
+      nextStep(b, s, "vapi");
+    });
+    return null;
+  },
+  // ---- Backup option: a Twilio account for numbers and follow-up texts (works with Vapi) ----
+  async twilio(b, f) {
+    const g = guard(b, "twilio"); if (g) return g;
+    const sid = str(f.twilioSid, 60) || getSetup(b.id).twilio?.sid || "";
+    const token = str(f.twilioToken, 300) || getSecret(b.id, "twilio_token") || "";
+    const wait = checkLimit(b); if (wait) return tooMany(wait);
+    const w = await checkTwilio(sid, token);
+    if (!w.ok) return err(w.message, f);
+    putSecret(b.id, "twilio_token", token);
+    updateSetup(b.id, (s) => {
+      s.twilio = { sid, confirmed: true };
+      if (s.phones?.twilioSid) s.phones = { ...s.phones, twilioSid: undefined };
+      if (s.skipped) delete s.skipped.twilio;
+      nextStep(b, s, "twilio");
+    });
+    return null;
+  },
+  "twilio-skip"(b) {
+    const g = guard(b, "twilio"); if (g) return g;
+    deleteSecret(b.id, "twilio_token");
+    updateSetup(b.id, (s) => {
+      delete s.twilio;
+      if (s.phones?.twilioSid) s.phones = { ...s.phones, twilioSid: undefined };
+      s.skipped = { ...s.skipped, twilio: true };
+      nextStep(b, s, "twilio");
     });
     return null;
   },
@@ -380,7 +428,7 @@ export const actions: Record<string, Action> = {
   },
   "extras-continue"(b) {
     const g = guard(b, "extras"); if (g) return g;
-    const p = extrasProblem(b, getSetup(b.id)); if (p) return err(p);
+    const p = phonesProblem(b, getSetup(b.id)) || extrasProblem(b, getSetup(b.id)); if (p) return err(p);
     updateSetup(b.id, (s) => { s.extrasDone = true; nextStep(b, s, "extras"); });
     return null;
   },
@@ -424,7 +472,7 @@ export const actions: Record<string, Action> = {
     if (!["idle", "create_failed"].includes(s.phase)) return null;
     const missing = STEPS.slice(0, STEPS.indexOf("install")).find((id) => !isOptional(id) && !stepDone(b, s, id));
     if (missing) return err("Finish the earlier steps first.");
-    const p = extrasProblem(b, s); if (p) return err(p);
+    const p = phonesProblem(b, s) || extrasProblem(b, s); if (p) return err(p);
     if (RAILWAY ? !hasSecret(b.id, "railway_token") : !hasSecret(b.id, "do_token")) return err(RAILWAY ? "Your Railway token is missing. Go back to the Railway step and check it again." : "Your DigitalOcean token is missing. Go back to the Server step and check it again.");
     if (!currentPackage()) return err("The app isn't ready to install yet. We've been told; please try again later or contact support.");
     const wait = allow(`install:${b.id}`, 6, 10 * MIN); if (wait) return tooMany(wait);
@@ -508,6 +556,17 @@ const demoActions: Record<string, Action> = {
   phones(b) {
     const g = guard(b, "phones"); if (g) return g;
     updateSetup(b.id, (s) => { s.brand!.ownPhoneAccount = false; s.phones = { balance: "demo", checked: true, confirmed: true, provider: "telnyx" }; nextStep(b, s, "phones"); });
+    return null;
+  },
+  // The backup options accept anything in a test run and store nothing.
+  vapi(b) {
+    const g = guard(b, "vapi"); if (g) return g;
+    updateSetup(b.id, (s) => { s.vapi = { confirmed: true }; s.phones = { ...s.phones, provider: "vapi" }; nextStep(b, s, "vapi"); });
+    return null;
+  },
+  twilio(b) {
+    const g = guard(b, "twilio"); if (g) return g;
+    updateSetup(b.id, (s) => { s.twilio = { sid: "AC" + "0".repeat(32), confirmed: true }; nextStep(b, s, "twilio"); });
     return null;
   },
   email(b, f) {
@@ -710,17 +769,19 @@ function brandSettings(s: SetupData): Record<string, string> {
   return v;
 }
 
-/** The phone keys the installed app is given: Telnyx's, or Vapi's with VOICE_PROVIDER=vapi. */
+/** The phone keys the installed app is given: Telnyx's, or Vapi's with VOICE_PROVIDER=vapi (the backup option). */
 export function phoneSettings(id: number, s: SetupData): Record<string, string> {
-  if (s.phones?.provider !== "vapi") return { TELNYX_API_KEY: getSecret(id, "telnyx_key") || "" };
+  const sid = twilioSidOf(s);
+  // The backup Twilio account: numbers and the texts sent from them.
+  const twilio = sid && getSecret(id, "twilio_token") ? { TWILIO_ACCOUNT_SID: sid, TWILIO_AUTH_TOKEN: getSecret(id, "twilio_token") || "" } : {};
+  if (!useVapi(s)) return { TELNYX_API_KEY: getSecret(id, "telnyx_key") || "", ...twilio };
   return {
     VOICE_PROVIDER: "vapi",
     VAPI_API_KEY: getSecret(id, "vapi_key") || "",
     VAPI_PUBLIC_KEY: getSecret(id, "vapi_public") || "",
     // Optional with Vapi: only email replies use it.
     TELNYX_API_KEY: getSecret(id, "telnyx_key") || "",
-    // Optional with Vapi: Twilio numbers and the texts sent from them.
-    ...(s.phones?.twilioSid && getSecret(id, "twilio_token") ? { TWILIO_ACCOUNT_SID: s.phones.twilioSid, TWILIO_AUTH_TOKEN: getSecret(id, "twilio_token") || "" } : {}),
+    ...twilio,
   };
 }
 
@@ -974,7 +1035,7 @@ function finish(id: number, url: string) {
     brand: s.brand ? { productName: s.brand.productName, ownerEmail: s.brand.ownerEmail, ownPhoneAccount: s.brand.ownPhoneAccount, ...(demo ? { logo: s.brand.logo, colour: s.brand.colour } : {}) } : undefined,
     domain: s.domain ? { mode: s.domain.mode, zone: s.domain.zone, sub: s.domain.sub, host: s.domain.host, confirmed: true } : undefined,
     server: s.server ? { region: s.server.region, size: s.server.size, price: s.server.price, chosen: true, sshPublicKey: s.server.sshPublicKey ? "yes" : undefined } : undefined,
-    phones: { confirmed: true, provider: s.phones?.provider }, email: s.email ? { mode: s.email.mode, address: s.email.address, from: s.email.from, confirmed: true, resend: s.email.resend ? { status: s.email.resend.status } : undefined } : undefined,
+    phones: { confirmed: true, provider: useVapi(s) ? "vapi" : "telnyx" }, email: s.email ? { mode: s.email.mode, address: s.email.address, from: s.email.from, confirmed: true, resend: s.email.resend ? { status: s.email.resend.status } : undefined } : undefined,
     calendars: s.calendars ? { google: s.calendars.google, microsoft: s.calendars.microsoft, done: true } : undefined,
     skipped: s.skipped, extrasDone: s.extrasDone,
     dropletId: s.dropletId, ip: s.ip, attempt: s.attempt, attemptVersion: s.attemptVersion,

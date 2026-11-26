@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { Link } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Check, Loader2, Phone } from "lucide-react";
@@ -9,6 +10,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { OwnedNumbers } from "./-own-numbers";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { buyNumberFor, platformApi } from "@/lib/api/console";
+import { twilioAccountQuery } from "@/lib/api/twilio";
 import { fmtPhone } from "@/lib/app/format";
 import { NUMBER_COUNTRIES, countryForTimezone, type AvailableNumber, type NumberCountry, type NumberType } from "@/lib/shared";
 import { cn } from "@/lib/utils";
@@ -25,7 +27,10 @@ const typeName = (c: NumberCountry, t: NumberType) => typesOf(c).find((x) => x.v
 
 export function BuyNumber({ clientId, timezone, onBought }: { clientId: string; timezone?: string; onBought: () => Promise<void> }) {
   const [open, setOpen] = useState(false);
-  const [tab, setTab] = useState<"buy" | "own">("buy");
+  const [tab, setTab] = useState<"buy" | "own" | "twilio">("buy");
+  // Twilio is a backup option: its tab only appears once the agency has connected a Twilio account.
+  const twilio = useQuery({ ...twilioAccountQuery(), enabled: open });
+  const showTwilio = Boolean(twilio.data?.connected);
   const qc = useQueryClient();
   const [country, setCountry] = useState<NumberCountry>(() => countryForTimezone(timezone));
   const [type, setType] = useState<NumberType>(() => typesOf(countryForTimezone(timezone))[0].value);
@@ -49,7 +54,7 @@ export function BuyNumber({ clientId, timezone, onBought }: { clientId: string; 
       <Button type="button" size="sm" variant="outline" className="h-8 w-full text-[12.5px]" onClick={() => setOpen(true)} data-action="buy-number">
         <Phone /> Add a number
       </Button>
-      <p className="mt-1.5 text-[11.5px] text-ink-muted">Buy one (charged to your Telnyx account each month) or use one you already own there. Twilio numbers work with the Vapi voice engine.</p>
+      <p className="mt-1.5 text-[11.5px] text-ink-muted">Buy one (charged to your Telnyx account each month) or use one you already own there.</p>
 
       <Dialog
         open={open}
@@ -62,15 +67,29 @@ export function BuyNumber({ clientId, timezone, onBought }: { clientId: string; 
           <DialogHeader>
             <DialogTitle>Add a phone number</DialogTitle>
             <DialogDescription>
-              {tab === "buy" ? "Pick a number for this receptionist. Telnyx charges your account for it every month until you release it." : "Numbers on your Telnyx account that no receptionist answers yet."}
+              {tab === "buy" ? "Pick a number for this receptionist. Telnyx charges your account for it every month until you release it." : tab === "own" ? "Numbers on your Telnyx account that no receptionist answers yet." : "A backup option, for agencies that use Vapi for voice."}
             </DialogDescription>
           </DialogHeader>
 
-          <Tabs value={tab} onValueChange={(v) => setTab(v as "buy" | "own")}>
-            <TabsList className="grid w-full grid-cols-2">
+          <Tabs value={tab} onValueChange={(v) => setTab(v as "buy" | "own" | "twilio")}>
+            <TabsList className={cn("grid w-full", showTwilio ? "grid-cols-[1fr_1fr_auto]" : "grid-cols-2")}>
               <TabsTrigger value="buy" data-tab="buy-new">Buy a new number</TabsTrigger>
               <TabsTrigger value="own" data-tab="use-existing">Use a number I already have</TabsTrigger>
+              {showTwilio ? (
+                <TabsTrigger value="twilio" data-tab="twilio-backup" className="px-2.5 text-[11.5px] font-normal text-ink-muted">
+                  Twilio (backup)
+                </TabsTrigger>
+              ) : null}
             </TabsList>
+            <TabsContent value="twilio" className="mt-3">
+              <Notice tone="info" title="Twilio numbers use the Vapi backup option">
+                This receptionist runs on Telnyx (recommended), so it keeps a Telnyx number. To answer a Twilio number, switch your voice engine to Vapi under{" "}
+                <Link to="/admin/connections" className="font-medium text-indigo hover:underline">
+                  Connections, Other options (backup)
+                </Link>
+                .
+              </Notice>
+            </TabsContent>
             <TabsContent value="own" className="mt-3">
               <OwnedNumbers
                 clientId={clientId}

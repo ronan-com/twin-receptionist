@@ -297,7 +297,7 @@ function Welcome({ name, onNext }: { name: string; onNext: () => void }) {
 function AccountStep({ engine, onEngine, onBack, onNext }: { engine: VoiceProviderId; onEngine: (e: VoiceProviderId) => void; onBack: () => void; onNext: () => void }) {
   if (engine === "vapi") {
     return (
-      <StepShell step={1} title="Create your Vapi account" lead="Vapi is the voice service behind your receptionists. The account is free to open and it's yours: you can see every call and charge there.">
+      <StepShell step={1} title="Create your Vapi account (backup option)" lead="Vapi is a backup option for the voice service behind your receptionists; Telnyx is the recommended one. The account is free to open and it's yours: you can see every call and charge there.">
         <div className="mb-6">
           <EngineChoice value={engine} onChange={onEngine} />
         </div>

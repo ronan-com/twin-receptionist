@@ -80,6 +80,11 @@ describe("demo buyer", () => {
     expect(getSetup(b.id).step).toBe("extras");
     expect(await run(b, "domain", { domain: "", mode: "cloudflare", token: "x" })).toBeNull();
     expect(await run(b, "calendars", { googleId: "x", googleSecret: "y", microsoftId: "z", microsoftSecret: "w" })).toBeNull();
+    // The backup options (Vapi, Twilio) are pretend too, and Telnyx stays the default until Vapi is added.
+    expect(await run(b, "vapi", { vapiKey: "x", vapiPublic: "y" })).toBeNull();
+    expect(getSetup(b.id).vapi?.confirmed).toBe(true);
+    expect(await run(b, "twilio", { twilioSid: "x", twilioToken: "y" })).toBeNull();
+    expect(getSetup(b.id).step).toBe("extras");
     expect(await run(b, "extras-continue")).toBeNull();
     expect(getSetup(b.id).step).toBe("install");
     expect(getSetup(b.id).domain?.host).toMatch(/^app\.demo-.+\.test$/);

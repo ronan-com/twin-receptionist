@@ -155,7 +155,6 @@ ${sec("accounts", "2. Get your accounts ready", RAILWAY ? `
 <h2 class="gopt">Required</h2>
 <h3>Hosting: Railway</h3>${ht("railway-token")}
 <h3>Phones: Telnyx</h3>${ht("telnyx-account")}${ht("telnyx-api-key")}
-<h3>Phones (Vapi, instead of Telnyx)</h3><p>Prefer Vapi? Choose it on the Phones step. Vapi only gives away US numbers, so for an Australian number you use a Twilio account (optional, also on the Phones step) or bring one from Telnyx.</p>${ht("vapi-account")}${ht("vapi-api-key")}
 <h2 class="gopt">Optional extras</h2>
 <p>Skip these to install now. You can add each one later (see <a href="#later">Adding the extras later</a>).</p>
 <h3>Email: Resend (optional)</h3>${ht("resend")}
@@ -163,15 +162,20 @@ ${sec("accounts", "2. Get your accounts ready", RAILWAY ? `
 <p>Two ways. <b>Let the setup add the records</b> (easiest): use the three Cloudflare guides in order. <b>Add the records yourself</b>: use the last guide.</p>
 ${ht("cloudflare-domain")}${ht("registrar-nameservers")}${ht("cloudflare-token")}${ht("registrar-dns-records")}
 <h3>Calendars (optional)</h3>${ht("google-oauth")}${ht("microsoft-oauth")}
+<h2 class="gopt">Other options (backup)</h2>
+<p>Telnyx is the recommended way, so most agencies never need these. They're on the last optional screen of the setup page, under <b>Other options (backup)</b>.</p>
+<h3>Vapi instead of Telnyx for voice (backup option)</h3><p>Vapi only gives away US numbers, so for an Australian number you also connect a Twilio account, or bring one from Telnyx.</p>${ht("vapi-account")}${ht("vapi-api-key")}
+<h3>Twilio numbers (backup option)</h3><p>Buy Australian numbers on your own Twilio account, or use ones you already have, and send follow-up texts from them. Paste your Account SID and Auth Token from the front page of the <a href="https://console.twilio.com/" target="_blank" rel="noopener noreferrer">Twilio console</a>. It works with the Vapi backup option.</p>
 ${extra.map((h) => ht(h.id)).join("")}` : `
 <h3>Your domain</h3>
 <p>The setup page offers two ways. <b>Let the setup handle DNS</b> (recommended): put your domain on a free Cloudflare account and change its nameservers at your registrar; the setup then adds every record for you. <b>I'll add the records myself</b>: keep DNS where it is, and the setup shows you each record to add.</p>
 ${ht("cloudflare-domain")}${ht("registrar-nameservers")}${ht("cloudflare-token")}${ht("registrar-dns-records")}
 <h3>Your server</h3>${ht("digitalocean-token")}
 <h3>Phones</h3>${ht("telnyx-account")}${ht("telnyx-api-key")}
-<h3>Phones (Vapi, instead of Telnyx)</h3>${ht("vapi-account")}${ht("vapi-api-key")}
 <h3>Email</h3>${ht("resend")}
 <h3>Calendars (optional)</h3>${ht("google-oauth")}${ht("microsoft-oauth")}
+<h3>Other options (backup)</h3><p>Telnyx is the recommended way. Vapi and Twilio are backup options, under <b>Other options (backup)</b> on the Phones step.</p>
+<h3>Vapi instead of Telnyx for voice (backup option)</h3>${ht("vapi-account")}${ht("vapi-api-key")}
 ${extra.map((h) => ht(h.id)).join("")}`)}
 ${sec("wizard", "3. The setup page, step by step", RAILWAY ? `
 <ol class="glist steps-long">
@@ -179,7 +183,7 @@ ${sec("wizard", "3. The setup page, step by step", RAILWAY ? `
   <li><b>Brand.</b> Type your brand name and owner email. You sign in with that email.</li>
   <li><b>Hosting.</b> Paste your Railway token and press <b>Check</b>.</li>
   <li><b>Phones.</b> Paste your Telnyx key and press <b>Check</b>.</li>
-  <li><b>Extras (optional).</b> Email, your own domain, calendars. Press <b>Skip all and continue</b> to go straight on.</li>
+  <li><b>Extras (optional).</b> Email, your own domain, calendars, and at the bottom <b>Other options (backup)</b> for Vapi or Twilio. Press <b>Skip all and continue</b> to go straight on.</li>
   <li><b>Install.</b> Press the install button and wait about 5 minutes. If it stops, press <b>Try again</b>.</li>
   <li><b>Done.</b> Open your address and sign in. Then delete your Railway token (and Cloudflare token, if you made one).</li>
 </ol>` : `

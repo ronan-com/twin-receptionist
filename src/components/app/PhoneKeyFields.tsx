@@ -10,7 +10,7 @@ import { cn } from "@/lib/utils";
 
 export const ENGINES: { id: VoiceProviderId; name: string; blurb: string }[] = [
   { id: "telnyx", name: "Telnyx", blurb: "Recommended. Buy Australian numbers here, texting included." },
-  { id: "vapi", name: "Vapi", blurb: "Use your Vapi account. Buy or bring a Twilio number (or a Telnyx one); texts go out from Twilio." },
+  { id: "vapi", name: "Vapi", blurb: "Backup option. Use your Vapi account. Buy or bring a Twilio number (or a Telnyx one); texts go out from Twilio." },
 ];
 
 export const engineName = (id: VoiceProviderId | undefined) => (id === "vapi" ? "Vapi" : "Telnyx");
@@ -18,23 +18,30 @@ export const engineName = (id: VoiceProviderId | undefined) => (id === "vapi" ? 
 export type PhoneKeyValue = { provider: VoiceProviderId; key: string; publicKey: string };
 export const keysReady = (v: PhoneKeyValue) => Boolean(v.key.trim()) && (v.provider === "telnyx" || Boolean(v.publicKey.trim()));
 
+/** Telnyx first and primary. Vapi is a backup option, folded away under "Other options (backup)" unless it's already chosen. */
 export function EngineChoice({ value, onChange }: { value: VoiceProviderId; onChange: (id: VoiceProviderId) => void }) {
+  const card = (e: (typeof ENGINES)[number]) => (
+    <button
+      key={e.id}
+      type="button"
+      role="radio"
+      aria-checked={value === e.id}
+      onClick={() => onChange(e.id)}
+      data-engine={e.id}
+      className={cn("w-full rounded-[10px] border px-3.5 py-2.5 text-left transition-colors", value === e.id ? "border-indigo bg-[#f5f4ff]" : "border-hairline bg-white hover:border-ink-muted")}
+    >
+      <div className="text-[13.5px] font-semibold text-ink">{e.name}{e.id === "telnyx" ? " (recommended)" : " (backup option)"}</div>
+      <div className="mt-0.5 text-[12px] leading-5 text-ink-muted">{e.blurb}</div>
+    </button>
+  );
+  const [main, ...backup] = ENGINES;
   return (
-    <div role="radiogroup" aria-label="Voice engine" className="grid gap-2 sm:grid-cols-2" data-field="voice-engine">
-      {ENGINES.map((e) => (
-        <button
-          key={e.id}
-          type="button"
-          role="radio"
-          aria-checked={value === e.id}
-          onClick={() => onChange(e.id)}
-          data-engine={e.id}
-          className={cn("rounded-[10px] border px-3.5 py-2.5 text-left transition-colors", value === e.id ? "border-indigo bg-[#f5f4ff]" : "border-hairline bg-white hover:border-ink-muted")}
-        >
-          <div className="text-[13.5px] font-semibold text-ink">{e.name}{e.id === "telnyx" ? " (recommended)" : ""}</div>
-          <div className="mt-0.5 text-[12px] leading-5 text-ink-muted">{e.blurb}</div>
-        </button>
-      ))}
+    <div role="radiogroup" aria-label="Voice engine" className="space-y-2" data-field="voice-engine">
+      {card(main)}
+      <details className="group rounded-[10px] border border-dashed border-hairline px-3 py-2" data-field="backup-engines" open={value !== "telnyx"}>
+        <summary className="cursor-pointer select-none text-[12.5px] font-medium text-ink-muted">Other options (backup)</summary>
+        <div className="mt-2 space-y-2">{backup.map(card)}</div>
+      </details>
     </div>
   );
 }

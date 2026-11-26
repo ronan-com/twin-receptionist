@@ -9,7 +9,7 @@ import { howTo } from "./content";
 import { chatBubble, chatHead } from "./chat";
 import { agencyUrl, canView, hostOf, locked, oauthRedirect, stepDone, updateInfo, webUrl, zoneOf } from "./setup";
 import { DEFAULT_REGION, DEFAULT_SIZE } from "./providers";
-import { STEPS, csrfToken, isOptional, logRead, secretHint, type DnsRecord, type SetupData, type StepId } from "./store";
+import { OPTIONAL_HUB, STEPS, csrfToken, isOptional, logRead, secretHint, type DnsRecord, type SetupData, type StepId } from "./store";
 
 // ---------------- icons (Lucide, MIT) ----------------
 const I: Record<string, string> = {
@@ -43,10 +43,12 @@ const META: Record<StepId, { title: string; short: string; icon: string; hue: st
   domain: { title: "Domain", short: RAILWAY ? "Optional" : "Your web address", icon: "globe", hue: "cyan" },
   server: { title: "Server", short: "DigitalOcean", icon: "server", hue: "indigo" },
   railway: { title: "Hosting", short: "Railway", icon: "server", hue: "indigo" },
-  phones: { title: "Phones", short: "Telnyx or Vapi", icon: "phone", hue: "coral" },
+  phones: { title: "Phones", short: "Telnyx", icon: "phone", hue: "coral" },
   email: { title: "Email", short: "Optional", icon: "mail", hue: "green" },
   calendars: { title: "Calendars", short: "Optional", icon: "calendar", hue: "magenta" },
   extras: { title: "Extras", short: "Optional, skip any", icon: "sparkles", hue: "cyan" },
+  vapi: { title: "Vapi", short: "Backup option", icon: "phone", hue: "coral" },
+  twilio: { title: "Twilio", short: "Backup option", icon: "phone", hue: "coral" },
   install: { title: "Install", short: RAILWAY ? "About 10 minutes" : "About 15 minutes", icon: "rocket", hue: "violet" },
   done: { title: "Live", short: "Your agency is live", icon: "party", hue: "green" },
 };
@@ -93,7 +95,7 @@ function head(c: Ctx, title: string, lead: string) {
 function nav(c: Ctx, right: string, opts: { back?: boolean } = {}) {
   const i = STEPS.indexOf(c.view);
   // An optional step goes back to the extras screen; the others to the step before, skipping optional ones.
-  const prev = isOptional(c.view) ? "extras" : [...STEPS.slice(0, i)].reverse().find((id) => !isOptional(id));
+  const prev = isOptional(c.view) ? OPTIONAL_HUB : [...STEPS.slice(0, i)].reverse().find((id) => !isOptional(id));
   const back = opts.back !== false && i > 1 && c.view !== "done" && prev ? `<a class="btn g" href="${base(c)}?step=${prev}">${icon("left")} Back</a>` : "<span></span>";
   // Test sites only: a plain link to look at the next step without filling this one in.
   const skip = CONFIG.previewJump && i < STEPS.length - 1 ? `<a class="btn g" href="${base(c)}?step=${STEPS[i + 1]}">Skip (preview)</a>` : "";
@@ -107,7 +109,7 @@ function welcome(c: Ctx) {
 <div class="tiles">
   <div class="tile indigo"><div class="ti">${icon("home")}</div><b>Yours to keep</b><span>Your brand, ${RAILWAY ? "hosting" : "server"}, accounts and clients. We have no login to them.</span></div>
   <div class="tile magenta"><div class="ti">${icon("clock")}</div><b>About ${RAILWAY ? "15" : "20"} minutes</b><span>Close the page any time; this link picks up where you left off.</span></div>
-  <div class="tile coral"><div class="ti">${icon("key")}</div><b>Have these ready</b><span>${RAILWAY ? "Railway (hosting) and Telnyx or Vapi (phones). Email and your own domain are optional extras you can add now or later." : "Your domain, DigitalOcean, Telnyx (or Vapi) and Resend accounts."}</span></div>
+  <div class="tile coral"><div class="ti">${icon("key")}</div><b>Have these ready</b><span>${RAILWAY ? "Railway (hosting) and Telnyx (phones). Email and your own domain are optional extras you can add now or later." : "Your domain, DigitalOcean, Telnyx and Resend accounts."}</span></div>
 </div>
 ${mainForm(c, "start", "")}
 ${nav(c, primary("Start"), { back: false })}`;
@@ -219,34 +221,59 @@ function server(c: Ctx) {
 ${nav(c, primary("Check and continue"))}`;
 }
 
-const phonesSummary = (c: Ctx) => (c.s.phones?.provider === "vapi" ? `Vapi ${esc(secretHint(c.b.id, "vapi_key") || "")}${c.s.phones.twilioSid ? " + Twilio" : ""}` : `Telnyx ${esc(secretHint(c.b.id, "telnyx_key") || "")}`);
+const phonesSummary = (c: Ctx) => {
+  const t = secretHint(c.b.id, "telnyx_key");
+  const bits = [c.s.phones?.confirmed || t ? `Telnyx ${esc(t || "")}`.trim() : ""];
+  if (c.s.vapi?.confirmed || c.s.phones?.provider === "vapi") bits.push(`Vapi ${esc(secretHint(c.b.id, "vapi_key") || "")} (backup option)`.trim());
+  if (c.s.twilio?.confirmed || c.s.phones?.twilioSid) bits.push("Twilio (backup option)");
+  return bits.filter(Boolean).join(" + ") || "Telnyx";
+};
 
 function phones(c: Ctx) {
   const saved = secretHint(c.b.id, "telnyx_key");
-  const vSaved = secretHint(c.b.id, "vapi_key");
-  const vapi = c.s.phones?.provider === "vapi" || (!c.s.phones?.provider && !!vSaved && !saved);
-  const radio = (id: string, label: string, hint: string, on: boolean) =>
-    `<label class="opt"><input type="radio" name="provider" value="${id}"${on ? " checked" : ""}><b>${label}</b><small>${hint}</small></label>`;
-  return `${head(c, "Connect your phone account", "Your clients' receptionists answer calls on your own account with Telnyx or Vapi.")}
+  return `${head(c, "Connect your phone account", "Your clients' receptionists answer calls on your own Telnyx account. Buy Australian numbers inside the app, and texting after calls works.")}
 <div class="body">${mainForm(c, "phones", `
-  <fieldset><legend class="f">Phone service</legend>
-    ${radio("telnyx", "Telnyx (recommended)", "Buy Australian numbers inside the app. Texting after calls works.", !vapi)}
-    ${radio("vapi", "Vapi", "Use a Vapi account. Buy or bring a Twilio number (Vapi only gives away US numbers); texts go out from Twilio.", vapi)}
-  </fieldset>
-  <h3>Telnyx</h3>
+  <h3>Telnyx <span class="tag">Recommended</span></h3>
   ${secretIn("key", "KEY...", saved, "Telnyx API key")}
   ${notice("warn", "A new Telnyx account is a trial: callers can't get through until it's upgraded and has credit.")}
-  ${showMeHow(["telnyx-account", "telnyx-api-key"])}
-  <h3>Vapi</h3>
+  ${showMeHow(["telnyx-account", "telnyx-api-key"])}`)}
+  ${RAILWAY ? (c.s.vapi?.confirmed ? "" : `<p class="hint">No Telnyx account? ${mini(c, "phones-backup", "Use a backup option instead", "linkbtn")}</p>`) : `<details class="advanced"><summary>Other options (backup)</summary>${backupCards(c)}</details>`}</div>
+${nav(c, primary("Check and continue"))}`;
+}
+
+/** Vapi and Twilio: backup options, shown after everything else (the last optional screen, or under Phones on DigitalOcean). */
+function backupCards(c: Ctx): string {
+  const vapiOn = !!c.s.vapi?.confirmed || c.s.phones?.provider === "vapi";
+  const twOn = !!c.s.twilio?.confirmed || !!c.s.phones?.twilioSid;
+  const card = (key: "vapi" | "twilio", title: string, text: string, on: boolean) => `<div class="xcard${on ? " added" : ""}"><div class="xh">${icon("phone")}<b>${title}</b><span class="tag">Backup option</span></div><p>${text}</p>
+  <div class="xa">${on ? `<span class="st f">${icon("check")} Added</span><a class="btn o" href="${base(c)}?step=${key}">Change</a>${mini(c, `${key}-skip`, "Remove", "linkbtn")}`
+    : `<a class="btn o" href="${base(c)}?step=${key}">Add now</a>${mini(c, `${key}-skip`, "Skip", "linkbtn")}${c.s.skipped?.[key] ? `<span class="st w">Skipped</span>` : ""}`}</div></div>`;
+  return `<h3 class="extras-head">Other options (backup)</h3>
+<p class="hint">Telnyx is the recommended way and is what you set up on the Phones step. These two are backups, only if you'd rather not use Telnyx for voice.</p>
+<div class="xcards">
+${card("vapi", "Use Vapi instead of Telnyx for voice", "Run the receptionists on a Vapi account instead. Vapi only gives away US numbers, so for Australian numbers add Twilio too. With Vapi, a Telnyx key is optional.", vapiOn)}
+${card("twilio", "Connect Twilio numbers", "Buy Australian numbers on your own Twilio account, or use ones you already have, and send follow-up texts from them. Works with the Vapi backup option.", twOn)}
+</div>`;
+}
+
+function vapi(c: Ctx) {
+  const vSaved = secretHint(c.b.id, "vapi_key");
+  return `${head(c, "Use Vapi instead of Telnyx", "A backup option. Your receptionists run on your own Vapi account instead of Telnyx. Telnyx stays the recommended way.")}
+<div class="body">${mainForm(c, "vapi", `
   ${secretIn("vapiKey", "Private key", vSaved, "Vapi private API key")}
   <label class="f" for="vapiPublic">Vapi public key (used by the browser test call)</label><input id="vapiPublic" name="vapiPublic" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" maxlength="300" placeholder="Public key" value="${val(c, "vapiPublic", "")}">
-  <p class="hint">With Vapi, the Telnyx key above is optional: it's only used for AI email replies.</p>
-  ${showMeHow(["vapi-account", "vapi-api-key"])}
-  <h3>Twilio <span class="tag">Optional</span></h3>
-  <p class="hint">Only with Vapi. Lets you buy Australian numbers on your own Twilio account, or use ones you already have, and sends the follow-up texts from them. You can also add it later under Connections.</p>
-  <label class="f" for="twilioSid">Twilio Account SID</label><input id="twilioSid" name="twilioSid" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" maxlength="60" placeholder="AC..." value="${val(c, "twilioSid", c.s.phones?.twilioSid || "")}">
+  ${c.s.phones?.confirmed ? "" : `<label class="f" for="key">Telnyx API key (optional)</label><input id="key" name="key" type="password" autocomplete="off" autocapitalize="off" spellcheck="false" maxlength="300" placeholder="KEY... (only used for AI email replies)">`}
+  <p class="hint">With Vapi the Telnyx key is optional: it's only used for AI email replies.</p>
+  ${showMeHow(["vapi-account", "vapi-api-key"])}`)}</div>
+${nav(c, `${mini(c, "vapi-skip", "Skip", "linkbtn")}${primary("Check and continue")}`)}`;
+}
+
+function twilio(c: Ctx) {
+  return `${head(c, "Connect Twilio numbers", "A backup option. Buy Australian numbers on your own Twilio account, or use ones you already have, and send follow-up texts from them. It works with the Vapi backup option. You can also add it later under Connections.")}
+<div class="body">${mainForm(c, "twilio", `
+  <label class="f" for="twilioSid">Twilio Account SID</label><input id="twilioSid" name="twilioSid" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" maxlength="60" placeholder="AC..." value="${val(c, "twilioSid", c.s.twilio?.sid || c.s.phones?.twilioSid || "")}">
   ${secretIn("twilioToken", "Auth Token", secretHint(c.b.id, "twilio_token"), "Twilio Auth Token")}`)}</div>
-${nav(c, primary("Check and continue"))}`;
+${nav(c, `${mini(c, "twilio-skip", "Skip", "linkbtn")}${primary("Check and continue")}`)}`;
 }
 
 function recordTable(rows: DnsRecord[], manual: boolean) {
@@ -345,6 +372,8 @@ const extrasState = (s: SetupData) => ({
   email: !!s.email?.confirmed,
   domain: !!s.domain?.host && !!s.domain.confirmed,
   calendars: !!s.calendars?.google || !!s.calendars?.microsoft,
+  vapi: !!s.vapi?.confirmed,
+  twilio: !!s.twilio?.confirmed,
 });
 
 function extras(c: Ctx) {
@@ -361,8 +390,10 @@ ${card("email", "Your own email", "mail", "Invites and notices sent from your ad
 ${card("domain", "Your own web address", "globe", "Use app.yourbusiness.com instead of the Railway address. We add the records for you with Cloudflare, or show you each one.", "domain", "domain-skip")}
 ${card("calendars", "Calendar booking", "calendar", "Let receptionists book into Google or Outlook calendars. Needs your own web address.", "calendars", "cal-skip")}
 </div>
+${c.s.phones?.confirmed || c.s.vapi?.confirmed ? "" : notice("warn", `You haven't added Telnyx yet. Add Vapi below, or <a href="${base(c)}?step=phones">go back and add your Telnyx key</a>.`)}
+${backupCards(c)}
 ${mainForm(c, "extras-continue", "")}
-${nav(c, primary(have.email || have.domain || have.calendars ? "Continue to install" : "Skip all and continue"))}`;
+${nav(c, primary(have.email || have.domain || have.calendars || have.vapi || have.twilio ? "Continue to install" : "Skip all and continue"))}`;
 }
 
 // ---------------- install ----------------
@@ -536,6 +567,11 @@ function laterCards(c: Ctx, url: string): string {
     "Open your dashboard, then <b>Settings</b>, then <b>Email and calendars</b>, and paste the client ID and secret.",
     `The setup guide's <a href="/guide#accounts" target="_blank" rel="noopener">calendar how-tos</a> walk through each one.`,
   ]));
+  if (!have.vapi || !have.twilio) cards.push(late("phone", "Other phone options (backup)", `Telnyx is your main phone service. Vapi (instead of Telnyx for voice) and Twilio (numbers and texts) are backup options.`, [
+    "Open your dashboard, then <b>Connections</b>.",
+    "Open <b>Other options (backup)</b>.",
+    "Press <b>Use Vapi</b> to switch voice to your Vapi account, or <b>Connect Twilio</b>, and paste the keys. Each is checked before it's saved.",
+  ]));
   // Not a wizard step and nothing to tick: it is only a Railway variable, so it is always listed.
   cards.push(late("sparkles", "AI help for your team", "A built-in assistant that answers your team's questions about the dashboard. It switches on when you paste an OpenRouter key into Railway variables.", [
     "Make an account at <b>openrouter.ai</b> and create an API key (add a few dollars of credit; each answer costs a fraction of a cent or two).",
@@ -632,7 +668,7 @@ ${notice("info", "We've deleted every key you gave us. We have no login to your 
 ${nav(c, `<a class="btn p" href="${esc(shown)}" target="_blank" rel="noopener noreferrer">Open your dashboard ${icon("ext")}</a>`, { back: false })}`;
 }
 
-const SCREENS: Record<StepId, (c: Ctx) => string> = { welcome, brand, railway: railwayStep, domain: domainStep, server, phones, email, calendars, extras, install, done };
+const SCREENS: Record<StepId, (c: Ctx) => string> = { welcome, brand, railway: railwayStep, domain: domainStep, server, phones, email, calendars, extras, vapi, twilio, install, done };
 
 export function statusRev(c: { b: Buyer; s: SetupData }): string {
   const s = c.s;
@@ -680,7 +716,7 @@ export function wizardPage(b: Buyer, s: SetupData, code: string, sid: string, vi
   const c: Ctx = { b, s, code, sid, view, flash };
   const live = isLive(c);
   const mainSteps = STEPS.filter((id) => !isOptional(id));
-  const i = isOptional(view) ? mainSteps.indexOf("extras") : mainSteps.indexOf(view);
+  const i = isOptional(view) ? mainSteps.indexOf(OPTIONAL_HUB) : mainSteps.indexOf(view);
   const lockNote = locked(s) && s.phase !== "done" && !["install", "done", "welcome"].includes(view)
     ? notice("info", `Your server is already built with these settings. <a href="/setup/${esc(code)}?step=install">Go to Install</a>`) : "";
   const fl = flash ? notice(flash.kind === "ok" ? "ok" : flash.kind === "err" ? "err" : "info", esc(flash.text)).replace('class="notice ', 'class="notice flash ') : "";

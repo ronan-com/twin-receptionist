@@ -115,7 +115,7 @@ export function ImportNumber({ clientId, timezone, twilioOnly = false, onDone }:
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Add a phone number</DialogTitle>
-            <DialogDescription>Vapi answers a number from your own Twilio or Telnyx account. Your provider keeps billing you for the number itself.</DialogDescription>
+            <DialogDescription>This receptionist runs on Vapi, a backup option. Vapi answers a number from your own Twilio or Telnyx account. Your provider keeps billing you for the number itself.</DialogDescription>
           </DialogHeader>
 
           <Select

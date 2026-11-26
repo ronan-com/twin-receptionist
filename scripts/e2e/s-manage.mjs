@@ -481,7 +481,7 @@ try {
     await bz.setViewport({ width: 1280, height: 900 });
   });
   await step("settings: business profile and own name save", async () => {
-    await bz.goto(`${B}/app/settings`, { waitUntil: "networkidle0" });
+    await bz.goto(`${B}/app/settings?tab=business`, { waitUntil: "networkidle0" });
     await type(bz, "#b-phone", "02 9000 0000");
     await type(bz, "#b-web", "samsdental.example.com");
     await clickText(bz, "button", "Save changes");
@@ -495,8 +495,11 @@ try {
     const s = await apiFetch(bz, "GET", "/api/session");
     assert(s.body.user.name === "Samantha Business", `name ${s.body.user.name}`);
     await bz.setViewport({ width: 390, height: 844 });
-    await bz.goto(`${B}/app/settings`, { waitUntil: "networkidle0" });
+    await bz.goto(`${B}/app/settings?tab=business`, { waitUntil: "networkidle0" });
     await bz.waitForSelector("#b-name");
+    await noOverflow(bz, "/app/settings?tab=business");
+    await bz.goto(`${B}/app/settings`, { waitUntil: "networkidle0" });
+    await bz.waitForSelector('[data-page="client-settings"]');
     await noOverflow(bz, "/app/settings");
     await bz.setViewport({ width: 1280, height: 900 });
   });

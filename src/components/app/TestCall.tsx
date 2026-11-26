@@ -14,7 +14,7 @@ function startButton(el: Element): HTMLButtonElement | null {
  * connected, so the widget's own "Talk to…" button never needs pressing. The
  * widget's in-call controls (mute, hang up, transcript) stay as they are.
  */
-export function TestCall({ assistantId }: { assistantId: string }) {
+export function TestCall({ assistantId, big = false }: { assistantId: string; big?: boolean }) {
   const holder = useRef<HTMLDivElement>(null);
   const [open, setOpen] = useState(false);
   const [ready, setReady] = useState(false);
@@ -100,18 +100,18 @@ export function TestCall({ assistantId }: { assistantId: string }) {
   }, [ready]);
 
   return (
-    <div className="mb-3 min-w-0 space-y-2 overflow-hidden border-b border-hairline pb-3" ref={holder} data-test-call>
-      <div className="text-[12.5px] font-medium text-ink">Test call</div>
+    <div className={big ? "min-w-0 space-y-2 overflow-hidden" : "mb-3 min-w-0 space-y-2 overflow-hidden border-b border-hairline pb-3"} ref={holder} data-test-call>
+      {big ? null : <div className="text-[12.5px] font-medium text-ink">Test call</div>}
       {!open ? (
         <Button
-          size="sm"
-          className="h-8 w-full text-[12.5px]"
+          size={big ? "lg" : "sm"}
+          className={big ? "h-14 w-full text-[16px] font-semibold" : "h-8 w-full text-[12.5px]"}
           onClick={() => setOpen(true)}
           onPointerEnter={preload}
           onFocus={preload}
           data-action="test-call"
         >
-          <Mic className="mr-1 h-3.5 w-3.5" /> Talk to this receptionist
+          <Mic className={big ? "mr-2 h-5 w-5" : "mr-1 h-3.5 w-3.5"} /> {big ? "Test call" : "Talk to this receptionist"}
         </Button>
       ) : failed ? (
         <p role="alert" className="text-[12px] text-ink-muted">{failed}</p>

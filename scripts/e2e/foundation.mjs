@@ -77,10 +77,10 @@ async function signIn(page, email, password) {
   await type(page, "#password", password);
   await clickText(page, "button[type=submit]", "Sign in");
 }
-// The business dashboard (/app): its tiles, next steps and recent calls.
+// The business home (/app): its three numbers, the to-do list and recent calls.
 async function waitDashboard(page) {
   await page.waitForSelector("[data-app-shell] .client-overview");
-  for (const t of ["Answered calls", "Your next steps", "Recent calls"]) await waitText(page, t);
+  for (const t of ["Calls answered", "Needs your attention", "Recent calls"]) await waitText(page, t);
 }
 // A new demo receptionist's sample calls reach call_log on the next sync (server/callsync.ts,
 // once a minute), so reload the dashboard until they show.

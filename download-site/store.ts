@@ -32,8 +32,10 @@ function decrypt(box: string, aad: string): string {
   return Buffer.concat([d.update(b.subarray(28)), d.final()]).toString("utf8");
 }
 
-export type SecretName = "do_token" | "railway_token" | "cf_token" | "telnyx_key" | "vapi_key" | "vapi_public" | "twilio_token" | "resend_key" | "smtp_password" | "google_secret" | "microsoft_secret";
-export const ALL_SECRETS: SecretName[] = ["do_token", "railway_token", "cf_token", "telnyx_key", "vapi_key", "vapi_public", "twilio_token", "resend_key", "smtp_password", "google_secret", "microsoft_secret"];
+export type SecretName = "do_token" | "railway_token" | "cf_token" | "telnyx_key" | "vapi_key" | "vapi_public" | "twilio_token" | "resend_key" | "smtp_password" | "google_secret" | "microsoft_secret" | "godaddy_key" | "godaddy_secret" | "openrouter_key";
+export const ALL_SECRETS: SecretName[] = ["do_token", "railway_token", "cf_token", "telnyx_key", "vapi_key", "vapi_public", "twilio_token", "resend_key", "smtp_password", "google_secret", "microsoft_secret", "godaddy_key", "godaddy_secret", "openrouter_key"];
+/** DNS logins: the only keys that may outlive the install, and only when our admin ticked "keep for later changes". */
+export const DNS_SECRETS: SecretName[] = ["cf_token", "godaddy_key", "godaddy_secret"];
 
 export const last4 = (v: string) => (v.length > 8 ? v.slice(-4) : "");
 export const mask = (l4?: string) => (l4 ? `••••${l4}` : "••••");
@@ -52,7 +54,19 @@ export function secretHint(buyerId: number, name: SecretName): string | null {
 }
 export const hasSecret = (buyerId: number, name: SecretName) => !!db().query("SELECT 1 FROM secrets WHERE buyer_id = ? AND name = ?").get(buyerId, name);
 export const deleteSecret = (buyerId: number, name: SecretName) => db().query("DELETE FROM secrets WHERE buyer_id = ? AND name = ?").run(buyerId, name);
-export const deleteAllSecrets = (buyerId: number) => db().query("DELETE FROM secrets WHERE buyer_id = ?").run(buyerId).changes;
+/**
+ * Deletes every key we hold for a buyer. The one exception is a DNS login the admin chose to keep for later changes
+ * (setups.data assist.keepDns); `everything` (reset / delete buyer) ignores that.
+ */
+export function deleteAllSecrets(buyerId: number, everything = false): number {
+  if (!everything) {
+    const r = db().query("SELECT data FROM setups WHERE buyer_id = ?").get(buyerId) as { data: string } | null;
+    let keep = false;
+    try { keep = !!(r && JSON.parse(r.data).assist?.keepDns); } catch {}
+    if (keep) return db().query(`DELETE FROM secrets WHERE buyer_id = ? AND name NOT IN (${DNS_SECRETS.map(() => "?").join(",")})`).run(buyerId, ...DNS_SECRETS).changes;
+  }
+  return db().query("DELETE FROM secrets WHERE buyer_id = ?").run(buyerId).changes;
+}
 
 /** Every secret value we hold for a buyer, plus the forms they could show up in, for redaction. */
 export function secretValues(buyerId: number): string[] {
@@ -111,7 +125,7 @@ export interface SetupData {
   step: StepId;
   brand?: { productName: string; ownerEmail: string; ownPhoneAccount: boolean ; logo?: string; colour?: string };
   domain?: {
-    mode: "cloudflare" | "manual";
+    mode: "cloudflare" | "godaddy" | "manual";
     zone?: string; // example.com
     sub: string; // "app"
     host?: string; // app.example.com (DOMAIN)
@@ -127,6 +141,7 @@ export interface SetupData {
       lastCheck?: string;
     };
     confirmed?: boolean; // the buyer pressed Continue with a usable domain
+    replace?: boolean; // GoDaddy: replace what is at app.<zone> (Cloudflare keeps this in cf.replace)
   };
   server?: {
     accountEmail?: string;
@@ -207,6 +222,25 @@ export interface SetupData {
   purgedAt?: string;
   sshKeyAdded?: boolean;
   flash?: { kind: "ok" | "err" | "info"; text: string; form?: Record<string, string>; link?: string };
+  /**
+   * "Set up for them" (assist.ts): steps our admin filled in for the buyer, so the wizard shows them done with
+   * "Set up by your provider" and a change link. Never holds a secret.
+   *   steps    stepId -> who/when; the mark goes when the buyer saves that step themselves
+   *   released stepIds the buyer pressed "change" on: the normal form shows again
+   *   keepDns  the admin chose to keep the DNS login after the install (for later changes)
+   *   dnsBy    which writer put the records in: cloudflare, godaddy or manual
+   *   cfZones  zone names the Cloudflare token can see (the admin picks one)
+   *   installBy / installedFor  who pressed Install
+   */
+  assist?: {
+    steps?: Partial<Record<StepId | "openrouter", { by: string; at: string }>>;
+    released?: StepId[];
+    keepDns?: boolean;
+    dnsBy?: "cloudflare" | "godaddy" | "manual";
+    cfZones?: string[];
+    installBy?: { by: string; at: string };
+    openrouter?: boolean;
+  };
 }
 
 interface Row { buyer_id: number; data: string; log: string; log_bytes: number; created_at: string; updated_at: string }
@@ -244,7 +278,7 @@ export function staleSecretBuyers(days: number): number[] {
 }
 
 export function resetSetup(buyerId: number) {
-  deleteAllSecrets(buyerId);
+  deleteAllSecrets(buyerId, true);
   db().query("DELETE FROM setups WHERE buyer_id = ?").run(buyerId);
 }
 

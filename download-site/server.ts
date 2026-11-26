@@ -12,6 +12,10 @@
 //   POST /p/<attempt token>/log     install output, in order (?offset=<bytes already sent>)
 //   POST /p/<attempt token>/exit    install.sh finished (?code=<exit code>)
 //   POST /api/sync                  the buyer's app sends its health snapshot (Bearer sync token; sync.ts)
+//   POST /api/tickets               a help ticket from the agency's app; GET /api/tickets/updates: our replies (Bearer sync token; tickets.ts)
+//   GET  /api/tls-allowed?domain=X  Caddy only: 200 for a host registered to a buyer (hosts.ts); a buyer's own domain serves their wizard at /
+//   GET  /api/releases/latest       the newest app release, for an app updating itself (Bearer sync token; releases.ts)
+//   GET  /api/releases/bundle/<v>   its source, only with a signed address that runs out in 10 minutes
 //   GET  /guide /styles.css /favicon.svg /wizard.js /chat.js /chat.css /healthz
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -28,6 +32,7 @@ import { DEMO, DEMO_KEY, DemoOffline, demoBuyer, demoDashboard } from "./demo";
 
 if ((process.env.PREVIEW_JUMP || "").trim() === "1" && !ANY_MOCK) {
   console.error("PREVIEW_JUMP=1 is for test sites only and needs a MOCK_* switch on too. Refusing to start.");
+import { serveOwnHost, tlsAllowedResponse } from "./hosts";
   process.exit(1);
 import { appSource, bundleSignatureOk, latestRelease, signBundleUrl } from "./releases";
 import { startAlerts } from "./alerts";
@@ -166,6 +171,11 @@ async function handle(req: Request, srv: Bun.Server): Promise<Response> {
 
   if (isGet && path === "/") return html(homePage());
   if (isGet && path === "/guide") return html(guidePage(), 200, { "Cache-Control": "public, max-age=300" });
+  // Caddy asks here before getting a certificate for a buyer's own domain (internal only), then their own domain serves their wizard (hosts.ts).
+  if (path === "/api/tls-allowed") return tlsAllowedResponse(req, url);
+  const own = await serveOwnHost(req, (r) => handle(r, srv));
+  if (own) return own;
+
   if (isGet && path === "/healthz") return respond("ok", 200, { "Content-Type": "text/plain", "Cache-Control": "no-store" });
   if (isGet && path === "/robots.txt") return respond("User-agent: *\nDisallow: /\n", 200, { "Content-Type": "text/plain" });
   if (isGet && ASSETS[path]) return respond(ASSETS[path].body, 200, { "Content-Type": ASSETS[path].type, "Cache-Control": "public, max-age=300" });

@@ -12,3 +12,23 @@ __DOMAIN__ {
 	}
 	reverse_proxy setup-site:4500
 }
+
+# A buyer's own setup-link domain (setup.theirdomain.com, a CNAME to __DOMAIN__): any name the setup site says is
+# registered to a buyer gets its https certificate on first use, and nothing else does. This needs the global option
+#   on_demand_tls { ask http://setup-site:4500/api/tls-allowed }
+# at the top of /opt/twin/Caddyfile (deploy/Caddyfile has it; remote-deploy.sh runs ensure-ondemand-tls.sh to add it to a
+# server that doesn't have it yet). The explicit sites above and in /opt/twin/sites always win over this catch-all.
+https:// {
+	tls {
+		on_demand
+	}
+	encode zstd gzip
+	request_body {
+		max_size 128KB
+	}
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		-Server
+	}
+	reverse_proxy setup-site:4500
+}

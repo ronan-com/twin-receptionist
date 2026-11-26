@@ -237,7 +237,8 @@ Tests: `download-site/test/chat.test.ts` (fake OpenRouter, nothing real is calle
 bun download-site/admin.ts add-buyer "Jane Citizen" jane@example.com   # prints her /setup/<code> link
 bun download-site/admin.ts list                                        # buyers and where each is
 bun download-site/admin.ts revoke|restore|reset <code or link>
-bun download-site/admin.ts publish <selfhost-bundle.tgz> <version>     # the app new installs get
+bun download-site/admin.ts publish <selfhost-bundle.tgz> <version> [notes]   # the app new installs get; notes = text or a file, one change per line
+bun download-site/admin.ts notes <version> <notes>                     # set or change a published version's release notes
 bun download-site/admin.ts admin-link you@yourcompany.com              # one-time /admin sign-in
 bun download-site/admin.ts admin-hash                                  # ADMIN_PASSWORD_HASH
 bun download-site/admin.ts backup [file]                               # consistent copy of site.db
@@ -250,8 +251,18 @@ app source that goes to buyers:
 
 ```bash
 bash download-site/make-package.sh 1.0.1
-bun download-site/admin.ts publish download-site/out/selfhost-bundle-1.0.1.tgz 1.0.1
+bun download-site/admin.ts publish download-site/out/selfhost-bundle-1.0.1.tgz 1.0.1 "- Calls show in a new timeline
+- Fixes the booking reminder time"
 ```
+
+### Updating buyers who are already installed (Railway)
+
+Publishing also makes every installed buyer's own setup link show **"Your agency is on version X. Version Y is
+available"** with the release notes above. **Update now** asks them to paste a Railway token again, sends the
+newest app to the same project and service (database and all existing variables untouched; only new variables
+the version needs are added), waits for `/api/health`, records the version, then deletes the token. If it fails
+Railway keeps the old deployment running and they press Try again. /admin shows each buyer's installed version
+and an "Update available" pill; to tell a buyer, send them their setup link (the buyer page has a copy button).
 
 ## Run it for real (production)
 

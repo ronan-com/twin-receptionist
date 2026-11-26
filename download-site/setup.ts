@@ -1310,6 +1310,8 @@ export function updateInfo(b: { demo: number }, s: SetupData): UpdateInfo | null
 
 /** Other code (support sync, ...) can give an update the variables a newer version needs. Only added when the agency doesn't already have them. */
 export const updateVarHooks: ((buyerId: number, existing: Record<string, string>) => Record<string, string>)[] = [];
+// The health heartbeat settings (sync.ts): added to agencies installed before it existed. Never re-made when present (that would cut the app off).
+updateVarHooks.push((id, have) => ("SUPPORT_SYNC_TOKEN" in have ? {} : supportSettings(id)));
 
 const UPDATE_TOKEN_MSG = "That token can't see your agency's project. Paste the token from the Railway account you installed with (workspace set to No workspace).";
 async function locateAgency(token: string, projectId: string): Promise<{ envId: string; appId: string }> {

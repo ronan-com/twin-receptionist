@@ -6,7 +6,7 @@ Placeholders: `{{buyer_first_name}}`, `{{setup_link}}`, `{{seller_name}}`, `{{su
 
 ---
 
-**Subject:** Your AI receptionist business is ready to set up
+**Subject:** Your AI receptionist agency is ready to set up
 
 Hi {{buyer_first_name}},
 
@@ -16,17 +16,17 @@ Thanks for your purchase. Here's your private setup link:
 
 It's just for you, so please don't share it.
 
-The setup wizard connects your own accounts and installs your dashboard at app.your-domain. When it's done, everything is in your name and we keep no access.
+The setup wizard connects your own accounts and installs your agency at app.your-domain, under your brand, in your own Railway account. When it's done, everything is in your name and we keep no access.
 
 **Have these ready:**
 - A domain you own (any registrar works)
-- A DigitalOcean account with a payment method
+- A Railway account on the Hobby plan (US$5 a month plus usage, needs a card)
 - A Telnyx account, upgraded from trial, with some credit
 - A Resend account
 - Optional: Google or Microsoft accounts for calendar sign-in
 - A password manager for the keys you'll create
 
-**How long it takes:** about 20 to 30 minutes of your time. Telnyx can take up to two working days to approve a new card, so open that account first. You can stop and come back to your link at any time.
+**How long it takes:** about 20 minutes of your time. Telnyx can take up to two working days to approve a new card, so open that account first. You can stop and come back to your link at any time.
 
 Questions? Reply to this email or write to {{support_email}}.
 

@@ -1,302 +1,245 @@
 # Setup wizard: on-screen copy
 
-Exact words for each screen, in order. Placeholders: `{{product}}` (the name the buyer picks), `{{domain}}` (their domain, e.g. `example.com.au`), `{{owner_email}}`, `{{server_ip}}`, `{{region}}`, `{{size}}`, `{{balance}}`. The dashboard always lives at `app.{{domain}}`.
+The words on each screen, in order, as `download-site/wizard.ts` shows them today. Where this file and the code disagree, the code wins and this file gets fixed.
 
-Style: Australian spelling, short sentences, no exclamation marks.
+Placeholders: `{{brand}}` (the brand name the buyer picks), `{{domain}}` (e.g. `example.com.au`), `{{host}}` (`app.{{domain}}`), `{{owner_email}}`, `{{from}}`, `{{balance}}`, `{{temp_url}}` (the `https://….up.railway.app` address).
 
-> TODO (Ronan): match screen order and field names against the wizard code in `download-site/` once it's built. Where this copy and the code disagree, the code wins and this file gets fixed.
+Style: Australian spelling, short sentences, no exclamation marks. Every step has a collapsed **Show me how** with the matching how-to from `providers/`.
+
+**Order (Railway, the default):** Welcome · Brand · Hosting (Railway) · Phones (Telnyx) · Email (Resend) · Domain · Calendars (optional) · Install · Live
+
+**Footer on every step:** Your keys are stored encrypted and deleted once your install is done.
 
 ---
 
 ## 1. Welcome
 
-**Headline:** Let's set up your receptionist business
+**Headline:** Let's set up your AI receptionist agency
 
-**Body:** At the end you'll have your own AI receptionist dashboard at app.your-domain, running on a server you own, with your own phone, email and domain accounts. We don't keep any access.
+**Body:** By the end your agency runs at app.your-domain, under your brand, on your own Railway account.
 
-**What you'll have at the end**
-- Your dashboard at `app.{{domain}}`, with your name and branding
-- A private server in your DigitalOcean account, with nightly database backups
-- Phone numbers and calls on your own Telnyx account
-- Invites and booking emails sent from your domain through Resend
-- Optional: Google and Microsoft calendar sign-in for your clients
+**Tiles**
+- **Yours to keep:** Your brand, hosting, accounts and clients. We keep no access.
+- **About 20 minutes:** Close the page any time; this link picks up where you left off.
+- **Have these ready:** Your domain, Railway, Telnyx and Resend accounts.
 
-**What you need**
-- A domain you own (any registrar), or a Cloudflare account it's already on
-- A DigitalOcean account with a payment method
-- A Telnyx account, upgraded from trial, with some credit
-- A Resend account
-- Optional: a Google Cloud and/or Microsoft Entra account for calendars
-- A password manager, to save the logins and keys you make today
-
-**How long:** About 20 to 30 minutes of your time. Some providers then do their own checks: Telnyx can take up to two working days to approve a card, and a nameserver change can take a few hours. You can close this page and come back to your link at any time.
-
-**Buttons:** `Start` · `See the provider how-tos`
+**Button:** `Start`
 
 ---
 
 ## 2. Brand
 
-**Headline:** Name your product
+**Headline:** Name your brand
 
-**Body:** This name appears on every screen, email and page title your clients see. The owner email becomes the first account, with full control.
+**Body:** Your brand appears on every screen and email your clients see.
 
 **Fields**
-- Product name. Hint: "For example, Chloe. You can't leave this blank."
-- Owner email. Hint: "Only this address can create the first account. Use one you'll keep."
+- Brand name. Placeholder: "e.g. Chloe".
+- Owner email. Hint: "You'll sign in with this as the owner of your agency."
 
-**Buttons:** `Back` · `Next`
+**Buttons:** `Back` · `Continue`
+
+**Errors:** Give your brand a name. / Enter a real email address.
 
 ---
 
-## 3. Domain
+## 3. Hosting (Railway)
 
-**Headline:** Where your dashboard will live
+**Headline:** Connect Railway
 
-**Body:** Enter the domain you own. Your dashboard goes at app.{{domain}}, so your main website stays as it is.
+**Body:** Your agency runs in your own Railway account. You pay Railway directly, from US$5 a month.
 
-**Field:** Your domain. Hint: "Just the domain, like example.com.au. No https://, no www."
-
-**Preview line:** Your dashboard will be at **app.{{domain}}**
-
-**Choice (radio cards):**
-
-**Let the wizard handle DNS** (Recommended)
-Your domain uses Cloudflare for DNS, and the wizard adds every record for you: the server address and the email records Resend needs. If your domain is with another registrar, you point it at Cloudflare once. You keep the domain where it is.
-Field: Cloudflare API token. Hint: "Create it with the Edit zone DNS template, for {{domain}} only."
-
-**I'll add the records myself**
-Keep DNS where it is now. The wizard shows you each record to add (the server address, then Resend's email records) and checks them for you. Works with GoDaddy, Crazy Domains, Namecheap, VentraIP and any other registrar.
-
-**Note under the cards:** Already have something at app.{{domain}}? It will be replaced when the record is added. Pick a different domain if you need it.
+**Field:** Railway account token. Hint: "Railway needs the **Hobby** plan (it asks for a card). Make the token with **No workspace**."
 
 **Buttons:** `Back` · `Check and continue`
 
-**Success line:** Cloudflare token works. It can edit DNS for {{domain}}.
+**Success line:** Connected to Railway ({{railway_email}}).
 
-### 3a. Point your domain at Cloudflare (only if needed)
-
-**Headline:** Point {{domain}} at Cloudflare
-
-**Body:** Sign in where you bought {{domain}} and replace its nameservers with these two. This is the only change you make at your registrar.
-
-**Shown:** `{{ns1}}` · `{{ns2}}` (copy buttons)
-
-**Small print:** Most registrars take a few minutes. Some take up to 24 hours. You can keep going: we'll wait for it at the install step.
-
-**Buttons:** `Back` · `I've changed them`
+**Errors**
+- Railway didn't accept that token. Make it under Account Settings > Tokens with Workspace set to No workspace, then paste it again.
+- Your Railway account needs the Hobby plan (US$5 a month, with a card) to run your agency. Upgrade in Railway, then press Check again.
+- That Railway account has no workspace yet. Open Railway once to finish signing up, then try again.
 
 ---
 
-## 4. Server
+## 4. Phones
 
-**Headline:** Your server
+**Headline:** Connect your Telnyx account
 
-**Body:** We create one server in your DigitalOcean account. It runs the dashboard, its database and the nightly backups. You pay DigitalOcean for it directly.
+**Body:** Your clients' receptionists answer calls on your Telnyx account.
 
-**Fields**
-- DigitalOcean API token. Hint: "API → Generate New Token. Name it setup, give it full access and a 30-day expiry. You'll delete it when we're done."
-- Location. Default: Sydney. Hint: "Pick the one closest to your clients. Your data is stored here."
-- Size. Options:
-  - 2 GB memory: "Recommended. Room for many agencies."
-  - 1 GB memory: "Works, but slower to install and update."
-  - Larger: "For a lot of agencies and calls."
-  Each option shows DigitalOcean's monthly price.
+**Field:** Telnyx API key. Placeholder: "KEY...".
 
-**Buttons:** `Back` · `Check and continue`
-
-**Success line:** Connected to the DigitalOcean account {{do_email}}.
-
----
-
-## 5. Phones
-
-**Headline:** Connect your phone account
-
-**Body:** Your receptionists answer calls on Telnyx. The account is yours: every call and number is billed to it, at Telnyx's prices.
-
-**Fields**
-- Telnyx API key. Hint: "Account Settings → API Keys → Create API Key. Leave it on No Expiration. It starts with KEY."
-- Who pays for calls? (radio)
-  - **My account, for everyone** (default): "Agencies you invite run on your Telnyx account. You buy numbers for them."
-  - **Each agency brings its own**: "Every agency connects its own Telnyx account before it can make receptionists. They buy and pay for their own numbers."
-
-**Small print:** A brand-new Telnyx account is a trial. Real callers can't get through until it's upgraded and has credit.
+**Warning:** A new Telnyx account is a trial: callers can't get through until it's upgraded and has credit.
 
 **Buttons:** `Back` · `Check and continue`
 
 **Success line:** Telnyx key works. Available credit: {{balance}}.
 
-**Low-credit line (warning):** Your credit is low. Top up and turn on Auto Recharge in Telnyx Billing before you take real calls.
-
 ---
 
-## 6. Email
+## 5. Email
 
 **Headline:** Send email from your domain
 
-**Body:** Invites, password resets and booking emails go out through your Resend account, from an address on {{domain}}.
+**Body:** Invites and notices go out through your own Resend account.
 
 **Fields**
-- Resend API key. Hint: "API Keys → Create API Key, with Sending access. It starts with re_."
-- Send from. Default: `{{product}} <no-reply@{{domain}}>`. Hint: "A name and an address on your domain."
+- Resend API key. Hint: "Create it with **Full access**. Your agency only ever gets a send-only key."
+- Send from. Placeholder: "hello@mail.yourbusiness.com". Hint: "A sub-domain like mail.yourbusiness.com keeps your main email separate."
 
-**If "Let the wizard handle DNS":** We'll add Resend's records to Cloudflare for you during the install.
-**If "I'll add the records myself":** Add these records where your DNS is. Resend checks them, usually within minutes. (Table of records, each with a copy button and a live status: Waiting / Found.)
+**Buttons:** `Use another email service` · `Check and continue`
 
-**Buttons:** `Back` · `Check and continue` · `Send me a test email` (after the domain is verified)
+**Once checked**
+- Headline: Email is connected
+- Body: Emails will come from **{{from}}**.
+- Notice: Resend is connected. We add its records for **{{sending_domain}}** on the Domain step.
+- Buttons: `Use another key or address` · `Continue`
 
-**Success line:** Resend key works. Your domain is verified.
+**Another email service (SMTP)**
+- Headline: Send email from your domain
+- Body: Use any email service that gives you SMTP details.
+- Fields: SMTP server, Port, Username, Password, Send from.
+- Buttons: `Use Resend instead` · `Check and continue`
+
+**Errors:** That Resend key can only send: make one with Full access. / {{domain}} is already added to another Resend account. Use that account's key, or remove it there first.
+
+---
+
+## 6. Domain
+
+**Headline:** Your web address
+
+**Body:** Your dashboard will live at app.your-domain. Your main website stays as it is.
+
+**Field:** Your domain. Placeholder: "yourbusiness.com.au".
+
+**Preview line:** Your dashboard: **app.{{domain}}**
+
+**Choice (radio cards)**
+- **Let the wizard handle DNS** (Recommended). "Use a free Cloudflare account; we add every record for you."
+  Field: Cloudflare API token. Hint: "Use the **Edit zone DNS** template and add **Zone: Read**, for this domain."
+- **I'll add the records myself.** "Keep DNS where it is. We tick each record off as it appears."
+  Hint: "We'll show you each record to add, with a tick as it appears."
+
+**If app.{{domain}} already exists (Cloudflare):** **app.{{domain}}** already points somewhere else. Tick box: **Replace it with my new server** · "Nothing else on your domain changes."
+
+**Buttons:** `Back` · `Continue`
+
+### 6a. Switch your nameservers (Cloudflare, only if needed)
+
+- Headline: Switch your nameservers
+- Body: At the company you bought **{{domain}}** from, replace its nameservers with these two.
+- Shown: the two nameservers, each with `Copy`.
+- Warning: Have a website or email on this domain? Check Cloudflare copied all your records before you switch.
+- Status: Waiting for the switch. This can take minutes or hours; you can close this page.
+- Buttons: `Change domain` · `Check now`
+
+### 6b. Add your email records (adding records yourself)
+
+- Headline: Add your email records
+- Body: Add each one where you manage DNS for **{{domain}}**. They tick off as they appear; you can keep going meanwhile.
+- Table: Type · Name · Value (each with `Copy`) · Found / Waiting.
+- Line under it: Your dashboard's two records come on the Install step.
+- Status: Waiting for Resend to verify · checked {{time}}. Then: Resend verified your email domain.
+- Buttons: `Change domain` · `Continue`
+
+**Errors**
+- This token can't see {{domain}}. Add it to Cloudflare first, or make the token for it.
+- That token needs Zone: Read and DNS: Edit for your domain.
+- Your email address is on {{sending_domain}}. Use that domain here, or go back to Email and change the address.
 
 ---
 
 ## 7. Calendars (optional)
 
-**Headline:** Calendar sign-in (optional)
+**Headline:** Calendar booking
 
-**Body:** Lets your clients connect Google or Outlook calendars with one click, so receptionists book into them. You can skip this and add it later in Settings → Email and calendars.
+**Body:** Optional: let receptionists book into Google or Outlook calendars.
 
-**Google card**
-- Redirect URI to add: `https://app.{{domain}}/api/oauth/google/callback` (copy)
-- Client ID · Client secret
+**Google card:** Redirect URI `https://app.{{domain}}/api/oauth/google/callback` (`Copy`) · Client ID · Client secret
 
-**Microsoft card**
-- Redirect URI to add: `https://app.{{domain}}/api/oauth/microsoft/callback` (copy)
-- Application (client) ID · Client secret value
+**Microsoft card:** Redirect URI `https://app.{{domain}}/api/oauth/microsoft/callback` (`Copy`) · Application (client) ID · Client secret
 
 **Buttons:** `Back` · `Skip for now` · `Check and continue`
 
-**Success line:** Google app accepted. / Microsoft app accepted.
+**Success lines:** Google accepted these keys. / Microsoft found your app and accepted the secret.
 
 ---
 
 ## 8. Install
 
-**Headline:** Installing {{product}}
+**Headline:** Ready to install
 
-**Body:** This takes about 10 to 20 minutes. You can leave this page open or come back later: the install keeps running on your server.
+**Body:** We'll set up {{brand}} in your Railway account. You can close the page while it runs.
 
-**Before it starts (summary card):** app.{{domain}} · {{region}} · {{size}} · Telnyx connected · Email from {{mail_from}} · Calendars: {{calendar_summary}}
+**Summary:** Dashboard: {{host}} · Hosting: Railway · {{workspace}} · from US$5/mo · Phones: Telnyx ••••{{last4}} · Email from: {{from}} · DNS: Handled by the wizard / You add two records
 
-**Button:** `Install` (then hidden)
+**Button:** `Install`
 
-### Progress messages (one line per stage, ticked when done)
+**While it runs**
+- Headline: Setting up {{brand}}
+- Body: About 10 minutes. You can close this page; your link picks up where you left off.
+- Stages, ticked as they finish:
+  1. Creating your project in Railway
+  2. Adding your database
+  3. Adding the app and your settings
+  4. Building the app (the longest step)
+  5. Starting the app
+  6. Connecting {{host}} (or: Waiting for your records for {{host}})
+  7. Getting your security certificate
+- Status lines: Setting up your Railway project. About a minute. / Railway is building the app. Usually 3 to 6 minutes. / Starting the app and its database.
+- Adding records yourself: a box **Add these two records for {{host}}** ("Add them now, while the app builds."), with Railway's CNAME and TXT and a tick for each.
+- `Show details`: the install log.
+- `Delete the project`. Confirm: "Delete this project (app and database) from your Railway account?"
 
-1. Creating your server in DigitalOcean…
-2. Waiting for your server to start…
-3. Adding your DNS records in Cloudflare… *(wizard-DNS only)*
-4. Checking app.{{domain}} points to your server…
-5. Checking your email domain with Resend…
-6. Copying {{product}} to your server…
-7. Installing the system software…
-8. Building the app. This is the longest step…
-9. Starting the database and the app…
-10. Getting your security certificate…
-11. Checking everything answers…
+**Running, waiting for the domain**
+- Headline: {{brand}} is running
+- Body: Use your temporary address now. {{host}} starts working once its records are in.
+- Shown: ● Running · {{temp_url}} · "Your temporary address. It keeps working after {{host}} is ready."
+- Status: Waiting for your records. Usually within 15 minutes. / Waiting for DNS. Usually a minute or two. / Railway is getting your security certificate. Usually a few minutes.
+- Buttons: `Delete the project` · `Finish now`
 
-**Done line:** All set. app.{{domain}} is live.
-
-### Waiting messages
-
-**Nameservers not changed yet**
-Waiting for {{domain}} to move to Cloudflare. Your registrar can take up to 24 hours. We check every minute. You can close this page: come back to your link and we'll carry on.
-
-**DNS not pointing yet** (manual DNS)
-Add this record where your DNS is: **A** · **app** · **{{server_ip}}**. Turn off any proxy (DNS only). We'll check every 30 seconds.
-Buttons: `Check now` · `Install anyway`
-Small print under "Install anyway": The install runs, but its last step needs the address working. If it isn't yet, it stops and you can press Try again later.
-
-**DNS added, still spreading**
-The record is in place. Some networks take a little while to see it. We'll keep checking.
-
-**Resend not verified yet**
-Waiting for Resend to verify {{domain}}. This is usually a few minutes, sometimes longer. Everything else carries on in the meantime.
-Button: `Check now`
+**If it stops**
+- Headline: The install stopped (build or start failed) / We couldn't set up Railway (project setup failed)
+- Body: the reason in one line, e.g. "Railway couldn't build the app: …" or "The app started but then stopped: …"
+- Buttons: `Delete the project` · `Try again`. Try again builds again in the same project, with the same database and settings.
 
 ---
 
-## 9. Done
+## 9. Live
 
-**Headline:** You're live
+**Headline:** Your agency is live
 
-**Body:** {{product}} is running at app.{{domain}}, on your own server. Everything here is yours now.
+**Body:** {{brand}} is running in your own Railway account. Everything here is yours.
 
-**Your link:** `https://app.{{domain}}` · button `Open your dashboard`
+**Shown:** ● Live · `https://app.{{domain}}` (or the temporary address, if the records aren't in yet: "Your temporary address. **{{host}}** starts working by itself once the records below are in.")
 
-**Line under it:** Create your account with **{{owner_email}}**. Only that address can make the first account, and it becomes the owner.
+**Line under it:** Create your account with **{{owner_email}}**. Only that address can make the first account.
 
-**Before you go (checklist, each ticks when clicked):**
-- [ ] Delete the DigitalOcean token named "setup" (API → Tokens). `Open DigitalOcean`
-- [ ] Delete the Cloudflare token you made for this (My Profile → API Tokens). `Open Cloudflare` *(wizard-DNS only)*
-- [ ] Download your server key and save it in your password manager. `Download server key`
-- [ ] Save your Telnyx, Resend and calendar keys in your password manager too.
+**Before you go**
+- Delete your Railway token. `Open Railway`
+- Delete your Cloudflare token. `Open Cloudflare` *(wizard-DNS only)*
+- Keep your Resend account: your agency sends email through it with its own send-only key.
+- Turn on backups for the Postgres volume in Railway (its Backups tab).
 
-**Server key note:** This key is the only way to sign in to your server's command line (for backups, restores and updates). We don't keep a copy. If you lose it, you can add a new key from the DigitalOcean console.
+**Notice:** We've deleted every key you gave us. We keep no access to your Railway project or accounts.
 
-**Footer:** Next: read "Your first hour" for what to do once you're signed in. `Open Your first hour`
+**Button:** `Open your dashboard`
 
-> TODO (Ronan): confirm the wizard deletes its stored tokens and the server key from our side at this screen, and say so here ("We've deleted our copy of your tokens and server key.") once it does.
+> TODO (Ronan): Railway's docs don't say which plans get volume backups, and Railway staff have said backups went to Pro first. If the Backups tab is empty on Hobby, this line needs a different instruction (upgrade to Pro, or another backup route). Check on a real Hobby account.
 
 ---
 
-## Error messages
+## General messages
 
-Each: headline, body, buttons.
+- Finish the earlier steps first.
+- You've tried that a lot in a short time. Please wait {{n}} seconds and try again.
+- For safety we deleted the keys you gave us, since this setup sat unused for a while. Paste them again to carry on.
+- {{Provider}} is busy: wait a minute and try again. / {{Provider}} is having a problem: try again in a few minutes.
 
-**Bad token / key (any provider)**
-- Headline: That {{provider}} key didn't work
-- Body: {{provider}} turned it down. Copy it again, making sure you've got the whole line, or create a new one.
-- Buttons: `Try again` · `Open {{provider}}`
+---
 
-**Missing permission (Cloudflare)**
-- Headline: This token can't edit DNS for {{domain}}
-- Body: The token works but doesn't have Zone → DNS → Edit for {{domain}}. Make a new one with the Edit zone DNS template and pick {{domain}} under Zone Resources.
-- Buttons: `Try again` · `Open Cloudflare`
+## Backup option: DigitalOcean
 
-**Missing permission (DigitalOcean)**
-- Headline: This token is read-only
-- Body: We need to create a server and an SSH key, so the token needs full (read and write) access. Make a new one with full access.
-- Buttons: `Try again` · `Open DigitalOcean`
-
-**DigitalOcean account not ready**
-- Headline: DigitalOcean can't create servers yet
-- Body: Your DigitalOcean account needs a verified email and a payment method before it can make a server. Finish those, then try again.
-- Buttons: `Try again` · `Open DigitalOcean`
-
-**Domain not on Cloudflare**
-- Headline: {{domain}} isn't in this Cloudflare account
-- Body: Add {{domain}} to Cloudflare first, or use a token from the account it's in. Or choose "I'll add the records myself".
-- Buttons: `Try again` · `Add records myself`
-
-**DNS not propagated yet**
-- Headline: app.{{domain}} doesn't point to your server yet
-- Body: We can still see {{found_ip}} (or nothing). If you've just added the record, give it a few minutes. If not, add **A · app · {{server_ip}}**, DNS only.
-- Buttons: `Check again` · `Install anyway`
-
-**Resend not verified yet**
-- Headline: Resend hasn't verified {{domain}} yet
-- Body: Resend is still looking for your email records. Check they match the table exactly. You can finish the install now: emails start sending as soon as Resend verifies the domain.
-- Buttons: `Check again` · `Carry on without email for now`
-
-> TODO (Ronan): decide whether "Carry on without email for now" is allowed. Without email, invites and password resets only appear in the server log until it's fixed in Settings → Email and calendars.
-
-**Droplet create failed**
-- Headline: DigitalOcean couldn't create your server
-- Body: DigitalOcean said: "{{reason}}". This is often a server limit on new accounts or a size that isn't available in {{region}}. Try another location or size, or ask DigitalOcean to raise your limit.
-- Buttons: `Try again` · `Change location or size`
-
-**Install failed**
-- Headline: The install stopped
-- Body: Your server said: "{{reason}}". Nothing is lost: the server and its settings are still there, and it's safe to run the install again.
-- Buttons: `Try install again` · `Show the log` · `Delete the server`
-- Delete confirmation: This removes the server from your DigitalOcean account so you stop paying for it. You can create a new one afterwards. Buttons: `Cancel` · `Delete server`
-
-**Telnyx still on trial**
-- Headline: Your Telnyx account is still a trial
-- Body: Real callers can't get through to a trial account. In Telnyx, open your profile → Account Level → Upgrade, then add credit. You can finish the install now and upgrade before you take real calls.
-- Buttons: `Check again` · `Carry on` · `Open Telnyx`
-
-**Lost contact (wizard page)**
-- Headline: We've lost contact with the wizard
-- Body: Check your internet connection. Your install keeps running on your server. Reopen your setup link and this page picks up where you left off.
-- Buttons: `Reconnect`
+Only on a site set to `HOSTING=digitalocean`. Order: Welcome, Brand, Domain, Server, Phones, Email, Calendars, Install, Live. The Server step reads "Your server · We create one server in your DigitalOcean account. You pay DigitalOcean directly." See `wizard.ts` for its exact screens.

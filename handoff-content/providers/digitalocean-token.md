@@ -7,6 +7,8 @@ link: https://cloud.digitalocean.com/account/api/tokens
 verified: 2026-11-26
 sources: [https://docs.digitalocean.com/reference/api/create-personal-access-token/, https://docs.digitalocean.com/reference/api/scopes/, https://docs.digitalocean.com/reference/api/scopes/droplet/create/, https://docs.digitalocean.com/reference/api/scopes/droplet/delete/, https://docs.digitalocean.com/reference/api/scopes/ssh_key/create/, https://docs.digitalocean.com/reference/api/scopes/tag/create/, https://docs.digitalocean.com/support/why-do-i-need-to-enter-a-payment-method/, https://docs.digitalocean.com/platform/billing/manage-payment-methods/, https://www.digitalocean.com/pricing/droplets, https://docs.digitalocean.com/reference/api/reference/ssh-keys/]
 ---
+Only for the optional DigitalOcean hosting. The standard setup uses Railway, so most people can skip this.
+
 ## What it's for
 DigitalOcean rents you the server your receptionist app runs on. The token lets the setup create that server for you, in the region and size you pick, and tidy it up if a try fails.
 

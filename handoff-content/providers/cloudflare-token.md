@@ -8,7 +8,7 @@ verified: 2026-11-26
 sources: [https://developers.cloudflare.com/fundamentals/api/get-started/create-token/, https://developers.cloudflare.com/fundamentals/api/reference/template/, https://developers.cloudflare.com/analytics/graphql-api/getting-started/authentication/api-token-auth/, https://developers.cloudflare.com/dns/internal-dns/get-started/]
 ---
 ## What it's for
-The token lets the setup add DNS records to your domain on Cloudflare (for your app, and for sending email). It can only touch the DNS of the one domain you pick.
+The token lets the setup add DNS records to your domain on Cloudflare: Railway's two records for app.your-domain (a CNAME and a TXT ownership check) and Resend's email records. It needs **Zone: Read** to find your domain and **DNS: Edit** to add the records. It can only touch the one domain you pick.
 
 ## Steps
 1. Sign in to Cloudflare. Click your profile icon (top right), then **My Profile**, then **API Tokens**.
@@ -32,6 +32,7 @@ Exactly two, both limited to your one domain:
 
 ## Watch out for
 - Cloudflare shows the token only once. If you lose it, create a new one and delete the old one.
+- Missing **Zone: Read**? The wizard says "That token needs Zone: Read and DNS: Edit for your domain." Make a new token with both.
 - Your domain must already be added to Cloudflare (the previous step). If it isn't, the token can't see it and the wizard says it found no domains.
 - If you have several domains, make sure **Zone Resources** names the one you're using for the receptionist.
 - Don't use the **Global API Key**. It gives full control of your whole Cloudflare account.

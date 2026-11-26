@@ -1,99 +1,80 @@
-# Running {{product}} day to day
+# Running {{brand}} day to day
 
-Most days you won't need to touch the server. This guide covers backups, updates, keeping an eye on things, what it costs, and what to do when something stops.
+Most days you won't need to touch anything. This guide covers backups, logs, settings, updates, what it costs, and what to do when something stops.
 
-Commands below run on your server. Sign in with the SSH key from the wizard:
-
-```bash
-ssh -i path/to/your-server-key root@{{server_ip}}
-cd /opt/receptionist
-```
-
-Always use `dc.sh` or `install.sh` in that folder. Plain `docker compose` won't pick up your settings.
-
-```bash
-sudo ./dc.sh ps                 # what's running
-sudo ./dc.sh logs -f app        # the app log
-sudo ./dc.sh restart app        # restart the app
-```
+Your agency runs in one project in your Railway account, with two services: **the app** (your dashboard) and **Postgres** (your database). Everything below is done in the Railway dashboard. There's no server to log in to.
 
 ---
 
 ## Backups
 
-**What happens on its own**
-- Every night at about 03:30 server time, the server saves a full copy of the database to `/opt/receptionist/backups/receptionist-YYYYmmdd-HHMMSS.dump`.
-- A backup is also taken before every update (`pre-update-*.dump`) and every restore (`pre-restore-*.dump`).
-- Backups older than 14 days are deleted.
+**Turn them on once.** Railway doesn't back up your database until you ask it to.
 
-**Check it's working**
-```bash
-systemctl list-timers receptionist-backup.timer
-journalctl -u receptionist-backup
-ls -lh /opt/receptionist/backups
-```
+1. In Railway, open your project and click the **Postgres** service.
+2. Open its **Backups** tab and pick a schedule. You can pick more than one:
+   - Daily: every 24 hours, kept for 6 days
+   - Weekly: every 7 days, kept for 27 days
+   - Monthly: every 30 days, kept for 89 days
+3. You can also make a backup by hand from the same tab, for example before a big change.
 
-**Take one now**
-```bash
-sudo bash /opt/receptionist/backup.sh
-```
+Backups are billed like volume storage, for the space they add. See "What it costs" below.
 
-**Copy them off the server.** Backups live on the same server. If the server is lost, so are they. Do at least one of these:
-- Turn on **Backups** for the droplet in DigitalOcean (weekly or daily). This copies the whole server.
-- Copy `backups/` and `secrets.env` to another computer or storage regularly, for example with `rsync` or `scp`.
-
-Always keep a copy of `secrets.env` with your backups. It holds the database password and `MAILBOX_KEY`. A backup restored without the matching `MAILBOX_KEY` loses saved mailbox and calendar logins.
+> TODO (Ronan): Railway's docs don't say which plans get volume backups, and Railway staff have said backups went to Pro first. Check the Backups tab on a real Hobby account. If it's locked, say here what Hobby buyers should do (move to Pro, or another backup route we give them).
 
 **Restore a backup**
-```bash
-sudo bash /opt/receptionist/restore.sh /opt/receptionist/backups/receptionist-20261126-033000.dump
-```
-It asks you to type `restore`. It takes a safety backup first, stops the app, rebuilds the database from the file, and starts the app again. Everything since that backup is lost, so pick the most recent good one.
+1. On the Postgres service's **Backups** tab, find the backup by its date and click **Restore**.
+2. Railway mounts a new volume from that backup in place of the current one. The old volume is kept, unmounted.
+3. Click **Details** at the top of the project to review the change, then **Deploy**.
 
-**Move to a new server**
-1. Make a new droplet and install there with the same `.env`.
-2. Stop it, copy the old `secrets.env` over the new one, then run `docker volume rm receptionist_db-data` and `sudo bash install.sh` again, so the database is made with the old password.
-3. Copy your latest dump across and run `restore.sh` with it.
-4. Point `app.{{domain}}` at the new server's IP.
+Everything since that backup is lost, so pick the most recent good one.
+
+**Watch out for**
+- Wiping a volume deletes all of its backups.
+- Backups can only be restored into the same project and environment.
+- Manual backups are limited to half the volume's size.
+- Keep a copy of `MAILBOX_KEY` (from the app's **Variables** tab) in your password manager. It unlocks saved mailbox and calendar logins.
 
 ---
 
-## Changing a server setting
+## Logs
 
-Your settings are in `/opt/receptionist/.env` (product name, domain, owner email, Telnyx key, whether agencies bring their own Telnyx account, email and calendar settings).
+- **The app's log:** open the app service, click the latest deployment, and read its logs. The **Build Logs** tab shows the last build.
+- **Everything at once:** click **Observability** in the top bar for the Log Explorer.
+- Railway keeps logs for 7 days on the Hobby plan (30 on Pro).
 
-1. Edit `.env`. One `KEY=value` per line, no comments after a value.
-2. Run `sudo bash /opt/receptionist/install.sh`. It backs up the database, rebuilds and restarts. It's safe to run any time.
+If email isn't working, sign-in and reset links are written to the app's log instead of being sent.
 
-Email and calendar settings can also be changed in the dashboard under **Settings → Email and calendars**, with no server work. What you save there replaces the `.env` value.
+---
+
+## Changing a setting
+
+Your settings are on the app service's **Variables** tab: `PRODUCT_NAME` (your brand name), `PUBLIC_URL`, `FIRST_ADMIN_EMAIL`, `TELNYX_API_KEY`, `SMTP_URL`, `MAIL_FROM`, `MAILBOX_KEY`, and the Google and Microsoft keys if you set them.
+
+1. Edit the value on the **Variables** tab.
+2. Railway stages the change. Review it and deploy it, and the app restarts with the new value.
+
+Don't change `MAILBOX_KEY` or `DATABASE_URL`. Changing `MAILBOX_KEY` loses saved mailbox and calendar logins.
+
+Email and calendar settings can also be changed in the dashboard under **Settings → Email and calendars**, with nothing to do in Railway. What you save there replaces the variable.
 
 ---
 
 ## Updates
 
-**How you install one.** An update is a new bundle file. On the server:
-```bash
-sudo bash /opt/receptionist/update.sh /path/to/selfhost-bundle.tgz
-```
-It replaces the app and scripts, backs up the database, then rebuilds. Your `.env`, `secrets.env`, backups and data are left alone. Expect a few minutes of downtime while it rebuilds (longer on a 1 GB server).
-
-`sudo bash update.sh` with no file rebuilds and repairs from what's already there. Try this first if the app won't start.
-
-> TODO (Ronan): update policy isn't decided. Decide and fill in: whether updates are included and for how long, how buyers hear about them (email list?), where they download the bundle (their private link on our site?), and whether we ever offer to apply them (which would mean asking for access).
+> TODO (Ronan): update policy and delivery aren't decided. Decide and fill in: whether updates are included and for how long, how buyers hear about them, and how a new version reaches their Railway project (for example a new private setup link that sends the update, or steps they follow). We keep no access, so we can't push it ourselves.
 
 ---
 
 ## Keeping an eye on things
 
-**Server (DigitalOcean)**
-- Open your droplet → **Monitoring**. If graphs are empty, follow DigitalOcean's prompt to install the metrics agent.
-- Create alert policies for CPU, memory and disk (for example, disk over 80%). DigitalOcean emails you.
-- Add an **Uptime** check for `https://app.{{domain}}/api/health` so you hear if the site goes down.
+**Hosting (Railway)**
+- Open the **Usage** page ([railway.com/workspace/usage](https://railway.com/workspace/usage)) now and then to see what you're spending.
+- Click **Set Usage Limits** there and add a **Custom email alert**, so you hear before a bill grows. A **Hard limit** takes everything offline when it's reached, receptionists included, so use it with care.
+- Add an uptime check for `https://app.{{domain}}/api/health` with any uptime service, so you hear if the site goes down. Railway restarts the app if it crashes.
 
 **Phone credit (Telnyx)**
-- Turn on **Auto Recharge** in Telnyx Billing. If credit runs out, receptionists stop answering until you top up.
-- Agencies on their own Telnyx account see their credit on **Connections**, with a warning below US$5.
-- In your dashboard, **Overview → Needs attention** shows failed calls, number requests waiting and agencies with no phone account. **System / QA** lists background problems.
+- Turn on **Auto Recharge** in Telnyx Billing. If credit runs out, every client's receptionist stops answering until you top up.
+- In your dashboard, **Overview → Needs attention** shows failed calls and other problems. **System / QA** lists background problems.
 
 **Email (Resend)**
 - In Resend, check **Emails** now and then for bounced or complained messages. Lots of bounces usually means a wrong client email address.
@@ -101,6 +82,7 @@ It replaces the app and scripts, backs up the database, then rebuilds. Your `.en
 
 **Domain**
 - Keep auto-renew on and your card current at the registrar.
+- Don't delete the CNAME and TXT records for `app.{{domain}}`. Railway needs both.
 
 ---
 
@@ -110,14 +92,14 @@ All billed to you directly by each provider. Prices checked 26 November 2026, in
 
 | Provider | What you pay for | Typical | Current pricing |
 |---|---|---|---|
-| DigitalOcean | One server | Basic droplet: US$12/month for 2 GB (recommended), US$6 for 1 GB, US$24 for 4 GB. Droplet backups add 20% (weekly) or 30% (daily). | https://www.digitalocean.com/pricing/droplets |
-| Telnyx | Phone numbers (monthly each), call minutes, the AI voice, and texts | Depends on numbers and call volume. The dashboard shows each number's monthly price before you buy. Minimum top-up is US$10. | https://telnyx.com/pricing |
+| Railway | Hosting the app and its database | Hobby plan: US$5 a month, which includes US$5 of usage. Above that: RAM US$10 per GB a month, CPU US$20 per vCPU a month, storage US$0.15 per GB a month, outbound traffic US$0.05 per GB. Backups are charged like storage. | https://railway.com/pricing |
+| Telnyx | Phone numbers (monthly each), call minutes, the AI voice, and texts, for all your clients | Depends on numbers and call volume. The dashboard shows each number's monthly price before you buy. Minimum top-up is US$10. | https://telnyx.com/pricing |
 | Resend | Sending emails | Free plan: 3,000 emails a month, 100 a day. Pro: US$20/month for 50,000. | https://resend.com/pricing |
 | Cloudflare | DNS (only if the wizard handles it) | Free plan covers it | https://www.cloudflare.com/plans/ |
 | Domain registrar | Your domain | Yearly, varies by registrar and domain ending | Your registrar |
 | Google / Microsoft | Calendar sign-in apps | Check current pricing | https://cloud.google.com/pricing · https://azure.microsoft.com/pricing/ |
 
-If agencies bring their own Telnyx account, they pay for their own numbers and calls.
+> TODO (Ronan): add a typical Railway month (app + Postgres, quiet and busy) once measured.
 
 ---
 
@@ -129,8 +111,8 @@ Work down this list. Most problems are the first two.
 2. **Telnyx account level.** Profile → Account Level should say **Paid**. A trial account blocks real callers. A changed card or failed payment can also hold the account.
 3. **The number.** Open the client's page in the dashboard. The number should be listed under **Phone number**. In Telnyx, check the number is active and not still waiting for approval (Australian numbers take about three days).
 4. **The receptionist is paused.** On the client's page, a paused receptionist shows **Paused**. Click **Resume**.
-5. **The key.** For agencies on their own Telnyx account, **Connections** shows "Telnyx isn't accepting your key" if the key was deleted. Use **Replace key** with a key from the same Telnyx account.
-6. **The server.** Open `https://app.{{domain}}/api/health`. If it doesn't answer, check the droplet is on in DigitalOcean, then run `sudo ./dc.sh ps` and `sudo bash update.sh` on the server.
+5. **The key.** If the Telnyx key was deleted, make a new one in the same Telnyx account and put it in `TELNYX_API_KEY` on the app's **Variables** tab.
+6. **The app.** Open `https://app.{{domain}}/api/health`. If it doesn't answer, open the app service in Railway and check the latest deployment and its logs. Check Railway hasn't stopped it for a usage limit or a failed payment.
 
 Callers hear a Telnyx automated-call notice first? Telnyx may play it on accounts that aren't fully verified. Completing Telnyx's Verified level removes it.
 
@@ -140,15 +122,14 @@ Callers hear a Telnyx automated-call notice first? Telnyx may play it on account
 
 | Problem | Likely cause | What to do |
 |---|---|---|
-| Dashboard won't load | Server off, or the app stopped | Check the droplet in DigitalOcean. On the server: `sudo ./dc.sh ps`, then `sudo bash update.sh` |
-| "Not secure" or certificate error | `app.{{domain}}` no longer points at the server, or it's proxied | Check the A record points at `{{server_ip}}`, DNS only (no Cloudflare proxy), then run `sudo bash install.sh` |
-| Nobody gets invite or reset emails | Email not set, or Resend domain unverified | **Settings → Email and calendars → Send test email**. Check the domain in Resend. Until fixed, emails are written to the app log |
-| Locked out of the owner account | Forgotten password and email not working | On the server: `sudo ./dc.sh logs app` and look for the reset link after requesting one |
+| Dashboard won't load | App stopped, a usage limit was hit, or a payment failed | In Railway, check the app service's latest deployment and its logs, and your **Usage** page |
+| "Not secure" or certificate error | The CNAME or TXT record for `app.{{domain}}` changed, or it's proxied | Check both records still match the app service's custom domain in Railway, with DNS only (no Cloudflare proxy) |
+| Nobody gets invite or reset emails | Email not set, or Resend domain unverified | **Settings → Email and calendars → Send test email**. Check the domain in Resend. Until fixed, emails are written to the app's log |
+| Locked out of the owner account | Forgotten password and email not working | Request a reset, then find the reset link in the app's log in Railway |
 | Calendar sign-in fails | Redirect URI missing, or secret expired | Add the redirect URI shown in **Settings → Email and calendars** to Google or Microsoft. Paste a new secret and click **Check** |
 | Can't buy a number | No credit, or none available | Top up Telnyx. Try the other number type |
 | Number bought but not ringing | Telnyx still approving it | Wait for approval (Australian numbers about three days). Check it in Telnyx |
-| Disk full | Old files or large logs | `df -h` on the server. Resize the droplet in DigitalOcean if needed |
-| Update failed | Build ran out of memory, or a network blip | Run `sudo bash update.sh` again. On a 1 GB server, consider resizing to 2 GB. The log is in `run/build.log` |
-| Restored, but calendar logins gone | Restored with a different `MAILBOX_KEY` | Put back the `secrets.env` that matches the backup and restore again, or have clients reconnect calendars |
+| Database full | The Postgres volume reached its size (5 GB on Hobby) | Resize the volume in Railway (Hobby and Pro can resize) |
+| Restored, but calendar logins gone | `MAILBOX_KEY` was changed | Put back the `MAILBOX_KEY` from your password manager, or have clients reconnect calendars |
 
 > TODO (Ronan): decide what support we offer after handover (none, email for N days, paid). Add the contact line here once decided.

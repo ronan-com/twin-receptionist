@@ -1,4 +1,4 @@
-import { DAYS, TIMEZONES, formatNumber, type Business, type DayKey, type Hours, type Settings, type Voice } from "../../src/lib/shared";
+import { DAYS, TIMEZONES, countryForTimezone, countryOfNumber, formatNumber, type Business, type DayKey, type Hours, type Settings, type Voice } from "../../src/lib/shared";
 import { createInvite, emailOf, type Ctx } from "../accounts";
 import { answeredBusiness, industryKeyOf, membershipRole } from "../answered";
 import { audit } from "../audit";
@@ -15,6 +15,7 @@ import { COLLECT_FIELDS, DEFAULT_PAUSE_MESSAGE, DIALECTS, TONES, ValidationError
 import { isDemo } from "../sandbox";
 import { getClient, orgOfClient, saveClient } from "../store";
 import { json, readBody, type ClientAccess, type ClientRouteArgs } from "./http";
+import { UI_PRODUCT } from "../product";
 
 // Area S (workspace, manage): receptionist settings, knowledge, call handling,
 // integrations, team and the business profile, for one business.
@@ -202,7 +203,7 @@ async function answeredNumbers(c: Business) {
     status: "active",
     routing_mode: "ai_receptionist",
     capabilities: { voice: true, sms: e164.startsWith("+614") },
-    country: "AU",
+    country: countryOfNumber(e164) ?? "AU",
     provider: "telnyx",
     health: degraded ? "degraded" : "healthy",
     last_health_check_at: iso(c.updatedAt),
@@ -228,7 +229,7 @@ async function answeredNumbers(c: Business) {
       status: "pending",
       routing_mode: "ai_receptionist",
       capabilities: { voice: true, sms: r.type === "mobile" },
-      country: "AU",
+      country: countryForTimezone(c.settings.timezone),
       provider: "telnyx",
       health: "unknown",
       last_health_check_at: null,
@@ -288,7 +289,7 @@ async function answeredIntegrations(c: Business, access: ClientAccess | null) {
     const provider = providerOf(c);
     if (provider === "builtin") {
       out.push(
-        base("builtin_calendar", "Answered calendar", {
+        base("builtin_calendar", `${UI_PRODUCT} calendar`, {
           status: b.enabled ? "connected" : "not_connected",
           config: { default_duration: b.minutes, account_email: b.notifyEmail ?? "", enabled: b.enabled },
           connected_at: b.createdAt,
@@ -346,7 +347,7 @@ async function answeredIntegrationEvents(c: Business) {
   const integrationFor = (kind: string) =>
     kind.startsWith("email") ? { id: "email_mailbox", provider: "email_mailbox", display_name: "Email inbox" }
     : kind.startsWith("hook") ? { id: "webhook", provider: "webhook", display_name: "Webhook / custom CRM" }
-    : cal ? { id: cal, provider: cal, display_name: cal === "builtin_calendar" ? "Answered calendar" : cal === "google_calendar" ? "Google Calendar" : "Microsoft Outlook Calendar" }
+    : cal ? { id: cal, provider: cal, display_name: cal === "builtin_calendar" ? `${UI_PRODUCT} calendar` : cal === "google_calendar" ? "Google Calendar" : "Microsoft Outlook Calendar" }
     : null;
   const incidents = await sql`
     select id, kind, message, status, created_at from incidents
@@ -513,7 +514,7 @@ function hoursFrom(input: unknown, current: Hours): Hours {
 
 function timezoneOf(value: unknown): string {
   const tz = String(value ?? "");
-  if (!TIMEZONES.some((t) => t.value === tz)) throw new ValidationError("Choose an Australian time zone from the list.");
+  if (!TIMEZONES.some((t) => t.value === tz)) throw new ValidationError("Choose a time zone from the list.");
   return tz;
 }
 

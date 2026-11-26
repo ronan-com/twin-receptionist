@@ -23,6 +23,7 @@ export type IndustryKey =
   | "property"
   | "auto"
   | "professional"
+  | "childcare"
   | "other";
 
 export type Tone = "friendly" | "professional" | "calm" | "upbeat" | "direct";
@@ -92,6 +93,8 @@ export type BookingRequest = {
   start: string;
   status: "booked" | "failed" | "saved";
   note: string;
+  // The caller's email, when they gave one (their booking confirmation goes there).
+  email?: string;
   // Where a callback stands, set by the business.
   stage?: "new" | "contacted" | "won" | "lost";
 };
@@ -163,8 +166,10 @@ export type ConnectInfo = {
   email: { connected: boolean; address: string; mode: EmailMode };
   // The calendar the receptionist books into, when it's the business's own.
   calendar: { wanted: "google" | "microsoft" | null; connected: boolean; account: string };
-  // Which "Sign in with…" buttons are set up on this server.
+  // Which "Sign in with…" buttons are set up on this server: for the calendar,
+  // and for the mailbox (the platform can turn Google mailbox sign-in off).
   signIn: { google: boolean; microsoft: boolean };
+  mailSignIn: { google: boolean; microsoft: boolean };
 };
 
 export type EmailActivity = {
@@ -187,10 +192,58 @@ export type EmailStatus = {
   activity: EmailActivity[];
 };
 
-export type NumberType = "local" | "mobile";
+// Australia: mobile (calls and texts) or local. The US has no "mobile" numbers to
+// buy: local or toll-free, and texting from them needs 10DLC registration first.
+export type NumberType = "local" | "mobile" | "toll_free";
+export type NumberCountry = "AU" | "US";
+
+export const NUMBER_COUNTRIES: { value: NumberCountry; label: string; types: { value: NumberType; label: string }[] }[] = [
+  {
+    value: "AU",
+    label: "Australia",
+    types: [
+      { value: "mobile", label: "Mobile (calls and texts)" },
+      { value: "local", label: "Local (calls only)" },
+    ],
+  },
+  {
+    value: "US",
+    label: "United States",
+    types: [
+      { value: "local", label: "Local" },
+      { value: "toll_free", label: "Toll-free" },
+    ],
+  },
+];
+
+// +61 and 9 digits; +1 and 10 digits (a US area code never starts with 0 or 1).
+const NUMBER_PATTERN: Record<NumberCountry, RegExp> = { AU: /^\+61\d{9}$/, US: /^\+1[2-9]\d{9}$/ };
+
+/** The country to buy numbers in for a receptionist in this time zone. */
+export function countryForTimezone(tz: string | null | undefined): NumberCountry {
+  const z = String(tz ?? "");
+  return z.startsWith("America/") || z === "Pacific/Honolulu" ? "US" : "AU";
+}
+
+/** Which of our countries a number (E.164) belongs to, or null. */
+export function countryOfNumber(e164: string): NumberCountry | null {
+  if (NUMBER_PATTERN.AU.test(e164)) return "AU";
+  if (NUMBER_PATTERN.US.test(e164)) return "US";
+  return null;
+}
+
+const US_TOLL_FREE = /^\+18(00|33|44|55|66|77|88)\d{7}$/;
+
+/** What kind of number it is, worked out from the number itself. */
+export function typeOfNumber(e164: string): NumberType {
+  if (/^\+614\d{8}$/.test(e164)) return "mobile";
+  if (US_TOLL_FREE.test(e164)) return "toll_free";
+  return "local";
+}
 
 export type AvailableNumber = {
   phoneNumber: string;
+  country: NumberCountry;
   type: NumberType;
   monthly: number;
   upfront: number;
@@ -231,10 +284,15 @@ export type NumberRequest = {
   createdAt: string;
 };
 
-export type AdminNumberRequest = NumberRequest & { agency: string; business: string; requestedBy: string; clientId: string };
+// country: where the receptionist is (from its time zone), so the number is bought there.
+export type AdminNumberRequest = NumberRequest & { agency: string; business: string; requestedBy: string; clientId: string; country: NumberCountry };
 
-// "+61731234567" -> "(07) 3123 4567", "+61412345678" -> "0412 345 678"
+// One way of writing numbers per country, everywhere they're shown:
+// "+61731234567" -> "(07) 3123 4567", "+61412345678" -> "0412 345 678",
+// "+12125550123" -> "(212) 555-0123". Anything else is shown as it is.
 export function formatNumber(e164: string): string {
+  const us = e164.match(/^\+1([2-9]\d{2})(\d{3})(\d{4})$/);
+  if (us) return `(${us[1]}) ${us[2]}-${us[3]}`;
   const m = e164.match(/^\+61(\d{9})$/);
   if (!m) return e164;
   const d = m[1];
@@ -250,6 +308,13 @@ export const TIMEZONES: { value: string; label: string }[] = [
   { value: "Australia/Adelaide", label: "Adelaide (SA)" },
   { value: "Australia/Darwin", label: "Darwin (NT)" },
   { value: "Australia/Perth", label: "Perth (WA)" },
+  { value: "America/New_York", label: "US Eastern (New York)" },
+  { value: "America/Chicago", label: "US Central (Chicago)" },
+  { value: "America/Denver", label: "US Mountain (Denver)" },
+  { value: "America/Phoenix", label: "US Mountain, no daylight saving (Phoenix)" },
+  { value: "America/Los_Angeles", label: "US Pacific (Los Angeles)" },
+  { value: "America/Anchorage", label: "Alaska (Anchorage)" },
+  { value: "Pacific/Honolulu", label: "Hawaii (Honolulu)" },
 ];
 
 type IndustryPreset = {
@@ -341,6 +406,17 @@ export const INDUSTRIES: IndustryPreset[] = [
     guardrail: "Do not give legal, financial or tax advice. Take the enquiry for the right person to follow up.",
   },
   {
+    key: "childcare",
+    label: "Childcare or early learning centre",
+    noun: "childcare centre",
+    customer: "parent",
+    booking: "centre tour",
+    services: ["Book a centre tour", "Enrolment or waitlist enquiry", "Fees and subsidy question", "Message for the director"],
+    weekend: "closed",
+    guardrail:
+      "Never discuss an individual child, who may collect a child, custody or family arrangements, or health and medical matters: offer a call back from the director instead. A tour is a visit only: never promise a place, an enrolment, a start date or a fee unless the centre's approved answers say so. If a child may be in danger right now, tell the caller to call triple zero.",
+  },
+  {
     key: "other",
     label: "Something else",
     noun: "business",
@@ -357,7 +433,7 @@ export function industry(key: IndustryKey): IndustryPreset {
 }
 
 export function defaultHours(key: IndustryKey): Hours {
-  const weekday: DayHours = { open: true, from: "08:00", to: "17:00" };
+  const weekday: DayHours = key === "childcare" ? { open: true, from: "06:30", to: "18:30" } : { open: true, from: "08:00", to: "17:00" };
   const preset = industry(key).weekend;
   const sat: DayHours =
     preset === "sat-full"
@@ -465,7 +541,64 @@ export type Account = {
   home: "/admin" | "/app";
   // A business user's access to each receptionist shared with them in this org.
   access: { clientId: string; role: "manager" | "viewer" }[];
+  // SINGLE_AGENCY=1: the whole server is this one agency (no platform team above it).
+  singleAgency?: boolean;
+  // May change the server's own settings (Settings, "Email and calendars").
+  serverSettings?: boolean;
 };
+
+// An agency's phone account as the Setup and Connections screens see it
+// (server/phoneAccount.ts).
+export type PhoneAccount = {
+  // own: the agency's own Telnyx key. platform: runs on the platform's account. none: not connected yet.
+  mode: "own" | "platform" | "none";
+  last4: string;
+  connectedAt: string;
+  // The agency's own credit. Null when it isn't theirs to see or the check failed.
+  balance: { amount: number; currency: string } | null;
+  // Why the last check of their key failed ("" when it's fine).
+  problem: string;
+  lowCredit: boolean;
+  // New agencies here must bring their own phone account.
+  required: boolean;
+  // SINGLE_AGENCY: the account is the server's own key, set at install (nothing to connect or replace).
+  installed?: boolean;
+  counts: { clients: number; numbers: number; calendars: number };
+  // Local test servers only: a pretend key that passes the check.
+  testKey?: string;
+};
+
+// The platform's email sender and Google/Microsoft sign-in apps, as the platform
+// admin's Settings tab sees them (server/platformSettingsApi.ts). Never holds a
+// whole secret: only its last 4 characters.
+export type PlatformServiceState = {
+  // saved: set in the dashboard. server: nothing saved, the server's environment
+  // has it. none: neither.
+  state: "saved" | "server" | "none";
+  // The environment also has a complete setting (what clearing the saved one falls back to).
+  serverHas: boolean;
+  last4: string;
+  savedAt: string;
+  savedBy: string;
+  // Why the saved setting can't be used ("" when it's fine).
+  problem: string;
+};
+
+export type PlatformSettings = {
+  mail: PlatformServiceState & { host: string; from: string };
+  // scopes: exactly what the app is asked for on this server. mailboxSignIn: whether
+  // it is also offered for mailboxes (MAILBOX_SIGNIN), not just calendars.
+  google: PlatformServiceState & { clientId: string; redirectUri: string; scopes: string[]; mailboxSignIn: boolean };
+  microsoft: PlatformServiceState & { clientId: string; redirectUri: string; scopes: string[]; mailboxSignIn: boolean };
+  // The public address the redirect URIs are built from, and a warning when it
+  // won't work with the providers (not https, or a local address).
+  publicBase: string;
+  publicWarning: string;
+  // Where test emails go: the signed-in admin.
+  testTo: string;
+};
+
+export type PlatformTestResult = { ok: true; message: string; redirectUri?: string };
 
 export type TelnyxSettings = {
   mode: "own" | "platform" | "none";
@@ -494,7 +627,7 @@ export type TestLogin = { email: string; password: string; role: string };
 
 export type Session =
   | ({ signedIn: true } & Account)
-  | { signedIn: false; signupOpen: boolean; firstRun: boolean };
+  | { signedIn: false; signupOpen: boolean; firstRun: boolean; singleAgency?: boolean };
 
 export type TeamState = {
   members: { id: string; email: string; name: string; role: OrgRole; joinedAt: string }[];

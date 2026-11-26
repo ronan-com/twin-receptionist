@@ -27,7 +27,7 @@ async function keyFor(orgId: string | null): Promise<string> {
   const [o] = await sql`select telnyx_key, platform_telnyx from orgs where id = ${orgId}`;
   const key = o?.telnyx_key ? unseal(o.telnyx_key) : o?.platform_telnyx ? platform : "";
   if (!key) {
-    throw new TelnyxError(400, "This account isn't set up for calls yet. Contact the platform team.");
+    throw new TelnyxError(400, "This account has no phone account connected yet. Connect one in Setup, or contact the platform team.");
   }
   keyCache.set(orgId, { key, at: Date.now() });
   return key;

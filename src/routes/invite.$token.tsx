@@ -8,10 +8,11 @@ import { Label } from "@/components/ui/label";
 import { AuthLayout, FormError } from "@/components/auth/AuthLayout";
 import { authApi, homeOf } from "@/lib/api/auth";
 import { sessionQuery } from "@/lib/app/workspace";
+import { named } from "@/lib/app/product";
 
 // Accepting an invite: to an agency's team, or to a business's workspace.
 export const Route = createFileRoute("/invite/$token")({
-  head: () => ({ meta: [{ title: "Accept your invite — Answered" }, { name: "robots", content: "noindex" }] }),
+  head: () => ({ meta: [{ title: named("Accept your invite — Answered") }, { name: "robots", content: "noindex" }] }),
   component: InvitePage,
 });
 

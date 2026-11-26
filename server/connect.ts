@@ -3,7 +3,7 @@ import type { Business, ConnectInfo } from "../src/lib/shared";
 import { publicUrl } from "./booking";
 import { connectEmail, connectOAuth, disconnectEmail, emailStatus } from "./email";
 import { calendarLink, connectCalendar, providerOf } from "./calendars";
-import { claimSignIn, finishSignIn, oauthAvailable, startSignIn, type OAuthProvider, type OAuthPurpose } from "./oauth";
+import { claimSignIn, finishSignIn, mailSignInAvailable, oauthAvailable, startSignIn, type OAuthProvider, type OAuthPurpose } from "./oauth";
 import type { EmailMode } from "../src/lib/shared";
 import { ValidationError } from "./prompt";
 import { clientByConnectHash, getOrgClient, saveClient } from "./store";
@@ -66,6 +66,7 @@ async function info(client: Business): Promise<ConnectInfo> {
       account: link?.account ?? "",
     },
     signIn: oauthAvailable(),
+    mailSignIn: await mailSignInAvailable(),
   };
 }
 

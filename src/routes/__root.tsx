@@ -2,6 +2,7 @@ import { QueryClientProvider, type QueryClient } from "@tanstack/react-query";
 import { Link, Outlet, createRootRouteWithContext, useRouter, useRouterState, type ErrorComponentProps } from "@tanstack/react-router";
 import { useEffect } from "react";
 import { Toaster } from "@/components/ui/sonner";
+import { OTHER_BRAND, PRODUCT } from "@/lib/app/product";
 
 // Plain TanStack Router (client-rendered). Each route's head() title is applied here,
 // since there is no server rendering (no HeadContent/Scripts).
@@ -62,7 +63,7 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
   errorComponent: ErrorComponent,
 });
 
-const DEFAULT_TITLE = "Answered — The AI Receptionist";
+const DEFAULT_TITLE = OTHER_BRAND ? PRODUCT : "Answered — The AI Receptionist";
 
 // The deepest route's head() title becomes the document title.
 function useDocumentTitle() {

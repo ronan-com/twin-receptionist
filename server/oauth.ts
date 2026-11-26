@@ -2,17 +2,24 @@ import { createHash, randomBytes } from "node:crypto";
 import type { EmailMode } from "../src/lib/shared";
 import { sql } from "./db";
 import { ValidationError } from "./prompt";
+import { fresh, oauthClient } from "./platformSettings";
 
 // "Sign in with Google / Microsoft" for a business's mailbox. The business is sent
 // to its provider, approves access, and comes back here with a code that becomes
 // a refresh token. IMAP and SMTP then log in with short-lived access tokens
 // (XOAUTH2), so no password is ever typed or stored.
 //
-// Needs, in ~/aibiz/.env:
+// Needs a Google and/or Microsoft app. The platform admin pastes them in Settings,
+// "Email and calendars" (platformSettings.ts); with nothing saved there, these from
+// the environment (~/aibiz/.env) are used:
 //   GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET      (Google Cloud, OAuth client, type "Web application")
 //   MICROSOFT_CLIENT_ID, MICROSOFT_CLIENT_SECRET (Microsoft Entra, app registration)
 //   OAUTH_REDIRECT_BASE                          (optional; default PUBLIC_URL, else http://localhost:8791)
 // Each provider must list <OAUTH_REDIRECT_BASE>/api/oauth/<provider>/callback as a redirect URI.
+//
+// Mailbox sign-in is a separate choice (MAILBOX_SIGNIN, below): Gmail's mail scope
+// is one Google calls "restricted", which means a long review and a paid yearly
+// security assessment. By default a Google app only ever asks for calendar access.
 
 export type OAuthProvider = "google" | "microsoft";
 // What the sign-in is for: reading and sending a mailbox, or booking into a calendar.
@@ -41,13 +48,45 @@ type ProviderConfig = {
   smtp: { host: string; port: number };
 };
 
+// MAILBOX_SIGNIN=off|google|microsoft|both: which providers offer "Sign in with…"
+// for a business's mailbox (calendars aren't affected). Not set: Microsoft yes (when
+// its app is set up), Google no. Mailboxes already connected through Google keep
+// working whatever this says: their saved sign-in is still refreshed and used; only
+// new Google mailbox sign-ins are refused while it's off.
+export type MailboxSignInSetting = "off" | "google" | "microsoft" | "both";
+const SETTINGS: MailboxSignInSetting[] = ["off", "google", "microsoft", "both"];
+
+export function mailboxSignInSetting(): MailboxSignInSetting | null {
+  const raw = (process.env.MAILBOX_SIGNIN ?? "").trim().toLowerCase();
+  return SETTINGS.includes(raw as MailboxSignInSetting) ? (raw as MailboxSignInSetting) : null;
+}
+
+/** Which providers may be used to sign in to a mailbox (before checking their apps are set up). */
+export async function mailboxSignInAllowed(): Promise<Record<OAuthProvider, boolean>> {
+  const s = mailboxSignInSetting() ?? "microsoft";
+  return { google: s === "google" || s === "both", microsoft: s === "microsoft" || s === "both" };
+}
+
+/** The "Sign in with…" buttons to show for a mailbox: allowed, and the app is set up. */
+export async function mailSignInAvailable(): Promise<Record<OAuthProvider, boolean>> {
+  const [allowed, has] = [await mailboxSignInAllowed(), oauthAvailable()];
+  return { google: allowed.google && has.google, microsoft: allowed.microsoft && has.microsoft };
+}
+
+/** Every scope a provider's app will be asked for on this server, for the settings page. */
+export async function requestedScopes(provider: OAuthProvider): Promise<string[]> {
+  const mail = (await mailboxSignInAllowed())[provider];
+  const all = [SCOPES[provider].calendar, ...(mail ? [SCOPES[provider].mail] : [])].join(" ").split(" ");
+  return [...new Set(all)];
+}
+
 function config(provider: OAuthProvider): ProviderConfig {
   if (provider === "google") {
     return {
       authUrl: "https://accounts.google.com/o/oauth2/v2/auth",
       tokenUrl: "https://oauth2.googleapis.com/token",
-      clientId: process.env.GOOGLE_CLIENT_ID,
-      clientSecret: process.env.GOOGLE_CLIENT_SECRET,
+      clientId: oauthClient("google").clientId || undefined,
+      clientSecret: oauthClient("google").clientSecret || undefined,
       // offline + consent: always return a refresh token.
       extraAuthParams: { access_type: "offline", prompt: "consent" },
       imap: { host: "imap.gmail.com", port: 993 },
@@ -57,8 +96,8 @@ function config(provider: OAuthProvider): ProviderConfig {
   return {
     authUrl: "https://login.microsoftonline.com/common/oauth2/v2.0/authorize",
     tokenUrl: "https://login.microsoftonline.com/common/oauth2/v2.0/token",
-    clientId: process.env.MICROSOFT_CLIENT_ID,
-    clientSecret: process.env.MICROSOFT_CLIENT_SECRET,
+    clientId: oauthClient("microsoft").clientId || undefined,
+    clientSecret: oauthClient("microsoft").clientSecret || undefined,
     extraAuthParams: { prompt: "select_account" },
     imap: { host: "outlook.office365.com", port: 993 },
     smtp: { host: "smtp.office365.com", port: 587 },
@@ -74,9 +113,10 @@ export function mailServers(provider: OAuthProvider) {
   return { imap: config(provider).imap, smtp: config(provider).smtp };
 }
 
-const redirectBase = () =>
+export const redirectBase = () =>
   (process.env.OAUTH_REDIRECT_BASE || process.env.PUBLIC_URL || "http://localhost:8791").replace(/\/$/, "");
-const redirectUri = (provider: OAuthProvider) => `${redirectBase()}/api/oauth/${provider}/callback`;
+/** The address the provider sends people back to. It must be registered with the provider. */
+export const redirectUri = (provider: OAuthProvider) => `${redirectBase()}/api/oauth/${provider}/callback`;
 
 // Sign-ins in progress, keyed by the random state sent to the provider. Kept in
 // the database so the provider can send the browser back to any server instance.
@@ -94,9 +134,17 @@ export async function startSignIn(
   origin: SignInOrigin,
   mode: EmailMode = "draft",
 ): Promise<string> {
+  await fresh();
   const c = config(provider);
   if (!c.clientId || !c.clientSecret) {
     throw new ValidationError(`Sign in with ${provider === "google" ? "Google" : "Microsoft"} isn't set up yet.`);
+  }
+  if (purpose === "mail" && !(await mailboxSignInAllowed())[provider]) {
+    throw new ValidationError(
+      provider === "google"
+        ? "Sign in with Google isn't offered for email on this server. Connect with an app password instead."
+        : "Sign in with Microsoft isn't offered for email on this server.",
+    );
   }
   await sql`delete from oauth_states where expires_at < now()`;
 
@@ -141,7 +189,9 @@ function emailFromIdToken(idToken: string | undefined): string {
 }
 
 async function tokenRequest(provider: OAuthProvider, body: Record<string, string>): Promise<any> {
+  await fresh();
   const c = config(provider);
+  if (!c.clientId || !c.clientSecret) throw new Error(`Sign in with ${provider === "google" ? "Google" : "Microsoft"} isn't set up on this server.`);
   const res = await fetch(c.tokenUrl, {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },

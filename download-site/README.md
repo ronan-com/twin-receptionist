@@ -1,0 +1,290 @@
+# Setup site (hosted wizard)
+
+The one thing we host for the packaged AI receptionist agency. A buyer (the agency) opens their
+private link, connects their own accounts, clicks **Install**, and the wizard sets their agency
+up in **their** accounts. Nothing to download and nothing to run on the buyer's computer. After
+a successful install we delete every key they gave us and keep no access.
+
+Two hosting options, chosen for the whole site with `HOSTING`:
+
+- **Railway** (default, the easy one): the agency and its Postgres run in the buyer's own
+  Railway project. No server to look after.
+- **DigitalOcean** (`HOSTING=digitalocean`): a droplet in the buyer's account runs
+  `deploy/selfhost/install.sh` (Caddy, Postgres, the app).
+
+One Bun process + SQLite (`bun:sqlite`), behind Caddy. Many buyers at once: all wizard state is
+per buyer in SQLite, and background work runs from a ticker that picks up again after a restart.
+A closed tab loses nothing. We manage buyers at **/admin** (or with `admin.ts`).
+
+```
+server.ts          routes, CSRF + same-origin check, rate limits, security headers, startup guards
+setup.ts           the wizard engine: actions, background ticker, Railway + DigitalOcean installs
+wizard.ts          the wizard screens (same look as the app's own Setup wizard)
+admin-web.ts       /admin: our buyers dashboard (sign-in, list, add, per-buyer view and actions)
+store.ts           per-buyer state, encrypted secrets vault, install log, tokens, CSRF tokens
+providers.ts       Railway, DigitalOcean, Cloudflare, Telnyx, Resend, SMTP, Google/Microsoft, public DNS
+userdata.ts        (DigitalOcean) the droplet's first-boot script; provision/runner.sh runs on it
+content.ts         loads the how-tos (handoff-content/providers/*.md) and the welcome email
+pages.ts           /, /guide, error pages
+lib.ts             settings, database, buyer codes, bundles, production guard
+admin.ts           command-line admin
+public/            wizard.css + Inter fonts, wizard.js, styles.css (/, /guide), favicon
+mock/serve.ts      TEST ONLY: fake Railway, DigitalOcean, Cloudflare, Resend, SMTP and DNS
+test/              end-to-end tests (puppeteer), see below
+deploy/            compose.yml + Caddyfile + .env.example for our small server
+```
+
+## The buyer's path (Railway)
+
+`/setup/<code>` (old `/download/<code>` links redirect there). One screen per step; how-tos sit
+behind **Show me how** (from `handoff-content/providers/<id>.md`).
+
+| Step | What they do | What we check |
+|---|---|---|
+| Welcome | Read three tiles, press Start | |
+| Brand | Brand name, owner email (`FIRST_ADMIN_EMAIL`) | format |
+| Hosting | Railway **account token** (Account Settings > Tokens, Workspace: *No workspace*) | `me { email workspaces }`, then plan: refuses Free / no card ("needs the Hobby plan") |
+| Phones | Telnyx key (becomes the app's `TELNYX_API_KEY`; every client runs on it) | `GET /v2/balance`; trial warning |
+| Email | Resend key (Full access) + the from address, e.g. `hello@mail.<domain>` | key works; the sending domain is added to Resend (an existing one is reused) |
+| Domain | Their domain. **Let the wizard handle DNS** (Cloudflare token) or **I'll add the records myself** | Cloudflare: token valid, zone found by name, `active` (else the two nameservers and polling; `moved` is reported), token can write DNS, asks before replacing an existing `app.` record; then writes Resend's records (+ DMARC `p=none` if missing). Manual: shows those records with live ticks from public DNS and Resend's own check |
+| Calendars | Optional Google / Microsoft client id + secret, or Skip | token endpoint check |
+| Install | Press Install | see below |
+| Done | Their link (or the temporary address), sign in with the owner email, delete the Railway and Cloudflare tokens, turn on Postgres backups | |
+
+### What Install does on Railway
+
+All through Railway's public GraphQL API (`https://backboard.railway.com/graphql/v2`, bearer =
+the buyer's account token). Each piece is saved as soon as it exists, so a site restart or a
+retry carries on where it stopped.
+
+1. `projectCreate` (in the workspace that has the paid plan), environment `production`.
+2. Postgres: `serviceCreate` from `ghcr.io/railwayapp-templates/postgres-ssl:16` with the same
+   variables Railway's own template sets (random password), then `volumeCreate` at
+   `/var/lib/postgresql/data`.
+3. The app: `serviceCreate` (empty), `variableCollectionUpsert` (`skipDeploys`):
+   `PRODUCT_NAME`, `PUBLIC_URL=https://app.<domain>`, `FIRST_ADMIN_EMAIL`, `TELNYX_API_KEY`,
+   `SMTP_URL`, `MAIL_FROM`, `MAILBOX_KEY` (new random 32 bytes), `SINGLE_AGENCY=1`, OAuth keys if
+   given, `HOST=0.0.0.0`, `API_PORT=PORT=8791`, `DATABASE_URL=${{Postgres.DATABASE_URL}}`,
+   `RAILWAY_DOCKERFILE_PATH=deploy/Dockerfile`. `SMTP_URL` uses a **send-only Resend key for that
+   one domain** that we create (`POST /api-keys`, `sending_access`), never the Full access key.
+   `serviceInstanceUpdate`: `dockerfilePath`, `healthcheckPath=/api/health`, restart on failure.
+4. `serviceDomainCreate` (target port 8791): the **temporary address** `https://<x>.up.railway.app`.
+5. `customDomainCreate` for `app.<domain>`: Railway answers with a CNAME target and a TXT
+   ownership check. Cloudflare path: we write both (DNS only). Manual path: the Install screen
+   shows both, with live ticks (public DNS + Railway's own status), and says what it finds if a
+   value is wrong.
+6. The code: the app source from the published bundle (`app-src.tgz` inside
+   `selfhost-bundle.tgz`) is posted as a `.tar.gz` to
+   `backboard.railway.com/project/<id>/environment/<id>/up?serviceId=<app>`, which is what
+   `railway up` does. **Our code is never public**: no GitHub, no registry; it goes only into the
+   buyer's own project. Railway builds it with `deploy/Dockerfile`.
+7. We poll `deployment(id) { status }` and copy `buildLogs` / `deploymentLogs` (redacted) into
+   **Show details**. `SUCCESS`: the agency is running at its temporary address straight away.
+   `FAILED` / `CRASHED`: the page shows the reason in one line.
+8. We poll `customDomain { status { certificateStatus } }` and the app's `/api/health`. When the
+   certificate is `VALID`, setup finishes by itself. **Finish now** finishes without waiting:
+   Railway issues the certificate on its own once the records are in, and the Done page lists them.
+
+**Try again** (failed build) sends the app again to the same project: same database and
+settings. **Delete the project** runs `projectDelete` (app, database and volume) and removes the
+records we wrote to Cloudflare, then goes back to the Install summary.
+
+Railway facts (Nov 2026 docs): account tokens use `Authorization: Bearer`, workspace tokens too
+(but can't run `me`), project tokens use `Project-Access-Token`. API limits: Hobby 1,000
+requests/hour and 10/second. Hobby is US$5/month including US$5 of usage (RAM US$10/GB-month,
+vCPU US$20/month, volume US$0.15/GB-month, egress US$0.05/GB), 5 GB volumes, 2 custom domains
+per service. Free/Trial accounts need no card but get 0.5 GB volumes, 1 custom domain, and
+unverified accounts land on a "limited trial" that can't deploy code, so we require Hobby.
+Certificates are Let's Encrypt, normally within an hour of the DNS being right. Private
+registry images need Pro, which is why we upload source instead.
+
+### DigitalOcean (`HOSTING=digitalocean`)
+
+Order: Welcome, Brand, Domain, Server (DigitalOcean token, region, size), Phones, Email,
+Calendars, Install, Done. Install creates a droplet whose first-boot script asks our site for
+work (`GET /p/<droplet token>/next`), downloads the bundle with a one-time link, runs
+`install.sh` and posts its log back (`provision/runner.sh`). Retry reuses the same droplet;
+**Delete the server** deletes it. Needs `PROVISION_URL` (https) reachable from the droplet.
+
+## Secrets
+
+- Stored in the `secrets` table, AES-256-GCM, key derived from `SETUP_SECRET_KEY`, bound to
+  (buyer, name) so rows can't be swapped. `PRAGMA secure_delete` is on.
+- Never sent back to the browser: forms show `Saved (••••abcd)`. Never logged. Install logs are
+  redacted (every stored secret, plus anything shaped like a known key).
+- After the install finishes we delete every secret and keep only: brand and owner email,
+  domain, the Railway project id (or droplet id/IP), addresses, timestamps, the redacted log.
+- A setup nobody touches for `SECRETS_IDLE_DAYS` (14) loses its stored keys; the buyer pastes
+  them again if they come back.
+- We never hold a way in: no SSH key, no Railway access after the token is deleted.
+
+## Safety
+
+- CSRF: every POST must carry an HMAC token tied to the session cookie (`HttpOnly`,
+  `SameSite=Lax`, `Secure` on https) **and** come from our own origin. "Our origin" is `SITE_URL`
+  or the address the browser really used (`Host`, or `X-Forwarded-Host` + `X-Forwarded-Proto`
+  from Caddy or a tunnel). A browser can't fake those for another site, so a wrong `SITE_URL` no
+  longer breaks forms; the site logs a warning the first time it sees it.
+- Startup guards: `PREVIEW_JUMP=1` refuses to start without a `MOCK_*` switch. Any `MOCK_*`,
+  `PREVIEW_JUMP` or `*_API_BASE` with a public https `SITE_URL` refuses to start (except
+  `*.trycloudflare.com` or `TEST_SITE=1`). Warnings for a missing / local / non-https / path
+  `SITE_URL`, `TRUST_PROXY` off behind a proxy, and missing how-to files.
+- Rate limits: 20 failed code lookups per IP per minute (then 429), 600 requests per IP per
+  minute, 20 provider checks per buyer per 10 minutes, 3 test emails per buyer per hour, 6
+  install starts per buyer per 10 minutes, 10 admin sign-in tries per IP / email per 15 minutes.
+- Strict CSP (`script-src 'self'`, no inline scripts or styles), `Referrer-Policy: same-origin`,
+  `X-Frame-Options: DENY`, `noindex`, `no-store` on wizard and admin pages.
+- Codes are 128 random bits; looked up by SHA-256 and compared in constant time.
+
+## Admin dashboard (/admin)
+
+For us (Twin Technologies) only. Turn it on with `ADMIN_EMAILS` (comma-separated). Sign in with
+a password (`ADMIN_PASSWORD_HASH`, made by `bun admin.ts admin-hash`) or a one-time link printed
+by `bun admin.ts admin-link you@yourcompany.com` (works once, 15 minutes, needs a button press).
+Sessions: random 256-bit id, `HttpOnly`, `SameSite=Strict`, `Path=/admin`, 12 hours.
+
+- **Buyers**: name, email, brand, status (not started / in setup / installing / failed / live /
+  revoked), step, live address, created, last activity. Search and filter by status.
+- **Add a buyer**: name + email gives the private link to copy. With `SITE_SMTP_URL` and
+  `SITE_MAIL_FROM` set, a "Send the welcome email" box sends `handoff-content/welcome-email.md`.
+- **Per buyer**: the link again, which step they're on, which keys we hold (name and last 4 only,
+  and only until the install finishes), the redacted install log, their setup **read-only**,
+  turn the link off/on, reset their setup, delete the buyer.
+- There is no "log in as buyer": once their agency is live we have no access to it.
+
+## Settings (environment variables)
+
+| Variable | Default | |
+|---|---|---|
+| `SETUP_SECRET_KEY` | (required) | 32 bytes, base64 (`bun admin.ts gen-key`). **Never change or lose it**: it unlocks the keys of half-finished setups and signs every session. Keep a copy apart from the backups. |
+| `SITE_URL` | `http://localhost:4500` | Public https address, no path. Setup links use it. |
+| `HOSTING` | `railway` | or `digitalocean` |
+| `PROVISION_URL` | `SITE_URL` | DigitalOcean only: what droplets call. Must be https. |
+| `SELLER_NAME` / `PRODUCT_NAME` / `SUPPORT_EMAIL` | | Shown on pages and in the welcome email |
+| `DATA_DIR` | `download-site/data` | SQLite + bundles (`/data` in Docker) |
+| `CONTENT_DIR` | | Folder with `providers/*.md` and `welcome-email.md`; else `download-site/content`, else `../handoff-content` |
+| `PORT` / `HOST` / `TRUST_PROXY` | `4500` / `127.0.0.1` / `0` | `TRUST_PROXY=1` behind Caddy |
+| `ADMIN_EMAILS`, `ADMIN_PASSWORD_HASH` | | /admin sign-in (escape each `$` as `$$` in a compose `.env`) |
+| `SITE_SMTP_URL`, `SITE_MAIL_FROM` | | Our own mail sender, for welcome emails |
+| `LOOKUPS_PER_MINUTE`, `REQUESTS_PER_MINUTE`, `CHECKS_PER_10_MIN`, `TEST_EMAILS_PER_HOUR`, `SECRETS_IDLE_DAYS` | 20, 600, 20, 3, 14 | |
+| `DNS_SERVERS` | `1.1.1.1,8.8.8.8` | Public resolvers to ask |
+
+Test only (refused on a public address): `MOCK_RAILWAY`, `MOCK_DO`, `MOCK_CF`, `MOCK_RESEND`,
+`MOCK_TELNYX`, `MOCK_OAUTH`, `MOCK_PORT_BASE`, `MOCK_APP_PORTS`, `EXTRA_LISTEN`, `PREVIEW_JUMP`,
+`*_API_BASE`, `TEST_SITE`.
+
+## Command-line admin
+
+```bash
+bun download-site/admin.ts add-buyer "Jane Citizen" jane@example.com   # prints her /setup/<code> link
+bun download-site/admin.ts list                                        # buyers and where each is
+bun download-site/admin.ts revoke|restore|reset <code or link>
+bun download-site/admin.ts publish <selfhost-bundle.tgz> <version>     # the app new installs get
+bun download-site/admin.ts admin-link you@yourcompany.com              # one-time /admin sign-in
+bun download-site/admin.ts admin-hash                                  # ADMIN_PASSWORD_HASH
+bun download-site/admin.ts backup [file]                               # consistent copy of site.db
+bun download-site/admin.ts gen-key                                     # a new SETUP_SECRET_KEY (first install only)
+```
+
+Publish a new app version (Railway and DigitalOcean both install from it):
+
+```bash
+bash download-site/make-package.sh 1.0.1
+bun download-site/admin.ts publish download-site/out/selfhost-bundle-1.0.1.tgz 1.0.1
+```
+
+## Run it for real (production)
+
+On a small server (1 GB is plenty) with Docker:
+
+1. DNS: an `A` record such as `setup.yourcompany.com` to the server. Open ports 80 and 443 only.
+2. Copy `download-site/` to the server (e.g. `/opt/setup/download-site`) and copy the how-tos
+   and welcome email in, so they're inside the image:
+   `mkdir -p download-site/content && cp -r handoff-content/providers handoff-content/welcome-email.md download-site/content/`
+3. `cd download-site/deploy && cp .env.example .env` and fill it in: `SITE_HOST`,
+   `SITE_URL=https://setup.yourcompany.com`, `SETUP_SECRET_KEY` (from `bun admin.ts gen-key`,
+   once), `ADMIN_EMAILS`, `ADMIN_PASSWORD_HASH` (`$` as `$$`), `SUPPORT_EMAIL`, optional
+   `SITE_SMTP_URL` / `SITE_MAIL_FROM`. `chmod 600 .env`. Never set any `MOCK_*` or `PREVIEW_JUMP`.
+4. `mkdir -p incoming && docker compose up -d --build`. Caddy gets the https certificate from
+   Let's Encrypt and proxies to the site (`TRUST_PROXY=1`, `HOST=0.0.0.0` are set in compose).
+   Check the logs once: `docker compose logs downloads` must show no `WARNING` lines.
+5. Publish a bundle: copy it to `deploy/incoming/`, then
+   `docker compose exec downloads bun admin.ts publish /incoming/selfhost-bundle-1.0.0.tgz 1.0.0`
+6. Sign in at `https://setup.yourcompany.com/admin` and add buyers there (or
+   `docker compose exec downloads bun admin.ts add-buyer "Name" email@x.com`).
+
+**Data**: everything lives in the `downloads-data` Docker volume (`/data`): `site.db` (buyers,
+setups, encrypted keys, admin sessions) and `packages/`. **Backups**: run nightly from cron,
+e.g. `docker compose exec -T downloads bun admin.ts backup` (writes
+`/data/backups/site-<time>.db` with SQLite `VACUUM INTO`, safe while running), then copy
+`/data/backups` off the server and prune old copies. Keep `SETUP_SECRET_KEY` in your password
+manager, **not** next to the backups (a backup plus the key opens half-finished setups' keys).
+If the key is ever lost, finished buyers are unaffected; buyers mid-setup must paste their keys
+again. Restore: stop the site, copy a backup to `/data/site.db`, start it.
+
+Updating the site: pull the new `download-site/`, `docker compose up -d --build`. Running
+setups pick up where they were.
+
+### On our AWS server (shared with the Twin stack)
+
+`deploy/aws/` runs the site as its own container `setup-site` (internal port 4500, volume
+`setupsite_setup-data`) on the `twin_default` network, behind the server's existing Caddy via
+`/opt/twin/sites/setupsite.caddy`, the same way `deploy/answered` does it.
+
+```bash
+# point setup.yourcompany.com at the server first, then:
+DOMAIN=setup.yourcompany.com DRY_RUN=1 bash download-site/deploy/aws/deploy.sh   # shows every step, calls nothing
+DOMAIN=setup.yourcompany.com ADMIN_EMAILS=you@yourcompany.com \
+  ADMIN_PASSWORD_HASH="$(bun download-site/admin.ts admin-hash | cut -d= -f2-)" \
+  SUPPORT_EMAIL=support@yourcompany.com \
+  BUNDLE=deploy/selfhost/out/selfhost-bundle.tgz VERSION=1.0.0 \
+  bash download-site/deploy/aws/deploy.sh
+```
+
+Settings are SSM SecureStrings under `/setupsite/env/*` (the site's `.env` is rebuilt from them
+on every deploy). `SETUP_SECRET_KEY` is created once and never overwritten: copy it from SSM into
+the password manager. The remote script refuses any test-only setting, waits for the container
+to be healthy, publishes `BUNDLE` if given, reloads Caddy and installs a nightly cron backup
+(`deploy/aws/backup.sh`: `VACUUM INTO`, gzip, `s3://twinrecep-deploy-<account>/setupsite-backups/`,
+30 days).
+
+## Run it locally (all fakes)
+
+```bash
+MOCK_PORT_BASE=4520 MOCK_APP_PORTS=4550-4559 bun download-site/mock/serve.ts &
+SETUP_SECRET_KEY=$(bun download-site/admin.ts gen-key) PORT=4520 SITE_URL=http://localhost:4520 \
+  DNS_SERVERS=127.0.0.1:4525 MOCK_PORT_BASE=4520 MOCK_APP_PORTS=4550-4559 \
+  MOCK_RAILWAY=1 MOCK_CF=1 MOCK_RESEND=1 MOCK_TELNYX=1 MOCK_OAUTH=1 ADMIN_EMAILS=you@example.com \
+  bun download-site/server.ts
+```
+
+Test values: Railway `mock-rail-token-ok` (`mock-rail-token-nocard` shows the Hobby/card
+message), Cloudflare `mock-cf-token-ok` (zones `alpha-`, `beta-reception.test` active, `gamma-`
+pending then active, `delta-` with an existing record; `mock-cf-token-readonly` can't edit),
+Telnyx any key starting `platform-fake-`, Resend `re_mock_full_access_key`
+(`re_mock_sending_only_key` shows the error). The fake Railway really builds the app image from
+the uploaded source and runs it with a local `postgres:16` on `127.0.0.1:<MOCK_APP_PORTS>`
+(containers `wiz-test-rail-*`), so the temporary address opens a working dashboard.
+`POST :4521/_mock/rail/fail-next-deploy` makes the next build fail.
+
+## End-to-end tests
+
+```bash
+bash download-site/test/run-e2e.sh            # Railway (default), ports 4520-4529 + 4550-4559
+node download-site/test/admin-e2e.mjs         # /admin, ports 4560-4569
+node download-site/test/e2e-digitalocean.mjs  # DigitalOcean variant (needs the dind image, see mock/droplet)
+```
+
+`run-e2e.sh` covers, with screenshots of every step at 390 px (and desktop) in `test-shots/` and
+a sideways-scroll check on each: the startup guards; a bad code, the old link redirect, CSRF,
+the tunnel/proxy origin case, per-IP and per-buyer rate limits; buyer A on the Cloudflare path
+with every provider error (bad Railway token, no card, bad Telnyx/Cloudflare keys, send-only
+Resend key, wrong Google secret), a failed build then **Try again** in the same project, the
+tab closed and the site restarted mid-build, Done, every secret gone from SQLite (and no
+plaintext in the db or WAL), the send-only key in `SMTP_URL`; buyer B in parallel on the
+add-records-yourself path (email records ticking off one by one, Resend verifying, the app's two
+records with a wrong one first); buyer C's **Delete the project**; nameservers pending then
+active and an existing `app.` record; and both installed apps answering `/api/health` with the
+brand as their title. Only things named `wiz-test-*` / labelled `wiz-test-port=<port>` are made
+and removed. The first run builds the app image (3 to 4 minutes per build); later runs reuse
+Docker's layer cache and take about 5 minutes in all.

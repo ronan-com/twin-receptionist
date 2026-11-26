@@ -94,6 +94,17 @@ export function clearCookie(req: Request): string {
   return `${COOKIE}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0${secure(req) ? "; Secure" : ""}`;
 }
 
+// SINGLE_AGENCY=1 (self-hosted copies): the server is one agency selling receptionists
+// to its own clients, with no platform above it. The first account owns that agency
+// and gets the agency console (not the platform one); nobody is a platform admin,
+// self-serve sign-up is off after the first account, and numbers are bought straight
+// on the server's own Telnyx key (TELNYX_API_KEY, set by the install).
+export const singleAgency = () => ["1", "true", "yes", "on"].includes((process.env.SINGLE_AGENCY ?? "").trim().toLowerCase());
+
+/** Who may change the server's own settings (Settings, "Email and calendars"). */
+export const canChangeServerSettings = (ctx: Ctx) =>
+  ctx.user.platformAdmin || (singleAgency() && ctx.role === "owner" && !ctx.viewing);
+
 export async function startSession(userId: string, orgId: string | null): Promise<string> {
   const token = newToken();
   await sql`
@@ -113,9 +124,10 @@ export async function sessionFrom(req: Request): Promise<Ctx | null> {
     from sessions s join users u on u.id = s.user_id
     where s.token_hash = ${tokenHash} and s.expires_at > now()`;
   if (!s) return null;
-  const user = { id: s.id, email: s.email, name: s.name, platformAdmin: s.platform_admin };
+  // With SINGLE_AGENCY there's no platform team: the first account is the agency's owner.
+  const user = { id: s.id, email: s.email, name: s.name, platformAdmin: Boolean(s.platform_admin) && !singleAgency() };
   // The platform team stepping into an agency (or a business's customer view), read-only.
-  if (s.platform_admin && s.view_org_id) {
+  if (user.platformAdmin && s.view_org_id) {
     const [o] = await sql`select id, name from orgs where id = ${s.view_org_id}`;
     if (o) {
       let business = "";
@@ -137,7 +149,7 @@ export async function sessionFrom(req: Request): Promise<Ctx | null> {
     }
   }
   // Agency owners/admins viewing one of their own clients' workspaces, read-only.
-  if (!s.platform_admin && s.view_client_id) {
+  if (!user.platformAdmin && s.view_client_id) {
     const [c] = await sql`
       select c.id, c.data->'settings'->>'businessName' as business, o.id as org_id, o.name
       from clients c join orgs o on o.id = c.org_id
@@ -198,6 +210,8 @@ export async function account(ctx: Ctx): Promise<Account> {
     console: consoleKind,
     home: consoleKind ? "/admin" : "/app",
     access: await clientAccessOf(ctx),
+    singleAgency: singleAgency(),
+    serverSettings: canChangeServerSettings(ctx),
     ...(ctx.viewing ? { viewing: ctx.viewing } : {}),
     brand: ctx.org ? await resolveBrand(ctx.org.id, await brandClient(ctx)) : undefined,
   };
@@ -209,6 +223,8 @@ export async function account(ctx: Ctx): Promise<Account> {
 // admin). After that it's invite-only unless ALLOW_SIGNUP=true.
 export async function signupOpen(): Promise<{ open: boolean; firstRun: boolean }> {
   const [{ n }] = await sql`select count(*)::int as n from users`;
+  // One agency per server: after its first account, people join by invite only.
+  if (singleAgency()) return { open: n === 0, firstRun: n === 0 };
   return { open: n === 0 || process.env.ALLOW_SIGNUP === "true", firstRun: n === 0 };
 }
 
@@ -232,7 +248,7 @@ export async function signUp(input: any): Promise<string> {
     if (first && firstAdmin && email !== firstAdmin) throw new AuthError("Sign-up is by invitation. Ask your team for an invite.", 403);
     // The self-serve sign-up (server/routes/signup.ts) only comes here for the very first account.
     if (!first && input?.firstOnly === true) throw new AuthError("The first account was just created. Refresh and try again.", 409);
-    if (!first && process.env.ALLOW_SIGNUP !== "true") throw new AuthError("Sign-up is by invitation. Ask your team for an invite.", 403);
+    if (!first && (process.env.ALLOW_SIGNUP !== "true" || singleAgency())) throw new AuthError("Sign-up is by invitation. Ask your team for an invite.", 403);
     const [taken] = await tx`select 1 from users where email = ${email}`;
     if (taken) throw new ValidationError("There's already an account with that email. Sign in instead.");
     await tx`insert into orgs (id, name, platform_telnyx) values (${orgId}, ${orgName}, ${first})`;

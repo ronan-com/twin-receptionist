@@ -1,0 +1,16 @@
+[Unit]
+Description=One-time setup for the AI receptionist platform (1-Click)
+After=network-online.target docker.service
+Wants=network-online.target
+Requires=docker.service
+ConditionPathExists=!/opt/receptionist/oneclick/done
+
+[Service]
+Type=simple
+Environment=HOME=/root
+ExecStart=/usr/bin/python3 /opt/receptionist/oneclick/oneclick.py
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

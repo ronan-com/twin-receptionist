@@ -1,5 +1,5 @@
 import type { Business as Receptionist, CallMessage } from "../../src/lib/shared";
-import { formatNumber, industry, INDUSTRIES, type IndustryKey } from "../../src/lib/shared";
+import { countryOfNumber, formatNumber, industry, INDUSTRIES, type IndustryKey } from "../../src/lib/shared";
 import { AuthError, createInvite, emailOf, requireRole, type Ctx } from "../accounts";
 import { changeBrand, ownBrand, uploadAsset } from "../brand";
 import { answeredBusiness } from "../answered";
@@ -165,7 +165,7 @@ function numberRows(c: ClientRow) {
     status: "active",
     routing_mode: "ai_receptionist",
     capabilities: { voice: true, sms: e164.startsWith("+614") },
-    country: "AU",
+    country: countryOfNumber(e164) ?? "AU",
     provider: "telnyx",
     health: "healthy",
     last_health_check_at: iso(c.data.updatedAt),

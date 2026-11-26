@@ -3,6 +3,7 @@ import { Link } from "@tanstack/react-router";
 import { CalendarCheck, Clock, PhoneIncoming } from "lucide-react";
 import { BrandMark, BrandWave } from "@/components/app/BrandMark";
 import type { Hue } from "@/components/app/hues";
+import { OTHER_BRAND, PRODUCT } from "@/lib/app/product";
 
 const AUTH_FACTS: { label: string; value: string; hue: Hue; icon: typeof PhoneIncoming }[] = [
   { label: "Answers", value: "Every call", hue: "indigo", icon: PhoneIncoming },
@@ -47,7 +48,7 @@ export function AuthLayout({ title, subtitle, children, footer }: { title: strin
             ))}
           </dl>
         </div>
-        <p className="relative text-[12px] text-ink-muted">© {new Date().getFullYear()} Answered. Built for businesses that never want to miss a call.</p>
+        <p className="relative text-[12px] text-ink-muted">© {new Date().getFullYear()} {PRODUCT}. Built for businesses that never want to miss a call.</p>
       </aside>
 
       <main className="relative flex min-h-screen min-w-0 flex-col px-4 py-8 sm:px-10 lg:min-h-0 lg:justify-center lg:px-16">
@@ -62,10 +63,12 @@ export function AuthLayout({ title, subtitle, children, footer }: { title: strin
           {children}
           {footer ? <div className="mt-6 text-[13px] text-ink-muted">{footer}</div> : null}
           <p className="mt-10 text-[12px] leading-5 text-ink-muted">
-            By continuing you agree to Answered's terms and acknowledge the privacy policy.{" "}
-            <Link to="/" className="text-indigo hover:underline">
-              Back to answeredai.co
-            </Link>
+            By continuing you agree to {PRODUCT}'s terms and acknowledge the privacy policy.{" "}
+            {OTHER_BRAND ? null : (
+              <Link to="/" className="text-indigo hover:underline">
+                Back to answeredai.co
+              </Link>
+            )}
           </p>
         </div>
       </main>

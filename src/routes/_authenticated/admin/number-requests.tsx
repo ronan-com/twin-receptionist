@@ -15,13 +15,21 @@ import { adminBusinessesQuery } from "@/lib/app/queries";
 import { getConsoleNumberRequests, platformApi, requestNumberFor } from "@/lib/api/console";
 import { formatNumber, type AdminNumberRequest, type AvailableNumber } from "@/lib/shared";
 import { READ_ONLY_HINT, useConsole } from "./-shared";
+import { named } from "@/lib/app/product";
 
 export const Route = createFileRoute("/_authenticated/admin/number-requests")({
-  head: () => ({ meta: [{ title: "Number requests — Answered admin" }] }),
+  head: () => ({ meta: [{ title: named("Number requests — Answered admin") }] }),
   component: NumberRequestsPage,
 });
 
 const typeLabel = (t: string) => (t === "mobile" ? "Mobile (calls and texts)" : "Local (calls only)");
+
+// A made-up number for a test lab receptionist (nothing is bought). US ones are in
+// 555-0100 to 0199, which is kept for fiction.
+function testNumber(r: AdminNumberRequest): string {
+  if (r.country === "US") return `+1212555${String(100 + Math.floor(Math.random() * 100)).padStart(4, "0")}`;
+  return `${r.type === "mobile" ? "+614" : "+617"}${String(Math.floor(10_000_000 + Math.random() * 89_999_999))}`;
+}
 
 function NumberRequestsPage() {
   const { platform } = useConsole();
@@ -66,10 +74,11 @@ function PlatformQueue() {
     onError: (e: Error) => toast.error("Couldn't connect the number", { description: e.message }),
   });
 
+  // In the receptionist's country. The US has no mobiles to buy: its local numbers do calls (and texts once registered).
   const find = (r: AdminNumberRequest) => {
     setPicking({ id: r.id, options: null });
     platformApi
-      .availableNumbers(r.type)
+      .availableNumbers(r.country === "US" ? "local" : r.type, r.country)
       .then((options) => setPicking({ id: r.id, options }))
       .catch((err: Error) => setPicking({ id: r.id, options: [], error: err.message }));
   };
@@ -105,7 +114,8 @@ function PlatformQueue() {
                         {demo ? <StatusBadge tone="warning">Test lab</StatusBadge> : null}
                       </div>
                       <div className="text-[12px] text-ink-muted">
-                        {typeLabel(r.type)} · {fmtDate(r.createdAt)}
+                        {typeLabel(r.type)}
+                        {r.country === "US" ? " · United States" : ""} · {fmtDate(r.createdAt)}
                         {r.requestedBy ? ` · ${r.requestedBy}` : ""}
                       </div>
                       {r.note ? <div className="text-[12px] text-ink-muted">“{r.note}”</div> : null}
@@ -116,7 +126,7 @@ function PlatformQueue() {
                           size="sm"
                           variant="outline"
                           className="h-8 text-[12.5px]"
-                          onClick={() => setBuying({ r, number: `${r.type === "mobile" ? "+614" : "+617"}${String(Math.floor(10_000_000 + Math.random() * 89_999_999))}`, test: true })}
+                          onClick={() => setBuying({ r, number: testNumber(r), test: true })}
                           data-action="test-number"
                         >
                           Connect a test number
@@ -133,6 +143,11 @@ function PlatformQueue() {
                   </div>
                   {picking?.id === r.id ? (
                     <div className="rounded-[6px] border border-hairline bg-canvas-2 p-2">
+                      {r.country === "US" ? (
+                        <p className="px-1 pb-1 text-[12px] text-ink-muted" data-note="us-texting">
+                          US local numbers. Texting from them needs 10DLC registration in Telnyx first, so texts aren't switched on for them.
+                        </p>
+                      ) : null}
                       {picking.options === null ? <p className="px-1 text-[12.5px] text-ink-muted">Searching…</p> : null}
                       {picking.error ? <p className="px-1 text-[12.5px] text-[#a41d1d]">{picking.error}</p> : null}
                       {picking.options?.length === 0 && !picking.error ? <p className="px-1 text-[12.5px] text-ink-muted">No numbers available right now.</p> : null}

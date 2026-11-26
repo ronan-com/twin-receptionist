@@ -5,7 +5,8 @@ import { api } from "./base";
 // in server/index.ts and server/routes/signup.ts).
 
 export type SignedIn = { signedIn: true } & Account;
-export type SignedOut = { signedIn: false; signupOpen: boolean; firstRun: boolean };
+// singleAgency (SINGLE_AGENCY=1): one agency per server, so only its first account signs itself up.
+export type SignedOut = { signedIn: false; signupOpen: boolean; firstRun: boolean; singleAgency?: boolean };
 export type Session = SignedIn | SignedOut;
 
 export type AgencySignup = { name: string; email: string; password: string; agencyName: string };

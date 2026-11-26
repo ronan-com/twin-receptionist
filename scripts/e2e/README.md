@@ -49,3 +49,25 @@ data; business user blocked from `/admin`, the console API and other businesses;
 reset (invalid link and full flow); an agency's customer accepting an invite (view-only, can't
 write); the connect page; the platform console, View as a business and Exit view; no
 horizontal scrolling at 390px on `/login`, `/signup`, `/app`, `/admin`, `/connect`.
+A new demo business's sample calls arrive with the next call sync (up to a minute), so the
+dashboard checks reload until they show.
+
+## p-phone-setup.mjs covers
+
+An agency's own phone account. Start the main server with
+`OWN_PHONE_ACCOUNT=required E2E_PORT=8905 E2E_DB=e2e_q bash scripts/e2e/setup.sh`, then
+`E2E_PORT=8905 E2E_DB=e2e_q node scripts/e2e/p-phone-setup.mjs`. It starts a second server
+itself (`PRODUCT_NAME=Chloe`, default phone mode; `E2E_PORT2`/`E2E_DB2`, default 8907/e2e_q3)
+and a third with `SINGLE_AGENCY=1` on an empty database (`E2E_PORT3`/`E2E_DB3`, default
+8908/e2e_q4), and stops both at the end.
+
+New agency held at `/setup` (console pages and `POST /api/clients` refused); malformed keys
+refused; the pretend key `KEYTEST-LOCAL-DEMO-0001` connects; Connections and the menu; buying
+a number for a demo receptionist; member/admin/owner/business permissions on
+`/api/phone-account`; booking through `/hooks/<id>/book` with an email (both emails in
+`server.log`, same slot refused); Answered vs Chloe naming and `/`; default mode sends a new
+agency to `/admin`; `/guide` signed out. US numbers: a US-time-zone receptionist's picker starts
+on the United States, `(212) 555-0101` format, 10DLC note, no texting; bad +1/+61 picks refused.
+SINGLE_AGENCY: first account lands on a plain agency console (no Agencies, Number Requests, Test
+Lab, Setup, "Platform" labels), platform APIs 403, key can't be replaced, Email and calendars with
+Google calendar-only scopes, direct number buying, invited admin, sign-up closed afterwards. Only malformed keys and the pretend key are ever sent.

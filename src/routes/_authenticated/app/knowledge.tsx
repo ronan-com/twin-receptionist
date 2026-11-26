@@ -19,12 +19,13 @@ import { knowledgeQuery, unansweredQuery } from "@/lib/app/queries";
 import { createKnowledge, deleteKnowledge, updateKnowledge, type KnowledgeSaved } from "@/lib/api/manage";
 import type { KnowledgeItem, KnowledgeStatus, KnowledgeType } from "@/lib/app/types";
 import { useWorkspace } from "@/lib/app/workspace";
+import { named } from "@/lib/app/product";
 
 export const Route = createFileRoute("/_authenticated/app/knowledge")({
   validateSearch: (search: Record<string, unknown>): { question?: string } => ({
     question: typeof search["question"] === "string" && search["question"] ? String(search["question"]) : undefined,
   }),
-  head: () => ({ meta: [{ title: "Knowledge base — Answered" }] }),
+  head: () => ({ meta: [{ title: named("Knowledge base — Answered") }] }),
   component: KnowledgePage,
 });
 

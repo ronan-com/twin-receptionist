@@ -9,7 +9,8 @@ import {
 } from "../src/lib/shared";
 import { sql } from "./db";
 import { CalendarError, busyTimes, createEvent } from "./calendars";
-import { notifyBusiness } from "./notify";
+import { confirmToCaller, notifyBusiness } from "./notify";
+import { mailerReady } from "./mailer";
 import { getSetting, putSetting } from "./store";
 
 // ---- Public address ------------------------------------------------------------
@@ -196,6 +197,9 @@ async function bookNow(client: Business, input: any): Promise<unknown> {
   const service = clip(input?.service, 80);
   const notes = clip(input?.notes, 500);
   const channel = clip(input?.channel, 20) || "call";
+  // Optional. An address that doesn't look like one is dropped rather than failing the booking.
+  const given = clip(input?.email, 254).toLowerCase();
+  const email = /^[^\s@,;]+@[^\s@,;]+\.[^\s@,;]+$/.test(given) ? given : "";
   const start = Date.parse(String(input?.start ?? ""));
   if (!name || !phone) return { booked: false, reason: "Ask for their name and mobile number first." };
   if (!Number.isFinite(start)) return { booked: false, reason: "Use a start value from check_availability." };
@@ -211,6 +215,7 @@ async function bookNow(client: Business, input: any): Promise<unknown> {
     start: isoLocal(start, s.timezone),
     status: "failed",
     note: notes,
+    ...(email ? { email } : {}),
   };
 
   try {
@@ -226,14 +231,18 @@ async function bookNow(client: Business, input: any): Promise<unknown> {
       start,
       end,
       title: `${service || "Appointment"} · ${name}`,
-      description: `Name: ${name}\nPhone: ${phone}\nService: ${service || "not given"}\n${notes ? `Notes: ${notes}\n` : ""}Booked by the AI receptionist by ${channel === "sms" ? "text" : "phone"}.`,
+      description: `Name: ${name}\nPhone: ${phone}\n${email ? `Email: ${email}\n` : ""}Service: ${service || "not given"}\n${notes ? `Notes: ${notes}\n` : ""}Booked by the AI receptionist by ${channel === "sms" ? "text" : "phone"}.`,
     });
     const when = `${sayDay(date)} at ${sayTime(isoLocal(start, s.timezone).slice(11, 16))}`;
     const booked: BookingRequest = { ...entry, status: "booked", note: notes };
     await record(client.id, booked).catch((err) => console.error(`[booking ${client.id}] couldn't log`, err.message));
     // Email the business and send it to their CRM. Never let that undo a booking that worked.
     notifyBusiness(client, booked).catch(() => {});
-    return { booked: true, when, message: `Booked. Tell them it's confirmed for ${when}.` };
+    // The caller's own confirmation, when they gave an email and this server can send mail.
+    const emailing = Boolean(email) && mailerReady();
+    // (With no mail server, as on a laptop, the email is printed in the server log.)
+    if (email) confirmToCaller(client, booked).catch((err) => console.error(`[booking ${client.id}] confirmation email`, err.message));
+    return { booked: true, when, message: `Booked. Tell them it's confirmed for ${when}${emailing ? " and that a confirmation email is on its way" : ""}.` };
   } catch (err) {
     const reason = err instanceof CalendarError ? err.message : "Unexpected error.";
     if (!(err instanceof CalendarError)) console.error(`[booking ${client.id}]`, err);
@@ -315,6 +324,7 @@ export function bookingTools(client: Business, base: string) {
         name: { type: "string", description: "Their full name." },
         phone: { type: "string", description: "Their mobile number." },
         service: { type: "string", description: "What the appointment is for, from the list of services." },
+        email: { type: "string", description: "Their email address, if they gave one, for their confirmation. Optional." },
         notes: { type: "string", description: "Anything else the team should know. Optional." },
         channel,
       },

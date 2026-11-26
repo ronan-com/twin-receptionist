@@ -77,6 +77,23 @@ async function signIn(page, email, password) {
   await type(page, "#password", password);
   await clickText(page, "button[type=submit]", "Sign in");
 }
+// The business dashboard (/app): its tiles, next steps and recent calls.
+async function waitDashboard(page) {
+  await page.waitForSelector("[data-app-shell] .client-overview");
+  for (const t of ["Answered calls", "Your next steps", "Recent calls"]) await waitText(page, t);
+}
+// A new demo receptionist's sample calls reach call_log on the next sync (server/callsync.ts,
+// once a minute), so reload the dashboard until they show.
+async function waitSampleCalls(page, ms = 90000) {
+  const end = Date.now() + ms;
+  for (;;) {
+    if (await page.$('.overview-calls ul[aria-label="Calls"] li')) return;
+    if (Date.now() > end) throw new Error("no sample calls on the dashboard after 90s");
+    await sleep(10000);
+    await page.reload({ waitUntil: "networkidle0" });
+    await waitDashboard(page);
+  }
+}
 async function signOut(page) {
   await page.click('button[aria-label="Account menu"]');
   await clickText(page, '[role="menuitem"]', "Sign out");
@@ -134,22 +151,51 @@ try {
   });
 
   await step("agency creates its first receptionist from the call to action", async () => {
+    // The call to action opens the new-receptionist wizard: business, hours, voice, review.
     await ag.click('[data-cta="first-receptionist"]');
-    await type(ag, "#biz-name", "Agency Client Dental");
-    await clickText(ag, "button[type=submit]", "Create business");
-    await ag.waitForSelector('[data-list="receptionists"]', { timeout: 15000 });
+    await waitPath(ag, "/admin/clients/new");
+    await type(ag, "#w-name", "Agency Client Dental");
+    await clickText(ag, '[role="radio"]', "Dental clinic");
+    await clickText(ag, '[data-action="continue"]', "Continue");
+    await ag.waitForSelector('[data-step="1"]');
+    await clickText(ag, '[data-action="continue"]', "Continue");
+    await ag.waitForSelector('[data-step="2"]');
+    // The first voice is picked for you once the list has loaded.
+    await ag.waitForSelector('[aria-labelledby="w-voice"] [role="radio"][aria-checked="true"]');
+    await clickText(ag, '[data-action="continue"]', "Continue");
+    await ag.waitForSelector("[data-review]");
+    await clickText(ag, '[data-action="create-receptionist"]', "Create receptionist");
+    // It lands on the new client's page, with its receptionist listed.
+    await waitPath(ag, /^\/admin\/clients\/[a-f0-9-]{36}$/, 30000);
+    await ag.waitForSelector('[data-page="admin-client"] [data-receptionist]', { timeout: 15000 });
     await waitText(ag, "Agency Client Dental");
   });
 
   await step("agency cannot open platform-only pages", async () => {
-    for (const p of ["/admin/agencies", "/admin/test-lab", "/admin/number-requests"]) {
+    for (const p of ["/admin/agencies", "/admin/test-lab"]) {
       await ag.goto(`${B}${p}`, { waitUntil: "networkidle0" });
       await waitPath(ag, "/admin");
     }
     const nav = await ag.evaluate(() => document.querySelector('nav[aria-label="Primary"]').innerText);
     assert(!nav.includes("Agencies") && !nav.includes("Test Lab"), "platform-only items in the agency's nav");
-    const r = await apiFetch(ag, "GET", "/api/admin/agencies");
-    assert(r.status === 403, `GET /api/admin/agencies answered ${r.status}`);
+    for (const u of ["/api/admin/agencies", "/api/admin/number-requests"]) {
+      const r = await apiFetch(ag, "GET", u);
+      assert(r.status === 403, `GET ${u} answered ${r.status}`);
+    }
+  });
+
+  await step("agency's Number Requests page is its own list, not the platform's queue", async () => {
+    // Number Requests is open to agencies on the platform's phone account: they ask
+    // for a number there and the platform team buys it.
+    await ag.goto(`${B}/admin/number-requests`, { waitUntil: "networkidle0" });
+    await waitPath(ag, "/admin/number-requests");
+    await ag.waitForSelector('[data-page="admin-number-requests"]');
+    await waitText(ag, "Request a number");
+    await waitText(ag, "Your requests");
+    const text = await ag.$eval('[data-page="admin-number-requests"]', (e) => e.innerText);
+    assert(!/Platform console|Agencies ask for numbers/i.test(text), "the platform's queue is showing to an agency");
+    const nav = await ag.evaluate(() => document.querySelector('nav[aria-label="Primary"]').innerText);
+    assert(nav.includes("Number Requests"), "Number Requests is missing from the agency's nav");
   });
 
   await step("agency is sent from /app to /admin", async () => {
@@ -196,10 +242,10 @@ try {
     await bz.waitForSelector('[data-action="later"]');
     await bz.$eval('[data-action="later"]', (b) => b.click());
     await waitPath(bz, "/app", 20000);
-    await bz.waitForSelector('[data-page="app-dashboard"]');
+    await waitDashboard(bz);
     await waitText(bz, biz.businessName);
     // The demo receptionist (fake provider key locally) has five sample calls.
-    await bz.waitForSelector('[data-list="calls"] li');
+    await waitSampleCalls(bz);
     const s = await apiFetch(bz, "GET", "/api/session");
     assert(s.body.role === "customer" && s.body.access[0]?.role === "manager", "not a customer manager");
   });
@@ -218,7 +264,8 @@ try {
   await step("phone width: /app has no horizontal overflow at 390px", async () => {
     await bz.setViewport({ width: 390, height: 844 });
     await bz.goto(`${B}/app`, { waitUntil: "networkidle0" });
-    await bz.waitForSelector('[data-page="app-dashboard"]');
+    await waitDashboard(bz);
+    await waitSampleCalls(bz);
     await noOverflow(bz, "/app");
     await bz.goto(`${B}/app/calls`, { waitUntil: "networkidle0" });
     await bz.waitForSelector('[data-placeholder], main');

@@ -12,6 +12,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { CLIENT_NAV } from "@/lib/app/constants";
 import { integrationsQuery, phoneNumbersQuery, unansweredQuery } from "@/lib/app/queries";
 import { useWorkspace } from "@/lib/app/workspace";
+import { named } from "@/lib/app/product";
 
 // The business workspace. Business users (managers and viewers) live here; the
 // platform team gets here only while viewing as a business. Agency staff and the
@@ -21,7 +22,7 @@ export const Route = createFileRoute("/_authenticated/app")({
     if (context.session.console) throw redirect({ to: "/admin", replace: true });
   },
   head: () => ({
-    meta: [{ title: "Workspace — Answered" }, { name: "robots", content: "noindex" }],
+    meta: [{ title: named("Workspace — Answered") }, { name: "robots", content: "noindex" }],
   }),
   component: ClientAppLayout,
 });

@@ -15,14 +15,15 @@ import { platformApi, getAdminAppointmentsLeads, getAdminRecentActivity, getCons
 import type { AppointmentStatus, LeadStage } from "@/lib/app/types";
 import { HUE_HEX, dailyCounts, hueFor, type Hue } from "@/components/app/hues";
 import { BizCell, CallSheet, useConsole } from "./-shared";
+import { named } from "@/lib/app/product";
 
 export const Route = createFileRoute("/_authenticated/admin/")({
-  head: () => ({ meta: [{ title: "Admin overview — Answered" }] }),
+  head: () => ({ meta: [{ title: named("Admin overview — Answered") }] }),
   component: AdminOverview,
 });
 
 function AdminOverview() {
-  const { ws, platform, readOnly, orgName } = useConsole();
+  const { ws, platform, readOnly, orgName, single } = useConsole();
   const range = ws.range;
   const callsQ = useQuery({ queryKey: ["console", "calls", rangeKey(range)], queryFn: () => getConsoleCalls(range) });
   const countsQ = useQuery(adminOverviewCountsQuery());
@@ -152,7 +153,7 @@ function AdminOverview() {
         <ul className="space-y-2 text-[13px]">
           <AttentionRow icon={AlertTriangle} label="Open incidents" value={c?.openIncidents ?? 0} to="/admin/system" tone={c?.openIncidents ? "danger" : "muted"} />
           <AttentionRow icon={ServerCrash} label="Failed calls in this period" value={failed.length} to="/admin/calls" tone={failed.length ? "danger" : "muted"} />
-          <AttentionRow icon={PhoneIncoming} label="Number requests waiting" value={c?.pendingNumberRequests ?? 0} to="/admin/number-requests" tone={c?.pendingNumberRequests ? "warning" : "muted"} />
+          {single ? null : <AttentionRow icon={PhoneIncoming} label="Number requests waiting" value={c?.pendingNumberRequests ?? 0} to="/admin/number-requests" tone={c?.pendingNumberRequests ? "warning" : "muted"} />}
           {platform ? <AttentionRow icon={Hash} label="Agencies with no phone account" value={c?.providerErrors ?? 0} to="/admin/system" tone={c?.providerErrors ? "warning" : "muted"} /> : null}
         </ul>
       </Panel>

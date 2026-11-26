@@ -1,6 +1,7 @@
 import type { Agency, TelnyxSettings } from "../src/lib/shared";
-import { AuthError, createInvite, emailOf, requireRole, textOf, type Ctx } from "./accounts";
+import { AuthError, createInvite, emailOf, requireRole, singleAgency, textOf, type Ctx } from "./accounts";
 import { iso, sql } from "./db";
+import { newAgencyUsesPlatform } from "./phoneAccount";
 import { ValidationError } from "./prompt";
 import { forgetKey, telnyx } from "./telnyx";
 
@@ -14,7 +15,9 @@ export async function telnyxSettings(ctx: Ctx): Promise<TelnyxSettings> {
   const mode = o?.own ? "own" : o?.platform_telnyx ? "platform" : "none";
   let balance: TelnyxSettings["balance"] = null;
   // Their own money is theirs to see; the platform's balance is only for the platform team.
-  if (mode === "own" || (mode === "platform" && ctx.user.platformAdmin)) {
+  // With SINGLE_AGENCY the server's key is the agency's own: its owners and admins see it.
+  const ownsServerKey = singleAgency() && (ctx.role === "owner" || ctx.role === "admin");
+  if (mode === "own" || (mode === "platform" && (ctx.user.platformAdmin || ownsServerKey))) {
     const res = await telnyx<{ data?: any }>("GET", "/balance").catch(() => null);
     if (res) balance = { amount: Number(res.data?.available_credit ?? res.data?.balance ?? 0), currency: res.data?.currency ?? "USD" };
   }
@@ -95,7 +98,7 @@ export async function createAgency(ctx: Ctx, input: any, base: string): Promise<
   if (!name) throw new ValidationError("Give the agency a name.");
   const email = emailOf(input?.ownerEmail);
   const id = crypto.randomUUID();
-  await sql`insert into orgs (id, name, platform_telnyx, created_by) values (${id}, ${name}, true, ${ctx.user.id})`;
+  await sql`insert into orgs (id, name, platform_telnyx, created_by) values (${id}, ${name}, ${newAgencyUsesPlatform()}, ${ctx.user.id})`;
   return createInvite(id, name, email, "owner", ctx.user, base);
 }
 

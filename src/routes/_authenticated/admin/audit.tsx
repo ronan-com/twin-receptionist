@@ -12,9 +12,10 @@ import { fmtSmartDate, humanize } from "@/lib/app/format";
 import { downloadCsv } from "@/lib/app/csv";
 import { getAudit, type ConsoleAudit } from "@/lib/api/console";
 import { useConsole } from "./-shared";
+import { named } from "@/lib/app/product";
 
 export const Route = createFileRoute("/_authenticated/admin/audit")({
-  head: () => ({ meta: [{ title: "Audit log — Answered admin" }] }),
+  head: () => ({ meta: [{ title: named("Audit log — Answered admin") }] }),
   component: AdminAuditPage,
 });
 

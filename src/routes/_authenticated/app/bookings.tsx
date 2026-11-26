@@ -34,6 +34,7 @@ import {
 import type { AppointmentRow, AppointmentStatus } from "@/lib/app/types";
 import { useWorkspace } from "@/lib/app/workspace";
 import { cn } from "@/lib/utils";
+import { PRODUCT, named } from "@/lib/app/product";
 
 export const Route = createFileRoute("/_authenticated/app/bookings")({
   validateSearch: (search: Record<string, unknown>): { booking?: string } => ({
@@ -41,7 +42,7 @@ export const Route = createFileRoute("/_authenticated/app/bookings")({
   }),
   head: () => ({
     meta: [
-      { title: "Bookings | Answered" },
+      { title: named("Bookings | Answered") },
       { name: "description", content: "Every appointment your receptionist booked, with the call behind it and its calendar status." },
     ],
   }),
@@ -130,7 +131,7 @@ function BookingsPage() {
       updateAppointment(ws.businessId!, input.id, { status: input.status, notes: input.notes }),
     onSuccess: (saved, input) => {
       toast.success(input.status ? `Marked ${APPOINTMENT_STATUS_LABELS[input.status].toLowerCase()}` : "Notes saved", {
-        description: "This changes the Answered record only. No calendar invitation or message was sent, so check your calendar if this booking was in it.",
+        description: named("This changes the Answered record only. No calendar invitation or message was sent, so check your calendar if this booking was in it."),
       });
       void qc.invalidateQueries({ queryKey: ["appointments", ws.businessId] });
       if (selected && selected.id === saved.id) setSelected(saved);
@@ -404,7 +405,7 @@ function BookingsPage() {
                 <div className="space-y-2">
                   <div className="text-[12.5px] font-medium text-ink">Update status</div>
                   <p className="text-[12px] text-ink-muted">
-                    Local record only. Answered does not change the appointment in your calendar and does not message the customer. To move the time, change it in your calendar.
+                    Local record only. {PRODUCT} does not change the appointment in your calendar and does not message the customer. To move the time, change it in your calendar.
                   </p>
                   {selected.id.startsWith("cal-") ? (
                     <p className="text-[12px] text-ink-muted">This appointment was added straight to the calendar, so change it there.</p>

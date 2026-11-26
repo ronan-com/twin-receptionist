@@ -1,5 +1,5 @@
-import type { AdminNumberRequest, NumberRequest, NumberType } from "../src/lib/shared";
-import { AuthError, textOf, type Ctx } from "./accounts";
+import { countryForTimezone, type AdminNumberRequest, type NumberRequest, type NumberType } from "../src/lib/shared";
+import { AuthError, singleAgency, textOf, type Ctx } from "./accounts";
 import { iso, sql } from "./db";
 import { sendAccountEmail } from "./mailer";
 import { ValidationError } from "./prompt";
@@ -30,13 +30,19 @@ export async function createRequest(ctx: Ctx, clientId: string, businessName: st
   const [r] = await sql`
     insert into number_requests (id, org_id, client_id, kind, note, requested_by)
     values (${id}, ${ctx.org!.id}, ${clientId}, ${type}, ${note}, ${ctx.user.id}) returning *`;
-  // Tell the platform team (printed to the log until email is set up).
-  const admins = await sql`select email from users where platform_admin`;
+  // Tell the platform team (printed to the log until email is set up). With
+  // SINGLE_AGENCY there's no platform team: the agency's owners and admins buy it
+  // themselves from the client's page.
+  const single = singleAgency();
+  const admins = single
+    ? await sql`select u.email from memberships m join users u on u.id = m.user_id where m.org_id = ${ctx.org!.id} and m.role in ('owner', 'admin')`
+    : await sql`select email from users where platform_admin`;
   for (const a of admins) {
     await sendAccountEmail(
       a.email,
       `Number request: ${businessName} (${ctx.org!.name})`,
-      `${ctx.user.name || ctx.user.email} at ${ctx.org!.name} asked for a ${type === "mobile" ? "mobile (calls and texts)" : "local"} number for ${businessName}.\n${note ? `Note: ${note}\n` : ""}\nBuy and connect it from Agencies: ${base}/agencies`,
+      `${ctx.user.name || ctx.user.email} at ${ctx.org!.name} asked for a ${type === "mobile" ? "mobile (calls and texts)" : "local"} number for ${businessName}.\n${note ? `Note: ${note}\n` : ""}\n` +
+        (single ? `Buy one from the client's page: ${base}/admin/clients/${clientId}` : `Buy and connect it from Agencies: ${base}/agencies`),
     ).catch((err) => console.error("[mail] number request", err.message));
   }
   return row(r);
@@ -49,7 +55,7 @@ function onlyPlatform(ctx: Ctx): void {
 export async function listRequests(ctx: Ctx): Promise<AdminNumberRequest[]> {
   onlyPlatform(ctx);
   const rows = await sql`
-    select r.*, o.name as org_name, c.data->'settings'->>'businessName' as business, u.email as by_email
+    select r.*, o.name as org_name, c.data->'settings'->>'businessName' as business, c.data->'settings'->>'timezone' as timezone, u.email as by_email
     from number_requests r
     join orgs o on o.id = r.org_id
     join clients c on c.id = r.client_id
@@ -62,6 +68,7 @@ export async function listRequests(ctx: Ctx): Promise<AdminNumberRequest[]> {
     business: r.business ?? "",
     requestedBy: r.by_email ?? "",
     clientId: r.client_id,
+    country: countryForTimezone(r.timezone),
   }));
 }
 
@@ -77,6 +84,11 @@ export async function pendingRequest(ctx: Ctx, id: string) {
   if (!r) throw new ValidationError("Unknown request.");
   if (r.status !== "pending") throw new ValidationError("That request has already been dealt with.");
   return r as { id: string; client_id: string; org_id: string; kind: NumberType };
+}
+
+/** A number bought straight from the client's page answers that client's waiting requests (SINGLE_AGENCY, no queue). */
+export async function settleRequests(clientId: string, phoneNumber: string): Promise<void> {
+  await sql`update number_requests set status = 'done', phone_number = ${phoneNumber}, resolved_at = now() where client_id = ${clientId} and status = 'pending'`;
 }
 
 export async function markDone(id: string, phoneNumber: string): Promise<void> {

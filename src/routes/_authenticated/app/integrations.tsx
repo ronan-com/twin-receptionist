@@ -27,9 +27,10 @@ import type { Integration } from "@/lib/app/types";
 import { useWorkspace } from "@/lib/app/workspace";
 import { cn } from "@/lib/utils";
 import type { Hue } from "@/components/app/hues";
+import { PRODUCT, named } from "@/lib/app/product";
 
 export const Route = createFileRoute("/_authenticated/app/integrations")({
-  head: () => ({ meta: [{ title: "Integrations — Answered" }] }),
+  head: () => ({ meta: [{ title: named("Integrations — Answered") }] }),
   validateSearch: (search: Record<string, unknown>): { error?: string; calendar?: string } => ({
     error: typeof search["error"] === "string" && search["error"] ? String(search["error"]).slice(0, 300) : undefined,
     calendar: search["calendar"] !== undefined ? String(search["calendar"]) : undefined,
@@ -47,7 +48,7 @@ interface Def {
 }
 
 const CATALOG: Def[] = [
-  { provider: "builtin_calendar", name: "Answered calendar", category: "Calendar", description: "A simple calendar we keep for you. Nothing to connect; bookings show in Bookings.", availability: "available" },
+  { provider: "builtin_calendar", name: named("Answered calendar"), category: "Calendar", description: "A simple calendar we keep for you. Nothing to connect; bookings show in Bookings.", availability: "available" },
   { provider: "google_calendar", name: "Google Calendar", category: "Calendar", description: "Your receptionist checks free times and books straight into Google Calendar.", availability: "available" },
   { provider: "microsoft_calendar", name: "Microsoft Outlook Calendar", category: "Calendar", description: "Book straight into Outlook and Microsoft 365 calendars.", availability: "available" },
   { provider: "email_mailbox", name: "Email inbox", category: "Email", description: "Your receptionist reads new enquiries in your inbox and drafts (or sends) replies.", availability: "available" },
@@ -391,7 +392,7 @@ function IntegrationDialog({
       ) : def.provider === "webhook" ? (
         <div className="grid gap-4">
           {!hasBooking ? (
-            <Notice tone="warning">Set up a calendar first (the Answered calendar is fine): the webhook sends each booking and callback your receptionist takes.</Notice>
+            <Notice tone="warning">Set up a calendar first (the {PRODUCT} calendar is fine): the webhook sends each booking and callback your receptionist takes.</Notice>
           ) : null}
           <Field label="Endpoint URL" htmlFor="wh-url" hint="We POST JSON to this HTTPS address after every booking and callback.">
             <Input id="wh-url" type="url" value={endpoint} onChange={(e) => setEndpoint(e.target.value)} disabled={!canEdit || !hasBooking} placeholder="https://hooks.yourcrm.com/answered" />

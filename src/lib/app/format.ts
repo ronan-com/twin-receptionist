@@ -1,4 +1,5 @@
 import { format, formatDistanceToNowStrict, isToday, isYesterday, parseISO } from "date-fns";
+import { formatNumber } from "@/lib/shared";
 
 const nf = new Intl.NumberFormat("en-AU");
 
@@ -92,13 +93,11 @@ export function fmtRelative(d: string | Date | null | undefined) {
 
 export function fmtPhone(value: string | null | undefined) {
   if (!value) return "—";
+  // One format per country, the same one the server uses (formatNumber):
+  // 0412 345 678, (07) 3123 4567, (212) 555-0123.
   const digits = value.replace(/[^\d+]/g, "");
-  if (/^\+61\d{9}$/.test(digits)) {
-    const rest = digits.slice(3);
-    if (rest.startsWith("4")) return `+61 ${rest.slice(0, 3)} ${rest.slice(3, 6)} ${rest.slice(6)}`;
-    return `+61 ${rest[0]} ${rest.slice(1, 5)} ${rest.slice(5)}`;
-  }
-  return value;
+  const shown = formatNumber(digits);
+  return shown === digits ? value : shown;
 }
 
 export function titleCase(value: string | null | undefined) {

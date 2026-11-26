@@ -1,9 +1,10 @@
 import type { Business } from "../../src/lib/shared";
 import { defaultHours, industry } from "../../src/lib/shared";
-import { AuthError, emailOf, hashPassword, passwordOf, sessionCookie, signUp, startSession, textOf } from "../accounts";
+import { AuthError, emailOf, singleAgency, hashPassword, passwordOf, sessionCookie, signUp, startSession, textOf } from "../accounts";
 import { industryKeyOf } from "../answered";
 import { audit } from "../audit";
 import { sql } from "../db";
+import { newAgencyUsesPlatform } from "../phoneAccount";
 import { ValidationError } from "../prompt";
 import { runAsOrg } from "../telnyx";
 import { readBody } from "./http";
@@ -90,7 +91,7 @@ async function agency(req: Request, input: any, ip: string): Promise<Response> {
   await sql.begin(async (tx) => {
     const [taken] = await tx`select 1 from users where email = ${who.email}`;
     if (taken) throw new ValidationError("There's already an account with that email. Sign in instead.");
-    await tx`insert into orgs (id, name, platform_telnyx) values (${orgId}, ${agencyName}, true)`;
+    await tx`insert into orgs (id, name, platform_telnyx) values (${orgId}, ${agencyName}, ${newAgencyUsesPlatform()})`;
     await tx`insert into users (id, email, name, password_hash) values (${userId}, ${who.email}, ${who.name}, ${hash})`;
     await tx`insert into memberships (org_id, user_id, role) values (${orgId}, ${userId}, 'owner')`;
   });
@@ -159,6 +160,8 @@ export async function signupRoutes(
   if (process.env.SELF_SIGNUP === "off") throw new AuthError("Sign-up is closed. Ask for an invite.", 403);
   const ip = addressOf(req, server);
   checkRate(ip);
+  // One agency per server (SINGLE_AGENCY): only the very first account signs itself up.
+  if (singleAgency() && !(await noUsersYet())) throw new AuthError("Sign-up is closed. Ask for an invite.", 403);
   const input = await readBody(req);
   return kind === "agency" ? agency(req, input, ip) : business(req, input, ip, deps);
 }

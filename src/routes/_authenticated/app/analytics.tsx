@@ -22,11 +22,12 @@ import {
 } from "@/lib/app/metrics";
 import { useRangeMetrics } from "@/lib/app/use-metrics";
 import { useWorkspace } from "@/lib/app/workspace";
+import { named } from "@/lib/app/product";
 
 export const Route = createFileRoute("/_authenticated/app/analytics")({
   head: () => ({
     meta: [
-      { title: "Reports — Answered" },
+      { title: named("Reports — Answered") },
       { name: "description", content: "Call volume, busiest times, outcomes and booking trends for your AI receptionist." },
     ],
   }),

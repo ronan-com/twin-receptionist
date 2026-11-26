@@ -36,12 +36,13 @@ import { useWorkspace } from "@/lib/app/workspace";
 import { fmtRelative } from "@/lib/app/format";
 import { TIMEZONES, formatNumber } from "@/lib/shared";
 import { cn } from "@/lib/utils";
+import { named } from "@/lib/app/product";
 
 const AGENT_TABS = ["persona", "conversation", "booking", "transfers", "hours"] as const;
 type AgentTab = (typeof AGENT_TABS)[number];
 
 export const Route = createFileRoute("/_authenticated/app/receptionist")({
-  head: () => ({ meta: [{ title: "Receptionist | Answered" }] }),
+  head: () => ({ meta: [{ title: named("Receptionist | Answered") }] }),
   validateSearch: (search: Record<string, unknown>): { tab?: AgentTab } => {
     const t = String(search["tab"] ?? "");
     return AGENT_TABS.includes(t as AgentTab) ? { tab: t as AgentTab } : {};
@@ -52,9 +53,9 @@ export const Route = createFileRoute("/_authenticated/app/receptionist")({
 /* ---------------- Form model ---------------- */
 
 // The industries our receptionist script knows (they round-trip through the server).
-const INDUSTRY_OPTIONS = ["Dental", "Healthcare", "Trades", "Salon & beauty", "Real estate", "Automotive", "Professional services", "Other"];
+const INDUSTRY_OPTIONS = ["Dental", "Healthcare", "Trades", "Salon & beauty", "Real estate", "Automotive", "Professional services", "Childcare", "Other"];
 const LENGTHS = [15, 20, 30, 45, 60, 90];
-const PROVIDER_LABEL: Record<string, string> = { builtin: "Answered calendar", google: "Google Calendar", microsoft: "Outlook Calendar" };
+const PROVIDER_LABEL: Record<string, string> = { builtin: named("Answered calendar"), google: "Google Calendar", microsoft: "Outlook Calendar" };
 
 interface AgentForm {
   name: string;

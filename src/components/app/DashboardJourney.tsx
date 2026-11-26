@@ -8,6 +8,7 @@ import {
   PhoneIncoming,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { PRODUCT, named } from "@/lib/app/product";
 
 const stages = [
   {
@@ -15,7 +16,7 @@ const stages = [
     icon: PhoneIncoming,
     title: "Call answered",
     detail:
-      "Answered identified Alex as a new patient and captured the reason for the call.",
+      named("Answered identified Alex as a new patient and captured the reason for the call."),
   },
   {
     label: "Booking",
@@ -97,7 +98,7 @@ export function DashboardJourney() {
                     a check-up and clean?
                   </p>
                   <p className="journey-message is-answer">
-                    <strong className="mr-2 text-indigo">Answered</strong> Of
+                    <strong className="mr-2 text-indigo">{PRODUCT}</strong> Of
                     course. How does Thursday at <strong>10:30 am</strong>{" "}
                     sound?
                   </p>

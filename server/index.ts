@@ -1,5 +1,5 @@
-import { defaultHours, type Business, type IndustryKey, type NumberState, type Settings, type Voice } from "../src/lib/shared";
-import { existsSync, statSync } from "node:fs";
+import { countryForTimezone, defaultHours, typeOfNumber, type Business, type IndustryKey, type NumberState, type Settings, type Voice } from "../src/lib/shared";
+import { existsSync, readFileSync, statSync } from "node:fs";
 import { join, normalize } from "node:path";
 import {
   AuthError,
@@ -23,6 +23,7 @@ import {
   signOut,
   signUp,
   signupOpen,
+  singleAgency,
   switchOrg,
   team,
   updateProfile,
@@ -31,7 +32,7 @@ import {
 import { isLocal } from "./auth";
 import { migrate, sql } from "./db";
 import { checkEmail, connectEmail, connectedClientIds, disconnectEmail, emailStatus } from "./email";
-import { availableNumbers, buyNumber, callSummary, connectedNumbers, openOrders, voiceAppFor } from "./numbers";
+import { availableNumbers, buyNumber, callSummary, checkBuyable, connectedNumbers, openOrders, sampleNumbers, searchFor, voiceAppFor } from "./numbers";
 import { ValidationError, buildInstructions, greetingOf, knowledgeFor, normaliseSettings } from "./prompt";
 import { clientsWithBooking, getClient, getOrgClient, insertClient, listClients, orgOfClient, removeClient, saveClient } from "./store";
 import { TelnyxError, enterOrg, hasKey, runAsOrg, telnyx } from "./telnyx";
@@ -40,6 +41,7 @@ import { callDetail, listCalls } from "./calls";
 import { startCallSync } from "./callsync";
 import { industryKeyOf, workspaceBusinesses } from "./answered";
 import { audit } from "./audit";
+import { OTHER_BRAND, brandedIndex } from "./product";
 import { consoleRoutes, isClientPaused } from "./routes/console";
 import { manageRoutes, setManageDeps } from "./routes/manage";
 import { signupRoutes } from "./routes/signup";
@@ -49,8 +51,9 @@ import { workspaceRoutes } from "./routes/workspace";
 import type { ClientAccess, RouteArgs } from "./routes/http";
 import { changeBrand, ownBrand, serveAsset, uploadAsset } from "./brand";
 import { accessibleClients, customerClientId, setFollowUpStage, customersFor, inviteCustomer, removeCustomer, revokeCustomerInvite } from "./customers";
-import { createRequest, declineRequest, listRequests, markDone, pendingCount, pendingRequest, requestsForClient } from "./numberRequests";
+import { createRequest, declineRequest, listRequests, markDone, pendingCount, pendingRequest, requestsForClient, settleRequests } from "./numberRequests";
 import { createAgency, exitView, inviteAgencyOwner, viewAs, isSuspended, listAgencies, telnyxSettings, updateAgency } from "./agencies";
+import { canBuyNumbers, checkKey, connectPhoneAccount, countCheck, disconnectPhoneAccount, phoneAccount, pretendAccount, requirePhoneAccount } from "./phoneAccount";
 import { previewEmail, sendSimText, startTextSim } from "./simulator";
 import {
   connectFromLink,
@@ -79,6 +82,8 @@ import { CalendarError, calendarLink, cancelEvent, disconnectCalendar, providerO
 import { mailerReady } from "./mailer";
 import { checkEmailAddress, checkWebhookUrl, webhookSecret } from "./notify";
 import { oauthAvailable } from "./oauth";
+import { refresh as loadPlatformSettings } from "./platformSettings";
+import { platformSettingsRoutes } from "./platformSettingsApi";
 import type { BookingProvider, BookingState } from "../src/lib/shared";
 import {
   connectNumberForTexts,
@@ -312,6 +317,8 @@ function assistantFields(s: Settings, instructions: string) {
 // and the first recommended voice. With the fake provider key of the local tests,
 // the receptionist is a demo one (no provider calls).
 async function createClient(orgId: string, input: unknown, opts: { quick?: boolean } = {}): Promise<Business> {
+  // An agency that must bring its own phone account connects it first (Setup).
+  await requirePhoneAccount(orgId);
   const voices = await voiceNames();
   const src = { ...((input ?? {}) as Record<string, unknown>) };
   if (opts.quick) {
@@ -370,7 +377,8 @@ async function updateClient(existing: Business, input: unknown): Promise<Busines
 async function numberState(ctx: Ctx, client: Business): Promise<NumberState> {
   // The demo receptionist never asks the carrier.
   if (isDemo(client.assistantId)) {
-    return { numbers: [], pending: [], balance: null, canBuy: false, requests: await requestsForClient(client.id) };
+    const recorded = (client.phoneNumbers ?? []).map((n) => ({ id: n, phoneNumber: n, status: "active", type: typeOfNumber(n) }));
+    return { numbers: recorded, pending: [], balance: null, canBuy: await canBuyNumbers(ctx), requests: await requestsForClient(client.id) };
   }
   const voiceApp = await voiceAppFor(client.assistantId);
   const [numbers, pending, balance] = await Promise.all([
@@ -385,7 +393,7 @@ async function numberState(ctx: Ctx, client: Business): Promise<NumberState> {
   if (JSON.stringify(current) !== JSON.stringify(client.phoneNumbers ?? [])) {
     await saveClient({ ...client, phoneNumbers: current });
   }
-  return { numbers, pending, balance, canBuy: ctx.user.platformAdmin, requests: await requestsForClient(client.id) };
+  return { numbers, pending, balance, canBuy: await canBuyNumbers(ctx), requests: await requestsForClient(client.id) };
 }
 
 // The workspace's manage side (server/routes/manage.ts) uses the same receptionist plumbing.
@@ -401,6 +409,8 @@ const json = (body: unknown, status = 200) =>
 // both the pages and the API, which is what a public link points at.
 const DIST = join(import.meta.dir, "..", "dist");
 
+let ownIndex: { at: number; html: string } | null = null;
+
 function page(path: string): Response {
   if (!existsSync(join(DIST, "index.html"))) {
     return new Response("The dashboard hasn't been built yet. Run: bun run build", { status: 503 });
@@ -409,7 +419,17 @@ function page(path: string): Response {
   // normalize() resolves any "../", so anything outside dist is refused here.
   const inside = wanted.startsWith(DIST + "/") && existsSync(wanted) && statSync(wanted).isFile();
   const hashed = inside && path.startsWith("/assets/");
-  return new Response(Bun.file(inside ? wanted : join(DIST, "index.html")), {
+  const index = join(DIST, "index.html");
+  const file = inside ? wanted : index;
+  // A copy sold under another name gets that name written into the page.
+  if (file === index && OTHER_BRAND) {
+    const at = statSync(index).mtimeMs;
+    if (ownIndex?.at !== at) ownIndex = { at, html: brandedIndex(readFileSync(index, "utf8")) };
+    return new Response(ownIndex.html, {
+      headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-cache", "X-Content-Type-Options": "nosniff", "Referrer-Policy": "same-origin" },
+    });
+  }
+  return new Response(Bun.file(file), {
     headers: {
       "Cache-Control": hashed ? "public, max-age=31536000, immutable" : "no-cache",
       "X-Content-Type-Options": "nosniff",
@@ -482,7 +502,7 @@ async function route(req: Request, server?: { requestIP(r: Request): { address: 
     const ctx = await sessionFrom(req);
     if (ctx) return json({ signedIn: true, ...(await account(ctx)) });
     const { open, firstRun } = await signupOpen();
-    return json({ signedIn: false, signupOpen: open, firstRun });
+    return json({ signedIn: false, signupOpen: open, firstRun, singleAgency: singleAgency() });
   }
   // Self-serve sign-up for agencies and businesses (the Answered build).
   if (path.startsWith("/api/signup/")) return (await signupRoutes(req, path, { createClient }, server)) ?? json({ error: "Not found" }, 404);
@@ -565,6 +585,8 @@ async function route(req: Request, server?: { requestIP(r: Request): { address: 
 
   // The platform team's view of every agency. Not scoped to a team.
   if (path.startsWith("/api/admin/")) {
+    // Email sender and Google/Microsoft apps (Settings, "Email and calendars").
+    if (path.startsWith("/api/admin/platform-settings")) return (await platformSettingsRoutes(req, path, method, ctx)) ?? json({ error: "Not found" }, 404);
     if (path === "/api/admin/number-requests" && method === "GET") {
       return json({ requests: await listRequests(ctx), pending: await pendingCount() });
     }
@@ -575,12 +597,20 @@ async function route(req: Request, server?: { requestIP(r: Request): { address: 
       } else {
         const r = await pendingRequest(ctx, nr[1]);
         const input = (await body(req)) as { phoneNumber?: string; confirm?: boolean };
-        const wantMobile = r.kind === "mobile";
-        if (wantMobile !== String(input.phoneNumber ?? "").startsWith("+614")) {
-          throw new ValidationError(`Pick a ${wantMobile ? "mobile" : "local"} number to match the request.`);
-        }
         const client = await getClient(r.client_id);
         if (!client) throw new ValidationError("That receptionist no longer exists.");
+        // The number is bought in the receptionist's country (from its time zone).
+        const country = countryForTimezone(client.settings.timezone);
+        const picked = String(input.phoneNumber ?? "");
+        if (checkBuyable(picked) !== country) {
+          throw new ValidationError(`Pick ${country === "US" ? "a US" : "an Australian"} number: this receptionist is in ${country === "US" ? "the US" : "Australia"}.`);
+        }
+        // Australia: a mobile for a mobile request, a landline for a local one. In the
+        // US there are no mobiles to buy, so any US number answers either.
+        const wantMobile = r.kind === "mobile";
+        if (country === "AU" && wantMobile !== picked.startsWith("+614")) {
+          throw new ValidationError(`Pick a ${wantMobile ? "mobile" : "local"} number to match the request.`);
+        }
         // The test lab's demo receptionist: nothing is bought, the number is only recorded.
         if (isDemo(client.assistantId)) {
           const fake = String(input.phoneNumber);
@@ -593,6 +623,7 @@ async function route(req: Request, server?: { requestIP(r: Request): { address: 
         await markDone(r.id, order.phoneNumbers[0] ?? String(input.phoneNumber));
         if (order.status === "success") {
           const fresh = (await getClient(client.id)) ?? client;
+          // Australian mobiles only: US numbers need 10DLC registration in Telnyx before they can text.
           for (const n of order.phoneNumbers.filter((p) => p.startsWith("+614"))) {
             await connectNumberForTexts(fresh, { phoneNumber: n }).catch((err) =>
               console.error(`[texting ${client.id}] ${n}`, err.message),
@@ -648,6 +679,23 @@ async function route(req: Request, server?: { requestIP(r: Request): { address: 
   }
   // Everything below that talks to Telnyx uses this team's own account.
   enterOrg(orgId);
+
+  // The agency's own phone account (Setup and Connections): its Telnyx key, checked
+  // against Telnyx before it's saved. Not for business users.
+  if (path === "/api/phone-account" || path === "/api/phone-account/test") {
+    if (ctx.role === "customer" && !ctx.user.platformAdmin) return json({ error: "Not allowed." }, 403);
+    if (path.endsWith("/test")) {
+      if (method !== "POST") return json({ error: "Not found" }, 404);
+      requireRole(ctx, "admin");
+      countCheck(orgId);
+      const checked = await checkKey((await body(req)).key);
+      return json({ ok: true, balance: checked.balance });
+    }
+    if (method === "GET") return json(await phoneAccount(ctx));
+    if (method === "PUT") return json(await connectPhoneAccount(ctx, await body(req)));
+    if (method === "DELETE") return json(await disconnectPhoneAccount(ctx));
+    return json({ error: "Not found" }, 404);
+  }
 
   // ---- The Answered UI's route modules (server/routes/*), wired once here ----
   if (path.startsWith("/api/automations/")) return (await automationRoutes({ req, url, path, method, ctx, orgId, appUrl: appUrl(req) }, { clientAccessFor, syncAssistant })) ?? json({ error: "Not found" }, 404);
@@ -789,10 +837,13 @@ async function route(req: Request, server?: { requestIP(r: Request): { address: 
   if (path === "/api/public-url" && method === "GET") return json({ url: publicUrl() });
 
   if (path === "/api/numbers/available" && method === "GET") {
-    // Searching shows our prices: only the platform team buys numbers.
-    if (!ctx.user.platformAdmin) throw new AuthError("Request a number and we'll set it up.", 403);
-    const type = url.searchParams.get("type") === "mobile" ? "mobile" : "local";
-    return json({ numbers: await availableNumbers(type) });
+    // Searching shows prices: the platform team, or an agency paying from its own phone account.
+    if (!(await canBuyNumbers(ctx))) throw new AuthError("Request a number and we'll set it up.", 403);
+    // ?country=AU (the default) or US; ?type= one that country has (AU: mobile, local; US: local, toll_free).
+    const { country, type } = searchFor(url.searchParams.get("country"), url.searchParams.get("type"));
+    // Local test servers with a pretend phone account: sample numbers, nothing asked of Telnyx.
+    if (await pretendAccount(orgId)) return json({ numbers: sampleNumbers(type, country) });
+    return json({ numbers: await availableNumbers(type, country) });
   }
 
   if (path === "/api/clients") {
@@ -929,13 +980,30 @@ async function route(req: Request, server?: { requestIP(r: Request): { address: 
     } else if (match[2] === "/numbers") {
       if (method === "GET") return json(await numberState(ctx, client));
       if (method === "POST") {
-        // Numbers cost us money every month: agencies ask (number-requests), the platform team buys.
-        if (!ctx.user.platformAdmin) throw new AuthError("Request a number and we'll set it up.", 403);
+        // Numbers cost money every month. On the platform's account, agencies ask
+        // (number-requests) and the platform team buys; on its own account an agency buys.
+        if (!(await canBuyNumbers(ctx))) throw new AuthError("Request a number and we'll set it up.", 403);
+        requireRole(ctx, "admin");
+        // A demo receptionist (test lab, local test servers): nothing is bought, the number is only recorded.
+        if (isDemo(client.assistantId)) {
+          const picked = (await req.json()) as { phoneNumber?: unknown; confirm?: unknown };
+          const number = String(picked.phoneNumber ?? "");
+          checkBuyable(number);
+          if (picked.confirm !== true) throw new ValidationError("Confirm the purchase first.");
+          const withNumber = { ...client, phoneNumbers: [...new Set([...(client.phoneNumbers ?? []), number])], updatedAt: new Date().toISOString() };
+          await saveClient(withNumber);
+          if (singleAgency()) await settleRequests(client.id, number);
+          await audit(ctx, "number.buy", { number, demo: true }, { clientId: client.id });
+          return json({ order: { id: `demo-${number}`, status: "success", requirementsMet: true, phoneNumbers: [number], createdAt: withNumber.updatedAt }, ...(await numberState(ctx, withNumber)) }, 201);
+        }
         const order = await buyNumber(await voiceAppFor(client.assistantId), client.id, await req.json());
+        await audit(ctx, "number.buy", { number: order.phoneNumbers[0] ?? "" }, { clientId: client.id });
+        if (singleAgency() && order.phoneNumbers[0]) await settleRequests(client.id, order.phoneNumbers[0]);
         const state = await numberState(ctx, client);
         // A mobile that's live straight away also takes texts. Others can be added from the texts card.
         if (order.status === "success") {
           const fresh = (await getClient(client.id)) ?? client;
+          // Australian mobiles only: US numbers need 10DLC registration in Telnyx before they can text.
           for (const n of order.phoneNumbers.filter((p) => p.startsWith("+614"))) {
             await connectNumberForTexts(fresh, { phoneNumber: n }).catch((err) =>
               console.error(`[texting ${client.id}] ${n}`, err.message),
@@ -955,6 +1023,7 @@ async function route(req: Request, server?: { requestIP(r: Request): { address: 
 
 await migrate();
 await loadPublicUrl();
+await loadPlatformSettings();
 // The receptionists' booking tools call PUBLIC_URL. If it changed since the last
 // start (e.g. moving to the real domain), point Telnyx at the new address.
 if (process.env.PUBLIC_URL) syncAll().catch((err) => console.error("[startup sync]", err.message));

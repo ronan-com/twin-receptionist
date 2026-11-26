@@ -1,4 +1,5 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, Link, redirect } from "@tanstack/react-router";
+import { OTHER_BRAND } from "@/lib/app/product";
 import { AnimatePresence, motion, useReducedMotion, useScroll, useTransform } from "motion/react";
 import { useEffect, useRef, useState } from "react";
 
@@ -35,6 +36,11 @@ import tradesImg from "@/assets/industries/trades.jpg";
 // Ported from Answered's marketing homepage. Copy changes from the original are
 // deliberate (honest claims for this engine); see the area M report.
 export const Route = createFileRoute("/")({
+  // The marketing page is Answered's own. A copy sold under another name has its
+  // public site elsewhere, so "/" goes straight to sign-in.
+  beforeLoad: () => {
+    if (OTHER_BRAND) throw redirect({ to: "/login", replace: true });
+  },
   head: () => ({ meta: [{ title: "Answered — The AI Receptionist" }] }),
   component: Index,
 });

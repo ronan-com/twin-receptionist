@@ -167,7 +167,7 @@ export function ConnectPage({ token }: { token: string }) {
   }
 
   const who = info?.receptionistName || "your AI receptionist";
-  const signInReady = provider === "google" ? info?.signIn.google : provider === "microsoft" ? info?.signIn.microsoft : false;
+  const signInReady = provider === "google" ? info?.mailSignIn.google : provider === "microsoft" ? info?.mailSignIn.microsoft : false;
   const providerName = provider === "google" ? "Google" : "Microsoft";
   const errorNotice = error ? <Notice tone="danger">{error}</Notice> : null;
 

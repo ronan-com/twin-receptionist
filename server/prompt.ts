@@ -211,7 +211,9 @@ export function buildInstructions(s: Settings, booking: { minutes: number } | nu
     ? `\n- Never discuss or give opinions on: ${s.avoid.join("; ")}. If asked, say it's not something you can help with on the phone and offer to pass a message to the team.`
     : "";
   const closing = s.closing ? `\n- To finish the conversation, say something close to: "${s.closing}"` : "";
-  const extras = (s.collect ?? []).map((f) => COLLECT_ASK[f]);
+  // A childcare centre's tour confirmation goes to the parent's email, so it always asks for one.
+  const collect = s.industry === "childcare" && !(s.collect ?? []).includes("email") ? ["email" as const, ...(s.collect ?? [])] : (s.collect ?? []);
+  const extras = collect.map((f) => COLLECT_ASK[f]);
   const collectStep = extras.length ? `\n   Also ask for ${extras.join(", ")}, one at a time.` : "";
   const questions = s.questions?.length
     ? `\n   Then ask these questions, one at a time, and include the answers in the request:\n${s.questions.map((q) => `   - ${q}`).join("\n")}`
@@ -246,7 +248,7 @@ Taking a ${preset.booking} request
 1. Ask what they need, and match it to the list above.
 ${
     booking
-      ? `2. Ask which day suits. Call check_availability for that date (YYYY-MM-DD) before offering anything, then offer two or three of the times it returns. Never offer a time it didn't return. If the day is closed or full, say so and check the next day. Appointments are ${booking.minutes} minutes. On a call, say "one moment while I check" before looking.`
+      ? `2. Ask which day suits. Call check_availability for that date (YYYY-MM-DD) before offering anything, then offer two or three of the times it returns. Never offer a time it didn't return. If the day is closed or full, say so and check the next day. ${s.industry === "childcare" ? "Tours" : "Appointments"} are ${booking.minutes} minutes. On a call, say "one moment while I check" before looking.`
       : `2. Ask which day suits. Offer two times on that day inside opening hours. If they ask for a time when the business is closed, say so and offer the nearest open time.`
   }
 3. Ask for their full name. If it is unusual, ask them to spell it.
@@ -254,7 +256,7 @@ ${
 ${
     booking
       ? `5. Repeat it back once: what they need, day, time, name and number.
-6. Call book_appointment with the slot's exact start value. If it says booked, tell them it's confirmed for that day and time. If it says the time is gone, check availability again and offer other times. If it fails for any other reason, say you couldn't lock it in, call request_callback, and tell them the team will call to confirm.`
+6. Call book_appointment with the slot's exact start value${collect.includes("email") ? ", and their email if they gave one" : ""}. If it says booked, tell them it's confirmed for that day and time. If it says the time is gone, check availability again and offer other times. If it fails for any other reason, say you couldn't lock it in, call request_callback, and tell them the team will call to confirm.`
       : `5. Repeat the request back once: what they need, day, time, name and number.
 6. Tell them the request has been passed to the team, who will confirm it. Do not say it is confirmed or booked, because you cannot see the calendar.`
   }

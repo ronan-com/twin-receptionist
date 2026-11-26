@@ -1,0 +1,14 @@
+{
+  "name": "receptionist-installer",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "start": "bun src/server.ts",
+    "mock": "MOCK_DO=1 STATE_DIR=./.state-dev bun src/server.ts",
+    "e2e": "bun test/e2e.ts"
+  },
+  "dependencies": {
+    "nodemailer": "^6.9.16"
+  }
+}

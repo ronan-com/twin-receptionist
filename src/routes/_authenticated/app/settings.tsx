@@ -19,12 +19,13 @@ import { asBusinessHours, DAY_KEYS, DAY_LABELS, type Business, type BusinessHour
 import { useWorkspace } from "@/lib/app/workspace";
 import { mergeFormOnRefresh } from "@/lib/app/business-logic";
 import { TIMEZONES } from "@/lib/shared";
+import { named } from "@/lib/app/product";
 
 const SETTINGS_TABS = ["business", "hours", "branding", "account", "billing", "activity"] as const;
 type SettingsTab = (typeof SETTINGS_TABS)[number];
 
 export const Route = createFileRoute("/_authenticated/app/settings")({
-  head: () => ({ meta: [{ title: "Settings | Answered" }] }),
+  head: () => ({ meta: [{ title: named("Settings | Answered") }] }),
   validateSearch: (search: Record<string, unknown>): { tab?: SettingsTab } => {
     const t = String(search["tab"] ?? "");
     return SETTINGS_TABS.includes(t as SettingsTab) ? { tab: t as SettingsTab } : {};
@@ -33,7 +34,7 @@ export const Route = createFileRoute("/_authenticated/app/settings")({
 });
 
 // The industries our receptionist script knows (they round-trip through the server).
-const INDUSTRY_OPTIONS = ["Dental", "Healthcare", "Trades", "Salon & beauty", "Real estate", "Automotive", "Professional services", "Other"];
+const INDUSTRY_OPTIONS = ["Dental", "Healthcare", "Trades", "Salon & beauty", "Real estate", "Automotive", "Professional services", "Childcare", "Other"];
 
 interface BizForm {
   name: string;

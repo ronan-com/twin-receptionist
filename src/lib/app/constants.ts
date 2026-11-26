@@ -34,6 +34,7 @@ import type {
   MembershipRole,
   KnowledgeType,
 } from "./types";
+import { named } from "@/lib/app/product";
 
 export interface NavItem {
   to: string;
@@ -93,6 +94,7 @@ export const ADMIN_NAV: NavItem[] = [
   { to: "/admin/voices", label: "Voices", icon: AudioLines },
   { to: "/admin/phone-numbers", label: "Phone Numbers", icon: Phone },
   { to: "/admin/number-requests", label: "Number Requests", icon: PhoneIncoming },
+  { to: "/admin/connections", label: "Connections", icon: Plug },
   { to: "/admin/usage", label: "Usage", icon: CreditCard },
   { to: "/admin/test-lab", label: "Test Lab", icon: FlaskConical, platformOnly: true },
   { to: "/admin/system", label: "System / QA", icon: ClipboardCheck },
@@ -247,7 +249,7 @@ export const INTEGRATION_CATALOG: IntegrationDef[] = [
   { provider: "servicem8", name: "ServiceM8", category: "Field service", description: "Turn booked call-outs into ServiceM8 jobs automatically.", availability: "available", oauth: true },
   { provider: "xero", name: "Xero", category: "Accounting", description: "Match callers to Xero contacts and surface invoice questions.", availability: "available", oauth: true },
   { provider: "webhook", name: "Webhook / custom CRM", category: "Automation", description: "Send call, booking and lead events to any HTTPS endpoint.", availability: "available", oauth: false },
-  { provider: "zapier", name: "Zapier", category: "Automation", description: "Connect Answered to thousands of apps without code.", availability: "coming_soon", oauth: false },
+  { provider: "zapier", name: "Zapier", category: "Automation", description: named("Connect Answered to thousands of apps without code."), availability: "coming_soon", oauth: false },
   { provider: "cliniko", name: "Cliniko", category: "Calendar", description: "Practice management booking for allied health.", availability: "coming_soon", oauth: true },
 ];
 
@@ -297,4 +299,4 @@ export const TIMEZONES = [
   "America/Los_Angeles",
   "Asia/Singapore",
 ];
-export const INDUSTRIES = ["Dental", "Healthcare", "Trades", "Legal", "Accounting", "Real estate", "Salon & beauty", "Fitness", "Hospitality", "Automotive", "Property management", "Professional services", "Other"];
+export const INDUSTRIES = ["Dental", "Healthcare", "Trades", "Legal", "Accounting", "Real estate", "Salon & beauty", "Fitness", "Hospitality", "Automotive", "Property management", "Professional services", "Childcare", "Other"];

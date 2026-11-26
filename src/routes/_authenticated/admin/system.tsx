@@ -17,9 +17,10 @@ import { fmtNumber, fmtRelative, fmtSmartDate, humanize, truncate } from "@/lib/
 import { adminBusinessesQuery, adminSystemQuery } from "@/lib/app/queries";
 import { logIncident, resolveIncident, type AdminSystem, type ConsoleCall, type ConsoleIncident } from "@/lib/api/console";
 import { BizCell, CallSheet, useConsole } from "./-shared";
+import { named } from "@/lib/app/product";
 
 export const Route = createFileRoute("/_authenticated/admin/system")({
-  head: () => ({ meta: [{ title: "System / QA — Answered admin" }] }),
+  head: () => ({ meta: [{ title: named("System / QA — Answered admin") }] }),
   component: AdminSystemPage,
 });
 

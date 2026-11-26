@@ -11,12 +11,14 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AuthenticatedRouteRouteImport } from './routes/_authenticated/route'
+import { Route as GuideRouteImport } from './routes/guide'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as ResetPasswordRouteImport } from './routes/reset-password'
 import { Route as SignupRouteImport } from './routes/signup'
 import { Route as AuthenticatedAdminRouteRouteImport } from './routes/_authenticated/admin/route'
 import { Route as AuthenticatedAppRouteRouteImport } from './routes/_authenticated/app/route'
 import { Route as AuthenticatedDashboardRouteImport } from './routes/_authenticated/dashboard'
+import { Route as AuthenticatedSetupRouteImport } from './routes/_authenticated/setup'
 import { Route as ConnectTokenRouteImport } from './routes/connect.$token'
 import { Route as InviteTokenRouteImport } from './routes/invite.$token'
 import { Route as ResetTokenRouteImport } from './routes/reset.$token'
@@ -26,6 +28,7 @@ import { Route as AuthenticatedAdminAuditRouteImport } from './routes/_authentic
 import { Route as AuthenticatedAdminBillingRouteImport } from './routes/_authenticated/admin/billing'
 import { Route as AuthenticatedAdminBrandingRouteImport } from './routes/_authenticated/admin/branding'
 import { Route as AuthenticatedAdminCallsRouteImport } from './routes/_authenticated/admin/calls'
+import { Route as AuthenticatedAdminConnectionsRouteImport } from './routes/_authenticated/admin/connections'
 import { Route as AuthenticatedAdminIntegrationsRouteImport } from './routes/_authenticated/admin/integrations'
 import { Route as AuthenticatedAdminNumberRequestsRouteImport } from './routes/_authenticated/admin/number-requests'
 import { Route as AuthenticatedAdminPhoneNumbersRouteImport } from './routes/_authenticated/admin/phone-numbers'
@@ -61,6 +64,11 @@ const AuthenticatedRouteRoute = AuthenticatedRouteRouteImport.update({
   id: '/_authenticated',
   getParentRoute: () => rootRouteImport,
 } as any)
+const GuideRoute = GuideRouteImport.update({
+  id: '/guide',
+  path: '/guide',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const LoginRoute = LoginRouteImport.update({
   id: '/login',
   path: '/login',
@@ -89,6 +97,11 @@ const AuthenticatedAppRouteRoute = AuthenticatedAppRouteRouteImport.update({
 const AuthenticatedDashboardRoute = AuthenticatedDashboardRouteImport.update({
   id: '/dashboard',
   path: '/dashboard',
+  getParentRoute: () => AuthenticatedRouteRoute,
+} as any)
+const AuthenticatedSetupRoute = AuthenticatedSetupRouteImport.update({
+  id: '/setup',
+  path: '/setup',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
 const ConnectTokenRoute = ConnectTokenRouteImport.update({
@@ -139,6 +152,12 @@ const AuthenticatedAdminCallsRoute = AuthenticatedAdminCallsRouteImport.update({
   path: '/calls',
   getParentRoute: () => AuthenticatedAdminRouteRoute,
 } as any)
+const AuthenticatedAdminConnectionsRoute =
+  AuthenticatedAdminConnectionsRouteImport.update({
+    id: '/connections',
+    path: '/connections',
+    getParentRoute: () => AuthenticatedAdminRouteRoute,
+  } as any)
 const AuthenticatedAdminIntegrationsRoute =
   AuthenticatedAdminIntegrationsRouteImport.update({
     id: '/integrations',
@@ -287,12 +306,14 @@ const AuthenticatedAdminClientsNewRoute =
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/guide': typeof GuideRoute
   '/login': typeof LoginRoute
   '/reset-password': typeof ResetPasswordRoute
   '/signup': typeof SignupRoute
   '/admin': typeof AuthenticatedAdminRouteRouteWithChildren
   '/app': typeof AuthenticatedAppRouteRouteWithChildren
   '/dashboard': typeof AuthenticatedDashboardRoute
+  '/setup': typeof AuthenticatedSetupRoute
   '/connect/$token': typeof ConnectTokenRoute
   '/invite/$token': typeof InviteTokenRoute
   '/reset/$token': typeof ResetTokenRoute
@@ -301,6 +322,7 @@ export interface FileRoutesByFullPath {
   '/admin/billing': typeof AuthenticatedAdminBillingRoute
   '/admin/branding': typeof AuthenticatedAdminBrandingRoute
   '/admin/calls': typeof AuthenticatedAdminCallsRoute
+  '/admin/connections': typeof AuthenticatedAdminConnectionsRoute
   '/admin/integrations': typeof AuthenticatedAdminIntegrationsRoute
   '/admin/number-requests': typeof AuthenticatedAdminNumberRequestsRoute
   '/admin/phone-numbers': typeof AuthenticatedAdminPhoneNumbersRoute
@@ -330,10 +352,12 @@ export interface FileRoutesByFullPath {
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/guide': typeof GuideRoute
   '/login': typeof LoginRoute
   '/reset-password': typeof ResetPasswordRoute
   '/signup': typeof SignupRoute
   '/dashboard': typeof AuthenticatedDashboardRoute
+  '/setup': typeof AuthenticatedSetupRoute
   '/connect/$token': typeof ConnectTokenRoute
   '/invite/$token': typeof InviteTokenRoute
   '/reset/$token': typeof ResetTokenRoute
@@ -342,6 +366,7 @@ export interface FileRoutesByTo {
   '/admin/billing': typeof AuthenticatedAdminBillingRoute
   '/admin/branding': typeof AuthenticatedAdminBrandingRoute
   '/admin/calls': typeof AuthenticatedAdminCallsRoute
+  '/admin/connections': typeof AuthenticatedAdminConnectionsRoute
   '/admin/integrations': typeof AuthenticatedAdminIntegrationsRoute
   '/admin/number-requests': typeof AuthenticatedAdminNumberRequestsRoute
   '/admin/phone-numbers': typeof AuthenticatedAdminPhoneNumbersRoute
@@ -373,12 +398,14 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/_authenticated': typeof AuthenticatedRouteRouteWithChildren
+  '/guide': typeof GuideRoute
   '/login': typeof LoginRoute
   '/reset-password': typeof ResetPasswordRoute
   '/signup': typeof SignupRoute
   '/_authenticated/admin': typeof AuthenticatedAdminRouteRouteWithChildren
   '/_authenticated/app': typeof AuthenticatedAppRouteRouteWithChildren
   '/_authenticated/dashboard': typeof AuthenticatedDashboardRoute
+  '/_authenticated/setup': typeof AuthenticatedSetupRoute
   '/connect/$token': typeof ConnectTokenRoute
   '/invite/$token': typeof InviteTokenRoute
   '/reset/$token': typeof ResetTokenRoute
@@ -387,6 +414,7 @@ export interface FileRoutesById {
   '/_authenticated/admin/billing': typeof AuthenticatedAdminBillingRoute
   '/_authenticated/admin/branding': typeof AuthenticatedAdminBrandingRoute
   '/_authenticated/admin/calls': typeof AuthenticatedAdminCallsRoute
+  '/_authenticated/admin/connections': typeof AuthenticatedAdminConnectionsRoute
   '/_authenticated/admin/integrations': typeof AuthenticatedAdminIntegrationsRoute
   '/_authenticated/admin/number-requests': typeof AuthenticatedAdminNumberRequestsRoute
   '/_authenticated/admin/phone-numbers': typeof AuthenticatedAdminPhoneNumbersRoute
@@ -418,12 +446,14 @@ export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
+    | '/guide'
     | '/login'
     | '/reset-password'
     | '/signup'
     | '/admin'
     | '/app'
     | '/dashboard'
+    | '/setup'
     | '/connect/$token'
     | '/invite/$token'
     | '/reset/$token'
@@ -432,6 +462,7 @@ export interface FileRouteTypes {
     | '/admin/billing'
     | '/admin/branding'
     | '/admin/calls'
+    | '/admin/connections'
     | '/admin/integrations'
     | '/admin/number-requests'
     | '/admin/phone-numbers'
@@ -461,10 +492,12 @@ export interface FileRouteTypes {
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
+    | '/guide'
     | '/login'
     | '/reset-password'
     | '/signup'
     | '/dashboard'
+    | '/setup'
     | '/connect/$token'
     | '/invite/$token'
     | '/reset/$token'
@@ -473,6 +506,7 @@ export interface FileRouteTypes {
     | '/admin/billing'
     | '/admin/branding'
     | '/admin/calls'
+    | '/admin/connections'
     | '/admin/integrations'
     | '/admin/number-requests'
     | '/admin/phone-numbers'
@@ -503,12 +537,14 @@ export interface FileRouteTypes {
     | '__root__'
     | '/'
     | '/_authenticated'
+    | '/guide'
     | '/login'
     | '/reset-password'
     | '/signup'
     | '/_authenticated/admin'
     | '/_authenticated/app'
     | '/_authenticated/dashboard'
+    | '/_authenticated/setup'
     | '/connect/$token'
     | '/invite/$token'
     | '/reset/$token'
@@ -517,6 +553,7 @@ export interface FileRouteTypes {
     | '/_authenticated/admin/billing'
     | '/_authenticated/admin/branding'
     | '/_authenticated/admin/calls'
+    | '/_authenticated/admin/connections'
     | '/_authenticated/admin/integrations'
     | '/_authenticated/admin/number-requests'
     | '/_authenticated/admin/phone-numbers'
@@ -548,6 +585,7 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AuthenticatedRouteRoute: typeof AuthenticatedRouteRouteWithChildren
+  GuideRoute: typeof GuideRoute
   LoginRoute: typeof LoginRoute
   ResetPasswordRoute: typeof ResetPasswordRoute
   SignupRoute: typeof SignupRoute
@@ -570,6 +608,13 @@ declare module '@tanstack/react-router' {
       path: ''
       fullPath: '/'
       preLoaderRoute: typeof AuthenticatedRouteRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/guide': {
+      id: '/guide'
+      path: '/guide'
+      fullPath: '/guide'
+      preLoaderRoute: typeof GuideRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/login': {
@@ -612,6 +657,13 @@ declare module '@tanstack/react-router' {
       path: '/dashboard'
       fullPath: '/dashboard'
       preLoaderRoute: typeof AuthenticatedDashboardRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/setup': {
+      id: '/_authenticated/setup'
+      path: '/setup'
+      fullPath: '/setup'
+      preLoaderRoute: typeof AuthenticatedSetupRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
     '/connect/$token': {
@@ -675,6 +727,13 @@ declare module '@tanstack/react-router' {
       path: '/calls'
       fullPath: '/admin/calls'
       preLoaderRoute: typeof AuthenticatedAdminCallsRouteImport
+      parentRoute: typeof AuthenticatedAdminRouteRoute
+    }
+    '/_authenticated/admin/connections': {
+      id: '/_authenticated/admin/connections'
+      path: '/connections'
+      fullPath: '/admin/connections'
+      preLoaderRoute: typeof AuthenticatedAdminConnectionsRouteImport
       parentRoute: typeof AuthenticatedAdminRouteRoute
     }
     '/_authenticated/admin/integrations': {
@@ -861,6 +920,7 @@ interface AuthenticatedAdminRouteRouteChildren {
   AuthenticatedAdminBillingRoute: typeof AuthenticatedAdminBillingRoute
   AuthenticatedAdminBrandingRoute: typeof AuthenticatedAdminBrandingRoute
   AuthenticatedAdminCallsRoute: typeof AuthenticatedAdminCallsRoute
+  AuthenticatedAdminConnectionsRoute: typeof AuthenticatedAdminConnectionsRoute
   AuthenticatedAdminIntegrationsRoute: typeof AuthenticatedAdminIntegrationsRoute
   AuthenticatedAdminNumberRequestsRoute: typeof AuthenticatedAdminNumberRequestsRoute
   AuthenticatedAdminPhoneNumbersRoute: typeof AuthenticatedAdminPhoneNumbersRoute
@@ -883,6 +943,7 @@ const AuthenticatedAdminRouteRouteChildren: AuthenticatedAdminRouteRouteChildren
     AuthenticatedAdminBillingRoute: AuthenticatedAdminBillingRoute,
     AuthenticatedAdminBrandingRoute: AuthenticatedAdminBrandingRoute,
     AuthenticatedAdminCallsRoute: AuthenticatedAdminCallsRoute,
+    AuthenticatedAdminConnectionsRoute: AuthenticatedAdminConnectionsRoute,
     AuthenticatedAdminIntegrationsRoute: AuthenticatedAdminIntegrationsRoute,
     AuthenticatedAdminNumberRequestsRoute:
       AuthenticatedAdminNumberRequestsRoute,
@@ -946,12 +1007,14 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedAdminRouteRoute: typeof AuthenticatedAdminRouteRouteWithChildren
   AuthenticatedAppRouteRoute: typeof AuthenticatedAppRouteRouteWithChildren
   AuthenticatedDashboardRoute: typeof AuthenticatedDashboardRoute
+  AuthenticatedSetupRoute: typeof AuthenticatedSetupRoute
 }
 
 const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedAdminRouteRoute: AuthenticatedAdminRouteRouteWithChildren,
   AuthenticatedAppRouteRoute: AuthenticatedAppRouteRouteWithChildren,
   AuthenticatedDashboardRoute: AuthenticatedDashboardRoute,
+  AuthenticatedSetupRoute: AuthenticatedSetupRoute,
 }
 
 const AuthenticatedRouteRouteWithChildren =
@@ -960,6 +1023,7 @@ const AuthenticatedRouteRouteWithChildren =
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AuthenticatedRouteRoute: AuthenticatedRouteRouteWithChildren,
+  GuideRoute: GuideRoute,
   LoginRoute: LoginRoute,
   ResetPasswordRoute: ResetPasswordRoute,
   SignupRoute: SignupRoute,

@@ -1,6 +1,6 @@
 import type { ResolvedRange } from "../app/date-range";
 import type { AuditRow, CallListRow, CallOutcome, CallStatus } from "../app/types";
-import type { AdminNumberRequest, Agency, AvailableNumber, Brand, Settings, TeamState, TestLogin, Voice as TwinVoice } from "../shared";
+import type { AdminNumberRequest, Agency, AvailableNumber, Brand, NumberCountry, NumberType, Settings, TeamState, TestLogin, Voice as TwinVoice } from "../shared";
 import { api, qs } from "./base";
 
 // The console (/admin) data layer (area C). Server side: server/routes/console.ts
@@ -350,6 +350,8 @@ export const shareBusiness = (id: string, email: string, role: "manager" | "view
   api.post<{ url: string; emailed: boolean; added: boolean; members: ConsolePerson[]; invitations: ConsoleInvite[] }>(`/api/console/businesses/${id}/members`, { email, role });
 export const unshareBusiness = (id: string, userId: string) => api.del<{ members: ConsolePerson[]; invitations: ConsoleInvite[] }>(`/api/console/businesses/${id}/members/${userId}`);
 export const revokeBusinessInvite = (id: string, inviteId: string) => api.del<{ members: ConsolePerson[]; invitations: ConsoleInvite[] }>(`/api/console/businesses/${id}/invites/${inviteId}`);
+/** An agency on its own phone account buys a number for a receptionist (charged to its account). */
+export const buyNumberFor = (id: string, phoneNumber: string) => api.post<{ order: { id: string; status: string; phoneNumbers: string[] } }>(`/api/clients/${id}/numbers`, { phoneNumber, confirm: true });
 export const requestNumberFor = (id: string, type: "local" | "mobile", note: string) => api.post(`/api/console/businesses/${id}/number-requests`, { type, note });
 export const resolveIncident = (id: string) => api.post<AdminSystem>(`/api/console/incidents/${id}/resolve`);
 export const logIncident = (input: { title: string; details?: string; severity?: string; client_id?: string }) => api.post<AdminSystem>("/api/console/incidents", input);
@@ -371,7 +373,7 @@ export const platformApi = {
   numberRequests: () => api.get<{ requests: AdminNumberRequest[]; pending: number }>("/api/admin/number-requests"),
   fulfilRequest: (id: string, phoneNumber: string) => api.post<{ requests: AdminNumberRequest[]; pending: number }>(`/api/admin/number-requests/${id}/fulfil`, { phoneNumber, confirm: true }),
   declineRequest: (id: string, reason: string) => api.post<{ requests: AdminNumberRequest[]; pending: number }>(`/api/admin/number-requests/${id}/decline`, { reason }),
-  availableNumbers: async (type: "local" | "mobile") => (await api.get<{ numbers: AvailableNumber[] }>(`/api/numbers/available${qs({ type })}`)).numbers,
+  availableNumbers: async (type: NumberType, country: NumberCountry = "AU") => (await api.get<{ numbers: AvailableNumber[] }>(`/api/numbers/available${qs({ type, country })}`)).numbers,
   viewAs: (orgId: string, clientId?: string) => api.post("/api/admin/view-as", { orgId, clientId }),
   exitView: () => api.del("/api/admin/view-as"),
   sandbox: async () => (await api.get<{ orgId: string | null }>("/api/admin/sandbox")).orgId,

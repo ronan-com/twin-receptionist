@@ -1,0 +1,41 @@
+# Runs on the small server in /opt/downloads (copy this folder's parent there).
+#   cd /opt/downloads/deploy && docker compose up -d --build
+# Settings come from deploy/.env (see .env.example; SETUP_SECRET_KEY is required). Buyers,
+# setups, encrypted secrets and the published server bundles live in the downloads-data volume.
+services:
+  downloads:
+    build: { context: .. }
+    image: download-site:latest
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      HOST: 0.0.0.0
+      PORT: "4500"
+      DATA_DIR: /data
+      TRUST_PROXY: "1"
+    volumes:
+      - downloads-data:/data
+      - ./incoming:/incoming:ro   # drop selfhost-bundle.tgz here, then run admin.ts publish /incoming/<file> <version>
+    expose: ["4500"]
+    read_only: true
+    tmpfs: [/tmp]
+    security_opt: [no-new-privileges:true]
+    logging: { driver: json-file, options: { max-size: 10m, max-file: "3" } }
+
+  caddy:
+    image: caddy:2.8.4
+    restart: unless-stopped
+    ports: ["80:80", "443:443", "443:443/udp"]
+    environment:
+      SITE_HOST: ${SITE_HOST}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on: [downloads]
+    logging: { driver: json-file, options: { max-size: 10m, max-file: "3" } }
+
+volumes:
+  downloads-data:
+  caddy-data:
+  caddy-config:

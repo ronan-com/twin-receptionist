@@ -1,5 +1,5 @@
 import { createHmac } from "node:crypto";
-import { formatNumber, type BookingRequest, type Business } from "../src/lib/shared";
+import { formatNumber, industry, type BookingRequest, type Business } from "../src/lib/shared";
 import { sendAccountEmail } from "./mailer";
 import { isPublicHost } from "./net";
 import { ValidationError } from "./prompt";
@@ -40,17 +40,52 @@ export function checkEmailAddress(value: unknown): string {
   return email;
 }
 
+// "an appointment", "a centre tour": what this kind of business calls a booking.
+function aBooking(client: Business): string {
+  const what = industry(client.settings.industry).booking;
+  return `${/^[aeiou]/i.test(what) ? "an" : "a"} ${what}`;
+}
+
+const whenText = (client: Business, r: BookingRequest) =>
+  new Date(r.start).toLocaleString("en-AU", { timeZone: client.settings.timezone, weekday: "long", day: "numeric", month: "long", hour: "numeric", minute: "2-digit" });
+
+/**
+ * The caller's own confirmation of a booking, sent to the email they gave on the
+ * call. Plain facts only: when, where, and who to ring to change it.
+ */
+export async function confirmToCaller(client: Business, r: BookingRequest): Promise<boolean> {
+  if (r.kind !== "booking" || r.status !== "booked" || !r.email) return false;
+  const s = client.settings;
+  const what = industry(s.industry).booking;
+  const number = client.phoneNumbers?.[0];
+  const lines = [
+    `Hi ${r.name.split(" ")[0] || "there"},`,
+    "",
+    `Your ${what} at ${s.businessName} is booked.`,
+    "",
+    `When:   ${whenText(client, r)}`,
+    ...(s.address ? [`Where:  ${s.address}`] : []),
+    ...(r.service ? [`For:    ${r.service}`] : []),
+    "",
+    number ? `To change or cancel, call us on ${formatNumber(number)}.` : "To change or cancel, please call us.",
+    "",
+    s.businessName,
+  ];
+  return sendAccountEmail(r.email, `Your ${what} at ${s.businessName}: ${whenText(client, r)}`, lines.join("\n"));
+}
+
 function emailText(client: Business, r: BookingRequest): { subject: string; text: string } {
   const who = r.name || "Someone";
   const how = r.channel === "sms" ? "by text" : r.channel === "email" ? "by email" : "on a call";
   const lines =
     r.kind === "booking"
       ? [
-          `${client.settings.receptionistName || "Your AI receptionist"} booked an appointment ${how}.`,
+          `${client.settings.receptionistName || "Your AI receptionist"} booked ${aBooking(client)} ${how}.`,
           "",
-          `When:     ${new Date(r.start).toLocaleString("en-AU", { timeZone: client.settings.timezone, weekday: "long", day: "numeric", month: "long", hour: "numeric", minute: "2-digit" })}`,
+          `When:     ${whenText(client, r)}`,
           `Name:     ${who}`,
           `Phone:    ${formatNumber(r.phone)}`,
+          ...(r.email ? [`Email:    ${r.email}`] : []),
           `Service:  ${r.service || "not given"}`,
           ...(r.note ? [`Notes:    ${r.note}`] : []),
         ]

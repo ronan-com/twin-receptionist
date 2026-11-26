@@ -1,4 +1,4 @@
-import type { AvailableNumber, ConnectedNumber, NumberOrder, NumberType } from "../src/lib/shared";
+import { countryOfNumber, type AvailableNumber, type ConnectedNumber, type NumberCountry, type NumberOrder, type NumberType } from "../src/lib/shared";
 import { ValidationError } from "./prompt";
 import { TelnyxError, telnyx } from "./telnyx";
 
@@ -11,14 +11,36 @@ export async function voiceAppFor(assistantId: string): Promise<string> {
   return String(id);
 }
 
-export async function availableNumbers(type: NumberType): Promise<AvailableNumber[]> {
-  const query = `filter[country_code]=AU&filter[phone_number_type]=${type}&filter[limit]=8`;
+// The number types that can be searched in each country. Telnyx's phone_number_type
+// filter takes local, toll_free, mobile, national or shared_cost; the US has no
+// "mobile" numbers to buy.
+const TYPES: Record<NumberCountry, NumberType[]> = { AU: ["mobile", "local"], US: ["local", "toll_free"] };
+
+/** Reads ?country= and ?type= from a search: Australia unless "US"; a type that country has. */
+export function searchFor(country: unknown, type: unknown): { country: NumberCountry; type: NumberType } {
+  const c: NumberCountry = country === "US" ? "US" : "AU";
+  if (c === "AU") return { country: c, type: type === "mobile" ? "mobile" : "local" };
+  return { country: c, type: type === "toll_free" ? "toll_free" : "local" };
+}
+
+export const searchableTypes = (country: NumberCountry) => TYPES[country];
+
+/** Checks a picked number is one of ours to buy: +61 and 9 digits, or +1 and 10. */
+export function checkBuyable(phoneNumber: string): NumberCountry {
+  const country = countryOfNumber(phoneNumber);
+  if (!country) throw new ValidationError("Choose an Australian or US number from the list.");
+  return country;
+}
+
+export async function availableNumbers(type: NumberType, country: NumberCountry = "AU"): Promise<AvailableNumber[]> {
+  const query = `filter[country_code]=${country}&filter[phone_number_type]=${type}&filter[limit]=8`;
   const res = await telnyx<{ data?: any[] }>("GET", `/available_phone_numbers?${query}`);
   return (res.data ?? []).map((n) => {
     const features: string[] = (n.features ?? []).map((f: any) => f.name);
     const cost = n.cost_information ?? {};
     return {
       phoneNumber: n.phone_number,
+      country,
       type,
       monthly: Number(cost.monthly_cost ?? 0),
       upfront: Number(cost.upfront_cost ?? 0),
@@ -26,6 +48,36 @@ export async function availableNumbers(type: NumberType): Promise<AvailableNumbe
       sms: features.includes("sms"),
     };
   });
+}
+
+// Stand-ins for local test servers, where the phone account is a pretend one.
+// The US ones are in 555-0100 to 0199, which is kept for fiction and never rings anyone.
+export function sampleNumbers(type: NumberType, country: NumberCountry = "AU"): AvailableNumber[] {
+  if (country === "US") {
+    const local = ["+12125550101", "+13125550102", "+14155550103", "+15125550104"];
+    const tollFree = ["+18885550101", "+18775550102", "+18665550103", "+18555550104"];
+    return (type === "toll_free" ? tollFree : local).map((phoneNumber) => ({
+      phoneNumber,
+      country,
+      type,
+      monthly: type === "toll_free" ? 2 : 1,
+      upfront: 0,
+      currency: "USD",
+      // US numbers can text only after 10DLC (or toll-free) registration in Telnyx.
+      sms: false,
+    }));
+  }
+  const mobile = ["+61480011201", "+61480011202", "+61480011203", "+61480011204"];
+  const local = ["+61255501201", "+61355501202", "+61755501203", "+61855501204"];
+  return (type === "mobile" ? mobile : local).map((phoneNumber) => ({
+    phoneNumber,
+    country,
+    type,
+    monthly: type === "mobile" ? 6 : 2,
+    upfront: 0,
+    currency: "USD",
+    sms: type === "mobile",
+  }));
 }
 
 export async function connectedNumbers(voiceAppId: string): Promise<ConnectedNumber[]> {
@@ -64,7 +116,7 @@ export async function openOrders(clientId: string): Promise<NumberOrder[]> {
 export async function buyNumber(voiceAppId: string, clientId: string, input: unknown): Promise<NumberOrder> {
   const body = (input ?? {}) as { phoneNumber?: unknown; confirm?: unknown };
   const phoneNumber = String(body.phoneNumber ?? "");
-  if (!/^\+61\d{9}$/.test(phoneNumber)) throw new ValidationError("Choose an Australian number from the list.");
+  checkBuyable(phoneNumber);
   if (body.confirm !== true) throw new ValidationError("Confirm the purchase first.");
 
   const res = await telnyx<{ data?: any }>("POST", "/number_orders", {

@@ -8,6 +8,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { adminNavFor, isPlatformOnlyPath } from "@/lib/app/constants";
 import { adminOverviewCountsQuery } from "@/lib/app/queries";
 import { useWorkspace } from "@/lib/app/workspace";
+import { named } from "@/lib/app/product";
 
 // The console. Variant "platform" (the platform admin: everything) or "agency"
 // (agency staff: their own agency). Business users are sent to their workspace,
@@ -16,10 +17,14 @@ export const Route = createFileRoute("/_authenticated/admin")({
   beforeLoad: ({ context, location }) => {
     const s = context.session;
     if (!s.console && !s.user.platformAdmin) throw redirect({ to: "/app", replace: true });
+    // An agency that brings its own phone account connects it before anything else.
+    if (s.console === "agency" && s.telnyx === "none" && !s.viewing && !s.user.platformAdmin) throw redirect({ to: "/setup", replace: true });
     if (!s.user.platformAdmin && isPlatformOnlyPath(location.pathname)) throw redirect({ to: "/admin", replace: true });
+    // One agency per server (SINGLE_AGENCY): numbers are bought from each client's page, there's no request queue.
+    if (s.singleAgency && location.pathname.startsWith("/admin/number-requests")) throw redirect({ to: "/admin", replace: true });
   },
   head: () => ({
-    meta: [{ title: "Admin console — Answered" }, { name: "robots", content: "noindex" }],
+    meta: [{ title: named("Admin console — Answered") }, { name: "robots", content: "noindex" }],
   }),
   component: AdminLayout,
 });
@@ -35,10 +40,10 @@ function AdminLayout() {
     const out: { title: string; description?: string; tone?: "info" | "warning" | "danger"; to?: string }[] = [];
     const c = countsQ.data;
     if (c?.openIncidents) out.push({ title: `${c.openIncidents} open incident${c.openIncidents === 1 ? "" : "s"}`, description: "Review in System / QA.", tone: "danger", to: "/admin/system" });
-    if (c?.pendingNumberRequests)
+    if (c?.pendingNumberRequests && !ws.session?.singleAgency)
       out.push({ title: `${c.pendingNumberRequests} number request${c.pendingNumberRequests === 1 ? "" : "s"} waiting`, tone: "warning", to: "/admin/number-requests" });
     return out;
-  }, [countsQ.data]);
+  }, [countsQ.data, ws.session?.singleAgency]);
 
   if (ws.loading) {
     return (
@@ -76,7 +81,7 @@ function AdminLayout() {
 
   return (
     <AppShell
-      nav={adminNavFor(variant)}
+      nav={adminNavFor(variant).filter((n) => !(variant === "agency" && (ws.session?.telnyx === "own" || ws.session?.singleAgency) && n.to === "/admin/number-requests"))}
       variant="admin"
       brandTo="/admin"
       sidebarHeader={

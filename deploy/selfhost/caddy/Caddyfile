@@ -1,0 +1,13 @@
+# https certificates for $DOMAIN come from Let's Encrypt automatically and renew on their own.
+# CADDY_TLS is empty in production (testing only: "tls internal" uses Caddy's own local CA).
+{$DOMAIN} {
+	{$CADDY_TLS}
+	encode zstd gzip
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options nosniff
+		Referrer-Policy strict-origin-when-cross-origin
+		-Server
+	}
+	reverse_proxy app:8791
+}

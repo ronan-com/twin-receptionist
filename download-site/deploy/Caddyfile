@@ -1,0 +1,14 @@
+# https certificate comes from Let's Encrypt automatically for SITE_HOST.
+{$SITE_HOST} {
+	encode zstd gzip
+	# Forms are small; new servers post install output in chunks of up to 60 KB.
+	request_body {
+		max_size 128KB
+	}
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options nosniff
+		-Server
+	}
+	reverse_proxy downloads:4500
+}

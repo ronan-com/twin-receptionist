@@ -16,9 +16,10 @@ import { fmtDate, fmtRelative } from "@/lib/app/format";
 import { teamQuery } from "@/lib/app/queries";
 import { cancelInvite, changeMemberRole, inviteMember, removeMember, resendInvite, type InviteResult, type TeamData, type TeamMember } from "@/lib/api/manage";
 import { useWorkspace } from "@/lib/app/workspace";
+import { named } from "@/lib/app/product";
 
 export const Route = createFileRoute("/_authenticated/app/team")({
-  head: () => ({ meta: [{ title: "Team — Answered" }] }),
+  head: () => ({ meta: [{ title: named("Team — Answered") }] }),
   component: TeamPage,
 });
 

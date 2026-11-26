@@ -23,7 +23,9 @@ export function useConsole() {
   const readOnly = Boolean(ws.viewing);
   // Pausing, sharing, branding, team: agency owners/admins and the platform admin.
   const canManage = !readOnly && (ws.isPlatformAdmin || role === "owner" || role === "admin");
-  return { ws, platform, readOnly, canManage, role, orgName: ws.org?.name ?? "" };
+  // SINGLE_AGENCY: the server is this one agency, on its own Telnyx key (no platform, no number requests).
+  const single = Boolean(ws.session?.singleAgency);
+  return { ws, platform, readOnly, canManage, role, single, orgName: ws.org?.name ?? "" };
 }
 
 export const READ_ONLY_HINT = "You're viewing as someone else, so this is read only.";

@@ -1,0 +1,7 @@
+node_modules
+test
+test-shots
+mock-droplet
+out
+.state*
+*.md

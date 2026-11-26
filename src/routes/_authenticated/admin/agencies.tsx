@@ -15,9 +15,10 @@ import { fmtDate, fmtNumber } from "@/lib/app/format";
 import { platformApi } from "@/lib/api/console";
 import type { Agency } from "@/lib/shared";
 import { LinkBox, useConsole } from "./-shared";
+import { named } from "@/lib/app/product";
 
 export const Route = createFileRoute("/_authenticated/admin/agencies")({
-  head: () => ({ meta: [{ title: "Agencies — Answered admin" }] }),
+  head: () => ({ meta: [{ title: named("Agencies — Answered admin") }] }),
   component: AgenciesPage,
 });
 

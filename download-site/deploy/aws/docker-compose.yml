@@ -1,0 +1,35 @@
+# The setup site in production, on the shared AWS server (next to the main Twin stack).
+# Its own container (setup-site) and data volume; no published ports: the server's main
+# Caddy reaches it over the twin_default network as setup-site:4500 (see setupsite.caddy).
+# Deployed by download-site/deploy/aws/deploy.sh; settings come from SSM /setupsite/env/*.
+name: setupsite
+services:
+  site:
+    build: { context: ./src }
+    image: setup-site:latest
+    container_name: setup-site
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      HOST: 0.0.0.0
+      PORT: "4500"
+      DATA_DIR: /data
+      TRUST_PROXY: "1"
+      NODE_ENV: production
+    volumes:
+      - setup-data:/data                 # site.db (buyers, setups, encrypted keys) + published bundles + backups
+      - ./incoming:/incoming:ro          # app bundles to publish (deploy.sh BUNDLE=...)
+    expose: ["4500"]
+    read_only: true
+    tmpfs: [/tmp]
+    security_opt: [no-new-privileges:true]
+    networks: [twin]
+    logging: { driver: json-file, options: { max-size: 10m, max-file: "5" } }
+
+networks:
+  twin:
+    external: true
+    name: twin_default
+
+volumes:
+  setup-data:

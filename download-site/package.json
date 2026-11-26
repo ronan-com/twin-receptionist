@@ -1,0 +1,14 @@
+{
+  "name": "setup-site",
+  "private": true,
+  "type": "module",
+  "description": "Hosted setup wizard: buyers connect their accounts and it builds their own server.",
+  "scripts": {
+    "start": "bun server.ts",
+    "mock": "bun mock/serve.ts",
+    "e2e": "bash test/run-e2e.sh"
+  },
+  "dependencies": {
+    "nodemailer": "^6.9.16"
+  }
+}

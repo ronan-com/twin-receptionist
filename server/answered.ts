@@ -20,6 +20,7 @@ const FROM_ANSWERED: Record<string, IndustryKey> = {
   Automotive: "auto",
   "Property management": "property",
   "Professional services": "professional",
+  Childcare: "childcare",
   Other: "other",
 };
 const TO_ANSWERED: Record<IndustryKey, string> = {
@@ -30,6 +31,7 @@ const TO_ANSWERED: Record<IndustryKey, string> = {
   property: "Real estate",
   auto: "Automotive",
   professional: "Professional services",
+  childcare: "Childcare",
   other: "Other",
 };
 

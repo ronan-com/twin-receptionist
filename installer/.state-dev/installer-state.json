@@ -1,0 +1,8 @@
+{
+  "step": "domain",
+  "brand": {
+    "productName": "Bob's Reception",
+    "ownerEmail": "owner@example.com",
+    "ownPhoneAccount": false
+  }
+}

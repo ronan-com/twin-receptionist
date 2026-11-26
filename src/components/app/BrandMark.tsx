@@ -1,5 +1,6 @@
 import { Link } from "@tanstack/react-router";
 import { cn } from "@/lib/utils";
+import { PRODUCT } from "@/lib/app/product";
 
 const BARS = [3, 6, 10, 14, 10, 6, 3];
 
@@ -37,7 +38,7 @@ export function BrandMark({
     <Link to={to} className={cn("group inline-flex items-center gap-2.5 outline-none", className)}>
       <BrandWave className="h-[14px]" />
       <span className={cn("font-semibold tracking-[-0.02em] text-ink", text)}>
-        Answered
+        {PRODUCT}
         {suffix ? <span className="ml-1.5 font-medium text-ink-muted/70">{suffix}</span> : null}
       </span>
     </Link>

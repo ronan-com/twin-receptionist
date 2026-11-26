@@ -26,12 +26,13 @@ import {
   type Settings,
 } from "@/lib/shared";
 import { READ_ONLY_HINT, useConsole } from "./-shared";
+import { named } from "@/lib/app/product";
 
 // The receptionist setup wizard (ported from the old Twin Setup page): four short
 // steps, then the existing POST /api/clients creates the phone assistant.
 export const Route = createFileRoute("/_authenticated/admin/clients/new")({
   validateSearch: (s: Record<string, unknown>): { company?: string } => (typeof s.company === "string" && /^[a-f0-9-]{36}$/.test(s.company) ? { company: s.company } : {}),
-  head: () => ({ meta: [{ title: "New receptionist — Answered admin" }] }),
+  head: () => ({ meta: [{ title: named("New receptionist — Answered admin") }] }),
   component: NewReceptionistPage,
 });
 

@@ -14,9 +14,10 @@ import { fmtNumber, fmtPhone, fmtRelative } from "@/lib/app/format";
 import { agentsQuery, phoneNumbersQuery } from "@/lib/app/queries";
 import { requestNumber } from "@/lib/api/manage";
 import { useWorkspace } from "@/lib/app/workspace";
+import { named } from "@/lib/app/product";
 
 export const Route = createFileRoute("/_authenticated/app/phone-numbers")({
-  head: () => ({ meta: [{ title: "Call handling — Answered" }] }),
+  head: () => ({ meta: [{ title: named("Call handling — Answered") }] }),
   component: PhoneNumbersPage,
 });
 
@@ -157,7 +158,8 @@ function PhoneNumbersPage() {
         {main ? (
           <div className="grid gap-3 sm:grid-cols-2">
             {FORWARDING.map((f) => {
-              const digits = main.replace(/^\+61/, "0");
+              // Dialled as a national number: 0412 345 678 in Australia, 2125550123 in the US.
+              const digits = main.startsWith("+1") ? main.slice(2) : main.replace(/^\+61/, "0");
               return (
                 <div key={f.title} className="rounded-[6px] border border-hairline p-3">
                   <div className="flex items-center gap-2 text-[13px] font-semibold text-ink">

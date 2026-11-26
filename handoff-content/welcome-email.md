@@ -1,0 +1,33 @@
+# Welcome email (sent after payment)
+
+Placeholders: `{{buyer_first_name}}`, `{{setup_link}}`, `{{seller_name}}`, `{{support_email}}`.
+
+> TODO (Ronan): confirm how long the setup link stays valid and whether it can be reused, then add one line about it. Confirm the support line once the support policy is decided.
+
+---
+
+**Subject:** Your AI receptionist business is ready to set up
+
+Hi {{buyer_first_name}},
+
+Thanks for your purchase. Here's your private setup link:
+
+{{setup_link}}
+
+It's just for you, so please don't share it.
+
+The setup wizard connects your own accounts and installs your dashboard at app.your-domain. When it's done, everything is in your name and we keep no access.
+
+**Have these ready:**
+- A domain you own (any registrar works)
+- A DigitalOcean account with a payment method
+- A Telnyx account, upgraded from trial, with some credit
+- A Resend account
+- Optional: Google or Microsoft accounts for calendar sign-in
+- A password manager for the keys you'll create
+
+**How long it takes:** about 20 to 30 minutes of your time. Telnyx can take up to two working days to approve a new card, so open that account first. You can stop and come back to your link at any time.
+
+Questions? Reply to this email or write to {{support_email}}.
+
+{{seller_name}}

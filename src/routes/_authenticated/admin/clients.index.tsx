@@ -18,9 +18,10 @@ import { companyApi, type CompanyRow } from "@/lib/api/console";
 import { INDUSTRIES, industry as industryPreset, type IndustryKey } from "@/lib/shared";
 import { AutomationChips, LinkBox, useConsole } from "./-shared";
 import { cn } from "@/lib/utils";
+import { named } from "@/lib/app/product";
 
 export const Route = createFileRoute("/_authenticated/admin/clients/")({
-  head: () => ({ meta: [{ title: "Clients — Answered admin" }] }),
+  head: () => ({ meta: [{ title: named("Clients — Answered admin") }] }),
   component: ClientsPage,
 });
 

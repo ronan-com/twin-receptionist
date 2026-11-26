@@ -1,0 +1,14 @@
+# Dropped into /opt/twin/sites/setupsite.caddy by remote-deploy.sh (__DOMAIN__ is replaced).
+# The main Caddy gets the https certificate for it automatically.
+__DOMAIN__ {
+	encode zstd gzip
+	# Forms are small; DigitalOcean servers post install logs in chunks of up to 60 KB.
+	request_body {
+		max_size 128KB
+	}
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		-Server
+	}
+	reverse_proxy setup-site:4500
+}

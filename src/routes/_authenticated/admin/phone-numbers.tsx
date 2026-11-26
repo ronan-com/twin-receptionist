@@ -11,14 +11,15 @@ import { fmtNumber } from "@/lib/app/format";
 import { adminNumbersQuery, adminBusinessesQuery } from "@/lib/app/queries";
 import type { AdminNumberRow } from "@/lib/api/console";
 import { BizCell, useConsole } from "./-shared";
+import { named } from "@/lib/app/product";
 
 export const Route = createFileRoute("/_authenticated/admin/phone-numbers")({
-  head: () => ({ meta: [{ title: "Phone numbers — Answered admin" }] }),
+  head: () => ({ meta: [{ title: named("Phone numbers — Answered admin") }] }),
   component: AdminNumbersPage,
 });
 
 function AdminNumbersPage() {
-  const { platform } = useConsole();
+  const { platform, single } = useConsole();
   const q = useQuery(adminNumbersQuery());
   const bizQ = useQuery(adminBusinessesQuery());
   const [search, setSearch] = useState("");
@@ -54,11 +55,13 @@ function AdminNumbersPage() {
       <PageHeader
         eyebrow={platform ? "Platform console" : "Agency console"}
         title="Phone numbers"
-        description="Each number rings its client's receptionist. Agencies request numbers; the platform team buys and connects them."
+        description={single ? "Each number rings its client's receptionist. Buy one from the client's page." : "Each number rings its client's receptionist. Agencies request numbers; the platform team buys and connects them."}
         actions={
-          <Button asChild size="sm" variant="outline" className="h-8 text-[12.5px]">
-            <Link to="/admin/number-requests">Number requests</Link>
-          </Button>
+          single ? null : (
+            <Button asChild size="sm" variant="outline" className="h-8 text-[12.5px]">
+              <Link to="/admin/number-requests">Number requests</Link>
+            </Button>
+          )
         }
       />
 

@@ -1,0 +1,10 @@
+data
+out
+test
+test-shots
+mock
+deploy
+node_modules
+/*.md
+make-package.sh
+!content

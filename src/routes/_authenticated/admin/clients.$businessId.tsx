@@ -18,12 +18,14 @@ import { describeHours, INDUSTRIES, industry as industryPreset, type IndustryKey
 import type { AppointmentStatus, LeadStage } from "@/lib/app/types";
 import { AutomationChips, AutomationIcon, CallSheet, LinkBox, READ_ONLY_HINT, useConsole } from "./-shared";
 import { BrandEditor } from "./-brand";
+import { BuyNumber } from "./-buy-number";
+import { named } from "@/lib/app/product";
 
 // A client: one company the agency looks after, with everything under it (its
 // receptionists and their automations, calls, bookings, customers and branding).
 // The path id is the company's (old links with a receptionist's id open its company).
 export const Route = createFileRoute("/_authenticated/admin/clients/$businessId")({
-  head: () => ({ meta: [{ title: "Client — Answered admin" }] }),
+  head: () => ({ meta: [{ title: named("Client — Answered admin") }] }),
   component: ClientDetailPage,
 });
 
@@ -566,6 +568,10 @@ function ReceptionistCard({
 }) {
   const [numType, setNumType] = useState<"local" | "mobile">("mobile");
   const [numNote, setNumNote] = useState("");
+  // An agency on its own phone account buys numbers itself; on the platform's it asks for one.
+  // With SINGLE_AGENCY the server's key is the agency's own, so it buys them too.
+  const { ws: consoleWs, single } = useConsole();
+  const ownPhone = (consoleWs.session?.telnyx === "own" || single) && !platform;
   const s = r.settings;
   const paused = r.status === "paused";
   const pause = useMutation({
@@ -680,7 +686,13 @@ function ReceptionistCard({
               ))}
             </ul>
           ) : null}
-          {!readOnly ? (
+          {!readOnly && ownPhone ? (
+            canManage ? (
+              <BuyNumber clientId={r.id} timezone={s.timezone} onBought={onChanged} />
+            ) : (
+              <p className="mt-3 border-t border-hairline pt-3 text-[12px] text-ink-muted">Ask an owner or admin of your agency to buy a number.</p>
+            )
+          ) : !readOnly ? (
             <form
               className="mt-3 space-y-2 border-t border-hairline pt-3"
               onSubmit={(e) => {

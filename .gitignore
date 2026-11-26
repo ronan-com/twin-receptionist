@@ -10,3 +10,7 @@ data/
 
 # agent worktrees
 .claude/
+
+# Built server bundles (make-bundle.sh output)
+deploy/selfhost/out/
+download-site/out/

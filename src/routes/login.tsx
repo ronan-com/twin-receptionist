@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowRight, Loader2, MailCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -8,6 +8,7 @@ import { Label } from "@/components/ui/label";
 import { AuthLayout, FormError } from "@/components/auth/AuthLayout";
 import { authApi, homeOf, safeRedirect } from "@/lib/api/auth";
 import { sessionQuery } from "@/lib/app/workspace";
+import { PRODUCT, named } from "@/lib/app/product";
 
 type Mode = "signin" | "forgot";
 
@@ -16,7 +17,7 @@ export const Route = createFileRoute("/login")({
     redirect: typeof search.redirect === "string" ? search.redirect : undefined,
     mode: search.mode === "forgot" ? ("forgot" as const) : undefined,
   }),
-  head: () => ({ meta: [{ title: "Sign in — Answered" }, { name: "robots", content: "noindex" }] }),
+  head: () => ({ meta: [{ title: named("Sign in — Answered") }, { name: "robots", content: "noindex" }] }),
   component: LoginPage,
 });
 
@@ -31,6 +32,9 @@ function LoginPage() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [info, setInfo] = useState<{ title: string; body: string } | null>(null);
+  // SINGLE_AGENCY: after the first account, people join by invite, so there's no sign-up link.
+  const sessionQ = useQuery(sessionQuery());
+  const inviteOnly = sessionQ.data && !sessionQ.data.signedIn ? Boolean(sessionQ.data.singleAgency) && !sessionQ.data.firstRun : false;
 
   // Already signed in: straight to where they belong.
   useEffect(() => {
@@ -73,16 +77,20 @@ function LoginPage() {
 
   return (
     <AuthLayout
-      title={mode === "signin" ? "Sign in to Answered" : "Reset your password"}
+      title={mode === "signin" ? named("Sign in to Answered") : "Reset your password"}
       subtitle={mode === "signin" ? "Welcome back. Your receptionist has been busy." : "We'll email you a secure link to choose a new password."}
       footer={
         mode === "signin" ? (
-          <>
-            New to Answered?{" "}
-            <Link to="/signup" className="font-medium text-indigo hover:underline">
-              Create an account
-            </Link>
-          </>
+          inviteOnly ? (
+            <>New to {PRODUCT}? Ask for an invite.</>
+          ) : (
+            <>
+              New to {PRODUCT}?{" "}
+              <Link to="/signup" className="font-medium text-indigo hover:underline">
+                Create an account
+              </Link>
+            </>
+          )
         ) : (
           <>
             Remembered it?{" "}

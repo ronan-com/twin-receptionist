@@ -29,6 +29,7 @@ import { asBusinessHours, asRecord, asStringArray, type BusinessHours } from "@/
 import { useWorkspace } from "@/lib/app/workspace";
 import { TIMEZONES } from "@/lib/shared";
 import { cn } from "@/lib/utils";
+import { named } from "@/lib/app/product";
 
 // First-run onboarding (area S): a step-by-step set-up for a business manager whose
 // receptionist is still "pending" (clients.data.onboarding): a business that signed
@@ -37,7 +38,7 @@ import { cn } from "@/lib/utils";
 // left, can be put off ("I'll finish later"), and finishing marks it done.
 
 export const Route = createFileRoute("/_authenticated/app/onboarding")({
-  head: () => ({ meta: [{ title: "Set up your receptionist — Answered" }] }),
+  head: () => ({ meta: [{ title: named("Set up your receptionist — Answered") }] }),
   component: OnboardingPage,
 });
 
@@ -50,7 +51,7 @@ const STEPS = [
   { key: "extras", title: "Finishing touches", blurb: "Optional: invite your team, get a phone number, connect a calendar." },
 ] as const;
 
-const INDUSTRY_OPTIONS = ["Dental", "Healthcare", "Trades", "Salon & beauty", "Real estate", "Automotive", "Professional services", "Other"];
+const INDUSTRY_OPTIONS = ["Dental", "Healthcare", "Trades", "Salon & beauty", "Real estate", "Automotive", "Professional services", "Childcare", "Other"];
 
 type Form = {
   business_name: string;

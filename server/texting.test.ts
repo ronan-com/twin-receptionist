@@ -93,10 +93,10 @@ describe("our own messaging profile", () => {
 
   test("the texts card lists the numbers on our profile; a receptionist with none shows off", async () => {
     const off = base({ phoneNumbers: ["+61480011301"] });
-    expect(await textingState({ ...off, assistantId: "demo-x" })).toEqual({ enabled: false, numbers: [], waiting: ["+61480011301"] });
+    expect(await textingState({ ...off, assistantId: "demo-x" })).toEqual({ enabled: false, numbers: [], waiting: ["+61480011301"], cantText: [] });
     answer(/messaging_profiles\/prof-9\/phone_numbers/, { data: [{ phone_number: "+61480011301" }] });
     const on = base({ textingProfileId: "prof-9", phoneNumbers: ["+61480011301", "+61255501301"] });
-    expect(await textingState(on)).toEqual({ enabled: true, numbers: ["+61480011301"], waiting: ["+61255501301"] });
+    expect(await textingState(on)).toEqual({ enabled: true, numbers: ["+61480011301"], waiting: [], cantText: ["+61255501301"] });
   });
 
   test("a profile is only removed when it is ours or was linked to this receptionist's assistant", async () => {

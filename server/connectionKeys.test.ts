@@ -31,6 +31,8 @@ async function boot(dbUrl: string, port: number, extra: Record<string, string>) 
     SUPPORT_SYNC_URL: "",
     OPENROUTER_API_KEY: "",
     E2E_FAKE_PROVIDER: "1",
+    TWILIO_ACCOUNT_SID: "",
+    TWILIO_AUTH_TOKEN: "",
     ...extra,
   };
   const p = Bun.spawn(["bun", "server/index.ts"], { cwd: join(import.meta.dir, ".."), env, stdout: "pipe", stderr: "pipe" });

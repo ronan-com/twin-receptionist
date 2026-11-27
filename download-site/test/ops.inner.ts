@@ -433,16 +433,16 @@ describe("the admin pages", () => {
   });
 
   test("the buyer page: the Problems panel, auto-update state, and Push update now (only when it can work)", async () => {
-    const a = await (await adminGet(`/admin/b/${ids.ok}`)).text();
+    const a = await (await adminGet(`/admin/b/${ids.ok}?tab=support`)).text();
     expect(a).toContain("Problems (last 24 hours)");
     expect(a).toContain("Text-back failed");
     expect(a).toContain("Telnyx answered 502");
     expect(a).toContain(`action="/admin/b/${ids.ok}/push-update"`);
     expect(a).toContain("Fetch recent logs");
-    const o = await (await adminGet(`/admin/b/${ids.off}`)).text();
+    const o = await (await adminGet(`/admin/b/${ids.off}?tab=support`)).text();
     expect(o).toContain("The owner turned automatic updates off");
     expect(o).not.toContain(`/admin/b/${ids.off}/push-update"`);
-    const n = await (await adminGet(`/admin/b/${ids.none}`)).text();
+    const n = await (await adminGet(`/admin/b/${ids.none}?tab=support`)).text();
     expect(n).toMatch(/(buyer|agency) presses Update on their setup link/);
   });
 
@@ -450,7 +450,7 @@ describe("the admin pages", () => {
     expect((await adminPost(`/admin/b/${ids.off}/push-update`)).headers.get("location")).toContain("m=push-off");
     expect((await adminPost(`/admin/b/${ids.none}/push-update`)).headers.get("location")).toContain("m=push-unavailable");
     expect((await adminPost(`/admin/b/${ids.ok}/push-update`)).headers.get("location")).toContain("m=push-ok");
-    expect(await (await adminGet(`/admin/b/${ids.ok}`)).text()).toContain("Update requested");
+    expect(await (await adminGet(`/admin/b/${ids.ok}?tab=support`)).text()).toContain("Update requested");
     const tok = (await import("../sync")).latestSnapshot(ids.ok); // snapshot exists; the token was returned by live()
     expect(tok).not.toBeNull();
     expect(sync.supportLog(ids.ok, 5).map((l) => l.action + ":" + l.note)).toContain("push-update:requested");

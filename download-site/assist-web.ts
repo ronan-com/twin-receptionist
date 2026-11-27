@@ -98,7 +98,7 @@ export function assistPanel(h: Helpers, sid: string, b: Buyer, s: SetupData): st
     if (s.phase === "done") {
       const url = appUrlOf(s);
       return `<p>${h.notice("ok", `Installed${s.assist?.installBy ? ` by ${esc(s.assist.installBy.by)}` : ""}. Live at <a href="${esc(url)}" target="_blank" rel="noopener noreferrer"><b>${esc(url)}</b></a> ${h.copyBtn(url)}${s.domainPending ? " (their own address starts working once its DNS records are in: use Check DNS above)" : ""}`)}</p>
-      <p class="hint">Send the owner their dashboard login from <a href="#invite">Invite them</a>, below.</p>`;
+      <p class="hint">Send the owner their dashboard login from <a href="/admin/b/${b.id}?tab=setup#invite">Invite them</a>, below.</p>`;
     }
     if (live) return `<p class="status"><span class="spin"></span>Installing: ${esc(s.installStep || s.progress?.[s.progress.length - 1] || s.phase)}. This page updates by itself; the log below streams.</p>`;
     if (s.phase === "failed" || s.phase === "create_failed") return `${h.notice("err", esc(s.error || "The install stopped."))}<form method="post" action="/admin/b/${b.id}/assist/install" class="sf">${h.hiddenT(sid)}<button class="btn p" type="submit">Try the install again</button></form>`;
@@ -172,7 +172,7 @@ const bool = (v: string | undefined) => v === "1";
 
 /** POST /admin/b/<id>/assist/<what>. */
 export async function assistRoute(what: string, b: Buyer, f: Record<string, string>, c: RouteCtx): Promise<Response> {
-  const back = (out: Out) => { setFlash(c.sid, b.id, out); return c.redirect(`/admin/b/${b.id}#assist`); };
+  const back = (out: Out) => { setFlash(c.sid, b.id, out); return c.redirect(`/admin/b/${b.id}?tab=setup#assist`); };
   const wait = allow(`assist:${c.email}`, 240, 60 * 60_000);
   if (wait) return back({ ok: false, message: `Too many changes just now. Wait ${Math.ceil(wait / 60)} minutes.`, kind: "err" });
   switch (what) {
@@ -211,17 +211,17 @@ export async function assistRoute(what: string, b: Buyer, f: Record<string, stri
       const r = await checkDns(b);
       return c.json({ rows: r.rows, all: r.all, host: r.host?.ok ?? null, live: r.live ?? null });
     }
-    case "mark-invited": { setFlash(c.sid, -b.id, markInvitedByHand(b, c.email)); return c.redirect(`/admin/b/${b.id}#invite`); }
+    case "mark-invited": { setFlash(c.sid, -b.id, markInvitedByHand(b, c.email)); return c.redirect(`/admin/b/${b.id}?tab=setup#invite`); }
     case "invite": {
       const r = await sendInvite(b, c.email);
-      if (!r.ok) { setFlash(c.sid, -b.id, { ok: false, message: r.message, kind: "err" }); return c.redirect(`/admin/b/${b.id}#invite`); }
-      if (r.mailed) { setFlash(c.sid, -b.id, { ok: true, message: `Invite emailed to ${r.to}: ${r.kind === "dashboard" ? "their dashboard login" : "their setup link"}.`, kind: "ok" }); return c.redirect(`/admin/b/${b.id}#invite`); }
+      if (!r.ok) { setFlash(c.sid, -b.id, { ok: false, message: r.message, kind: "err" }); return c.redirect(`/admin/b/${b.id}?tab=setup#invite`); }
+      if (r.mailed) { setFlash(c.sid, -b.id, { ok: true, message: `Invite emailed to ${r.to}: ${r.kind === "dashboard" ? "their dashboard login" : "their setup link"}.`, kind: "ok" }); return c.redirect(`/admin/b/${b.id}?tab=setup#invite`); }
       return c.html(c.h.page("Invite", `<section class="card narrow"><h1>${esc(b.name)}: invite</h1>
 ${c.h.notice("err", esc(r.mailError || "The email didn't send."))}
 <p class="lead">${r.kind === "dashboard" ? `Their ${r.loginKind === "reset" ? `one-time login link (works once, runs out in ${r.minutes} minutes)` : "dashboard's first-account page"}` : "Their private setup link"}, to send to <b>${esc(r.to)}</b>:</p>
 <div class="linkrow"><code id="invite-link">${esc(r.link)}</code>${c.h.copyBtn(r.link)}</div>
 <form method="post" action="/admin/b/${b.id}/assist/mark-invited" class="sf">${c.h.hiddenT(c.sid)}<button class="btn o" type="submit">I've sent it myself: mark as invited</button></form>
-<p><a href="/admin/b/${b.id}#invite">← Back to ${esc(b.name)}</a></p></section>`, { sid: c.sid, email: c.email }));
+<p><a href="/admin/b/${b.id}?tab=setup#invite">← Back to ${esc(b.name)}</a></p></section>`, { sid: c.sid, email: c.email }));
     }
     case "owner-login": {
       const r = await ownerLogin(b, c.email, bool(f.email));
@@ -234,7 +234,7 @@ ${c.h.notice("err", esc(r.mailError || "The email didn't send."))}
 ${r.mailed ? c.h.notice("ok", `Emailed to ${esc(r.to)}.`) : r.mailError ? c.h.notice("err", esc(r.mailError)) : c.h.notice("info", "Copy the link and send it to them yourself. It isn't stored anywhere.")}
 <div class="linkrow"><code id="owner-link">${esc(r.url)}</code>${c.h.copyBtn(r.url)}</div>
 ${r.mailed ? "" : `<form method="post" action="/admin/b/${b.id}/assist/mark-invited" class="sf">${c.h.hiddenT(c.sid)}<button class="btn o" type="submit">I've sent it myself: mark as invited</button></form>`}
-<p><a href="/admin/b/${b.id}#invite">← Back to ${esc(b.name)}</a></p></section>`, { sid: c.sid, email: c.email }));
+<p><a href="/admin/b/${b.id}?tab=setup#invite">← Back to ${esc(b.name)}</a></p></section>`, { sid: c.sid, email: c.email }));
     }
   }
   return back({ ok: false, message: "That didn't work. Reload the page and try again.", kind: "err" });

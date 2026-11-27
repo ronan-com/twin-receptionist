@@ -258,7 +258,7 @@ export async function syncNow(buyerId: number, appUrl: string, doFetch: typeof f
 }
 
 /** "View as": a one-time sign-in link (the app makes it valid for 60 seconds, once). The app refuses while Support access is off. */
-export async function viewAsLink(buyerId: number, appUrl: string, doFetch: typeof fetch = fetch): Promise<Outcome<{ url: string }>> {
+export async function viewAsLink(buyerId: number, appUrl: string, doFetch: typeof fetch = fetch, clientId = ""): Promise<Outcome<{ url: string }>> {
   const base = appBase(appUrl);
   const tok = callToken(buyerId);
   if (!base || !tok) return { ok: false, reason: "no-app", message: "We don't have this app's address, or it was installed before syncing existed." };
@@ -272,7 +272,22 @@ export async function viewAsLink(buyerId: number, appUrl: string, doFetch: typeo
     if (r.status === 200 && link) return { ok: false, reason: "error", message: "The app gave a link to a different address, so we didn't open it." };
     return { ok: false, reason: "error", message: `The app answered ${r.status}.` };
   }
-  return { ok: true, url: link };
+  // Straight into one business of that agency: the app opens that business's view when the link carries its id.
+  return { ok: true, url: /^[a-f0-9-]{36}$/.test(clientId) ? `${link}?c=${clientId}` : link };
+}
+
+/** "Choose a business": the agency's businesses (id and name only), only while Support access is on. Shown, never stored. */
+export async function fetchClients(buyerId: number, appUrl: string, doFetch: typeof fetch = fetch): Promise<Outcome<{ clients: { id: string; name: string }[] }>> {
+  const base = appBase(appUrl);
+  const tok = callToken(buyerId);
+  if (!base || !tok) return { ok: false, reason: "no-app", message: "We don't have this app's address, or it was installed before syncing existed." };
+  const r = await callApp(base, "/api/support/clients", tok, doFetch);
+  if (!r) return { ok: false, reason: "unreachable", message: "The app didn't answer. It may be down, restarting or asleep." };
+  if (r.status === 403 && r.json?.error === "access_off") return { ok: false, reason: "off", message: "The buyer has switched Support access off." };
+  if (r.status === 401 || r.status === 404) return { ok: false, reason: "refused", message: "This version of the app can't list its businesses yet. The agency needs to update." };
+  if (r.status !== 200 || !r.json?.ok || !Array.isArray(r.json.clients)) return { ok: false, reason: "error", message: `The app answered ${r.status}.` };
+  const clients = r.json.clients.slice(0, 300).filter((c: any) => c && typeof c.id === "string" && /^[a-f0-9-]{36}$/.test(c.id)).map((c: any) => ({ id: String(c.id), name: String(c.name || "").slice(0, 120) }));
+  return { ok: true, clients };
 }
 
 export type LogLine = { at: string; level: string; line: string };

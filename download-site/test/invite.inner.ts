@@ -157,7 +157,7 @@ describe("generic setup site: no product name anywhere", () => {
 describe("Invite them", () => {
   test("not installed: the card offers their setup link, lists what we did and what's left, and the list says Not invited yet", async () => {
     const b = buyerByEmail("ann@example.com");
-    const page = (await call("GET", `/admin/b/${b.id}`)).body;
+    const page = (await call("GET", `/admin/b/${b.id}?tab=setup`)).body;
     const card = page.slice(page.indexOf('id="invite"'));
     expect(card).toContain("Send their setup link");
     expect(card).toContain("Not invited yet");
@@ -173,9 +173,9 @@ describe("Invite them", () => {
   test("Send invite email: the setup link goes to them (no product name) and invited-at is recorded and shown", async () => {
     const b = buyerByEmail("ann@example.com");
     const before = mails.length;
-    const page = (await call("GET", `/admin/b/${b.id}`)).body;
+    const page = (await call("GET", `/admin/b/${b.id}?tab=setup`)).body;
     const r = await call("POST", `/admin/b/${b.id}/assist/invite`, { t: tok(page) });
-    expect(r.loc).toBe(`/admin/b/${b.id}#invite`);
+    expect(r.loc).toBe(`/admin/b/${b.id}?tab=setup#invite`);
     expect(mails.length).toBe(before + 1);
     const m = mails[mails.length - 1];
     expect(m.to).toBe("ann@example.com");
@@ -184,7 +184,7 @@ describe("Invite them", () => {
     expect(m.data).not.toMatch(/Zorbo/i);
     const after = buyerByEmail("ann@example.com");
     expect(after.invited_at).toBeTruthy();
-    const again = (await call("GET", `/admin/b/${b.id}`)).body;
+    const again = (await call("GET", `/admin/b/${b.id}?tab=setup`)).body;
     expect(again).toContain("Invite emailed to ann@example.com: their setup link.");
     expect(again.slice(again.indexOf('id="invite"'))).toContain("Invited ");
     expect(await adminPage()).toMatch(/Ann Agency[\s\S]*?Invited \d{4}-\d\d-\d\d/);
@@ -195,7 +195,7 @@ describe("Invite them", () => {
     const b = findBuyer(buyerByEmail("ben@example.com").code)!;
     updateSetup(b.id, (s) => { s.phase = "done"; s.step = "done"; s.brand = { productName: "Ben Voice", ownerEmail: "owner@ben.test", ownPhoneAccount: false }; s.resultUrl = "https://app.ben.test"; s.extrasDone = true; });
     sync.newSyncToken(b.id);
-    const page = (await call("GET", `/admin/b/${b.id}`)).body;
+    const page = (await call("GET", `/admin/b/${b.id}?tab=setup`)).body;
     const card = page.slice(page.indexOf('id="invite"'));
     expect(card).toContain("Send their dashboard login");
     expect(card).toContain("Send invite email to owner@ben.test");
@@ -215,7 +215,7 @@ describe("Invite them", () => {
     try {
       await call("POST", "/admin/buyers", { t: tok(await adminPage()), name: "Nora Nomail", email: "nora@example.com" });
       const b = buyerByEmail("nora@example.com");
-      const page = (await call("GET", `/admin/b/${b.id}`)).body;
+      const page = (await call("GET", `/admin/b/${b.id}?tab=setup`)).body;
       const card = page.slice(page.indexOf('id="invite"'));
       expect(card).toContain("Email isn't set up on the setup site — copy and send it yourself");
       expect(card).toContain(`data-copy="http://localhost:4500/setup/${b.code}"`);

@@ -185,7 +185,7 @@ describe("admin: the Set up for them panel", () => {
   test("sign in; the panel lists the steps with who did what", async () => {
     const res = await fetch(newAdminLink(ADMIN).replace(/^https?:\/\/[^/]+/, SITE), { method: "POST", redirect: "manual", headers: { origin: SITE, "content-type": "application/x-www-form-urlencoded" }, body: "" });
     cookie = (res.headers.get("set-cookie") || "").split(";")[0];
-    const html = await (await adm(url)).text();
+    const html = await (await adm(`${url}?tab=setup`)).text();
     csrf = html.match(/name="t" value="([^"]+)"/)![1];
     expect(html).toContain("Set up for them");
     for (const w of ["Brand", "Hosting (Railway)", "Phones (Telnyx, or Vapi + Twilio)", "Own domain and DNS", "Install for them", "Audit log", "Use their domain for the setup link"]) expect(html).toContain(w);
@@ -197,17 +197,17 @@ describe("admin: the Set up for them panel", () => {
   test("filling a step from the form: errors show in the panel, success marks it Done by you, the audit log has who and when", async () => {
     let r = await act(`${url}/assist/brand`, { productName: "", ownerEmail: "p@p.test" });
     expect(r.status).toBe(303);
-    expect(await (await adm(url)).text()).toContain("Give your brand a name.");
-    expect(await (await adm(url)).text()).not.toContain('notice flash'); // shown once
+    expect(await (await adm(`${url}?tab=setup`)).text()).toContain("Give your brand a name.");
+    expect(await (await adm(`${url}?tab=setup`)).text()).not.toContain('notice flash'); // shown once
     r = await act(`${url}/assist/brand`, { productName: "Panel AI", ownerEmail: "p@p.test", colour: "#112233" });
-    let html = await (await adm(url)).text();
+    let html = await (await adm(`${url}?tab=setup`)).text();
     expect(html).toContain("Brand is done.");
     expect(html).toContain("Done by you");
     expect(html).toContain("Panel AI");
     await act(`${url}/assist/railway`, { token: "wrong" });
-    expect(await (await adm(url)).text()).toMatch(/Railway didn&#39;t accept|Railway/);
+    expect(await (await adm(`${url}?tab=setup`)).text()).toMatch(/Railway didn&#39;t accept|Railway/);
     await act(`${url}/assist/railway`, { token: RW_TOKEN });
-    html = await (await adm(url)).text();
+    html = await (await adm(`${url}?tab=setup`)).text();
     expect(html).toContain("filled: railway");
     expect(html).toContain(ADMIN);
     expect(html).not.toContain(RW_TOKEN);
@@ -221,9 +221,9 @@ describe("admin: the Set up for them panel", () => {
   test("their setup link on their own domain: by hand shows the CNAME with copy buttons; the host is registered, Caddy may get a certificate, and Check DNS answers", async () => {
     const host = "setup.panel-buyer.com";
     await act(`${url}/assist/host`, { host: "panel-buyer.com", provider: "manual" });
-    expect(await (await adm(url)).text()).toContain("Use a name under their domain");
+    expect(await (await adm(`${url}?tab=setup`)).text()).toContain("Use a name under their domain");
     await act(`${url}/assist/host`, { host, provider: "manual" });
-    const html = await (await adm(url)).text();
+    const html = await (await adm(`${url}?tab=setup`)).text();
     expect(html).toContain(`https://${host}/`);
     expect(html).toContain("CNAME");
     expect(html).toContain('data-dns-poll="/admin/b/' + buyer.id + '/assist/check-dns"');
@@ -242,7 +242,7 @@ describe("admin: the Set up for them panel", () => {
 
   test("install-for-them is refused with the reason while steps are missing; the status feed is the wizard's own shape", async () => {
     await act(`${url}/assist/install`, {});
-    expect(await (await adm(url)).text()).toContain("Still to fill in: Phones (Telnyx, or Vapi + Twilio), AI (OpenRouter).");
+    expect(await (await adm(`${url}?tab=setup`)).text()).toContain("Still to fill in: Phones (Telnyx, or Vapi + Twilio), AI (OpenRouter).");
     const st = await (await adm(`${url}/status`)).json() as any;
     expect(st).toMatchObject({ phase: "idle" });
     expect(typeof st.rev).toBe("string");

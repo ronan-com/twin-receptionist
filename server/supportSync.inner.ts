@@ -327,6 +327,28 @@ describe("Support access", () => {
     expect(await sessionFrom(req("/", { headers: { cookie } }))).toBeNull();
   });
 
+  test("the client picker: the businesses list needs access on; a link with a business id opens straight into that business", async () => {
+    await setAccess({ enabled: false, until: null });
+    const off = await supportPublicRoutes(post("/api/support/clients", bearer()), "/api/support/clients", "POST");
+    expect(off!.status).toBe(403);
+    expect(((await supportPublicRoutes(post("/api/support/clients"), "/api/support/clients", "POST"))!).status).toBe(401);
+    await setAccess({ enabled: true, until: null });
+    const ok = await (await supportPublicRoutes(post("/api/support/clients", bearer()), "/api/support/clients", "POST"))!.json() as any;
+    expect(ok.clients).toEqual([{ id: clientId, name: "Secret Plumbing" }]);
+    expect(JSON.stringify(ok)).not.toContain("Jane Citizen");
+    const t = (await issueLoginLink("https://app.example.com")).url.split("/").pop()!;
+    const res = (await supportPublicRoutes(req(`/api/support/in/${t}?c=${clientId}`), `/api/support/in/${t}`, "GET"))!;
+    expect(res.status).toBe(302);
+    expect(res.headers.get("location")).toBe("/app");
+    const ctx = await sessionFrom(req("/", { headers: { cookie: cookieOf(res) } }));
+    expect(ctx?.viewing?.client).toBe(clientId);
+    expect(ctx?.role).toBe("customer");
+    // A business id from somewhere else is ignored: the agency console, as before.
+    const t2 = (await issueLoginLink("https://app.example.com")).url.split("/").pop()!;
+    const res2 = (await supportPublicRoutes(req(`/api/support/in/${t2}?c=${crypto.randomUUID()}`), `/api/support/in/${t2}`, "GET"))!;
+    expect((await sessionFrom(req("/", { headers: { cookie: cookieOf(res2) } })))?.viewing?.client).toBeNull();
+  });
+
   test("the support person can't sign in with a password", async () => {
     await setAccess({ enabled: true, until: null });
     await redeemLoginLink((await issueLoginLink("https://app.example.com")).url.split("/").pop()!);

@@ -67,7 +67,7 @@ sed "s/__DOMAIN__/$DOMAIN/" src/deploy/aws/setupsite.caddy.tmpl > /opt/twin/site
 # master admin address (ADMIN_DOMAIN): /admin and its assets are served there directly. Every other page there goes to /admin;
 # on other hosts it forwards to the generic $DOMAIN, which is what buyer setup links use. To move admin later, change ADMIN_DOMAIN's default here.
 ADMIN_DOMAIN=${7:-setup.sageai.agency}
-ADMIN_PATHS="/admin /admin/* /styles.css /favicon.svg /admin-live.js /tickets.css /wizard.css /wizard.js /chat.css /chat.js /fonts/*"
+ADMIN_PATHS="/admin /admin/* /styles.css /favicon.svg /admin-live.js /admin.css /tickets.css /wizard.css /wizard.js /chat.css /chat.js /fonts/*"
 site_block() { # <host> <paths served here> [redirect target for everything else, default: the generic $DOMAIN]
   local to=${3:-}
   [ -n "$to" ] || to="https://$DOMAIN{uri} 308"

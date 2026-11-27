@@ -354,7 +354,7 @@ async function supportUser(): Promise<string> {
 }
 
 /** Spends a link (once, within 60 seconds, only while access is on) and opens a support session. Returns the session token or null. */
-export async function redeemLoginLink(token: string): Promise<string | null> {
+export async function redeemLoginLink(token: string, clientId: string | null = null): Promise<string | null> {
   if (!/^[A-Za-z0-9_-]{43}$/.test(token)) return null;
   const [used] = await sql`
     update support_login_links set used_at = now()
@@ -369,6 +369,11 @@ export async function redeemLoginLink(token: string): Promise<string | null> {
   await sql`delete from sessions where user_id = ${userId} and expires_at < now()`;
   await sql`insert into sessions (token_hash, user_id, org_id, expires_at, support) values (${hashToken(sessionToken)}, ${userId}, ${org.id}, ${new Date(ends)}, true)`;
   await audit({ user: { id: userId }, org: { id: org.id } }, "support.signin", { summary: `${supportSeller()} signed in to help (read-only support access)` });
+  // Straight into one of this agency's businesses (the setup site's "View as" client picker): the same view the console's own "View as" gives.
+  if (clientId && /^[a-f0-9-]{36}$/.test(clientId)) {
+    const [c] = await sql`select id from clients where id = ${clientId} and org_id = ${org.id}`;
+    if (c) await sql`update sessions set view_client_id = ${c.id} where token_hash = ${hashToken(sessionToken)}`;
+  }
   return sessionToken;
 }
 
@@ -417,11 +422,22 @@ async function logsRoute(): Promise<Response> {
   return reply({ ok: true, lines: recentLogs() });
 }
 
+/** The agency's businesses (id and business name only), for the setup site's "View as" client picker. Only while Support access is on; shown there, never stored. */
+async function clientsRoute(): Promise<Response> {
+  const org = await agencyOrg();
+  if (!org || !accessOpen(await readAccess())) return reply({ ok: false, error: "access_off", message: "The owner hasn't turned on Support access." }, 403);
+  const rows = await sql`select id, data->'settings'->>'businessName' as business from clients where org_id = ${org.id} order by created_at limit 300`;
+  await audit(null, "support.clients", { summary: `${supportSeller()} looked at the list of businesses (${rows.length})` }, { orgId: org.id });
+  return reply({ ok: true, clients: rows.map((r: any) => ({ id: String(r.id), name: String(r.business ?? "").slice(0, 120) })) });
+}
+
 /**
  * No session: the setup site calls these with the shared token, or a browser opens a one-time link.
  *   POST /api/support/ping         "Sync now": the snapshot, straight back (or {sharing:false})
  *   POST /api/support/login-link   a one-time link, only while Support access is on
  *   POST /api/support/logs        the last 200 log lines (scrubbed), only while Support access is on
+ *   POST /api/support/clients     the agency's businesses (id + name), only while Support access is on
+ *   GET  /api/support/in/<token>?c=<business id>   as below, but straight into that business's view
  *   POST /api/support/owner-reset-link   a 15-minute, one-time password-reset link for the owner (no Support access needed)
  *   GET  /api/support/in/<token>   spends the link, signs in as support, goes to the dashboard
  */
@@ -429,14 +445,15 @@ export async function supportPublicRoutes(req: Request, path: string, method: st
   const redeem = path.match(/^\/api\/support\/in\/([A-Za-z0-9_-]{20,64})$/);
   if (redeem && method === "GET") {
     if (tooManyFailures()) return new Response("Too many tries. Wait a few minutes.", { status: 429, headers: noStore });
-    const session = await redeemLoginLink(redeem[1]);
+    const want = new URL(req.url).searchParams.get("c");
+    const session = await redeemLoginLink(redeem[1], want);
     if (!session) {
       failures.push(Date.now());
       return new Response("This sign-in link has expired or was already used. Ask for a new one.", { status: 410, headers: { ...noStore, "content-type": "text/plain; charset=utf-8" } });
     }
-    return new Response(null, { status: 302, headers: { ...noStore, location: "/admin", "set-cookie": sessionCookie(req, session) } });
+    return new Response(null, { status: 302, headers: { ...noStore, location: want && /^[a-f0-9-]{36}$/.test(want) ? "/app" : "/admin", "set-cookie": sessionCookie(req, session) } });
   }
-  if (path !== "/api/support/ping" && path !== "/api/support/login-link" && path !== "/api/support/owner-reset-link" && path !== "/api/support/logs") return null;
+  if (path !== "/api/support/ping" && path !== "/api/support/login-link" && path !== "/api/support/owner-reset-link" && path !== "/api/support/logs" && path !== "/api/support/clients") return null;
   if (method !== "POST") return reply({ error: "Not found" }, 404);
   if (tooManyFailures()) return reply({ error: "Too many tries." }, 429);
   if (!tokenOk(req)) {
@@ -445,6 +462,7 @@ export async function supportPublicRoutes(req: Request, path: string, method: st
   }
   if (path === "/api/support/owner-reset-link") return ownerResetRoute(req);
   if (path === "/api/support/logs") return logsRoute();
+  if (path === "/api/support/clients") return clientsRoute();
   if (path === "/api/support/ping") {
     if (!(await syncEnabled())) return reply({ ok: true, sharing: false });
     return reply({ ok: true, sharing: true, snapshot: await buildSnapshot() });

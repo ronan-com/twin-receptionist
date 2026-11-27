@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Notice } from "@/components/app/primitives";
+import { NumberCaps } from "./-number-caps";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { importNumberFor, type ImportNumberInput } from "@/lib/api/console";
 import { twilioAccountQuery, twilioApi } from "@/lib/api/twilio";
@@ -179,7 +180,7 @@ export function ImportNumber({ clientId, timezone, twilioOnly = false, onDone }:
                             <span className={cn("flex h-4 w-4 items-center justify-center rounded-full border", on ? "border-indigo bg-indigo text-white" : "border-hairline")}>{on ? <Check className="h-3 w-3" /> : null}</span>
                             {fmtPhone(n.phoneNumber)}
                           </span>
-                          <span className="shrink-0 text-[12px] text-ink-muted">{taken ? `Answers for ${n.assignedTo}` : n.sms ? "Calls + texts" : "Calls only"}</span>
+                          {taken ? <span className="shrink-0 text-[12px] text-ink-muted">{`Answers for ${n.assignedTo}`}</span> : <NumberCaps sms={n.sms} />}
                         </button>
                       </li>
                     );
@@ -258,9 +259,9 @@ export function ImportNumber({ clientId, timezone, twilioOnly = false, onDone }:
                             <span className={cn("flex h-4 w-4 items-center justify-center rounded-full border", on ? "border-indigo bg-indigo text-white" : "border-hairline")}>{on ? <Check className="h-3 w-3" /> : null}</span>
                             {fmtPhone(n.phoneNumber)}
                           </span>
-                          <span className="shrink-0 text-[12px] text-ink-muted">
-                            {price(n)}
-                            {n.sms ? " · texts" : ""}
+                          <span className="flex shrink-0 items-center gap-2">
+                            <NumberCaps sms={n.sms} />
+                            <span className="text-[12px] text-ink-muted">{price(n)}</span>
                           </span>
                         </button>
                       </li>

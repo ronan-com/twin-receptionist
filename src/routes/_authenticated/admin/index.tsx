@@ -96,7 +96,7 @@ function AdminOverview() {
             {!readOnly ? (
               <NeedsPhone className="h-8 text-[12.5px]" label={<><Plus className="mr-1.5 h-3.5 w-3.5" /> New receptionist</>}>
                 <Button asChild size="sm" className="h-8 text-[12.5px]">
-                  <Link to="/admin/clients/new" data-cta="new-receptionist">
+                  <Link to="/admin/receptionists/new" data-cta="new-receptionist">
                     <Plus className="mr-1.5 h-3.5 w-3.5" /> New receptionist
                   </Link>
                 </Button>
@@ -135,7 +135,7 @@ function AdminOverview() {
               !readOnly ? (
                 <NeedsPhone size="default" label={<><Plus className="mr-1.5 h-4 w-4" /> Create your first receptionist</>}>
                   <Button asChild data-cta="first-receptionist">
-                    <Link to="/admin/clients/new">
+                    <Link to="/admin/receptionists/new">
                       <Plus className="mr-1.5 h-4 w-4" /> Create your first receptionist
                     </Link>
                   </Button>

@@ -63,7 +63,7 @@ function ClientsPage() {
       setName("");
       await qc.invalidateQueries({ queryKey: ["console"] });
       if (phoneNeeded) void navigate({ to: "/admin/clients/$businessId", params: { businessId: id } });
-      else void navigate({ to: "/admin/clients/new", search: { company: id } });
+      else void navigate({ to: "/admin/receptionists/new", search: { company: id } });
     },
     onError: (e: Error) => toast.error("Couldn't add the client", { description: e.message }),
   });
@@ -174,7 +174,7 @@ function ClientsPage() {
                 </Button>
                 <NeedsPhone className="h-8 text-[12.5px]" label={<><Plus className="mr-1.5 h-3.5 w-3.5" /> New receptionist</>}>
                 <Button asChild size="sm" className="h-8 text-[12.5px]">
-                  <Link to="/admin/clients/new" data-action="new-receptionist">
+                  <Link to="/admin/receptionists/new" data-action="new-receptionist">
                     <Plus className="mr-1.5 h-3.5 w-3.5" /> New receptionist
                   </Link>
                 </Button>
@@ -239,7 +239,7 @@ function ClientsPage() {
               !readOnly && !(q.data ?? []).length ? (
                 <NeedsPhone label="New receptionist">
                 <Button asChild size="sm">
-                  <Link to="/admin/clients/new">New receptionist</Link>
+                  <Link to="/admin/receptionists/new">New receptionist</Link>
                 </Button>
                 </NeedsPhone>
               ) : undefined,

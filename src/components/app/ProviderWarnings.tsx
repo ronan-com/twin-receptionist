@@ -8,7 +8,10 @@ import { request } from "@/lib/api/base";
 
 type Item = { provider: string; balance?: number; currency?: string; low?: boolean; url?: string; message?: string };
 
-export function ProviderWarnings({ enabled = true }: { enabled?: boolean }) {
+export type ProviderWarning = Item;
+
+/** Low balances and a nearly full database. They show in the bell and as a small pop-up (see alerts.tsx), not as a bar. */
+export function useProviderWarnings(enabled = true): Item[] {
   const q = useQuery({
     queryKey: ["provider-status", "warnings"],
     enabled,
@@ -24,7 +27,12 @@ export function ProviderWarnings({ enabled = true }: { enabled?: boolean }) {
       }
     },
   });
-  const items = q.data ?? [];
+  return q.data ?? [];
+}
+
+/** The old top bar. Not used by the app any more; kept for anything that still imports it. */
+export function ProviderWarnings({ enabled = true }: { enabled?: boolean }) {
+  const items = useProviderWarnings(enabled);
   if (items.length === 0) return null;
   return (
     <div data-provider-warnings className="space-y-px">

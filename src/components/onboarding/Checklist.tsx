@@ -73,7 +73,7 @@ export function useGetStartedItems(enabled: boolean) {
         title: "Create your first receptionist",
         hint: "Pick a template, set the hours and call handling, choose a voice.",
         done: (c?.agents ?? 0) > 0 || Boolean(withReceptionist),
-        to: "/admin/clients/new",
+        to: "/admin/receptionists/new",
         cta: "Create receptionist",
         guide: "receptionist",
       },
@@ -82,7 +82,7 @@ export function useGetStartedItems(enabled: boolean) {
         title: "Make a test call",
         hint: "Press Talk to this receptionist on its page and say hello from your browser.",
         done: (calls.data ?? []).some((x) => x.channel === "web"),
-        to: withReceptionist ? "/admin/clients/$businessId" : "/admin/clients/new",
+        to: withReceptionist ? "/admin/clients/$businessId" : "/admin/receptionists/new",
         cta: withReceptionist ? "Open receptionist" : "Create one first",
         guide: "testcall",
       },
@@ -124,7 +124,7 @@ function ItemLink({ item, companyId, className, children }: { item: Item; compan
         {children}
       </Link>
     );
-  const to = item.to === "/admin/clients/$businessId" ? "/admin/clients/new" : (item.to as "/admin/clients");
+  const to = item.to === "/admin/clients/$businessId" ? "/admin/receptionists/new" : (item.to as "/admin/clients");
   return (
     <Link to={to} className={className} data-cta={`gs-${item.key}`}>
       {children}

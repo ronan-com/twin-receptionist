@@ -5,13 +5,19 @@ import {
   CalendarDays,
   Home,
   Inbox,
+  LayoutDashboard,
   LifeBuoy,
+  Mail,
+  MessageSquareText,
+  Mic,
   Palette,
   Phone,
+  PhoneCall,
   Plug,
   Settings,
   Users,
 } from "lucide-react";
+import type { Hue } from "@/components/app/hues";
 import type {
   CallOutcome,
   CallStatus,
@@ -36,6 +42,11 @@ export interface NavItem {
   match?: string[];
   /** Paths that keep this item highlighted only when matched exactly. */
   matchExact?: string[];
+  /** Colour of its icon badge. */
+  hue?: Hue;
+  /** The big section of the nav (AI Receptionist): drawn larger, with its sub-sections underneath. */
+  featured?: boolean;
+  children?: { to: string; label: string; icon: LucideIcon; hue?: Hue }[];
 }
 
 /**
@@ -61,18 +72,34 @@ export const CLIENT_BACKLINKS: { to: string; label: string; from: string[] }[] =
   { to: "/app/settings", label: "Settings", from: ["/app/how-it-works", "/app/receptionist", "/app/knowledge", "/app/phone-numbers", "/app/automations", "/app/analytics", "/app/team", "/app/integrations"] },
 ];
 
-// The console (/admin). Six places. Everything else is a tab inside one of them
+// The console (/admin). Home, then the AI Receptionist package (the big one: Voice, Messages and Email
+// agents), then clients, calls and the rest. Everything else is a tab inside one of them
 // (ADMIN_SECTIONS), and every older URL still opens.
 export const ADMIN_NAV: NavItem[] = [
-  { to: "/admin/clients", label: "Clients", icon: Building2, match: ["/admin/calls", "/admin/agencies"], matchExact: ["/admin"] },
-  { to: "/admin/receptionists", label: "Receptionists", icon: Bot, match: ["/admin/voices", "/admin/test-lab"] },
-  { to: "/admin/phone-numbers", label: "Numbers", icon: Phone, match: ["/admin/number-requests"] },
-  { to: "/admin/connections", label: "Connections", icon: Plug },
-  { to: "/admin/branding", label: "Brand", icon: Palette },
+  { to: "/admin", label: "Home", icon: LayoutDashboard, hue: "indigo", exact: true },
+  {
+    to: "/admin/receptionists",
+    label: "AI Receptionist",
+    icon: Bot,
+    hue: "violet",
+    featured: true,
+    match: ["/admin/voices", "/admin/test-lab"],
+    children: [
+      { to: "/admin/receptionists/voice", label: "AI Voice Agent", icon: Mic, hue: "indigo" },
+      { to: "/admin/receptionists/messages", label: "AI Message Agent", icon: MessageSquareText, hue: "cyan" },
+      { to: "/admin/receptionists/email", label: "AI Email Agent", icon: Mail, hue: "magenta" },
+    ],
+  },
+  { to: "/admin/clients", label: "Clients", icon: Building2, hue: "sky", match: ["/admin/agencies"] },
+  { to: "/admin/calls", label: "Calls", icon: PhoneCall, hue: "green" },
+  { to: "/admin/phone-numbers", label: "Numbers", icon: Phone, hue: "amber", match: ["/admin/number-requests"] },
+  { to: "/admin/connections", label: "Connections", icon: Plug, hue: "cyan" },
+  { to: "/admin/branding", label: "Brand", icon: Palette, hue: "magenta" },
   {
     to: "/admin/tutorials",
     label: "Help",
     icon: LifeBuoy,
+    hue: "slate",
     match: ["/admin/support-requests", "/admin/settings", "/admin/usage", "/admin/system", "/admin/audit"],
   },
 ];
@@ -92,13 +119,14 @@ export interface AdminTab {
 /** The tabs shown across the top of each console area. */
 export const ADMIN_SECTIONS: AdminTab[][] = [
   [
-    { to: "/admin", label: "Overview", exact: true },
     { to: "/admin/clients", label: "Clients" },
-    { to: "/admin/calls", label: "Calls" },
     { to: "/admin/agencies", label: "Agencies", platformOnly: true },
   ],
   [
-    { to: "/admin/receptionists", label: "Receptionists" },
+    { to: "/admin/receptionists", label: "All", exact: true },
+    { to: "/admin/receptionists/voice", label: "AI Voice Agent" },
+    { to: "/admin/receptionists/messages", label: "AI Message Agent" },
+    { to: "/admin/receptionists/email", label: "AI Email Agent" },
     { to: "/admin/voices", label: "Voices" },
     { to: "/admin/test-lab", label: "Test", platformOnly: true },
   ],

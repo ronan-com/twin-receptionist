@@ -32,7 +32,6 @@ import { Route as AuthenticatedAdminConnectionsRouteImport } from './routes/_aut
 import { Route as AuthenticatedAdminIntegrationsRouteImport } from './routes/_authenticated/admin/integrations'
 import { Route as AuthenticatedAdminNumberRequestsRouteImport } from './routes/_authenticated/admin/number-requests'
 import { Route as AuthenticatedAdminPhoneNumbersRouteImport } from './routes/_authenticated/admin/phone-numbers'
-import { Route as AuthenticatedAdminReceptionistsRouteImport } from './routes/_authenticated/admin/receptionists'
 import { Route as AuthenticatedAdminSettingsRouteImport } from './routes/_authenticated/admin/settings'
 import { Route as AuthenticatedAdminSupportRequestsRouteImport } from './routes/_authenticated/admin/support-requests'
 import { Route as AuthenticatedAdminSystemRouteImport } from './routes/_authenticated/admin/system'
@@ -60,6 +59,12 @@ import { Route as AuthenticatedAppTeamRouteImport } from './routes/_authenticate
 import { Route as AuthenticatedAdminClientsIndexRouteImport } from './routes/_authenticated/admin/clients.index'
 import { Route as AuthenticatedAdminClientsBusinessIdRouteImport } from './routes/_authenticated/admin/clients.$businessId'
 import { Route as AuthenticatedAdminClientsNewRouteImport } from './routes/_authenticated/admin/clients.new'
+import { Route as AuthenticatedAdminReceptionistsIndexRouteImport } from './routes/_authenticated/admin/receptionists.index'
+import { Route as AuthenticatedAdminReceptionistsReceptionistIdRouteImport } from './routes/_authenticated/admin/receptionists.$receptionistId'
+import { Route as AuthenticatedAdminReceptionistsEmailRouteImport } from './routes/_authenticated/admin/receptionists.email'
+import { Route as AuthenticatedAdminReceptionistsMessagesRouteImport } from './routes/_authenticated/admin/receptionists.messages'
+import { Route as AuthenticatedAdminReceptionistsNewRouteImport } from './routes/_authenticated/admin/receptionists.new'
+import { Route as AuthenticatedAdminReceptionistsVoiceRouteImport } from './routes/_authenticated/admin/receptionists.voice'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -180,12 +185,6 @@ const AuthenticatedAdminPhoneNumbersRoute =
   AuthenticatedAdminPhoneNumbersRouteImport.update({
     id: '/phone-numbers',
     path: '/phone-numbers',
-    getParentRoute: () => AuthenticatedAdminRouteRoute,
-  } as any)
-const AuthenticatedAdminReceptionistsRoute =
-  AuthenticatedAdminReceptionistsRouteImport.update({
-    id: '/receptionists',
-    path: '/receptionists',
     getParentRoute: () => AuthenticatedAdminRouteRoute,
   } as any)
 const AuthenticatedAdminSettingsRoute =
@@ -344,6 +343,42 @@ const AuthenticatedAdminClientsNewRoute =
     path: '/clients/new',
     getParentRoute: () => AuthenticatedAdminRouteRoute,
   } as any)
+const AuthenticatedAdminReceptionistsIndexRoute =
+  AuthenticatedAdminReceptionistsIndexRouteImport.update({
+    id: '/receptionists/',
+    path: '/receptionists/',
+    getParentRoute: () => AuthenticatedAdminRouteRoute,
+  } as any)
+const AuthenticatedAdminReceptionistsReceptionistIdRoute =
+  AuthenticatedAdminReceptionistsReceptionistIdRouteImport.update({
+    id: '/receptionists/$receptionistId',
+    path: '/receptionists/$receptionistId',
+    getParentRoute: () => AuthenticatedAdminRouteRoute,
+  } as any)
+const AuthenticatedAdminReceptionistsEmailRoute =
+  AuthenticatedAdminReceptionistsEmailRouteImport.update({
+    id: '/receptionists/email',
+    path: '/receptionists/email',
+    getParentRoute: () => AuthenticatedAdminRouteRoute,
+  } as any)
+const AuthenticatedAdminReceptionistsMessagesRoute =
+  AuthenticatedAdminReceptionistsMessagesRouteImport.update({
+    id: '/receptionists/messages',
+    path: '/receptionists/messages',
+    getParentRoute: () => AuthenticatedAdminRouteRoute,
+  } as any)
+const AuthenticatedAdminReceptionistsNewRoute =
+  AuthenticatedAdminReceptionistsNewRouteImport.update({
+    id: '/receptionists/new',
+    path: '/receptionists/new',
+    getParentRoute: () => AuthenticatedAdminRouteRoute,
+  } as any)
+const AuthenticatedAdminReceptionistsVoiceRoute =
+  AuthenticatedAdminReceptionistsVoiceRouteImport.update({
+    id: '/receptionists/voice',
+    path: '/receptionists/voice',
+    getParentRoute: () => AuthenticatedAdminRouteRoute,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -367,7 +402,6 @@ export interface FileRoutesByFullPath {
   '/admin/integrations': typeof AuthenticatedAdminIntegrationsRoute
   '/admin/number-requests': typeof AuthenticatedAdminNumberRequestsRoute
   '/admin/phone-numbers': typeof AuthenticatedAdminPhoneNumbersRoute
-  '/admin/receptionists': typeof AuthenticatedAdminReceptionistsRoute
   '/admin/settings': typeof AuthenticatedAdminSettingsRoute
   '/admin/support-requests': typeof AuthenticatedAdminSupportRequestsRoute
   '/admin/system': typeof AuthenticatedAdminSystemRoute
@@ -395,7 +429,13 @@ export interface FileRoutesByFullPath {
   '/app/': typeof AuthenticatedAppIndexRoute
   '/admin/clients/$businessId': typeof AuthenticatedAdminClientsBusinessIdRoute
   '/admin/clients/new': typeof AuthenticatedAdminClientsNewRoute
+  '/admin/receptionists/$receptionistId': typeof AuthenticatedAdminReceptionistsReceptionistIdRoute
+  '/admin/receptionists/email': typeof AuthenticatedAdminReceptionistsEmailRoute
+  '/admin/receptionists/messages': typeof AuthenticatedAdminReceptionistsMessagesRoute
+  '/admin/receptionists/new': typeof AuthenticatedAdminReceptionistsNewRoute
+  '/admin/receptionists/voice': typeof AuthenticatedAdminReceptionistsVoiceRoute
   '/admin/clients/': typeof AuthenticatedAdminClientsIndexRoute
+  '/admin/receptionists/': typeof AuthenticatedAdminReceptionistsIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -417,7 +457,6 @@ export interface FileRoutesByTo {
   '/admin/integrations': typeof AuthenticatedAdminIntegrationsRoute
   '/admin/number-requests': typeof AuthenticatedAdminNumberRequestsRoute
   '/admin/phone-numbers': typeof AuthenticatedAdminPhoneNumbersRoute
-  '/admin/receptionists': typeof AuthenticatedAdminReceptionistsRoute
   '/admin/settings': typeof AuthenticatedAdminSettingsRoute
   '/admin/support-requests': typeof AuthenticatedAdminSupportRequestsRoute
   '/admin/system': typeof AuthenticatedAdminSystemRoute
@@ -445,7 +484,13 @@ export interface FileRoutesByTo {
   '/app': typeof AuthenticatedAppIndexRoute
   '/admin/clients/$businessId': typeof AuthenticatedAdminClientsBusinessIdRoute
   '/admin/clients/new': typeof AuthenticatedAdminClientsNewRoute
+  '/admin/receptionists/$receptionistId': typeof AuthenticatedAdminReceptionistsReceptionistIdRoute
+  '/admin/receptionists/email': typeof AuthenticatedAdminReceptionistsEmailRoute
+  '/admin/receptionists/messages': typeof AuthenticatedAdminReceptionistsMessagesRoute
+  '/admin/receptionists/new': typeof AuthenticatedAdminReceptionistsNewRoute
+  '/admin/receptionists/voice': typeof AuthenticatedAdminReceptionistsVoiceRoute
   '/admin/clients': typeof AuthenticatedAdminClientsIndexRoute
+  '/admin/receptionists': typeof AuthenticatedAdminReceptionistsIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -471,7 +516,6 @@ export interface FileRoutesById {
   '/_authenticated/admin/integrations': typeof AuthenticatedAdminIntegrationsRoute
   '/_authenticated/admin/number-requests': typeof AuthenticatedAdminNumberRequestsRoute
   '/_authenticated/admin/phone-numbers': typeof AuthenticatedAdminPhoneNumbersRoute
-  '/_authenticated/admin/receptionists': typeof AuthenticatedAdminReceptionistsRoute
   '/_authenticated/admin/settings': typeof AuthenticatedAdminSettingsRoute
   '/_authenticated/admin/support-requests': typeof AuthenticatedAdminSupportRequestsRoute
   '/_authenticated/admin/system': typeof AuthenticatedAdminSystemRoute
@@ -499,7 +543,13 @@ export interface FileRoutesById {
   '/_authenticated/app/': typeof AuthenticatedAppIndexRoute
   '/_authenticated/admin/clients/$businessId': typeof AuthenticatedAdminClientsBusinessIdRoute
   '/_authenticated/admin/clients/new': typeof AuthenticatedAdminClientsNewRoute
+  '/_authenticated/admin/receptionists/$receptionistId': typeof AuthenticatedAdminReceptionistsReceptionistIdRoute
+  '/_authenticated/admin/receptionists/email': typeof AuthenticatedAdminReceptionistsEmailRoute
+  '/_authenticated/admin/receptionists/messages': typeof AuthenticatedAdminReceptionistsMessagesRoute
+  '/_authenticated/admin/receptionists/new': typeof AuthenticatedAdminReceptionistsNewRoute
+  '/_authenticated/admin/receptionists/voice': typeof AuthenticatedAdminReceptionistsVoiceRoute
   '/_authenticated/admin/clients/': typeof AuthenticatedAdminClientsIndexRoute
+  '/_authenticated/admin/receptionists/': typeof AuthenticatedAdminReceptionistsIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -525,7 +575,6 @@ export interface FileRouteTypes {
     | '/admin/integrations'
     | '/admin/number-requests'
     | '/admin/phone-numbers'
-    | '/admin/receptionists'
     | '/admin/settings'
     | '/admin/support-requests'
     | '/admin/system'
@@ -553,7 +602,13 @@ export interface FileRouteTypes {
     | '/app/'
     | '/admin/clients/$businessId'
     | '/admin/clients/new'
+    | '/admin/receptionists/$receptionistId'
+    | '/admin/receptionists/email'
+    | '/admin/receptionists/messages'
+    | '/admin/receptionists/new'
+    | '/admin/receptionists/voice'
     | '/admin/clients/'
+    | '/admin/receptionists/'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -575,7 +630,6 @@ export interface FileRouteTypes {
     | '/admin/integrations'
     | '/admin/number-requests'
     | '/admin/phone-numbers'
-    | '/admin/receptionists'
     | '/admin/settings'
     | '/admin/support-requests'
     | '/admin/system'
@@ -603,7 +657,13 @@ export interface FileRouteTypes {
     | '/app'
     | '/admin/clients/$businessId'
     | '/admin/clients/new'
+    | '/admin/receptionists/$receptionistId'
+    | '/admin/receptionists/email'
+    | '/admin/receptionists/messages'
+    | '/admin/receptionists/new'
+    | '/admin/receptionists/voice'
     | '/admin/clients'
+    | '/admin/receptionists'
   id:
     | '__root__'
     | '/'
@@ -628,7 +688,6 @@ export interface FileRouteTypes {
     | '/_authenticated/admin/integrations'
     | '/_authenticated/admin/number-requests'
     | '/_authenticated/admin/phone-numbers'
-    | '/_authenticated/admin/receptionists'
     | '/_authenticated/admin/settings'
     | '/_authenticated/admin/support-requests'
     | '/_authenticated/admin/system'
@@ -656,7 +715,13 @@ export interface FileRouteTypes {
     | '/_authenticated/app/'
     | '/_authenticated/admin/clients/$businessId'
     | '/_authenticated/admin/clients/new'
+    | '/_authenticated/admin/receptionists/$receptionistId'
+    | '/_authenticated/admin/receptionists/email'
+    | '/_authenticated/admin/receptionists/messages'
+    | '/_authenticated/admin/receptionists/new'
+    | '/_authenticated/admin/receptionists/voice'
     | '/_authenticated/admin/clients/'
+    | '/_authenticated/admin/receptionists/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -832,13 +897,6 @@ declare module '@tanstack/react-router' {
       path: '/phone-numbers'
       fullPath: '/admin/phone-numbers'
       preLoaderRoute: typeof AuthenticatedAdminPhoneNumbersRouteImport
-      parentRoute: typeof AuthenticatedAdminRouteRoute
-    }
-    '/_authenticated/admin/receptionists': {
-      id: '/_authenticated/admin/receptionists'
-      path: '/receptionists'
-      fullPath: '/admin/receptionists'
-      preLoaderRoute: typeof AuthenticatedAdminReceptionistsRouteImport
       parentRoute: typeof AuthenticatedAdminRouteRoute
     }
     '/_authenticated/admin/settings': {
@@ -1030,6 +1088,48 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedAdminClientsNewRouteImport
       parentRoute: typeof AuthenticatedAdminRouteRoute
     }
+    '/_authenticated/admin/receptionists/': {
+      id: '/_authenticated/admin/receptionists/'
+      path: '/receptionists'
+      fullPath: '/admin/receptionists/'
+      preLoaderRoute: typeof AuthenticatedAdminReceptionistsIndexRouteImport
+      parentRoute: typeof AuthenticatedAdminRouteRoute
+    }
+    '/_authenticated/admin/receptionists/$receptionistId': {
+      id: '/_authenticated/admin/receptionists/$receptionistId'
+      path: '/receptionists/$receptionistId'
+      fullPath: '/admin/receptionists/$receptionistId'
+      preLoaderRoute: typeof AuthenticatedAdminReceptionistsReceptionistIdRouteImport
+      parentRoute: typeof AuthenticatedAdminRouteRoute
+    }
+    '/_authenticated/admin/receptionists/email': {
+      id: '/_authenticated/admin/receptionists/email'
+      path: '/receptionists/email'
+      fullPath: '/admin/receptionists/email'
+      preLoaderRoute: typeof AuthenticatedAdminReceptionistsEmailRouteImport
+      parentRoute: typeof AuthenticatedAdminRouteRoute
+    }
+    '/_authenticated/admin/receptionists/messages': {
+      id: '/_authenticated/admin/receptionists/messages'
+      path: '/receptionists/messages'
+      fullPath: '/admin/receptionists/messages'
+      preLoaderRoute: typeof AuthenticatedAdminReceptionistsMessagesRouteImport
+      parentRoute: typeof AuthenticatedAdminRouteRoute
+    }
+    '/_authenticated/admin/receptionists/new': {
+      id: '/_authenticated/admin/receptionists/new'
+      path: '/receptionists/new'
+      fullPath: '/admin/receptionists/new'
+      preLoaderRoute: typeof AuthenticatedAdminReceptionistsNewRouteImport
+      parentRoute: typeof AuthenticatedAdminRouteRoute
+    }
+    '/_authenticated/admin/receptionists/voice': {
+      id: '/_authenticated/admin/receptionists/voice'
+      path: '/receptionists/voice'
+      fullPath: '/admin/receptionists/voice'
+      preLoaderRoute: typeof AuthenticatedAdminReceptionistsVoiceRouteImport
+      parentRoute: typeof AuthenticatedAdminRouteRoute
+    }
   }
 }
 
@@ -1043,7 +1143,6 @@ interface AuthenticatedAdminRouteRouteChildren {
   AuthenticatedAdminIntegrationsRoute: typeof AuthenticatedAdminIntegrationsRoute
   AuthenticatedAdminNumberRequestsRoute: typeof AuthenticatedAdminNumberRequestsRoute
   AuthenticatedAdminPhoneNumbersRoute: typeof AuthenticatedAdminPhoneNumbersRoute
-  AuthenticatedAdminReceptionistsRoute: typeof AuthenticatedAdminReceptionistsRoute
   AuthenticatedAdminSettingsRoute: typeof AuthenticatedAdminSettingsRoute
   AuthenticatedAdminSupportRequestsRoute: typeof AuthenticatedAdminSupportRequestsRoute
   AuthenticatedAdminSystemRoute: typeof AuthenticatedAdminSystemRoute
@@ -1054,7 +1153,13 @@ interface AuthenticatedAdminRouteRouteChildren {
   AuthenticatedAdminIndexRoute: typeof AuthenticatedAdminIndexRoute
   AuthenticatedAdminClientsBusinessIdRoute: typeof AuthenticatedAdminClientsBusinessIdRoute
   AuthenticatedAdminClientsNewRoute: typeof AuthenticatedAdminClientsNewRoute
+  AuthenticatedAdminReceptionistsReceptionistIdRoute: typeof AuthenticatedAdminReceptionistsReceptionistIdRoute
+  AuthenticatedAdminReceptionistsEmailRoute: typeof AuthenticatedAdminReceptionistsEmailRoute
+  AuthenticatedAdminReceptionistsMessagesRoute: typeof AuthenticatedAdminReceptionistsMessagesRoute
+  AuthenticatedAdminReceptionistsNewRoute: typeof AuthenticatedAdminReceptionistsNewRoute
+  AuthenticatedAdminReceptionistsVoiceRoute: typeof AuthenticatedAdminReceptionistsVoiceRoute
   AuthenticatedAdminClientsIndexRoute: typeof AuthenticatedAdminClientsIndexRoute
+  AuthenticatedAdminReceptionistsIndexRoute: typeof AuthenticatedAdminReceptionistsIndexRoute
 }
 
 const AuthenticatedAdminRouteRouteChildren: AuthenticatedAdminRouteRouteChildren =
@@ -1069,7 +1174,6 @@ const AuthenticatedAdminRouteRouteChildren: AuthenticatedAdminRouteRouteChildren
     AuthenticatedAdminNumberRequestsRoute:
       AuthenticatedAdminNumberRequestsRoute,
     AuthenticatedAdminPhoneNumbersRoute: AuthenticatedAdminPhoneNumbersRoute,
-    AuthenticatedAdminReceptionistsRoute: AuthenticatedAdminReceptionistsRoute,
     AuthenticatedAdminSettingsRoute: AuthenticatedAdminSettingsRoute,
     AuthenticatedAdminSupportRequestsRoute:
       AuthenticatedAdminSupportRequestsRoute,
@@ -1082,7 +1186,19 @@ const AuthenticatedAdminRouteRouteChildren: AuthenticatedAdminRouteRouteChildren
     AuthenticatedAdminClientsBusinessIdRoute:
       AuthenticatedAdminClientsBusinessIdRoute,
     AuthenticatedAdminClientsNewRoute: AuthenticatedAdminClientsNewRoute,
+    AuthenticatedAdminReceptionistsReceptionistIdRoute:
+      AuthenticatedAdminReceptionistsReceptionistIdRoute,
+    AuthenticatedAdminReceptionistsEmailRoute:
+      AuthenticatedAdminReceptionistsEmailRoute,
+    AuthenticatedAdminReceptionistsMessagesRoute:
+      AuthenticatedAdminReceptionistsMessagesRoute,
+    AuthenticatedAdminReceptionistsNewRoute:
+      AuthenticatedAdminReceptionistsNewRoute,
+    AuthenticatedAdminReceptionistsVoiceRoute:
+      AuthenticatedAdminReceptionistsVoiceRoute,
     AuthenticatedAdminClientsIndexRoute: AuthenticatedAdminClientsIndexRoute,
+    AuthenticatedAdminReceptionistsIndexRoute:
+      AuthenticatedAdminReceptionistsIndexRoute,
   }
 
 const AuthenticatedAdminRouteRouteWithChildren =

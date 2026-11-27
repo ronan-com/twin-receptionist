@@ -14,7 +14,7 @@ import { AssistantProvider } from "@/components/assistant/Assistant";
 import { useSupportUnread } from "@/components/app/SupportDialog";
 import { ConnectPhoneBanner } from "@/components/app/PhoneGate";
 import { SectionTabs } from "@/components/app/SectionTabs";
-import { ProviderWarnings } from "@/components/app/ProviderWarnings";
+import { useLiveAlerts, type AlertItem } from "@/components/app/alerts";
 
 // The console. Variant "platform" (the platform admin: everything) or "agency"
 // (agency staff: their own agency). Business users are sent to their workspace,
@@ -46,15 +46,18 @@ function AdminLayout() {
   const support = useSupportUnread(!ws.loading && !!ws.session);
   const supportUnread = variant === "agency" ? support.unread : 0;
 
+  // Low balances (was the bar across the top), new calls and messages: in the bell, with a small pop-up and a sound.
+  const live = useLiveAlerts(ws.loading || !ws.session ? null : ws.range, !ws.loading && !!ws.session && !ws.viewing);
+
   const notifications = useMemo(() => {
-    const out: { title: string; description?: string; tone?: "info" | "warning" | "danger"; to?: string }[] = [];
+    const out: AlertItem[] = [];
     const c = countsQ.data;
-    if (c?.openIncidents) out.push({ title: `${c.openIncidents} open incident${c.openIncidents === 1 ? "" : "s"}`, description: "Review in System / QA.", tone: "danger", to: "/admin/system" });
+    if (c?.openIncidents) out.push({ id: "incidents", title: `${c.openIncidents} open incident${c.openIncidents === 1 ? "" : "s"}`, description: "Review in System / QA.", tone: "danger", to: "/admin/system" });
     if (c?.pendingNumberRequests && !ws.session?.singleAgency)
-      out.push({ title: `${c.pendingNumberRequests} number request${c.pendingNumberRequests === 1 ? "" : "s"} waiting`, tone: "warning", to: "/admin/number-requests" });
-    if (supportUnread) out.push({ title: `${supportUnread} new in Support requests`, description: "Replies and client requests you haven't read.", tone: "info", to: "/admin/support-requests" });
-    return out;
-  }, [countsQ.data, ws.session?.singleAgency, supportUnread]);
+      out.push({ id: "number-requests", title: `${c.pendingNumberRequests} number request${c.pendingNumberRequests === 1 ? "" : "s"} waiting`, tone: "warning", to: "/admin/number-requests" });
+    if (supportUnread) out.push({ id: "support", title: `${supportUnread} new in Support requests`, description: "Replies and client requests you haven't read.", tone: "info", to: "/admin/support-requests" });
+    return [...out, ...live];
+  }, [countsQ.data, ws.session?.singleAgency, supportUnread, live]);
 
   if (ws.loading) {
     return (
@@ -108,7 +111,6 @@ function AdminLayout() {
       brandTo="/admin"
       banner={
         <>
-        <ProviderWarnings />
         {!ws.viewing ? (
           <ConnectPhoneBanner />
         ) : ws.viewing ? (

@@ -1,7 +1,9 @@
 import { useMemo, useState } from "react";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
-import { Bot, Search } from "lucide-react";
+import { Bot, Mail, MessageSquareText, Mic, Plus, Search } from "lucide-react";
+import { NeedsPhone } from "@/components/app/PhoneGate";
+import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
@@ -14,13 +16,13 @@ import type { AdminAgentRow } from "@/lib/api/console";
 import { BizCell, useConsole } from "./-shared";
 import { PRODUCT } from "@/lib/app/product";
 
-export const Route = createFileRoute("/_authenticated/admin/receptionists")({
-  head: () => ({ meta: [{ title: `AI receptionists — ${PRODUCT} admin` }] }),
+export const Route = createFileRoute("/_authenticated/admin/receptionists/")({
+  head: () => ({ meta: [{ title: `AI Receptionist — ${PRODUCT} admin` }] }),
   component: AdminAgentsPage,
 });
 
 function AdminAgentsPage() {
-  const { platform } = useConsole();
+  const { platform, readOnly } = useConsole();
   const q = useQuery(adminAgentsQuery());
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState("all");
@@ -53,35 +55,40 @@ function AdminAgentsPage() {
       cell: (a) => <BizCell biz={{ name: a.name, is_demo: a.business.is_demo, org_name: a.business.org_name }} sub={platform ? `${a.business.name} · ${a.business.org_name}` : a.business.name} />,
     },
     { key: "status", header: "Status", cell: (a) => <StatusBadge tone={a.status === "active" ? "success" : "muted"} dot>{humanize(a.status)}</StatusBadge> },
-    { key: "voice", header: "Voice", hideBelow: "md", cell: (a) => <span className="text-ink-muted">{a.voice?.display_name.split(" - ")[0] ?? "Default"}</span> },
-    { key: "booking", header: "Bookings", hideBelow: "lg", cell: (a) => <span className="text-ink-muted">{a.booking ? `${humanize(a.booking.provider)}${a.booking.enabled ? "" : " (off)"}` : "Messages only"}</span> },
-    { key: "model", header: "Model", hideBelow: "xl", cell: (a) => <span className="font-mono text-[11.5px] text-ink-muted">{a.demo_assistant ? "demo" : a.llm_model}</span> },
     {
-      key: "routing",
-      header: "Phone",
-      hideBelow: "sm",
+      key: "channels",
+      header: "Does",
       cell: (a) => (
-        <StatusBadge tone={a.routing_status === "routed" ? "success" : "muted"} dot>
-          {a.routing_status === "routed" ? "Number connected" : "No number"}
-        </StatusBadge>
+        <span className="flex gap-1.5">
+          {([["voice", Mic, "Voice", "indigo"], ["messages", MessageSquareText, "Messages", "cyan"], ["email", Mail, "Email", "magenta"]] as const).map(([tab, Ic, label, hue]) => (
+            <Link key={tab} to="/admin/receptionists/$receptionistId" params={{ receptionistId: a.id }} search={{ tab }} title={label} data-hue={hue} className="hue-icon inline-flex h-7 w-7 items-center justify-center rounded-[8px] hover:opacity-80"><Ic className="h-3.5 w-3.5" /></Link>
+          ))}
+        </span>
       ),
     },
-    { key: "updated", header: "Updated", align: "right", hideBelow: "xl", cell: (a) => <span className="whitespace-nowrap text-ink-muted">{fmtRelative(a.updated_at)}</span> },
     {
       key: "open",
       header: "",
       align: "right",
       cell: (a) => (
-        <Link to="/admin/clients/$businessId" params={{ businessId: a.business_id }} className="whitespace-nowrap text-[12px] text-indigo hover:underline">
-          Open client
-        </Link>
+        <Button asChild size="sm" variant="outline" className="h-8 text-[12.5px]">
+          <Link to="/admin/receptionists/$receptionistId" params={{ receptionistId: a.id }} search={{ tab: "voice" }}>Edit</Link>
+        </Button>
       ),
     },
   ];
 
   return (
     <div className="space-y-5" data-page="admin-receptionists">
-      <PageHeader eyebrow={platform ? "Platform console" : "Agency console"} title="AI receptionists" description="Each client has one receptionist: its voice, booking setup, phone number and model." />
+      <PageHeader
+        title="AI Receptionist"
+        description="One setup. Answers calls, texts and email."
+        actions={!readOnly ? (
+          <NeedsPhone className="h-8 text-[12.5px]" label={<><Plus className="mr-1.5 h-3.5 w-3.5" /> New receptionist</>}>
+            <Button asChild size="sm" className="h-8 text-[12.5px]"><Link to="/admin/receptionists/new" data-cta="new-receptionist"><Plus className="mr-1.5 h-3.5 w-3.5" /> New receptionist</Link></Button>
+          </NeedsPhone>
+        ) : null}
+      />
 
       <MetricGrid cols={4}>
         <MetricCard label="Receptionists" value={fmtNumber(stats.total)} hint="Excluding demo" icon={Bot} loading={q.isPending} />
@@ -113,7 +120,7 @@ function AdminAgentsPage() {
         <DataTable columns={columns} rows={rows} rowKey={(a) => a.id} loading={q.isPending} empty={{ title: "No receptionists match", icon: Bot }} />
       </Panel>
 
-      <p className="text-[11.5px] text-ink-muted">The receptionist's script is built from its settings and never shown here. Changes are made from the client's workspace and written to the audit log.</p>
+      
     </div>
   );
 }

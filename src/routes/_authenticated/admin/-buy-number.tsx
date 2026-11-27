@@ -8,6 +8,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Notice } from "@/components/app/primitives";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { OwnedNumbers } from "./-own-numbers";
+import { NumberCaps } from "./-number-caps";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { buyNumberFor, platformApi } from "@/lib/api/console";
 import { twilioAccountQuery } from "@/lib/api/twilio";
@@ -54,7 +55,7 @@ export function BuyNumber({ clientId, timezone, onBought }: { clientId: string; 
       <Button type="button" size="sm" variant="outline" className="h-8 w-full text-[12.5px]" onClick={() => setOpen(true)} data-action="buy-number">
         <Phone /> Add a number
       </Button>
-      <p className="mt-1.5 text-[11.5px] text-ink-muted">This receptionist runs on Telnyx, so it takes a Telnyx number: buy one (charged to your Telnyx account each month) or use one you already own there.</p>
+      
 
       <Dialog
         open={open}
@@ -67,14 +68,14 @@ export function BuyNumber({ clientId, timezone, onBought }: { clientId: string; 
           <DialogHeader>
             <DialogTitle>Add a phone number</DialogTitle>
             <DialogDescription>
-              {tab === "buy" ? "Pick a number for this receptionist. Telnyx charges your account for it every month until you release it." : tab === "own" ? "Numbers on your Telnyx account that no receptionist answers yet." : "A backup option, for agencies that use Vapi for voice."}
+              {tab === "buy" ? "Pick one. It's billed monthly by Telnyx." : tab === "own" ? "Numbers you already have." : "Backup option (Vapi)."}
             </DialogDescription>
           </DialogHeader>
 
           <Tabs value={tab} onValueChange={(v) => setTab(v as "buy" | "own" | "twilio")}>
             <TabsList className={cn("grid w-full", showTwilio ? "grid-cols-[1fr_1fr_auto]" : "grid-cols-2")}>
-              <TabsTrigger value="buy" data-tab="buy-new">Buy a new number</TabsTrigger>
-              <TabsTrigger value="own" data-tab="use-existing">Use a number I already have</TabsTrigger>
+              <TabsTrigger value="buy" data-tab="buy-new">Buy new</TabsTrigger>
+              <TabsTrigger value="own" data-tab="use-existing">Use mine</TabsTrigger>
               {showTwilio ? (
                 <TabsTrigger value="twilio" data-tab="twilio-backup" className="px-2.5 text-[11.5px] font-normal text-ink-muted">
                   Twilio (backup)
@@ -147,9 +148,7 @@ export function BuyNumber({ clientId, timezone, onBought }: { clientId: string; 
 
               {country === "US" ? (
                 <div data-note="us-texting">
-                  <Notice tone="info">
-                    US numbers take calls straight away; texting needs 10DLC (or toll-free) registration in Telnyx first, so it isn't switched on here.
-                  </Notice>
+                  <Notice tone="info">US numbers take calls now. Texts need extra registration in Telnyx.</Notice>
                 </div>
               ) : null}
 
@@ -180,7 +179,7 @@ export function BuyNumber({ clientId, timezone, onBought }: { clientId: string; 
                             <span className={cn("flex h-4 w-4 items-center justify-center rounded-full border", on ? "border-indigo bg-indigo text-white" : "border-hairline")}>{on ? <Check className="h-3 w-3" /> : null}</span>
                             {fmtPhone(n.phoneNumber)}
                           </span>
-                          <span className="shrink-0 text-ink-muted">{price(n)} a month</span>
+                          <span className="flex shrink-0 items-center gap-2"><NumberCaps sms={n.sms} /><span className="text-ink-muted">{price(n)}/mo</span></span>
                         </button>
                       </li>
                     );

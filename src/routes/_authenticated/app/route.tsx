@@ -3,7 +3,6 @@ import { ClientShell } from "@/components/app/ClientShell";
 import { Notice, ErrorState } from "@/components/app/primitives";
 import { SetupPrompt } from "@/components/app/SetupPrompt";
 import { SettingsTabs } from "@/components/app/SettingsTabs";
-import { ProviderWarnings } from "@/components/app/ProviderWarnings";
 import { WorkspaceBrand } from "@/components/app/WorkspaceBrand";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -109,7 +108,7 @@ function ClientAppLayout() {
   })();
 
   return (
-    <ClientShell nav={CLIENT_NAV} banner={<>{ws.access.kind === "staff_view" || ws.console ? <ProviderWarnings /> : null}{banner}</>}>
+    <ClientShell nav={CLIENT_NAV} banner={banner}>
       {ws.business ? (
         <>
           <WorkspaceBrand />

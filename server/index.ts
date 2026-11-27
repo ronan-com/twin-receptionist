@@ -101,7 +101,8 @@ import { platformSettingsRoutes } from "./platformSettingsApi";
 import { emailSettingsRoutes } from "./emailSettings";
 import type { BookingProvider, BookingState } from "../src/lib/shared";
 import { connectNumberForTexts, enableTexting, sendTestText, textingState } from "./texting";
-import { numbersBecameLive, setTexts, splitNumbers, textsAfterBuy, textsStatus, textsWhenLive } from "./textsControl";
+import { setTexts, splitNumbers, textsAfterBuy, textsStatus } from "./textsControl";
+import { recordNumbers, startNumberSync } from "./numberSync";
 import { BOOKING_TOOL_DEFS } from "./booking";
 import { VapiError, asProvider, connectedEngines, installProvider, ownKeyInstall, providerOfClient, providerOfOrg } from "./voice/config";
 import { providerById, voiceFor, voiceForOrg } from "./voice";
@@ -426,17 +427,9 @@ async function numberState(ctx: Ctx, client: Business): Promise<NumberState> {
   }
   const engine = voiceFor(client);
   const { numbers, pending, balance } = await engine.numbers.state(ctx, client);
-  // Remember the connected numbers so the client list can show them without asking Telnyx again, and which
-  // ones were still waiting for approval, so the next look can tell when one has gone live.
-  const current = numbers.map((n) => n.phoneNumber);
-  const split = splitNumbers({ numbers, pending });
-  const becameLive = numbersBecameLive(client, split);
-  if (JSON.stringify(current) !== JSON.stringify(client.phoneNumbers ?? []) || JSON.stringify(split.pending) !== JSON.stringify(client.pendingNumbers ?? [])) {
-    const saved = { ...client, phoneNumbers: current, pendingNumbers: split.pending };
-    await saveClient(saved);
-    // A number that has just gone live (approved after it was added) starts taking texts if the Texts switch is on.
-    await textsWhenLive(saved, becameLive).catch((err) => console.error(`[texting ${client.id}]`, err.message));
-  }
+  // Remember the connected numbers (and which are still waiting for approval) so the client list can show them
+  // without asking again, and so a number approved later is noticed (server/numberSync.ts).
+  await recordNumbers(client, { numbers, pending });
   return { provider: engine.id, support: { ...engine.numbers.support(), rule: NUMBER_RULE[engine.id] }, numbers, pending, balance, canBuy: await canBuyNumbers(ctx), canUseOwn: engine.id === "telnyx" && (await canUseOwnNumbers(ctx)), requests: await requestsForClient(client.id) };
 }
 
@@ -1372,6 +1365,14 @@ startAutoUpdate();
 startBackups();
 // Account emails that failed on every sender are tried again (server/mailer.ts).
 startOutbox();
+
+// Every ten minutes, receptionists with numbers waiting for approval are asked again, so a number that goes live
+// shows as live and starts texting even when nobody has the page open (server/numberSync.ts).
+startNumberSync(async (client, orgId) => {
+  const ctx = { tokenHash: "", user: { id: "", email: "", name: "", platformAdmin: false }, org: { id: orgId, name: "" }, role: "owner" } as Ctx;
+  const { numbers, pending } = await runAsOrg(orgId, () => voiceFor(client).numbers.state(ctx, client));
+  return { numbers, pending };
+});
 
 // Check every connected mailbox once a minute. One at a time, so a slow mail
 // server can't pile up connections.

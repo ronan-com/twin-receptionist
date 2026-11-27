@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
-import { Link, useNavigate, useSearch } from "@tanstack/react-router";
+import { createContext, useContext } from "react";
+import { Link as RouterLink, useNavigate, useSearch } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Bot, CalendarCheck, CheckCircle2, Lock, MoonStar } from "lucide-react";
@@ -37,6 +38,18 @@ import { fmtRelative } from "@/lib/app/format";
 import { TIMEZONES, formatNumber } from "@/lib/shared";
 import { cn } from "@/lib/utils";
 import { PRODUCT } from "@/lib/app/product";
+
+// Inside the agency's receptionist editor, links to the client dashboard's pages stay in the editor instead.
+const EmbeddedCtx = createContext<string | null>(null);
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function Link(props: any) {
+  const rid = useContext(EmbeddedCtx);
+  if (!rid) return <RouterLink {...props} />;
+  const to = String(props.to);
+  if (to.startsWith("/app/calls") || to.startsWith("/app/leads")) return <RouterLink {...props} to="/admin/calls" />;
+  const tab = to.startsWith("/app/integrations") ? "booking" : to.startsWith("/app/phone-numbers") ? "voice" : "advanced";
+  return <RouterLink {...props} to="/admin/receptionists/$receptionistId" params={{ receptionistId: rid }} search={{ tab }} />;
+}
 
 export const AGENT_TABS = ["persona", "conversation", "booking", "transfers", "hours"] as const;
 export type AgentTab = (typeof AGENT_TABS)[number];
@@ -170,7 +183,7 @@ const STATUS_TONE: Record<AutomationStatus["state"], Tone> = { on: "success", of
 
 /* ---------------- Page ---------------- */
 
-export function ReceptionistPage({ tab, onTab }: { tab?: AgentTab; onTab?: (t: AgentTab) => void } = {}) {
+export function ReceptionistPage({ tab, onTab, embeddedId }: { tab?: AgentTab; onTab?: (t: AgentTab) => void; /** The receptionist being edited from the agency console. */ embeddedId?: string } = {}) {
   const ws = useWorkspace();
   const agentsQ = useQuery(agentsQuery(ws.businessId));
   const agent = (agentsQ.data?.[0] as ReceptionistRow | undefined) ?? null;
@@ -178,7 +191,11 @@ export function ReceptionistPage({ tab, onTab }: { tab?: AgentTab; onTab?: (t: A
   if (agentsQ.isPending) return <PageSkeleton metrics={0} rows={4} />;
   if (agentsQ.error) return <ErrorState message={agentsQ.error.message} onRetry={() => void agentsQ.refetch()} />;
   if (!agent) return <ErrorState message="This business has no receptionist yet. Ask your agency to set one up." />;
-  return <AgentEditor key={agent.id} agent={agent} tab={tab} onTab={onTab} />;
+  return (
+    <EmbeddedCtx.Provider value={embeddedId ?? null}>
+      <AgentEditor key={agent.id} agent={agent} tab={tab} onTab={onTab} />
+    </EmbeddedCtx.Provider>
+  );
 }
 
 function AgentEditor({ agent, tab: tabProp, onTab }: { agent: ReceptionistRow; tab?: AgentTab; onTab?: (t: AgentTab) => void }) {

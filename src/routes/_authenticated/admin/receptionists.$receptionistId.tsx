@@ -139,7 +139,7 @@ function ReceptionistEditor() {
           {card("voice")}
           {editable ? (
             <Panel title="Script and voice" description="What it says and how it sounds.">
-              <Scope id={r.id}><ReceptionistPage /></Scope>
+              <Scope id={r.id}><ReceptionistPage embeddedId={r.id} /></Scope>
             </Panel>
           ) : null}
         </div>

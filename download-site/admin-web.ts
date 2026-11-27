@@ -36,7 +36,7 @@ import { wizardPage } from "./wizard";
 import { deleteTickets, fileOf, navLinkHtml, replyToTicket, setTicketStatus, ticketById, ticketViewHtml, ticketsListHtml, type Status as TicketStatus } from "./tickets";
 import { assistPanel, assistRoute, inviteCard, isInstalling, statusJson } from "./assist-web";
 import { removeHost } from "./hosts";
-import { createLink, linksPanel, rotateLink, toggleLink, listLinks } from "./genericlink";
+import { createLink, rotateLink, toggleLink, listLinks } from "./genericlink";
 
 // ---------------- settings ----------------
 const ADMIN_EMAILS = (process.env.ADMIN_EMAILS || "").split(",").map((s) => s.trim().toLowerCase()).filter(Boolean);
@@ -249,7 +249,6 @@ function listPage(sid: string, email: string, q: string, filter: string, flash =
 ${DEMO_READY ? `<form method="post" action="/admin/demo" target="_blank">${hiddenT(sid)}<button class="btn o" type="submit" title="Makes a test agency with pretend accounts and opens their setup in a new tab">Start a test run</button></form>` : ""}</div>
 </section>` : "";
   return page("Agencies", `${flash}
-${linksPanel(sid, { hiddenT, copyBtn })}
 <section class="card">
 <div class="titlerow"><h1>Agencies</h1></div>
 <p class="lead">${all.length} agenc${all.length === 1 ? "y" : "ies"}. ${counts.live} live, ${counts.installing} installing, ${counts.failed} failed. ${syncing} syncing now.</p>

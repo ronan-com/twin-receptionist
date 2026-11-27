@@ -46,8 +46,8 @@ describe("Telnyx first, Vapi and Twilio as backup options", () => {
     const b = await buyer("a");
     telnyxOk();
     expect(await run(b, "phones", { provider: "vapi", key: TKEY, ...VOK })).toBeNull();
-    expect(calls).toHaveLength(1);
-    expect(calls[0].url).toBe("https://api.telnyx.com/v2/balance");
+    // The balance, then the two pretrial probes (a paid account can list both).
+    expect(calls.map((c) => c.url)).toEqual(["https://api.telnyx.com/v2/balance", "https://api.telnyx.com/v2/ai/assistants?page[size]=1", "https://api.telnyx.com/v2/call_control_applications?page[size]=1"]);
     expect(getSetup(b.id).phones).toMatchObject({ provider: "telnyx", confirmed: true });
     expect(getSetup(b.id).vapi).toBeUndefined();
     expect(hasSecret(b.id, "vapi_key")).toBe(false);

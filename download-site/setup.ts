@@ -268,6 +268,8 @@ export const actions: Record<string, Action> = {
     if (!key) return err("Paste your Telnyx API key.", f);
     const wait = checkLimit(b); if (wait) return tooMany(wait);
     const r = await checkTelnyx(key);
+    // Pretrial: the key is fine, the account isn't upgraded yet. Keep the key so "Check again" works without pasting it again.
+    if (!r.ok && r.pretrial) { putSecret(b.id, "telnyx_key", key); updateSetup(b.id, (s) => { s.phones = { ...s.phones, checked: true, confirmed: false }; }); return err(r.message); }
     if (!r.ok) return err(r.message, f);
     putSecret(b.id, "telnyx_key", key);
     updateSetup(b.id, (s) => {

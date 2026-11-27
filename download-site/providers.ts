@@ -283,12 +283,34 @@ export async function railwayUpload(token: string, projectId: string, environmen
 }
 
 // ======================= Telnyx =======================
-export async function checkTelnyx(key: string): Promise<Check<{ balance: string }>> {
+/**
+ * A Telnyx account still on "pretrial" takes the key and shows a balance, but can't create AI assistants or buy
+ * numbers, so the agency would install and then fail on its first receptionist. Telnyx has no endpoint that reports
+ * the account level, so we ask two cheap read-only lists a pretrial account isn't allowed (AI assistants, Call
+ * Control applications): a permission refusal there, or an answer that talks about pretrial / account level /
+ * upgrading, means pretrial. Anything else (network trouble, Telnyx down) never blocks the buyer.
+ */
+export const TELNYX_PRETRIAL_MSG = "Your Telnyx account is still on pretrial. Upgrade it in Telnyx (profile → Account Level → Upgrade, confirm with LinkedIn or GitHub, add US$10), then press Check again — or Skip for now and connect it later in your dashboard.";
+const PRETRIAL_RE = /pre-?trial|account level|upgrade (?:your|the) account|trial account or higher|requires? (?:a )?(?:trial|paid|verified) account/i;
+export function telnyxSaysPretrial(status: number, body: unknown): boolean {
+  if (status === 401 || status === 403) return true;
+  return status >= 400 && status < 500 && status !== 404 && status !== 429 && PRETRIAL_RE.test(typeof body === "string" ? body : JSON.stringify(body ?? ""));
+}
+export async function telnyxPretrial(key: string): Promise<boolean> {
+  const h = { headers: { Authorization: `Bearer ${key}`, Accept: "application/json", "User-Agent": UA } };
+  const probe = (path: string) => call("Telnyx", `${TELNYX_API}${path}`, h, 15000).then((r) => telnyxSaysPretrial(r.status, r.json)).catch(() => false);
+  const [ai, cc] = await Promise.all([probe("/v2/ai/assistants?page[size]=1"), probe("/v2/call_control_applications?page[size]=1")]);
+  return ai || cc;
+}
+
+export async function checkTelnyx(key: string): Promise<Check<{ balance: string }> & { pretrial?: boolean }> {
   if (!key) return { ok: false, message: "Paste your Telnyx API key first." };
   if (hasSpace(key)) return { ok: false, message: "That key has spaces in it: copy just the key." };
   const bad = "Telnyx didn't accept that key: copy it again from API Keys, or make a new one.";
   if (CONFIG.mockTelnyx) {
     // Test mode: never calls Telnyx. Only pretend keys (platform-fake-...) pass; the installed app treats them as a fake phone provider.
+    // platform-fake-pretrial-... is a pretend key on a pretrial account.
+    if (key.startsWith("platform-fake-pretrial")) return { ok: false, pretrial: true, message: TELNYX_PRETRIAL_MSG };
     return key.startsWith("platform-fake-") ? { ok: true, message: "Telnyx key works (test mode). Available credit: 25.00 USD.", balance: "25.00 USD" } : { ok: false, message: bad };
   }
   const { status, json } = await call("Telnyx", `${TELNYX_API}/v2/balance`, { headers: { Authorization: `Bearer ${key}`, Accept: "application/json", "User-Agent": UA } }).catch((e) => ({ status: -1, json: { e } }));
@@ -297,6 +319,7 @@ export async function checkTelnyx(key: string): Promise<Check<{ balance: string 
   if (status !== 200) return { ok: false, message: `Telnyx had a problem (error ${status}). Wait a minute and try again.` };
   const d = json.data || {};
   const balance = `${Number(d.available_credit ?? d.balance ?? 0).toFixed(2)} ${d.currency || "USD"}`;
+  if (await telnyxPretrial(key)) return { ok: false, pretrial: true, message: TELNYX_PRETRIAL_MSG };
   return { ok: true, message: `Telnyx key works. Available credit: ${balance}.`, balance };
 }
 

@@ -52,6 +52,30 @@ export async function checkKey(raw: unknown): Promise<{ key: string; balance: Ba
   }
 }
 
+/**
+ * A Telnyx account still on "pretrial" accepts the key and shows a balance, but can't create AI assistants or buy
+ * numbers. Telnyx has no endpoint for the account level, so ask two cheap read-only lists a pretrial account isn't
+ * allowed: a permission refusal, or an answer about pretrial / account level / upgrading, means pretrial. Network
+ * trouble or Telnyx being down never blocks anyone. Same rule as the setup site (download-site/providers.ts).
+ */
+export const PRETRIAL_MSG = "Your Telnyx account is still on pretrial. Upgrade it in Telnyx (profile → Account Level → Upgrade, confirm with LinkedIn or GitHub, add US$10), then press Check again.";
+const PRETRIAL_RE = /pre-?trial|account level|upgrade (?:your|the) account|trial account or higher|requires? (?:a )?(?:trial|paid|verified) account/i;
+export function telnyxSaysPretrial(status: number, detail: string): boolean {
+  if (status === 401 || status === 403) return true;
+  return status >= 400 && status < 500 && status !== 404 && status !== 429 && PRETRIAL_RE.test(detail);
+}
+export async function isPretrial(key: string): Promise<boolean> {
+  const probe = (path: string) => telnyx("GET", path, undefined, key).then(() => false, (err) => err instanceof TelnyxError && err.status !== 502 && telnyxSaysPretrial(err.status, err.message));
+  const [ai, cc] = await Promise.all([probe("/ai/assistants?page[size]=1"), probe("/call_control_applications?page[size]=1")]);
+  return ai || cc;
+}
+/** A key being connected (or tested) in Connections: it works, and the account isn't on pretrial. */
+export async function checkNewKey(raw: unknown): Promise<{ key: string; balance: Balance }> {
+  const r = await checkKey(raw);
+  if (!isTestKey(r.key) && (await isPretrial(r.key))) throw new ValidationError(PRETRIAL_MSG);
+  return r;
+}
+
 // A handful of checks a minute per agency is plenty; more looks like key guessing.
 const checks = new Map<string, number[]>();
 export function countCheck(orgId: string): void {
@@ -210,7 +234,7 @@ export async function connectPhoneAccount(ctx: Ctx, input: any): Promise<PhoneAc
     return phoneAccount(ctx);
   }
 
-  const { key } = await checkKey(input?.key);
+  const { key } = await checkNewKey(input?.key);
 
   // Receptionists live inside one Telnyx account. A key from a different account
   // would leave every existing one unreachable, so check one of them answers to it.

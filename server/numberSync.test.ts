@@ -110,7 +110,7 @@ describe("the background number check", () => {
       pendingClients: async () => [{ client: a, orgId }, { client: b, orgId }],
       readNumbers: async (c) => {
         if (c.id === a.id) throw new Error("carrier down");
-        return engine("active")(c as any, orgId);
+        return engine("active")();
       },
     });
     expect(r).toEqual({ checked: 1, failed: 1 });

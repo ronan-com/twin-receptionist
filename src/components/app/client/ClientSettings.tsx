@@ -7,6 +7,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
+import { TelegramSetup } from "@/components/app/telegram/TelegramSetup";
+import { telegramApi, telegramKey } from "@/lib/api/telegram";
 import { PauseControl } from "@/components/app/receptionist/PauseControl";
 import { saveReceptionist, type ReceptionistRow } from "@/components/app/receptionist/model";
 import { agentsQuery, knowledgeQuery, phoneNumbersQuery } from "@/lib/app/queries";
@@ -76,6 +78,7 @@ export function ClientSettings() {
   const agentsQ = useQuery(agentsQuery(businessId));
   const numbersQ = useQuery(phoneNumbersQuery(businessId));
   const knowledgeQ = useQuery(knowledgeQuery(businessId));
+  const telegramQ = useQuery({ queryKey: telegramKey(businessId ?? ""), queryFn: () => telegramApi.get(businessId!), enabled: !!businessId });
   const agent = (agentsQ.data?.[0] as ReceptionistRow | undefined) ?? null;
   const numbers = (numbersQ.data ?? []).filter((n) => n.e164 && n.status === "active");
   const bookingSet = asRecord(agent?.booking_rules)["configured"] === true;
@@ -313,6 +316,11 @@ export function ClientSettings() {
             <p className="text-[14px] text-ink-muted">Email alerts aren't switched on yet. {AGENCY_NOTE(who)}</p>
           )}
           <p className="text-[13px] text-ink-muted">Want calls put through to your mobile too? {AGENCY_NOTE(who)}</p>
+        </Section>
+
+        <Section id="chatbot" title="Chatbot" summary={telegramQ.data?.connected ? `Telegram: @${telegramQ.data.username}` : "Telegram: not connected"} open={open === "chatbot"} onToggle={() => toggle("chatbot")}>
+          <h3 className="text-[15px] font-semibold text-ink">Telegram</h3>
+          {businessId ? <TelegramSetup clientId={businessId} /> : null}
         </Section>
 
         <LinkRow to="/app/team" title="Team logins" summary="Who can sign in and see your calls" />

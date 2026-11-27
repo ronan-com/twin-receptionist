@@ -24,22 +24,24 @@ const clip = (v: unknown, max: number) => String(v ?? "").trim().slice(0, max);
 /* Web chats                                                            */
 /* ------------------------------------------------------------------ */
 
-type ChatRow = { id: string; started_at: Date | string; last_message_at: Date | string; outcome: string | null; visitor_name: string; first: string | null };
+type ChatRow = { id: string; started_at: Date | string; last_message_at: Date | string; outcome: string | null; visitor_name: string; origin: string; contact_key: string; first: string | null };
 
 async function chatsOf(clientId: string, from: Date, to: Date): Promise<ChatRow[]> {
   return (await sql`
-    select c.id, c.started_at, c.last_message_at, c.outcome, c.visitor_name,
+    select c.id, c.started_at, c.last_message_at, c.outcome, c.visitor_name, c.origin, c.contact_key,
       (select m.content from webchat_messages m where m.conversation_id = c.id and m.role = 'user' order by m.id limit 1) as first
     from webchat_conversations c
     where c.client_id = ${clientId} and c.last_message_at between ${from} and ${to}
     order by c.last_message_at desc limit 1000`) as ChatRow[];
 }
 
-/** The booking or message a chat left behind: a web request logged while the chat ran. */
+const isTelegram = (chat: ChatRow) => chat.origin === "telegram";
+
+/** The booking or message a chat left behind: a request logged while the chat ran. */
 function requestForChat(chat: ChatRow, requests: StoredRequest[]): StoredRequest | undefined {
   const a = new Date(chat.started_at).getTime();
   const b = new Date(chat.last_message_at).getTime() + 5 * MINUTE;
-  return requests.find((r) => r.channel === "web" && Date.parse(r.at) >= a - MINUTE && Date.parse(r.at) <= b);
+  return requests.find((r) => r.channel === (isTelegram(chat) ? "telegram" : "web") && Date.parse(r.at) >= a - MINUTE && Date.parse(r.at) <= b);
 }
 
 /* ------------------------------------------------------------------ */
@@ -76,7 +78,7 @@ async function inbox(args: ClientRouteArgs) {
     const r = requestForChat(ch, requests);
     items.push({
       id: `chat-${ch.id}`,
-      kind: "chat",
+      kind: isTelegram(ch) ? "telegram" : "chat",
       at: iso(ch.last_message_at),
       who: ch.visitor_name || r?.name || null,
       phone: r?.phone || null,
@@ -174,11 +176,11 @@ async function calendar(args: ClientRouteArgs) {
 /* ------------------------------------------------------------------ */
 
 const STATUSES = ["new", "active", "customer", "closed"];
-type Entry = { at: string; kind: "call" | "text" | "booking" | "callback" | "chat"; title: string; summary: string | null; callId: string | null };
+type Entry = { at: string; kind: "call" | "text" | "booking" | "callback" | "chat" | "telegram"; title: string; summary: string | null; callId: string | null };
 type Contact = { id: string; name: string; phone: string; email: string; status: string; notes: string; last_at: string; counts: { calls: number; bookings: number; chats: number }; timeline: Entry[] };
 
 const EMAIL = /^[^\s@,;]+@[^\s@,;]+\.[^\s@,;]+$/;
-const KEY = /^(?:\d{3,20}|e:[^\s/]{3,254})$/;
+const KEY = /^(?:\d{3,20}|e:[^\s/]{3,254}|t:-?\d{3,20})$/;
 
 async function buildContacts(client: Business): Promise<Contact[]> {
   const from = new Date(Date.now() - 400 * DAY);
@@ -237,14 +239,22 @@ async function buildContacts(client: Business): Promise<Contact[]> {
     add(c, at, { at, kind: text ? "text" : "call", title: text ? "Text conversation" : `Call${call.outcome ? ` (${call.outcome.replace(/_/g, " ")})` : ""}`, summary: call.summary, callId: call.id }, { phone: call.from_number });
   }
   // A chat belongs to the visitor whose booking or message it produced.
+  // A Telegram user is one contact however many times they write: found again by their Telegram id, and
+  // joined to the phone contact once any of their chats left a number.
+  const tgKey = new Map<string, string>();
+  for (const ch of chats) {
+    const r = isTelegram(ch) && ch.contact_key ? requestForChat(ch, requests) : undefined;
+    const k = r ? keyOf(r.phone, r.email) : null;
+    if (k) tgKey.set(ch.contact_key, k);
+  }
   for (const ch of chats) {
     const r = requestForChat(ch, requests);
-    const key = r ? keyOf(r.phone, r.email) : null;
+    const key = isTelegram(ch) && ch.contact_key ? (tgKey.get(ch.contact_key) ?? ch.contact_key) : r ? keyOf(r.phone, r.email) : null;
     if (!key) continue;
     const c = get(key);
     c.counts.chats++;
     const at = iso(ch.last_message_at);
-    add(c, at, { at, kind: "chat", title: "Website chat", summary: ch.first ? clip(ch.first, 200) : null, callId: null }, { name: ch.visitor_name || r?.name });
+    add(c, at, { at, kind: isTelegram(ch) ? "telegram" : "chat", title: isTelegram(ch) ? "Telegram chat" : "Website chat", summary: ch.first ? clip(ch.first, 200) : null, callId: null }, { name: ch.visitor_name || r?.name, phone: r?.phone, email: r?.email });
   }
   for (const n of notes as any[]) {
     const c = byKey.get(n.key);

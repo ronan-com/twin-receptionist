@@ -245,7 +245,7 @@ function bookingEvent(client: Business, r: { name: string; phone: string; email?
     start,
     end,
     title: `${service || "Appointment"} · ${name}`,
-    description: `Name: ${name}\nPhone: ${phone}\n${email ? `Email: ${email}\n` : ""}Service: ${service || "not given"}\n${notes ? `Notes: ${notes}\n` : ""}Booked by the AI receptionist ${channel === "sms" ? "by text" : channel === "web" ? "in the website chat" : "by phone"}.`,
+    description: `Name: ${name}\nPhone: ${phone}\n${email ? `Email: ${email}\n` : ""}Service: ${service || "not given"}\n${notes ? `Notes: ${notes}\n` : ""}Booked by the AI receptionist ${channel === "sms" ? "by text" : channel === "web" ? "in the website chat" : channel === "telegram" ? "in the Telegram chat" : "by phone"}.`,
   };
 }
 

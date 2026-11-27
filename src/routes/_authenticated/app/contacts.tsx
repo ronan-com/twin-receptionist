@@ -85,7 +85,7 @@ function ContactsPage() {
               <button type="button" onClick={() => setOpen(c.id)} className="flex w-full items-center gap-3 px-4 py-3.5 text-left outline-none hover:bg-canvas-2/60 focus-visible:bg-canvas-2/60">
                 <span className="min-w-0 flex-1">
                   <span className="block truncate text-[14.5px] font-medium text-ink">{c.name || (c.phone ? fmtPhone(c.phone) : c.email)}</span>
-                  <span className="block truncate text-[13px] text-ink-muted">{[c.name && c.phone ? fmtPhone(c.phone) : "", c.email].filter(Boolean).join(" · ") || "No details"}</span>
+                  <span className="block truncate text-[13px] text-ink-muted">{[c.name && c.phone ? fmtPhone(c.phone) : "", c.email].filter(Boolean).join(" · ") || (c.id.startsWith("t:") ? "Telegram" : "No details")}</span>
                 </span>
                 <span className="hidden text-[12.5px] text-ink-muted sm:block">{c.counts.calls + c.counts.chats} chats and calls · {c.counts.bookings} bookings</span>
                 <span className="hidden w-24 text-right text-[12.5px] text-ink-muted sm:block">{fmtRelative(c.last_at)}</span>

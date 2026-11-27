@@ -55,6 +55,7 @@ import { OTHER_BRAND, UI_PRODUCT, brandedIndex } from "./product";
 import { agencySnapshot, consoleRoutes, isClientPaused } from "./routes/console";
 import { assistantRoute } from "./assistant";
 import { webchatAdmin, webchatPublic } from "./webchat";
+import { liveTelegramDeps, telegramAdmin, telegramHook, type TelegramDeps } from "./telegram";
 import { manageRoutes, setManageDeps } from "./routes/manage";
 import { signupRoutes } from "./routes/signup";
 import { automationHooks, automationRoutes } from "./routes/automations";
@@ -572,6 +573,8 @@ async function clientAccessFor(ctx: Ctx, orgId: string, id: string): Promise<{ c
 
 // Everyone signs in. A person only ever sees the receptionists of the
 // organisation they're working in.
+const telegramDeps = (): TelegramDeps => ({ ...liveTelegramDeps, publicUrl });
+
 async function route(req: Request, server?: { requestIP(r: Request): { address: string } | null }): Promise<Response> {
   const url = new URL(req.url);
   const path = url.pathname;
@@ -589,6 +592,9 @@ async function route(req: Request, server?: { requestIP(r: Request): { address: 
   // Incoming texts (Telnyx's messaging webhook, Twilio's SmsUrl): answered by the text chatbot (server/smsBot.ts).
   const smsHook = path.match(/^\/hooks\/sms\/(telnyx|twilio)\/([a-f0-9-]{36})\/([A-Za-z0-9_-]{20,64})$/);
   if (smsHook && method === "POST") return smsHook[1] === "telnyx" ? telnyxTextHook(req, smsHook[2], smsHook[3]) : twilioTextHook(req, smsHook[2], smsHook[3]);
+  // Telegram: a business's own bot posts its updates here (checked by the secret header, server/telegram.ts).
+  const tgHook = path.match(/^\/hooks\/telegram\/([a-f0-9-]{36})$/);
+  if (tgHook && method === "POST") return telegramHook(req, tgHook[1], telegramDeps());
   if (path.startsWith("/hooks/automations/")) return (await automationHooks(req, path)) ?? json({ error: "Not found" }, 404);
   // The website chat widget's public API (CORS-limited to the business's own websites).
   if (path.startsWith("/api/webchat/")) return (await webchatPublic(req, path, undefined, server)) ?? json({ error: "Not found" }, 404);
@@ -905,6 +911,7 @@ async function route(req: Request, server?: { requestIP(r: Request): { address: 
 
   // ---- The Answered UI's route modules (server/routes/*), wired once here ----
   if (path.startsWith("/api/automations/")) return (await automationRoutes({ req, url, path, method, ctx, orgId, appUrl: appUrl(req) }, { clientAccessFor, syncAssistant })) ?? json({ error: "Not found" }, 404);
+  if (path.startsWith("/api/telegram/")) return (await telegramAdmin({ req, url, path, method, ctx, orgId, appUrl: appUrl(req) }, { clientAccessFor, telegram: telegramDeps() })) ?? json({ error: "Not found" }, 404);
   if (path.startsWith("/api/website-chat/")) return (await webchatAdmin({ req, url, path, method, ctx, orgId, appUrl: appUrl(req) }, { clientAccessFor, publicUrl })) ?? json({ error: "Not found" }, 404);
   const area = path.match(/^\/api\/(workspace|manage|console)(\/.*)?$/);
   if (area) {

@@ -4,7 +4,7 @@ import { api, qs } from "./base";
 
 const base = (id: string) => `/api/workspace/${encodeURIComponent(id)}`;
 
-export type InboxKind = "call" | "text" | "chat" | "email";
+export type InboxKind = "call" | "text" | "chat" | "telegram" | "email";
 export type InboxItem = {
   id: string;
   kind: InboxKind;
@@ -40,7 +40,7 @@ export const decideBooking = (id: string, requestId: string, status: "confirmed"
 
 export type ContactStatus = "new" | "active" | "customer" | "closed";
 export type Contact = { id: string; name: string; phone: string; email: string; status: ContactStatus; notes: string; last_at: string; counts: { calls: number; bookings: number; chats: number } };
-export type TimelineEntry = { at: string; kind: "call" | "text" | "booking" | "callback" | "chat"; title: string; summary: string | null; callId: string | null };
+export type TimelineEntry = { at: string; kind: "call" | "text" | "booking" | "callback" | "chat" | "telegram"; title: string; summary: string | null; callId: string | null };
 export const getContacts = async (id: string) => (await api.get<{ contacts: Contact[] }>(`${base(id)}/contacts`)).contacts;
 export const getContact = (id: string, key: string) => api.get<{ contact: Contact; timeline: TimelineEntry[] }>(`${base(id)}/contacts/${encodeURIComponent(key)}`);
 export const patchContact = (id: string, key: string, body: Partial<Pick<Contact, "name" | "notes" | "status">>) => api.patch<{ contact: Contact }>(`${base(id)}/contacts/${encodeURIComponent(key)}`, body);

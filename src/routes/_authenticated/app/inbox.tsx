@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
-import { Inbox as InboxIcon, Mail, MessageCircle, MessageSquare, Phone, Search } from "lucide-react";
+import { Inbox as InboxIcon, Mail, MessageCircle, MessageSquare, Phone, Search, Send } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { EmptyState, ErrorState } from "@/components/app/primitives";
 import { CallDetailSheet } from "@/components/app/CallDetailSheet";
@@ -21,9 +21,10 @@ const KINDS: { id: "all" | InboxKind; label: string }[] = [
   { id: "call", label: "Calls" },
   { id: "chat", label: "Chats" },
   { id: "text", label: "Texts" },
+  { id: "telegram", label: "Telegram" },
   { id: "email", label: "Emails" },
 ];
-const ICON = { call: Phone, text: MessageSquare, chat: MessageCircle, email: Mail } as const;
+const ICON = { call: Phone, text: MessageSquare, chat: MessageCircle, telegram: Send, email: Mail } as const;
 
 function InboxPage() {
   const ws = useWorkspace();
@@ -85,6 +86,7 @@ function InboxPage() {
                   <span className="min-w-0 flex-1">
                     <span className="flex items-baseline gap-2">
                       <span className="truncate text-[14.5px] font-medium text-ink">{i.who || (i.phone ? fmtPhone(i.phone) : i.email) || "Unknown"}</span>
+                      {i.kind === "telegram" ? <span className="shrink-0 rounded-full bg-canvas-2 px-2 py-0.5 text-[11.5px] font-medium text-ink-muted">Telegram</span> : null}
                       <span className="shrink-0 text-[12px] text-ink-muted">{fmtRelative(i.at)}</span>
                     </span>
                     <span className={cn("mt-0.5 block text-[13.5px] text-ink-muted", !isOpen && "line-clamp-1")}>{i.summary || "No summary"}</span>

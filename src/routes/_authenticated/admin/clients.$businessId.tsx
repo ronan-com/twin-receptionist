@@ -25,6 +25,7 @@ import { ImportNumber } from "./-import-number";
 import { AttachedNumbers } from "./-own-numbers";
 import { TextsSwitch } from "./-texts-switch";
 import { TestCall } from "@/components/app/TestCall";
+import { TelegramSetup } from "@/components/app/telegram/TelegramSetup";
 import { WebsiteChatCard } from "@/components/app/webchat/WebsiteChatCard";
 import { PRODUCT } from "@/lib/app/product";
 
@@ -868,6 +869,11 @@ function ReceptionistCard({
       </div>
       <div className="mt-4" data-website-chat={r.id}>
         <WebsiteChatCard clientId={r.id} businessName={who} />
+      </div>
+      <div className="mt-4" data-telegram={r.id}>
+        <Panel title="Telegram" description={`A Telegram bot for ${who}. It answers like the website chat.`}>
+          <TelegramSetup clientId={r.id} />
+        </Panel>
       </div>
     </Panel>
   );

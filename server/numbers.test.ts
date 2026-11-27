@@ -69,7 +69,7 @@ describe("MAILBOX_SIGNIN", () => {
     try {
       set(undefined);
       expect(await mailboxSignInAllowed()).toEqual({ google: false, microsoft: true });
-      expect(await requestedScopes("google")).toEqual(["openid", "email", "https://www.googleapis.com/auth/calendar.events"]);
+      expect(await requestedScopes("google")).toEqual(["openid", "email", "https://www.googleapis.com/auth/calendar.events", "https://www.googleapis.com/auth/calendar.events.freebusy"]);
       set("both");
       expect(await requestedScopes("google")).toContain("https://mail.google.com/");
     } finally {

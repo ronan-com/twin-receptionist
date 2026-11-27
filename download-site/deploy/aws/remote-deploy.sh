@@ -79,7 +79,7 @@ if [ "$DOMAIN" != "setup.chloeeai.co" ]; then
   fi
 fi
 if [ "$ADMIN_DOMAIN" != "$DOMAIN" ] && [ "$ADMIN_DOMAIN" != "setup.chloeeai.co" ]; then
-  site_block "$ADMIN_DOMAIN" "$ADMIN_PATHS" "https://$ADMIN_DOMAIN/admin 302" >> /opt/twin/sites/setupsite.caddy
+  site_block "$ADMIN_DOMAIN" "/oauth/broker/* $ADMIN_PATHS" "https://$ADMIN_DOMAIN/admin 302" >> /opt/twin/sites/setupsite.caddy
 fi
 docker exec twin-caddy-1 caddy reload --config /etc/caddy/Caddyfile --adapter caddyfile
 

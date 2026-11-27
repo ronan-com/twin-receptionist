@@ -60,6 +60,7 @@ import { automationHooks, automationRoutes } from "./routes/automations";
 import { applyAutomations, bookingBlocked, startAutomations, withAutomations } from "./automations";
 import { workspaceRoutes } from "./routes/workspace";
 import { workspaceMoreRoutes } from "./routes/workspaceMore";
+import { pipedreamConsoleRoutes } from "./routes/apps";
 import type { ClientAccess, RouteArgs } from "./routes/http";
 import { changeBrand, ownBrand, serveAsset, uploadAsset } from "./brand";
 import { accessibleClients, customerClientId, setFollowUpStage, customersFor, inviteCustomer, removeCustomer, revokeCustomerInvite } from "./customers";
@@ -876,7 +877,7 @@ async function route(req: Request, server?: { requestIP(r: Request): { address: 
     if (area[1] === "console") {
       // Agency staff and the platform team only.
       if (ctx.role === "customer" && !ctx.user.platformAdmin) return json({ error: "Not allowed." }, 403);
-      return (await consoleRoutes(base, { createClient })) ?? json({ error: "Not found" }, 404);
+      return (await pipedreamConsoleRoutes(base)) ?? (await consoleRoutes(base, { createClient })) ?? json({ error: "Not found" }, 404);
     }
     let rest = area[2] ?? "";
     let client: Business | null = null;

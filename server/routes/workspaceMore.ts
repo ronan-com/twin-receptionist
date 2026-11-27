@@ -6,6 +6,7 @@ import { isPublicHost } from "../net";
 import { ValidationError } from "../prompt";
 import { saveClient } from "../store";
 import { audit } from "../audit";
+import { appsRoutes } from "./apps";
 import { json, readBody, type ClientRouteArgs } from "./http";
 import { manageDeps } from "./manage";
 import { answeredCall, appointmentsFor, bizOf, isRefusedBooking, phoneKey, rangeOf, requestsOf, type CallRow, type StoredRequest } from "./workspace";
@@ -367,6 +368,7 @@ export async function workspaceMoreRoutes(args: ClientRouteArgs): Promise<Respon
       return c ? json({ contact: summaryOf(c), timeline: c.timeline }) : json({ error: "That contact isn't here any more." }, 404);
     }
   }
+  if (rest === "/apps" || rest.startsWith("/apps/") || rest === "/pipedream/connect") return appsRoutes(args);
   if (rest === "/mcp") {
     if (get) return json(mcpView(client));
     if (method === "PUT") return putMcp(args);

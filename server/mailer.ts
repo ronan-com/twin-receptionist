@@ -121,12 +121,12 @@ export const mailerReady = () => routesOf(deps.config()).length > 0;
 const errText = (e: unknown) => String((e as Error)?.message ?? e ?? "unknown error").split("\n")[0].slice(0, 300);
 
 /** Tries the main sender, then the backup. Never throws. */
-export async function deliver(to: string, subject: string, text: string, only?: Route["name"]): Promise<{ ok: true; via: Route["name"] } | { ok: false; error: string; tried: number }> {
+export async function deliver(to: string, subject: string, text: string, only?: Route["name"], html?: string): Promise<{ ok: true; via: Route["name"] } | { ok: false; error: string; tried: number }> {
   const routes = routesOf(deps.config()).filter((r) => !only || r.name === only);
   let error = "No email sender is set up.";
   for (const [i, r] of routes.entries()) {
     try {
-      await deps.transport(r.url).sendMail({ from: r.from, to, subject, text });
+      await deps.transport(r.url).sendMail({ from: r.from, to, subject, text, ...(html ? { html } : {}) });
       if (i > 0) await deps.problem("email_failover", `The main email sender failed, so the backup sent it: ${error}`);
       return { ok: true, via: r.name };
     } catch (err) {
@@ -141,13 +141,13 @@ export async function deliver(to: string, subject: string, text: string, only?: 
  * to the log, and callers show the link instead), or every sender failed and it's queued to try again.
  * With queue: false (follow-ups and tests, which keep their own record) a failure throws instead.
  */
-export async function sendAccountEmail(to: string, subject: string, text: string, opts: { queue?: boolean } = {}): Promise<boolean> {
+export async function sendAccountEmail(to: string, subject: string, text: string, opts: { queue?: boolean; html?: string } = {}): Promise<boolean> {
   if (deps === realDeps) await fresh();
   if (!mailerReady()) {
     console.log(`[mail not configured] To: ${to}\nSubject: ${subject}\n\n${text}\n`);
     return false;
   }
-  const r = await deliver(to, subject, text);
+  const r = await deliver(to, subject, text, undefined, opts.html);
   if (r.ok) {
     await deps.store.insert({ to, subject, text: "", status: "sent", attempts: 1, via: r.via, error: "", nextAt: null }).catch(() => {});
     return true;

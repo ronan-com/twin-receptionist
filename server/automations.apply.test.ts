@@ -84,7 +84,7 @@ test("saving sends the script + tools, then greeting, telephony settings and tra
   expect(script.body.tools[1]).toMatchObject({ type: "transfer", transfer: { targets: [{ to: "+61733334444" }], from: "+61412000999" } });
   expect(rest.body).toEqual({
     greeting: "{{twin_greeting}}",
-    dynamic_variables: { twin_greeting: "Hi, Alpha Plumbing. This call is recorded.", twin_open_now: "unknown" },
+    dynamic_variables: { twin_greeting: "Hi, Alpha Plumbing. This call is recorded.", twin_open_now: "unknown", twin_caller_context: "" },
     dynamic_variables_webhook_url: `https://answered.example/hooks/automations/${client.id}/tok_abcdefghijklmnop`,
     telephony_settings: {
       default_texml_app_id: "texml-9",

@@ -229,3 +229,24 @@ describe("6. after-hours mode", () => {
     expect(out.greeting).toBe("G");
   });
 });
+
+describe("returning-caller memory in the payload", () => {
+  const o = { publicUrl: "https://app.example.com", token: "tok_0123456789abcdef", callerMemory: true };
+  test("adds the script line, an empty default variable and the webhook, even with every automation off", () => {
+    const out = overlayPayload(client(), defaultAutomations(), { instructions: "BASE", greeting: "Hi." }, o) as any;
+    expect(out.instructions).toContain("{{twin_caller_context}}");
+    expect(out.dynamic_variables.twin_caller_context).toBe("");
+    expect(out.dynamic_variables_webhook_url).toContain("/hooks/automations/");
+  });
+  test("is not offered without a public address or key (the line would show raw braces)", () => {
+    expect((overlayPayload(client(), defaultAutomations(), { instructions: "BASE" }, { ...o, publicUrl: "" }) as any).instructions).toBe("BASE");
+    expect((overlayPayload(client(), defaultAutomations(), { instructions: "BASE" }, { ...o, token: "" }) as any).instructions).toBe("BASE");
+  });
+  test("off unless asked for, and never on Vapi", () => {
+    expect((overlayPayload(client(), defaultAutomations(), { instructions: "BASE" }, { publicUrl: o.publicUrl, token: o.token }) as any).instructions).toBe("BASE");
+    expect(automationInstructions(client(), defaultAutomations(), "vapi", true)).not.toContain("twin_caller_context");
+  });
+  test("the script tells the assistant to check identity first", () => {
+    expect(automationInstructions(client(), defaultAutomations(), "telnyx", true)).toContain("same person");
+  });
+});

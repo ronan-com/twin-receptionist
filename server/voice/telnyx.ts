@@ -1,6 +1,6 @@
 import type { AvailableNumber, Business, CallMessage, NumberCountry, NumberOrder, NumberType, Settings, Voice } from "../../src/lib/shared";
 import { bookingLive, bookingTools, publicUrl } from "../booking";
-import { loadAutomations, overlayPayload, telephonyPayload, withAutomations } from "../automations";
+import { ensureAutomationRow, overlayPayload, telephonyPayload, withAutomations } from "../automations";
 import { greetingOf } from "../prompt";
 import { UI_PRODUCT } from "../product";
 import { fakeProvider } from "../sandbox";
@@ -113,8 +113,8 @@ export const telnyxProvider: VoiceProvider = {
   async applyAutomations(synced) {
     const res = await telnyx<any>("GET", `/ai/assistants/${synced.assistantId}`);
     const current = (res.data ?? res)?.telephony_settings ?? {};
-    const row = await loadAutomations(synced.id);
-    const greet = synced.settings.paused ? {} : overlayPayload(synced, row.settings, { greeting: synced.settings.greeting }, { publicUrl: publicUrl(), token: row.token });
+    const row = await ensureAutomationRow(synced.id);
+    const greet = synced.settings.paused ? {} : overlayPayload(synced, row.settings, { greeting: synced.settings.greeting }, { publicUrl: publicUrl(), token: row.token, callerMemory: true });
     await telnyx("POST", `/ai/assistants/${synced.assistantId}`, { ...greet, ...telephonyPayload(row.settings, current) });
   },
 

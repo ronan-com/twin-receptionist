@@ -77,6 +77,7 @@ async function seedClient(orgId: string, companyId: string, provider: "telnyx" |
     sql`insert into incidents (org_id, client_id, kind, message) values (${orgId}, ${cid}, 'test', 'x')`,
     sql`insert into knowledge_items (client_id, question, answer) values (${cid}, 'q', 'a')`,
     sql`insert into client_automations (client_id) values (${cid})`,
+    sql`insert into contact_notes (client_id, key) values (${cid}, '0400000000')`,
     sql`insert into automation_texts (client_id, provider_call_id, kind, status) values (${cid}, ${`txt-${cid}`}, 'after_call', 'sent')`,
     sql`insert into webchat_settings (client_id, public_id) values (${cid}, ${`pub-${cid}`})`,
     sql`insert into followup_messages (client_id, kind, channel, dedupe_key, status) values (${cid}, 'reminder', 'sms', 'k', 'sent')`,

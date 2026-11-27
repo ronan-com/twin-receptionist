@@ -60,7 +60,8 @@ export const TUTORIALS: Tutorial[] = [
     summary: "A quick look around.",
     steps: [
       "Press **Take the tour**.",
-      "Press **Next** to move on, **Skip** to stop.",
+      "Press **Next** to move on.",
+      "Press **Skip** to stop any time.",
     ],
     to: "/admin",
     toLabel: "Open Overview",

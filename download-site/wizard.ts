@@ -1,6 +1,6 @@
 // The setup wizard's screens. Same look as the app's own Setup wizard: a step rail, one
 // card per step with an icon tile, a headline, one short sentence, the inputs, one primary
-// button. How-tos sit behind a collapsed "Show me how". Plain forms (they work without
+// button. How-tos sit behind a collapsed "Step-by-step guide". Plain forms (they work without
 // JavaScript); /wizard.js adds copy buttons and live progress.
 import { CONFIG, RAILWAY, type Buyer, type Style } from "./lib";
 import { DEMO, demoSample, isDemo } from "./demo";
@@ -121,11 +121,11 @@ const when = (iso?: string) => (iso ? new Date(iso).toISOString().slice(11, 19) 
 function showMeHow(ids: string[]) {
   const parts = ids.map((id) => {
     const h = howTo(id);
-    const meta = [h.time, h.cost].filter(Boolean).map((x) => esc(x!)).join(" · ");
+    const meta = [h.time, h.cost, h.checked ? `Checked ${h.checked}` : ""].filter(Boolean).map((x) => esc(x!)).join(" · ");
     return `<section class="howpart"><h3>${esc(h.title)}</h3>${meta ? `<p class="howmeta">${meta}</p>` : ""}${h.html}</section>`;
   }).join("");
   // Without script this is a plain open/close box; /wizard.js turns it into a side panel.
-  return `<details class="how" data-title="${esc(ids.length > 1 ? "Show me how" : howTo(ids[0]).title)}"><summary>Show me how</summary><div class="howbox">${parts}<p><a class="more-link" href="/guide#${esc(ids[0])}" target="_blank" rel="noopener">Open the full guide ${icon("ext")}</a></p></div></details>`;
+  return `<details class="how" data-title="${esc(ids.length > 1 ? "Step-by-step guide" : howTo(ids[0]).title)}"><summary>Step-by-step guide</summary><div class="howbox">${parts}<p><a class="more-link" href="/guide#${esc(ids[0])}" target="_blank" rel="noopener">Open the full guide ${icon("ext")}</a></p></div></details>`;
 }
 
 function head(c: Ctx, title: string, lead: string, prov?: string) {
@@ -301,7 +301,6 @@ function server(c: Ctx) {
     <div><label class="f" for="region">Location</label><select id="region" name="region">${regions.map(([v, n]) => `<option value="${esc(v)}"${v === region ? " selected" : ""}>${esc(n)}</option>`).join("")}</select></div>
     <div><label class="f" for="size">Size</label><select id="size" name="size">${sizes.map(([v, n]) => `<option value="${esc(v)}"${v === size ? " selected" : ""}>${esc(n)}</option>`).join("")}</select></div>
   </div>
-  ${showMeHow(["digitalocean-token"])}
   <details class="advanced"><summary>Advanced: add your own SSH key</summary>
     <label class="f" for="sshPublicKey">SSH public key (optional)</label>
     <textarea id="sshPublicKey" name="sshPublicKey" rows="2" spellcheck="false" placeholder="ssh-ed25519 AAAA... you@laptop">${val(c, "sshPublicKey", sv?.sshPublicKey || "")}</textarea>
@@ -664,7 +663,7 @@ function installRailway(c: Ctx) {
     return `${head(c, "Ready to install", `We'll set up ${P(c)} in your Railway account. You can close the page while it runs.`)}
 <div class="summary">${rows.map(([k, v]) => `<div><span>${k}</span><b>${v}</b></div>`).join("")}</div>
 ${phoneSkipped(s) ? phoneLaterNote(c) : ""}
-${mainForm(c, "install-start", "")}
+${mainForm(c, "install-start", "")}${showMeHow(["install"])}
 ${nav(c, primary("Install"))}`;
   }
   const rw = s.rw || {};
@@ -684,7 +683,7 @@ ${nav(c, primary("Install"))}`;
   if (bad) {
     return `${head(c, s.phase === "failed" ? "The install stopped" : "We couldn't set up Railway", "")}
 ${notice("err", esc((s.error || "Something went wrong.").replace("press Check again", "press Try again").replace(/^./, (x) => x.toUpperCase())))}
-${list}${log}
+${list}${log}${showMeHow(["install"])}
 ${nav(c, `${del}${mini(c, s.phase === "failed" ? "install-retry" : "install-start", `Try again ${icon("right")}`, "btn p")}`, { back: false })}`;
   }
   if (isDemo(c.b) && s.phase === "domain") return doneRailway(c);
@@ -884,9 +883,9 @@ function helperCard(c: Ctx): string {
   const h = HELP[key] || HELP[c.view] || HELP.welcome;
   const on = chatEnabled();
   return `<aside class="helper" id="helper" data-url="${base(c)}/chat" data-t="${esc(csrfToken(c.sid, c.code))}" data-view="${c.view}" data-max="${CHAT_MAX_MESSAGE}"><details open><summary><span class="hav">${HELPER_FACE}</span><span class="hname"><b>Setup helper</b><small>Here to help</small></span></summary>
-<div class="hbody"><p class="hsay">${esc(h.say)}</p>${on ? `<div class="hchips" hidden>${h.chips.map((q) => `<button type="button" class="hchip" data-q="${esc(q)}">${esc(q)}</button>`).join("")}</div><div class="hlog" aria-live="polite"></div>
+<div class="hbody"><button type="button" class="hhide" hidden aria-label="Hide the setup helper">Hide</button><p class="hsay">${esc(h.say)}</p>${on ? `<div class="hchips" hidden>${h.chips.map((q) => `<button type="button" class="hchip" data-q="${esc(q)}">${esc(q)}</button>`).join("")}</div><div class="hlog" aria-live="polite"></div>
 <form class="hform"><label class="chat-sr" for="hq">Ask the helper</label><textarea id="hq" rows="2" maxlength="${CHAT_MAX_MESSAGE}" placeholder="Ask me anything" autocomplete="off"></textarea><button type="submit" class="hsend">Ask</button></form>
-<p class="hnote">Please don't paste keys here.</p>` : ""}</div></details></aside>`;
+<p class="hnote">Please don't paste keys here.</p>` : ""}</div></details><button type="button" class="hshow" hidden>Show the setup helper</button></aside>`;
 }
 
 /** The steps shown in the rail: optional ones only while you're on them (they hang off the extras step). */

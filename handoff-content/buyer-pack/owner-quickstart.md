@@ -137,7 +137,7 @@ Your agency works without these. Your setup link keeps listing any you skipped, 
 
 **Your own email** (5 minutes)
 1. Open **Settings**, then **Email and calendars**.
-2. Paste the mail server address and the address emails come from. For Resend the address is `smtps://resend:YOUR_KEY@smtp.resend.com:465`.
+2. Paste the mail server address and the address emails come from. For Resend the address is `smtp://resend:YOUR_KEY@smtp.resend.com:2587`.
 3. Click **Send test email**.
 4. Add the DNS records Resend shows for your domain.
 

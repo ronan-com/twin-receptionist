@@ -8,12 +8,12 @@ import { join, resolve } from "node:path";
 import { CONFIG } from "./lib";
 
 export const PROVIDER_IDS = [
-  "cloudflare-domain", "cloudflare-token", "registrar-nameservers", "registrar-dns-records", "digitalocean-token", "railway-token",
-  "telnyx-account", "telnyx-api-key", "vapi-account", "twilio-account", "openrouter-key", "resend", "google-oauth", "microsoft-oauth", "stripe",
+  "cloudflare-domain", "cloudflare-token", "registrar-nameservers", "registrar-dns-records", "railway-token",
+  "telnyx-account", "telnyx-api-key", "vapi-account", "twilio-account", "openrouter-key", "resend", "google-oauth", "microsoft-oauth", "stripe", "install",
 ] as const;
 export type ProviderId = (typeof PROVIDER_IDS)[number];
 
-export interface HowTo { id: string; title: string; time?: string; cost?: string; link?: string; html: string; md: string; placeholder: boolean }
+export interface HowTo { id: string; title: string; time?: string; cost?: string; link?: string; /** When the facts in this guide were last checked against the provider's own pages (free text, e.g. "28 Nov 2026"). */ checked?: string; html: string; md: string; placeholder: boolean }
 
 const esc = (s: string) => s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
 
@@ -91,7 +91,6 @@ const PLACEHOLDER: Record<string, [string, string]> = {
   "cloudflare-token": ["Create a Cloudflare API token", "In Cloudflare open **My Profile > API Tokens > Create Token**, use the **Edit zone DNS** template, add the permission **Zone: Read** next to **DNS: Edit**, choose your domain under Zone Resources, then **Create Token** and copy it."],
   "registrar-nameservers": ["Change your nameservers", "At the company you bought the domain from (GoDaddy, Namecheap, Crazy Domains, VentraIP...), find **Nameservers** (or **DNS servers**) for the domain, choose **custom**, and replace them with the two Cloudflare showed you. It usually takes minutes, sometimes a few hours."],
   "registrar-dns-records": ["Add DNS records at your registrar", "Open your domain's **DNS** or **DNS records** page at your registrar and add each record exactly as shown: type, name (host) and value. Leave TTL on the default. Some registrars want the name without your domain on the end."],
-  "digitalocean-token": ["Create a DigitalOcean token", "Sign in at [DigitalOcean](https://cloud.digitalocean.com/), add a payment method, then open **API > Generate New Token**. Choose **Full Access** (it needs write scope), set it to expire in 30 days, and copy it (it starts with `dop_v1_`)."],
   "railway-token": ["Create a Railway token", "Sign up at [railway.com](https://railway.com), then choose the **Hobby** plan under **Account > Plans** (US$5 a month, which includes US$5 of usage; it needs a card). Open **Account Settings > Tokens** ([railway.com/account/tokens](https://railway.com/account/tokens)), type a name like *Setup*, leave **Workspace** on **No workspace**, click **Create** and copy the token. You can delete it once your agency is live."],
   "telnyx-account": ["Open and upgrade a Telnyx account", "Sign up at [telnyx.com](https://telnyx.com/sign-up), confirm your email, then upgrade from trial under **Account Level** and add credit under **Billing**. Real callers can't reach a trial account."],
   "telnyx-api-key": ["Create a Telnyx API key", "In Telnyx open **Account Settings > API Keys > Create API Key** and copy it straight away (it starts with `KEY`)."],
@@ -101,6 +100,7 @@ const PLACEHOLDER: Record<string, [string, string]> = {
   "resend": ["Create a Resend API key", "Sign up at [resend.com](https://resend.com/signup), open **API Keys > Create API Key**, choose **Full access** and copy it (it starts with `re_`). The setup adds and verifies your sending domain for you."],
   "google-oauth": ["Google calendar keys (optional)", "Not needed if your setup provider offers the shared connection: Google Calendar then connects with one click from your dashboard. To use your own app instead, in [Google Cloud](https://console.cloud.google.com/apis/credentials) enable the Google Calendar API, then create an **OAuth client ID** of type **Web application** with the redirect address shown on this page. Copy the Client ID and secret."],
   "microsoft-oauth": ["Microsoft calendar keys (optional)", "Not needed if your setup provider offers the shared connection: Outlook then connects with one click from your dashboard. To use your own app instead, in [Microsoft Entra](https://entra.microsoft.com/) open **App registrations > New registration**, allow any organisation and personal accounts, add the **Web** redirect address shown on this page, then create a client secret and copy its **Value**."],
+  "install": ["What happens when you press Install", "Press **Install**. Your agency and its database are built in your own Railway account in about 5 to 10 minutes. You can close the page. If it stops, the page says why: fix that, then press **Try again**."],
   "stripe": ["Stripe (optional)", "Only needed if you bill your clients through Stripe. You can set it up later from your dashboard."],
 };
 
@@ -123,7 +123,7 @@ export function loadContent(): Map<string, HowTo> {
         const { meta, body } = frontMatter(readFileSync(join(pdir, f), "utf8"));
         const id = (meta.id || f.replace(/\.md$/, "")).toLowerCase();
         if (!/^[a-z0-9-]+$/.test(id) || (m.has(id) && !m.get(id)!.placeholder)) continue;
-        m.set(id, { id, title: meta.title || PLACEHOLDER[id]?.[0] || id, time: meta.time, cost: meta.cost, link: /^https?:\/\//.test(meta.link || "") ? meta.link : undefined, html: markdown(body.replace(/^#\s+.*\n/, ""), 1, true), md: body, placeholder: false });
+        m.set(id, { id, title: meta.title || PLACEHOLDER[id]?.[0] || id, time: meta.time, cost: meta.cost, checked: meta.checked, link: /^https?:\/\//.test(meta.link || "") ? meta.link : undefined, html: markdown(body.replace(/^#\s+.*\n/, ""), 2, true), md: body, placeholder: false });
       } catch (e) {
         console.error(`content: couldn't read ${f}: ${(e as Error).message}`);
       }

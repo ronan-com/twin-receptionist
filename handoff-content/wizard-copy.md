@@ -4,7 +4,7 @@ The words on each screen, in order, as `download-site/wizard.ts` shows them toda
 
 Placeholders: `{{brand}}` (the brand name the buyer picks), `{{domain}}` (e.g. `example.com.au`), `{{host}}` (`app.{{domain}}`), `{{owner_email}}`, `{{from}}`, `{{balance}}`, `{{temp_url}}` (the `https://….up.railway.app` address).
 
-Style: Australian spelling, short sentences, no exclamation marks. Every step has a collapsed **Show me how** with the matching how-to from `providers/`.
+Style: Australian spelling, short sentences, no exclamation marks. Every step has a collapsed **Step-by-step guide** with the matching how-to from `providers/`.
 
 **Order (Railway, the default):** Welcome · Brand · Hosting (Railway) · Phones (Telnyx) · Email (Resend) · Domain · Calendars (optional) · Install · Live
 

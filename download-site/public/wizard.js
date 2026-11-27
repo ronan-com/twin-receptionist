@@ -28,7 +28,7 @@
     });
   });
 
-  // "Show me how" opens the guide in a side panel (a bottom sheet on a phone) instead of pushing the page down.
+  // "Step-by-step guide" opens the guide in a side panel (a bottom sheet on a phone) instead of pushing the page down.
   let panel = null, scrim = null, opener = null;
   function closePanel() {
     if (!panel) return;
@@ -45,7 +45,7 @@
     opener = sum;
     scrim = document.createElement("div"); scrim.className = "howscrim"; scrim.addEventListener("click", closePanel);
     panel = document.createElement("aside"); panel.className = "howpanel"; panel.setAttribute("role", "dialog"); panel.setAttribute("aria-modal", "true");
-    const title = sum.parentElement.getAttribute("data-title") || "Show me how";
+    const title = sum.parentElement.getAttribute("data-title") || "Step-by-step guide";
     panel.setAttribute("aria-label", title);
     const head = document.createElement("header"), t = document.createElement("b"), x = document.createElement("button");
     t.textContent = title; x.type = "button"; x.className = "howclose"; x.setAttribute("aria-label", "Close"); x.textContent = "\u00d7"; x.addEventListener("click", closePanel);
@@ -68,6 +68,23 @@
   // The step helper card is open on a computer and folded away on a phone (tap its head to open it).
   const hd = document.querySelector("#helper details");
   if (hd && window.matchMedia && window.matchMedia("(max-width: 959px)").matches) hd.open = false;
+  // The helper card can be hidden for good ("Hide"); a small "Show the setup helper" button brings it back. Remembered in this browser.
+  const hc = document.getElementById("helper");
+  if (hc) {
+    const HK = "setup-helper-off";
+    const hide = hc.querySelector(".hhide"), show = hc.querySelector(".hshow");
+    const setOff = function (off) {
+      hc.classList.toggle("off", off);
+      if (hide) hide.hidden = off;
+      if (show) show.hidden = !off;
+      try { if (off) localStorage.setItem(HK, "1"); else localStorage.removeItem(HK); } catch (_) {}
+    };
+    if (hide) hide.hidden = false;
+    if (hide) hide.addEventListener("click", function () { setOff(true); });
+    if (show) show.addEventListener("click", function () { setOff(false); });
+    let was = false; try { was = localStorage.getItem(HK) === "1"; } catch (_) {}
+    if (was) setOff(true);
+  }
 
   // Brand step: shrink the chosen logo to a small PNG (it travels to the agency's server as one
   // setting, so it must stay under about 30 KB) and put it in the form.

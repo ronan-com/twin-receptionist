@@ -115,7 +115,7 @@ describe("update your agency", () => {
     expect(getSetup(buyer.id).update?.phase).toBe("ask");
     const html = page(buyer);
     expect(html).toContain('name="token"');
-    expect(html).toContain("Show me how");
+    expect(html).toContain("Step-by-step guide");
     const bad = await run(buyer, "update-start", { token: "some-other-token-nope" });
     expect(bad?.kind).toBe("err");
     expect(getSetup(buyer.id).update?.phase).toBe("ask");

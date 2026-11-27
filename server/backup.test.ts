@@ -12,6 +12,7 @@ import { migrate, sql } from "./db";
 import { databaseLimitMb } from "./providerStatus";
 import { putSetting } from "./store";
 
+process.env.MAILBOX_KEY ||= Buffer.alloc(32, 7).toString("base64");
 const dir = mkdtempSync(join(tmpdir(), "bk-test-"));
 const orgId = crypto.randomUUID();
 const clientId = crypto.randomUUID();
@@ -151,6 +152,9 @@ describe("keeping transcripts for N months", () => {
 
   test("clears old transcript text and messages, keeps the call row, summary and outcome", async () => {
     if (!ready) return;
+    // The daily job tests above already ran a clean-up (12 months): put the old transcript and message back.
+    await sql`update call_log set transcript = ${[{ role: "user", text: "hello" }] as any} where org_id = ${orgId} and provider_call_id = ${`old-${orgId}`}`;
+    await sql`insert into webchat_messages (conversation_id, role, content, created_at) values (${convId}, 'user', 'old hello', ${monthsAgo(14)})`;
     const forever = await runRetention(0);
     expect(forever).toEqual({ transcripts: 0, messages: 0 });
     const r = await runRetention(12);

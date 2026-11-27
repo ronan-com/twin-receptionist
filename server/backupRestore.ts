@@ -70,7 +70,7 @@ export async function restoreBackup(path: string, db: typeof sql = sql): Promise
     let batch: unknown[] = [];
     const flush = async () => {
       if (!batch.length) return;
-      await tx.unsafe(`insert into "${table}" select * from jsonb_populate_recordset(null::"${table}", $1::jsonb)`, [JSON.stringify(batch)]);
+      await tx.unsafe(`insert into "${table}" select * from jsonb_populate_recordset(null::"${table}", $1::text::jsonb)`, [JSON.stringify(batch)]);
       rows += batch.length;
       batch = [];
     };

@@ -73,7 +73,7 @@ export const ADMIN_NAV: NavItem[] = [
     to: "/admin/tutorials",
     label: "Help",
     icon: LifeBuoy,
-    match: ["/admin/support-requests", "/admin/settings", "/admin/usage", "/admin/system", "/admin/audit"],
+    match: ["/admin/support-requests", "/admin/settings", "/admin/usage", "/admin/system", "/admin/audit", "/admin/billing"],
   },
 ];
 
@@ -110,6 +110,7 @@ export const ADMIN_SECTIONS: AdminTab[][] = [
     { to: "/admin/tutorials", label: "Guides", agencyOnly: true },
     { to: "/admin/support-requests", label: "Support", agencyOnly: true },
     { to: "/admin/settings", label: "Settings" },
+    { to: "/admin/billing", label: "Billing", agencyOnly: true },
     { to: "/admin/usage", label: "Usage" },
     { to: "/admin/system", label: "System" },
     { to: "/admin/audit", label: "Activity" },

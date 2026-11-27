@@ -29,7 +29,7 @@ export const Route = createFileRoute("/_authenticated/admin/clients/")({
 const companiesKey = ["console", "companies"] as const;
 
 function ClientsPage() {
-  const { platform, readOnly } = useConsole();
+  const { platform, readOnly, canManage } = useConsole();
   const navigate = useNavigate();
   const qc = useQueryClient();
   const q = useQuery({ queryKey: companiesKey, queryFn: companyApi.list });
@@ -169,9 +169,10 @@ function ClientsPage() {
             </Button>
             {!readOnly ? (
               <>
-                <Button variant="outline" size="sm" className="h-8 text-[12.5px]" onClick={() => setAdding(true)} data-action="add-client">
+                <Button variant="outline" size="sm" className="h-8 text-[12.5px]" onClick={() => { setMode("self"); setAdding(true); }} data-action="add-client">
                   <Building2 className="mr-1.5 h-3.5 w-3.5" /> Add client
                 </Button>
+                {canManage && !platform ? <Button variant="outline" size="sm" className="h-8 text-[12.5px]" onClick={() => { setMode("link"); setAdding(true); }} data-action="invite-client">Invite client to set up</Button> : null}
                 <NeedsPhone className="h-8 text-[12.5px]" label={<><Plus className="mr-1.5 h-3.5 w-3.5" /> New receptionist</>}>
                 <Button asChild size="sm" className="h-8 text-[12.5px]">
                   <Link to="/admin/clients/new" data-action="new-receptionist">

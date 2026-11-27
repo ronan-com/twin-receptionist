@@ -3,6 +3,7 @@ import { createInvite, emailOf, type Ctx } from "../accounts";
 import { answeredBusiness, industryKeyOf, industryLabelOf, membershipRole } from "../answered";
 import { audit } from "../audit";
 import { changeBrand, isBrandLocked, ownBrand, resolveBrand, uploadAsset } from "../brand";
+import { readCustomerBilling } from "../customerBilling";
 import { availability, bookingLive } from "../booking";
 import { CalendarError, calendarLink, providerOf } from "../calendars";
 import { dashboardSignInStart } from "../connect";
@@ -960,6 +961,11 @@ export async function manageRoutes(args: ClientRouteArgs): Promise<Response | nu
       business: answeredBusiness(next, { orgId: clientOrgId, orgName: org.name, sandbox: org.sandbox, suspended: org.suspended }),
       applied: changed && !isDemo(next.assistantId),
     });
+  }
+  if (rest === "/customer-billing" && method === "GET") {
+    if (access !== "manager" || ctx.viewing) return json({ billing: null });
+    const [r] = await sql`select company_id from clients where id=${client.id} and org_id=${clientOrgId}`;
+    return json({ billing: r?.company_id ? await readCustomerBilling(clientOrgId, r.company_id) : null });
   }
   if (rest === "/subscription" && method === "GET") {
     return json({

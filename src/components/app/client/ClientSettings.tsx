@@ -16,6 +16,7 @@ import { updateBusiness } from "@/lib/api/manage";
 import { fmtPhone } from "@/lib/app/format";
 import { asBusinessHours, asRecord, asStringArray, DAY_KEYS, DAY_LABELS, DEFAULT_HOURS, type BusinessHours } from "@/lib/app/types";
 import { useWorkspace } from "@/lib/app/workspace";
+import { ClientPayment } from "@/components/app/ClientPayment";
 import { ALWAYS_FROM, ALWAYS_TO } from "@/lib/shared";
 import { cn } from "@/lib/utils";
 
@@ -180,6 +181,7 @@ export function ClientSettings() {
   return (
     <div className="space-y-4" data-page="client-settings">
       <h1 className="text-[22px] font-semibold tracking-[-0.02em] text-ink sm:text-[26px]">Settings</h1>
+      {businessId && ws.access.kind === "member" && ws.access.canManage ? <ClientPayment businessId={businessId}/> : null}
       {ro ? <p className="rounded-[8px] border border-hairline bg-white px-4 py-3 text-[13.5px] text-ink-muted">{ws.access.readOnlyReason ?? "You can look but not change anything."}</p> : null}
 
       <div className="panel overflow-hidden">

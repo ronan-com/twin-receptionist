@@ -1,31 +1,27 @@
-// Credential-free dashboard preview: no app accounts, provider calls, or install state changes.
+// An interactive, isolated preview. Every change is sample data in the browser session.
 import { esc } from "./pages";
-
-const sections = [
-  ["overview", "Overview"], ["clients", "Clients"], ["calls", "Calls"],
-  ["receptionists", "AI Receptionists"], ["voices", "Voices"],
-  ["numbers", "Phone Numbers"], ["connections", "Connections"], ["usage", "Usage"],
-  ["qa", "System / QA"], ["audit", "Audit Log"], ["support", "Support requests"],
-  ["tutorials", "Tutorials"], ["settings", "Settings"],
-] as const;
-
-export function dashboardPreview(base: string, section: string | null = null): string {
-  const selected = sections.find(([key]) => key === section) ?? sections[0];
-  const resume = esc(base);
-  const link = (key: string) => resume + "?preview=dashboard&amp;section=" + key;
-  const cards = [["Clients", "0", "0 active"], ["Receptionists", "0", "0 numbers attached"], ["Calls", "0", "No calls yet"], ["AI resolution", "0%", "No calls yet"], ["Failed calls", "0", "No calls yet"], ["Bookings", "0", "No bookings yet"], ["Follow-ups", "0", "No follow-ups yet"], ["Avg length", "0s", "No calls yet"]];
-  const overview = selected[0] === "overview";
-  return `<!doctype html>
-<html lang="en-AU"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="robots" content="noindex, nofollow"><title>Your agency | Dashboard preview</title>
-<link rel="stylesheet" href="/wizard.css"></head>
-<body data-neutral-onboarding class="preview-dashboard">
-<div class="preview-layout">
-<aside class="preview-sidebar"><a class="preview-mark" href="${link("overview")}">Your agency</a>
-<p class="preview-caption">Agency workspace</p><nav aria-label="Preview navigation">${sections.map(([key, label]) => `<a href="${link(key)}"${key === selected[0] ? ' aria-current="page"' : ""}>${label}</a>`).join("")}</nav></aside>
-<main class="preview-main"><header class="preview-header"><span>Agency console / ${selected[1]}</span><a class="btn p" href="${resume}">Continue onboarding</a></header>
-<div class="preview-content"><div class="preview-notice"><b>Preview mode</b><span>Your dashboard is ready to explore. Connect your accounts when you are ready to start using it.</span></div>
-<h1>${overview ? "Your agency overview" : selected[1]}</h1><p class="lead">${overview ? "Your clients, receptionists and calls." : "This area will be available when your agency is connected."}</p>
-${overview ? `<section class="preview-panel preview-empty"><h2>Create your first receptionist</h2><p>Add a business and set up its AI receptionist after finishing onboarding.</p><a class="btn p" href="${resume}">Continue onboarding</a></section><div class="preview-stats">${cards.map(([label,value,sub])=>`<section class="preview-panel"><p>${label}</p><strong>${value}</strong><small>${sub}</small></section>`).join("")}</div><section class="preview-panel"><h2>Needs attention</h2><p>No incidents or failed calls.</p></section>` : `<section class="preview-panel preview-empty"><h2>${selected[1]}</h2><p>No live data yet. Finish onboarding to use this part of your dashboard.</p><a class="btn p" href="${resume}">Continue onboarding</a></section>`}
-</div></main></div></body></html>`;
+const agency = [["overview","Overview"],["clients","Clients"],["receptionists","Receptionists"],["numbers","Numbers"],["connections","Connections"],["brand","Brand"],["billing","Billing"],["help","Help"]] as const;
+const customer = [["home","Home"],["inbox","Inbox"],["calendar","Calendar"],["contacts","Contacts"],["settings","Settings"]] as const;
+export function dashboardPreview(base:string, section:string|null=null, view:string|null=null):string {
+ const isCustomer=view==="customer";
+ const sections=isCustomer?customer:agency;
+ const selected=sections.find(([k])=>k===section)??sections[0];
+ const resume=esc(base);
+ const href=(key:string,client=isCustomer)=>resume+"?preview=dashboard&amp;view="+(client?"customer":"agency")+"&amp;section="+key;
+ const overview=selected[0]==="overview"||selected[0]==="home";
+ const stats=isCustomer?["Calls answered","Bookings made","Messages for you"]:["Clients","Receptionists","Calls","Bookings"];
+ const form=(body:string,action:string)=>`<form method="post" class="preview-form" data-demo-form="${action}">${body}<button class="btn p" type="submit">Save in preview</button></form>`;
+ const sample=`<div class="preview-panel"><h2>Sample business</h2><p data-demo-name>Example Plumbing</p><p data-demo-greeting>Friendly AI receptionist</p><p data-demo-hours>24/7</p><a class="btn o" href="${href("home",true)}">See customer's dashboard</a></div>`;
+ let body="";
+ if(overview) body=`<div class="preview-stats">${stats.map(t=>`<section class="preview-panel"><p>${t}</p><strong data-demo-stat="${t}">0</strong><small>Sample data</small></section>`).join("")}</div><section class="preview-panel preview-empty"><h2>${isCustomer?"Your receptionist":"Create your first receptionist"}</h2><p>${isCustomer?"See the calls and appointments your AI handles.":"Try adding a sample client and viewing their dashboard."}</p><a class="btn p" href="${href(isCustomer?"settings":"clients")}">${isCustomer?"Receptionist settings":"Manage clients"}</a></section>`;
+ else if(selected[0]==="clients") body=sample+`<section class="preview-panel"><h2>Add a sample client</h2>${form('<label class="f">Business name<input name="name" maxlength="80" required placeholder="Example Plumbing"></label>',"client")}<p>Practice only. No invitation or email is sent.</p></section>`;
+ else if(selected[0]==="receptionists"||selected[0]==="settings") body=sample+`<section class="preview-panel"><h2>Receptionist settings</h2>${form('<label class="f">Greeting<input name="greeting" maxlength="160" placeholder="Hello, how can I help?" required></label><label class="f">Opening hours<select name="hours"><option>24/7</option><option>Weekdays, 9am-5pm</option></select></label>',"receptionist")}</section>`;
+ else if(selected[0]==="calendar") body=`<section class="preview-panel"><h2>Appointments</h2><p data-demo-booking>No sample appointments yet.</p>${form('<label class="f">Appointment name<input name="booking" required maxlength="80" placeholder="Sample consultation"></label>',"booking")}</section>`;
+ else if(selected[0]==="inbox"||selected[0]==="contacts") body=`<section class="preview-panel"><h2>${selected[1]}</h2><p>Try recording a sample enquiry.</p><p data-demo-message>No sample enquiries yet.</p>${form('<label class="f">Example enquiry<input name="message" required maxlength="120" placeholder="Request a callback"></label>',"message")}</section>`;
+ else if(selected[0]==="brand") body=`<section class="preview-panel"><h2>Agency identity</h2>${form('<label class="f">Agency name<input required name="agency" maxlength="80" placeholder="Your agency"></label><label class="f">Accent colour<input type="color" name="colour" value="#32343c"></label>',"brand")}</section>`;
+ else if(selected[0]==="billing") body=`<section class="preview-panel"><h2>Monthly subscription</h2><p data-demo-price>No sample plan yet.</p>${form('<label class="f">Monthly price (AUD)<input name="price" type="number" min="1" step="0.01" required placeholder="199"></label>',"billing")}<p>No payment is collected in preview.</p></section>`;
+ else if(selected[0]==="numbers") body=`<section class="preview-panel"><h2>Sample phone number</h2><p data-demo-number>No number attached.</p>${form('<label class="f">Choose a sample number<select name="number"><option>+61 2 5550 0100</option><option>+61 7 5550 0100</option></select></label>',"number")}<p>No number is purchased.</p></section>`;
+ else if(selected[0]==="connections") body=`<section class="preview-panel"><h2>Sample connections</h2><p data-demo-connection>No connected accounts.</p>${form('<label class="f">Try a connection<select name="connection"><option>Google Calendar</option><option>Telnyx</option><option>OpenRouter</option></select></label>',"connection")}<p>No real accounts are accessed.</p></section>`;
+ else body=`<section class="preview-panel"><h2>${selected[1]}</h2><p>These features require connected accounts. You can explore the sample client or return to finish onboarding.</p><a class="btn o" href="${resume}">Continue onboarding</a></section>`;
+ return `<!doctype html><html lang="en-AU"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="robots" content="noindex, nofollow"><title>Dashboard preview</title><link rel="stylesheet" href="/wizard.css"><script src="/dashboard-preview.js" defer></script></head><body data-neutral-onboarding class="preview-dashboard"><div class="preview-layout"><aside class="preview-sidebar"><a class="preview-mark" data-demo-agency href="${href(isCustomer?"home":"overview")}">Your agency</a><p class="preview-caption">${isCustomer?"Customer workspace":"Agency workspace"}</p><nav aria-label="Preview navigation">${sections.map(([key,label])=>`<a href="${href(key)}"${key===selected[0]?' aria-current="page"':""}>${label}</a>`).join("")}</nav></aside><main class="preview-main"><header class="preview-header"><span>${isCustomer?"Customer":"Agency"} dashboard / ${selected[1]}</span><a class="btn p" href="${resume}">Continue onboarding</a></header><div class="preview-content"><div class="preview-notice"><b>Preview mode</b><span>Sample data only. No real calls, messages or payments.</span><a class="btn o" href="${href(isCustomer?"overview":"home",!isCustomer)}">${isCustomer?"Switch to agency view":"Switch to customer view"}</a></div><h1>${overview?(isCustomer?"Your business dashboard":"Your agency overview"):selected[1]}</h1><p class="lead data-demo-status" role="status">${isCustomer?"Manage your own AI receptionist.":"Manage your clients and receptionists."}</p>${body}</div></main></div></body></html>`;
 }

@@ -890,7 +890,7 @@ async function companiesInScope(scope: string | null, id: string | null = null):
     order by lower(m.name)`) as CompanyRow[];
 }
 
-async function oneCompany(ctx: Ctx, id: string): Promise<CompanyRow> {
+export async function oneCompany(ctx: Ctx, id: string): Promise<CompanyRow> {
   if (!UUID.test(id)) throw new ValidationError("Unknown client.");
   const scope = scopeOf(ctx);
   await ensureCompanies(scope);
@@ -1100,7 +1100,7 @@ const nameOf = (v: unknown, what: string) => {
   return s;
 };
 
-async function createCompany(ctx: Ctx, input: any) {
+export async function createCompany(ctx: Ctx, input: any) {
   // The platform admin may file a company under any agency; staff use their own.
   let orgId = ctx.org!.id;
   if (isPlatformScope(ctx) && input?.orgId) {
@@ -1147,7 +1147,7 @@ async function updateCompany(ctx: Ctx, id: string, input: any) {
 }
 
 // Puts a receptionist into a company. Customers of the company get access to it too.
-async function attachReceptionist(ctx: Ctx, id: string, input: any) {
+export async function attachReceptionist(ctx: Ctx, id: string, input: any) {
   const m = await oneCompany(ctx, id);
   const c = await oneClient(ctx, String(input?.clientId ?? ""));
   if (c.org_id !== m.org_id) throw new ValidationError("That receptionist belongs to another agency.");

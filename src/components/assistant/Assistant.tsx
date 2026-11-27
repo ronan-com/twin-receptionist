@@ -1,27 +1,33 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import { useRouter, useRouterState } from "@tanstack/react-router";
-import { ArrowUp, Check, Copy, RotateCcw, Sparkles, Square, X } from "lucide-react";
+import { ArrowUp, Check, Copy, Mic, Minus, RotateCcw, Sparkles, Square, Volume2, VolumeX, X } from "lucide-react";
 import { PRODUCT } from "@/lib/app/product";
 import { cn } from "@/lib/utils";
 import { Markdown } from "./Markdown";
+import { ConfirmCard } from "../helper/ConfirmCard";
+import { answerCard, askHelper, type CardState, type HelperAction } from "../helper/helperApi";
+import { loadPrefs, savePrefs, type HelperPrefs } from "../helper/prefs";
+import { canListen, listen, speak, stopSpeaking } from "../helper/voice";
 
-// "Ask for help": an AI assistant for agency owners and admins on the console. A
-// floating button and a slide-over chat that streams answers from POST /api/assistant
-// (server/assistant.ts). It is only mounted where the server says it is on
-// (session.assistant), so with no OPENROUTER_API_KEY there is no button at all.
+// "Helper": the AI helper for agency owners and admins on the console. A floating button and a
+// slide-over chat that talks to POST /api/helper/chat (server/helper.ts): answers questions, opens
+// pages, looks things up and, after a confirm card, makes or changes a receptionist. It is only
+// mounted for owners and admins (session.assistant); with no AI key it says so in the chat.
+// Voice is basic and off by default (src/components/helper/voice.ts). The panel's open, minimised
+// and speaker state is remembered per person in this browser (src/components/helper/prefs.ts).
 
 export type AssistantApi = { open: () => void; toggle: () => void; isOpen: boolean };
 const Ctx = createContext<AssistantApi | null>(null);
 /** Null where the assistant is off (no key, or not an agency owner or admin). */
 export const useAssistant = () => useContext(Ctx);
 
-type Msg = { id: string; role: "user" | "assistant"; content: string; error?: string };
+type Msg = { id: string; role: "user" | "assistant"; content: string; error?: string; actions?: HelperAction[]; cards?: Record<string, CardState> };
 
 export const STARTERS = [
-  "How do I make my first receptionist?",
+  "Set up a receptionist for me",
+  "What's set up so far?",
   "How do I give a client their own login?",
-  "Why isn't my receptionist transferring calls?",
-  "How do I connect a phone number?",
+  "Take me to my phone numbers",
 ];
 
 const MAX_CHARS = 2000;
@@ -51,8 +57,15 @@ const isTyping = (t: EventTarget | null) => {
 };
 
 export function AssistantProvider({ enabled, userId, children }: { enabled: boolean; userId: string; children: ReactNode }) {
-  const [isOpen, setOpen] = useState(false);
-  const api = useMemo<AssistantApi>(() => ({ open: () => setOpen(true), toggle: () => setOpen((o) => !o), isOpen }), [isOpen]);
+  // Open, minimised and speaker are remembered per person. It reopens by itself only on a wide screen.
+  const [prefs, setPrefs] = useState<HelperPrefs>(() => {
+    const p = loadPrefs(userId);
+    return { ...p, open: p.open && typeof window !== "undefined" && window.matchMedia("(min-width: 1024px)").matches };
+  });
+  const isOpen = prefs.open;
+  const setOpen = useCallback((v: boolean | ((o: boolean) => boolean)) => setPrefs((p) => ({ ...p, open: typeof v === "function" ? v(p.open) : v, mini: false })), []);
+  useEffect(() => savePrefs(userId, prefs), [userId, prefs]);
+  const api = useMemo<AssistantApi>(() => ({ open: () => setOpen(true), toggle: () => setOpen((o) => !o), isOpen }), [isOpen, setOpen]);
 
   // ⌘/ or Ctrl+/ toggles it anywhere; "?" opens it when you're not typing in a field.
   useEffect(() => {
@@ -68,18 +81,18 @@ export function AssistantProvider({ enabled, userId, children }: { enabled: bool
     };
     window.addEventListener("keydown", on);
     return () => window.removeEventListener("keydown", on);
-  }, [enabled]);
+  }, [enabled, setOpen]);
 
   if (!enabled) return <Ctx.Provider value={null}>{children}</Ctx.Provider>;
   return (
     <Ctx.Provider value={api}>
       {children}
-      <AssistantPanel userId={userId} open={isOpen} onOpenChange={setOpen} />
+      <AssistantPanel userId={userId} open={isOpen} onOpenChange={setOpen} prefs={prefs} onPrefs={(p) => setPrefs((cur) => ({ ...cur, ...p }))} />
     </Ctx.Provider>
   );
 }
 
-function AssistantPanel({ userId, open, onOpenChange }: { userId: string; open: boolean; onOpenChange: (v: boolean) => void }) {
+function AssistantPanel({ userId, open, onOpenChange, prefs, onPrefs }: { userId: string; open: boolean; onOpenChange: (v: boolean) => void; prefs: HelperPrefs; onPrefs: (p: Partial<HelperPrefs>) => void }) {
   const router = useRouter();
   const route = useRouterState({
     select: (s) => {
@@ -96,6 +109,8 @@ function AssistantPanel({ userId, open, onOpenChange }: { userId: string; open: 
   const pinned = useRef(true);
   const msgsRef = useRef(msgs);
   msgsRef.current = msgs;
+  const prefsRef = useRef(prefs);
+  prefsRef.current = prefs;
 
   useEffect(() => {
     if (!busy) save(userId, msgs);
@@ -144,67 +159,75 @@ function AssistantPanel({ userId, open, onOpenChange }: { userId: string; open: 
       setMsgs([...history, reply]);
       setBusy(true);
       pinned.current = true;
+      stopSpeaking();
       const ctrl = new AbortController();
       abort.current = ctrl;
-      let text = "";
-      let frame = 0;
       const patch = (p: Partial<Msg>) => setMsgs((cur) => cur.map((m) => (m.id === reply.id ? { ...m, ...p } : m)));
-      const flush = () => {
-        frame = 0;
-        patch({ content: text });
-      };
       try {
-        const res = await fetch("/api/assistant", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          credentials: "same-origin",
-          signal: ctrl.signal,
-          body: JSON.stringify({ route, messages: history.map(({ role, content }) => ({ role, content })) }),
-        });
-        if (!res.ok || !res.body) {
-          const err = await res.json().catch(() => ({}));
-          throw new Error(err?.error || "The assistant isn't available right now.");
-        }
-        const reader = res.body.getReader();
-        const dec = new TextDecoder();
-        let buf = "";
-        for (;;) {
-          const { done, value } = await reader.read();
-          if (done) break;
-          buf += dec.decode(value, { stream: true });
-          let nl: number;
-          while ((nl = buf.indexOf("\n")) >= 0) {
-            const line = buf.slice(0, nl).trim();
-            buf = buf.slice(nl + 1);
-            if (!line.startsWith("data:")) continue;
-            const data = line.slice(5).trim();
-            if (data === "[DONE]") continue;
-            try {
-              const obj = JSON.parse(data);
-              if (obj.error) throw new Error(obj.error);
-              if (typeof obj.t === "string") {
-                text += obj.t;
-                if (!frame) frame = window.requestAnimationFrame(flush);
-              }
-            } catch (e) {
-              if (e instanceof SyntaxError) continue;
-              throw e;
-            }
-          }
-        }
-        if (frame) window.cancelAnimationFrame(frame);
-        patch({ content: text });
+        const out = await askHelper(history.map(({ role, content }) => ({ role, content })), route, ctrl.signal);
+        patch({ content: out.reply, actions: out.actions.length ? out.actions : undefined });
+        // Opening a page is only a look: it happens now. Changes wait on their card.
+        const nav = out.actions.find((a) => a.type === "navigate");
+        if (nav) go(nav.path);
+        if (prefsRef.current.speak) void speak(out.reply);
       } catch (e) {
-        if (frame) window.cancelAnimationFrame(frame);
-        if ((e as Error).name === "AbortError") patch({ content: text });
-        else patch({ content: text, error: (e as Error).message || "Something went wrong." });
+        if ((e as Error).name !== "AbortError") patch({ error: (e as Error).message || "Something went wrong." });
       } finally {
         abort.current = null;
         setBusy(false);
       }
     },
-    [route],
+    [route, go],
   );
+
+  // Do it / Cancel on a confirm card. The server runs only what it stored for that card.
+  const answer = useCallback(
+    async (msgId: string, id: string, cancel: boolean) => {
+      const mark = (state: CardState) => setMsgs((cur) => cur.map((m) => (m.id === msgId ? { ...m, cards: { ...m.cards, [id]: state } } : m)));
+      mark(cancel ? { s: "cancelled" } : { s: "working" });
+      try {
+        const out = await answerCard(id, cancel);
+        mark({ s: cancel ? "cancelled" : "done" });
+        setMsgs((cur) => [...cur, { id: uid(), role: "assistant", content: out.message }]);
+        if (!cancel && out.navigate) go(out.navigate);
+        if (!cancel && prefsRef.current.speak) void speak(out.message);
+      } catch (e) {
+        mark({ s: "error", text: (e as Error).message });
+      }
+    },
+    [go],
+  );
+
+  // The mic: one sentence at a time, sent when it ends.
+  const [listening, setListening] = useState(false);
+  const [micNote, setMicNote] = useState("");
+  const stopListening = useRef<(() => void) | null>(null);
+  const toggleMic = () => {
+    if (listening) return stopListening.current?.();
+    stopSpeaking();
+    setMicNote("");
+    let heard = "";
+    setListening(true);
+    stopListening.current = listen({
+      onText: (t) => {
+        heard = t;
+        setDraft(t);
+      },
+      onEnd: (err) => {
+        setListening(false);
+        stopListening.current = null;
+        if (err) setMicNote(err);
+        else if (heard.trim()) send(heard);
+      },
+    });
+  };
+  useEffect(() => () => stopListening.current?.(), []);
+  useEffect(() => {
+    if (!open) {
+      stopListening.current?.();
+      stopSpeaking();
+    }
+  }, [open]);
 
   const send = useCallback(
     (text: string) => {
@@ -246,21 +269,23 @@ function AssistantPanel({ userId, open, onOpenChange }: { userId: string; open: 
         type="button"
         onClick={() => onOpenChange(true)}
         data-assistant-button
-        aria-label="Ask for help"
+        aria-label="Open Helper"
         aria-keyshortcuts="Control+/ Meta+/"
-        title="Ask for help (Ctrl or ⌘ + /)"
+        title="Helper (Ctrl or ⌘ + /)"
+        data-helper-mini={prefs.mini}
         className={cn(
-          "fixed bottom-4 right-4 z-40 inline-flex h-11 items-center gap-2 rounded-full bg-indigo pl-3.5 pr-4 text-[13px] font-semibold text-white shadow-[0_6px_20px_-4px_color-mix(in_srgb,var(--indigo)_55%,transparent),0_2px_6px_rgba(15,23,42,0.18)] transition duration-200 hover:bg-indigo-deep hover:shadow-[0_8px_24px_-4px_color-mix(in_srgb,var(--indigo)_60%,transparent)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo sm:bottom-6 sm:right-6",
+          "fixed bottom-4 right-4 z-40 inline-flex h-11 items-center gap-2 rounded-full bg-indigo text-[13px] font-semibold text-white shadow-[0_6px_20px_-4px_color-mix(in_srgb,var(--indigo)_55%,transparent),0_2px_6px_rgba(15,23,42,0.18)] transition duration-200 hover:bg-indigo-deep hover:shadow-[0_8px_24px_-4px_color-mix(in_srgb,var(--indigo)_60%,transparent)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo sm:bottom-6 sm:right-6",
+          prefs.mini ? "w-11 justify-center" : "pl-3.5 pr-4",
           open && "pointer-events-none translate-y-2 opacity-0",
         )}
         tabIndex={open ? -1 : 0}
       >
-        <Sparkles className="h-4 w-4" aria-hidden /> Ask for help
+        <Sparkles className="h-4 w-4" aria-hidden /> {prefs.mini ? null : "Helper"}
       </button>
 
       <aside
         role="dialog"
-        aria-label={`${PRODUCT} help`}
+        aria-label="Helper"
         aria-hidden={!open}
         data-assistant-panel
         data-open={open}
@@ -269,20 +294,38 @@ function AssistantPanel({ userId, open, onOpenChange }: { userId: string; open: 
           open ? "visible translate-x-0" : "invisible translate-x-full",
         )}
       >
-        <header className="relative flex items-center gap-3 border-b border-hairline bg-[linear-gradient(135deg,color-mix(in_srgb,var(--indigo)_10%,#fff),#fff_70%)] px-4 py-3">
+        <header className="relative flex items-center gap-3 border-b border-hairline bg-[linear-gradient(135deg,color-mix(in_srgb,var(--indigo)_10%,#fff),#fff_70%)] px-4 py-3 max-sm:gap-2">
           <span className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-indigo text-white shadow-sm" aria-hidden>
             <Sparkles className="h-[18px] w-[18px]" />
           </span>
           <div className="min-w-0 flex-1">
-            <h2 className="truncate text-[14.5px] font-semibold leading-tight tracking-[-0.01em] text-ink">{PRODUCT} help</h2>
-            <p className="truncate text-[12px] text-ink-muted">AI assistant · knows your dashboard</p>
+            <h2 className="truncate text-[14.5px] font-semibold leading-tight tracking-[-0.01em] text-ink">Helper</h2>
+            <p className="truncate text-[12px] text-ink-muted">AI helper · knows your dashboard</p>
           </div>
           {!empty ? (
             <button type="button" onClick={clear} data-assistant-clear title="Clear chat" aria-label="Clear chat" className="inline-flex h-8 items-center gap-1.5 rounded-md px-2 text-[12px] font-medium text-ink-muted hover:bg-canvas-2 hover:text-ink">
               <RotateCcw className="h-3.5 w-3.5" /> <span className="hidden sm:inline">Clear</span>
             </button>
           ) : null}
-          <button type="button" onClick={() => onOpenChange(false)} title="Close (Esc)" aria-label="Close help" className="inline-flex h-8 w-8 items-center justify-center rounded-md text-ink-muted hover:bg-canvas-2 hover:text-ink">
+          <button
+            type="button"
+            onClick={() => {
+              const on = !prefs.speak;
+              onPrefs({ speak: on });
+              if (!on) stopSpeaking();
+            }}
+            data-helper-speaker
+            aria-pressed={prefs.speak}
+            title={prefs.speak ? "Reading answers aloud (click to stop)" : "Read answers aloud"}
+            aria-label={prefs.speak ? "Stop reading answers aloud" : "Read answers aloud"}
+            className={cn("inline-flex h-8 w-8 items-center justify-center rounded-md hover:bg-canvas-2", prefs.speak ? "text-indigo" : "text-ink-muted hover:text-ink")}
+          >
+            {prefs.speak ? <Volume2 className="h-4 w-4" /> : <VolumeX className="h-4 w-4" />}
+          </button>
+          <button type="button" onClick={() => { onOpenChange(false); onPrefs({ mini: true }); }} data-helper-minimise title="Minimise" aria-label="Minimise Helper" className="inline-flex h-8 w-8 items-center justify-center rounded-md text-ink-muted hover:bg-canvas-2 hover:text-ink">
+            <Minus className="h-4 w-4" />
+          </button>
+          <button type="button" onClick={() => onOpenChange(false)} title="Close (Esc)" aria-label="Close Helper" className="inline-flex h-8 w-8 items-center justify-center rounded-md text-ink-muted hover:bg-canvas-2 hover:text-ink">
             <X className="h-4 w-4" />
           </button>
         </header>
@@ -300,7 +343,7 @@ function AssistantPanel({ userId, open, onOpenChange }: { userId: string; open: 
             <div className="flex min-h-full flex-col justify-center pb-6" data-assistant-empty>
               <h3 className="text-[20px] font-semibold leading-snug tracking-[-0.02em] text-ink">How can I help?</h3>
               <p className="mt-1.5 text-[13.5px] leading-relaxed text-ink-muted">
-                Ask me anything about setting up {PRODUCT}. I can see how far along your agency is, so I can point you to the next step.
+                Ask me about {PRODUCT}, tell me where you want to go, or ask me to set up a receptionist. I can see how far along your agency is. I always check with you before I change anything.
               </p>
               <div className="mt-5 grid gap-2" role="list">
                 {STARTERS.map((q) => (
@@ -327,7 +370,7 @@ function AssistantPanel({ userId, open, onOpenChange }: { userId: string; open: 
                       <div className="max-w-[88%] whitespace-pre-wrap break-words rounded-2xl rounded-br-md bg-indigo px-3.5 py-2 text-[13.5px] leading-[1.5] text-white">{m.content}</div>
                     </div>
                   ) : (
-                    <Answer msg={m} streaming={busy && m.id === lastId} onLink={go} onRetry={retry} />
+                    <Answer msg={m} streaming={busy && m.id === lastId} onLink={go} onRetry={retry} onCard={(id, cancel) => void answer(m.id, id, cancel)} />
                   )}
                 </li>
               ))}
@@ -343,11 +386,24 @@ function AssistantPanel({ userId, open, onOpenChange }: { userId: string; open: 
               onChange={(e) => setDraft(e.target.value.slice(0, MAX_CHARS))}
               onKeyDown={onKey}
               rows={1}
-              placeholder="Ask a question…"
+              placeholder={listening ? "Listening…" : "Ask or tell Helper…"}
               aria-label="Your question"
               data-assistant-input
               className="max-h-[140px] min-h-[36px] flex-1 resize-none bg-transparent px-2.5 py-2 text-[13.5px] leading-[1.4] text-ink outline-none placeholder:text-ink-muted/70"
             />
+            {canListen() && !busy ? (
+              <button
+                type="button"
+                onClick={toggleMic}
+                data-helper-mic
+                aria-pressed={listening}
+                aria-label={listening ? "Stop listening" : "Talk to Helper"}
+                title={listening ? "Stop listening" : "Talk to Helper"}
+                className={cn("inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl transition", listening ? "animate-pulse bg-[#fff1f0] text-[#a3231b]" : "text-ink-muted hover:bg-canvas-2 hover:text-ink")}
+              >
+                <Mic className="h-4 w-4" />
+              </button>
+            ) : null}
             {busy ? (
               <button type="button" onClick={() => abort.current?.abort()} aria-label="Stop" title="Stop" data-assistant-stop className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-ink text-white hover:opacity-90">
                 <Square className="h-3.5 w-3.5 fill-current" />
@@ -366,6 +422,11 @@ function AssistantPanel({ userId, open, onOpenChange }: { userId: string; open: 
               </button>
             )}
           </div>
+          {micNote ? (
+            <p className="mt-2 px-1 text-center text-[11.5px] text-[#a3231b]" role="status">
+              {micNote}
+            </p>
+          ) : null}
           <p className="mt-2 px-1 text-center text-[11px] text-ink-muted">AI can make mistakes. Check anything important. Press Ctrl or ⌘ + / to open or close.</p>
         </footer>
       </aside>
@@ -373,7 +434,7 @@ function AssistantPanel({ userId, open, onOpenChange }: { userId: string; open: 
   );
 }
 
-function Answer({ msg, streaming, onLink, onRetry }: { msg: Msg; streaming: boolean; onLink: (href: string) => void; onRetry: () => void }) {
+function Answer({ msg, streaming, onLink, onRetry, onCard }: { msg: Msg; streaming: boolean; onLink: (href: string) => void; onRetry: () => void; onCard: (id: string, cancel: boolean) => void }) {
   const [copied, setCopied] = useState(false);
   const copy = async () => {
     try {
@@ -410,6 +471,15 @@ function Answer({ msg, streaming, onLink, onRetry }: { msg: Msg; streaming: bool
             ))}
           </div>
         ) : null}
+        {msg.actions?.map((a) =>
+          a.type === "confirm" ? (
+            <ConfirmCard key={a.id} card={a} state={msg.cards?.[a.id]} onDo={() => onCard(a.id, false)} onCancel={() => onCard(a.id, true)} />
+          ) : (
+            <button key={`${a.type}-${a.path}`} type="button" onClick={() => onLink(a.path)} data-helper-open className="mt-2 mr-2 inline-flex h-8 items-center gap-1.5 rounded-lg border border-hairline px-3 text-[12.5px] font-medium text-indigo hover:bg-canvas-2">
+              {a.type === "navigate" ? `Open ${a.label} again` : a.label}
+            </button>
+          ),
+        )}
         {msg.error ? (
           <div className="mt-2 flex items-center justify-between gap-2 rounded-lg border border-[#ffcfcb] bg-[#fff1f0] px-3 py-2 text-[12.5px] text-[#a3231b]" role="alert">
             <span>{msg.error}</span>

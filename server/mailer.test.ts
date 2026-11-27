@@ -89,9 +89,9 @@ describe("building a sender from a simple choice", () => {
     expect(buildSender({ provider: "zoho_au", address: "a@biz.com.au", password: "p" }).host).toBe("smtp.zoho.com.au");
     expect(buildSender({ provider: "zoho", address: "a@biz.com", password: "p" }).host).toBe("smtp.zoho.com");
   });
-  test("Resend: the API key over smtps on 465, user resend", () => {
+  test("Resend: the API key over STARTTLS on 2587 (Railway blocks 465/587 on non-Pro plans), user resend", () => {
     const s = buildSender({ provider: "resend", address: "hello@mail.biz.com", password: "re_abc123XYZ_456" });
-    expect(s.smtpUrl).toBe("smtps://resend:re_abc123XYZ_456@smtp.resend.com:465");
+    expect(s.smtpUrl).toBe("smtp://resend:re_abc123XYZ_456@smtp.resend.com:2587");
     expect(s.from).toBe("hello@mail.biz.com");
   });
   test("Other (SMTP): host, port, username; 465 means smtps; odd passwords are encoded", () => {

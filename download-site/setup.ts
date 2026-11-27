@@ -976,7 +976,7 @@ function supportSettings(id: number): Record<string, string> {
 
 export function buildSettings(id: number, s: SetupData): string {
   const resendKey = getSecret(id, "resend_key");
-  const smtp = s.email?.mode === "resend" ? `smtps://resend:${resendKey}@smtp.resend.com:465` : smtpUrl(s.email!.smtp!.host, s.email!.smtp!.port, s.email!.smtp!.user, getSecret(id, "smtp_password") || "");
+  const smtp = s.email?.mode === "resend" ? `smtp://resend:${resendKey}@smtp.resend.com:2587` : smtpUrl(s.email!.smtp!.host, s.email!.smtp!.port, s.email!.smtp!.user, getSecret(id, "smtp_password") || "");
   return buildEnv({
     PRODUCT_NAME: s.brand!.productName,
     DOMAIN: hostOf(s),
@@ -1390,7 +1390,7 @@ export async function railwayVars(id: number, s: SetupData, token: string): Prom
     if (!key || !s.email.resend?.domainId) throw new ProviderError("Your Resend key is missing. Go back to the Email step and check it again.");
     // The server gets a send-only key for this one domain, never the Full access key.
     const send = await resendSendingKey(key, `${s.brand!.productName} server`, s.email.resend.domainId);
-    smtp = `smtps://resend:${send}@smtp.resend.com:465`;
+    smtp = `smtp://resend:${send}@smtp.resend.com:2587`;
   } else smtp = smtpUrl(s.email.smtp!.host, s.email.smtp!.port, s.email.smtp!.user, getSecret(id, "smtp_password") || "");
   const v: Record<string, string> = {
     PRODUCT_NAME: s.brand!.productName,

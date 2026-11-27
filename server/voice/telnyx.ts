@@ -8,7 +8,7 @@ import { TelnyxError, telnyx } from "../telnyx";
 import { telnyxSettings } from "../agencies";
 import { availableNumbers, buyNumber, callSummary, connectedNumbers, openOrders, voiceAppFor } from "../numbers";
 import { ValidationError } from "../prompt";
-import { enableTexting, removeTextingProfile, textingProfileId } from "../texting";
+import { migrateTexting, removeTextingProfile, textingProfileId } from "../texting";
 import type { Conversation, VoiceProvider } from "./provider";
 
 // The Telnyx engine: the code that used to sit in server/index.ts, server/calls.ts and
@@ -92,9 +92,7 @@ export const telnyxProvider: VoiceProvider = {
     });
     const assistantId = created.data?.id ?? created.id;
     if (!assistantId) throw new TelnyxError(502, "The phone service did not return an assistant ID.");
-    // Texting is free until a number is attached, so switch it on straight away.
-    // A failure here shouldn't lose the receptionist: the texts card can retry.
-    await enableTexting(assistantId).catch((err) => console.error(`[texting ${assistantId}]`, err.message));
+    // Texting (our own messaging profile, server/texting.ts) is set up when a number is connected for texts.
     return assistantId;
   },
 
@@ -116,16 +114,18 @@ export const telnyxProvider: VoiceProvider = {
     const row = await ensureAutomationRow(synced.id);
     const greet = synced.settings.paused ? {} : overlayPayload(synced, row.settings, { greeting: synced.settings.greeting }, { publicUrl: publicUrl(), token: row.token, callerMemory: true });
     await telnyx("POST", `/ai/assistants/${synced.assistantId}`, { ...greet, ...telephonyPayload(row.settings, current) });
+    // A receptionist whose texts were still answered by its Telnyx assistant moves to ours.
+    await migrateTexting(synced).catch((err) => console.error(`[texting ${synced.id}] couldn't move to our own texting`, err.message));
   },
 
   async deleteAssistant(client) {
-    const profileId = await textingProfileId(client.assistantId).catch(() => null);
+    const profileId = await textingProfileId(client).catch(() => null);
     await telnyx("DELETE", `/ai/assistants/${client.assistantId}`).catch((err) => {
       // Already gone on Telnyx's side is fine; anything else should surface.
       if (!(err instanceof TelnyxError && err.status === 404)) throw err;
     });
     if (profileId) {
-      await removeTextingProfile(profileId, client.assistantId).catch((err) =>
+      await removeTextingProfile(profileId, client).catch((err) =>
         console.error(`[texting ${client.id}] couldn't remove messaging profile`, err.message),
       );
     }

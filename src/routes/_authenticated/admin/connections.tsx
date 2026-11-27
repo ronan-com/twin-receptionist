@@ -16,6 +16,7 @@ import { EngineChoice, PhoneKeyFields, engineName, keysReady, type PhoneKeyValue
 import { cn } from "@/lib/utils";
 import { READ_ONLY_HINT, useConsole } from "./-shared";
 import { TwilioCard } from "./-twilio-card";
+import { OpenRouterCard } from "./-openrouter-card";
 import { PRODUCT } from "@/lib/app/product";
 
 // Connections: what the agency has plugged in. The phone account is the one that
@@ -76,6 +77,8 @@ function ConnectionsPage() {
           </details>
         )}
       />
+
+      <OpenRouterCard canManage={canManage} readOnly={readOnly} />
 
       <div className="grid gap-3 md:grid-cols-3">
         <CountCard icon={Building2} hue="indigo" label="Clients" count={a.counts.clients} hint="Businesses you run receptionists for." to="/admin/clients" cta="Open clients" />

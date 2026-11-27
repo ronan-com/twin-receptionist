@@ -246,7 +246,7 @@ export async function account(ctx: Ctx): Promise<Account> {
     singleAgency: singleAgency(),
     serverSettings: canChangeServerSettings(ctx),
     // The "Ask for help" assistant: a key is set (OPENROUTER_API_KEY) and this person is an agency owner or admin.
-    assistant: assistantConfigured() && canUseAssistant(ctx),
+    assistant: (await assistantConfigured(ctx.org?.id ?? null)) && canUseAssistant(ctx),
     ...(ctx.viewing ? { viewing: ctx.viewing } : {}),
     brand: ctx.org ? await resolveBrand(ctx.org.id, await brandClient(ctx)) : undefined,
   };

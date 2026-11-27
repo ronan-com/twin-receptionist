@@ -106,7 +106,10 @@ import { ENGINE_LABEL, NUMBER_RULE, closestVoice, numberFits, pickEngine, source
 import type { VoiceProvider } from "./voice/provider";
 import { toolAllowed } from "./voice/tools";
 import { startVapiHours } from "./voice/vapiHours";
-import { vapiEvents, vapiToolHook } from "./voice/vapiWebhook";
+import { vapiCallerHook, vapiEvents, vapiToolHook } from "./voice/vapiWebhook";
+import { telnyxTextHook, twilioTextHook } from "./smsBot";
+import { checkOpenRouterKey, clearLlmKey, LlmError, llmKeyState, parseOpenRouterKey, saveLlmKey } from "./llm";
+import { providerStatus, startProviderAlerts } from "./providerStatus";
 import { cancel as cancelBooking, findBooking, reschedule as rescheduleBooking } from "./bookingChange";
 
 // The last 200 log lines (scrubbed) and a problem list for the support heartbeat (server/problems.ts).
@@ -564,8 +567,13 @@ async function route(req: Request, server?: { requestIP(r: Request): { address: 
   // Vapi: its tool calls (the same hook behind an envelope) and its end-of-call reports.
   const vapiTool = path.match(/^\/hooks\/([a-f0-9-]{36})\/vapi\/(availability|book|callback|find|reschedule|cancel)$/);
   if (vapiTool && method === "POST") return vapiToolHook(req, vapiTool[1], vapiTool[2], hook);
+  const vapiCaller = path.match(/^\/hooks\/vapi\/([a-f0-9-]{36})\/caller$/);
+  if (vapiCaller && method === "POST") return vapiCallerHook(req, vapiCaller[1]);
   const vapiEvent = path.match(/^\/hooks\/vapi\/([a-f0-9-]{36})$/);
   if (vapiEvent && method === "POST") return vapiEvents(req, vapiEvent[1]);
+  // Incoming texts (Telnyx's messaging webhook, Twilio's SmsUrl): answered by the text chatbot (server/smsBot.ts).
+  const smsHook = path.match(/^\/hooks\/sms\/(telnyx|twilio)\/([a-f0-9-]{36})\/([A-Za-z0-9_-]{20,64})$/);
+  if (smsHook && method === "POST") return smsHook[1] === "telnyx" ? telnyxTextHook(req, smsHook[2], smsHook[3]) : twilioTextHook(req, smsHook[2], smsHook[3]);
   if (path.startsWith("/hooks/automations/")) return (await automationHooks(req, path)) ?? json({ error: "Not found" }, 404);
   // The website chat widget's public API (CORS-limited to the business's own websites).
   if (path.startsWith("/api/webchat/")) return (await webchatPublic(req, path, undefined, server)) ?? json({ error: "Not found" }, 404);
@@ -825,6 +833,40 @@ async function route(req: Request, server?: { requestIP(r: Request): { address: 
     if (method === "PUT") return json(await connectTwilio(ctx, await body(req)));
     if (method === "DELETE") return json(await disconnectTwilio(ctx));
     return json({ error: "Not found" }, 404);
+  }
+
+  // The agency's OpenRouter key (Connections): the text AI for the website chat, texts, email and summaries.
+  if (path === "/api/openrouter-key") {
+    if (ctx.role === "customer" && !ctx.user.platformAdmin) return json({ error: "Not allowed." }, 403);
+    if (method === "GET") return json(await llmKeyState(orgId));
+    if (method === "PUT") {
+      requireRole(ctx, "admin");
+      let key: string;
+      try {
+        key = parseOpenRouterKey(await body(req));
+        await checkOpenRouterKey(key);
+      } catch (err) {
+        if (err instanceof LlmError) throw new ValidationError(err.message);
+        throw err;
+      }
+      await saveLlmKey(orgId, key);
+      await audit(ctx, "openrouter.connect", { last4: key.slice(-4) });
+      return json(await llmKeyState(orgId));
+    }
+    if (method === "DELETE") {
+      requireRole(ctx, "owner");
+      await clearLlmKey(orgId);
+      await audit(ctx, "openrouter.disconnect", {});
+      return json(await llmKeyState(orgId));
+    }
+    return json({ error: "Not found" }, 404);
+  }
+
+  // Which services are running low (balances), for the owner (server/providerStatus.ts).
+  if (path === "/api/provider-status" && method === "GET") {
+    requireRole(ctx, "admin");
+    const items = await providerStatus(orgId);
+    return json({ items });
   }
 
   // The agency's own phone account (Setup and Connections): its Telnyx key, checked
@@ -1115,7 +1157,7 @@ async function route(req: Request, server?: { requestIP(r: Request): { address: 
       }
       if (method === "GET") return json(await textingState(client));
       if (method === "POST") {
-        await enableTexting(client.assistantId);
+        await enableTexting(client);
         return json(await textingState(client));
       }
     } else if (match[2] === "/texting/numbers") {
@@ -1309,6 +1351,7 @@ startCallSync();
 startAutomations();
 // Vapi receptionists: rewrite the greeting when the business opens or closes (server/voice/vapiHours.ts).
 startVapiHours();
+startProviderAlerts();
 // Health and usage counts to the setup provider, unless the owner turned it off (server/supportSync.ts).
 startSupportSync();
 startTicketSync();

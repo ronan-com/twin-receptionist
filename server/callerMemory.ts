@@ -8,8 +8,10 @@ import { isDemo } from "./sandbox";
 // matched on the caller's number. Every query is keyed on the receptionist's client id, so
 // nothing from another business (or another agency) can appear.
 //
-// Vapi: its assistants can't be handed per-call values by our server without an assistant-request
-// hook. TODO(vapi): answer Vapi's "assistant-request" with variableValues { twin_caller_context }.
+// Vapi: an inbound call can't be handed per-call values by our server without giving up the
+// number's direct link to the assistant (assistant-request). Instead the Vapi assistant has a
+// caller_history tool that it uses at the start of each call; server/voice/vapiWebhook.ts
+// vapiCallerHook answers it with this same text, for the number on the line.
 
 const DAY = 86_400_000;
 const WINDOW_DAYS = 90;

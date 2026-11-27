@@ -237,12 +237,12 @@ describe("texts through Twilio", () => {
     expect(sent[0].form).toEqual({ From: "+61480011301", To: "+61412345678", Body: "Hi from Alpha" });
   });
 
-  test("a Telnyx receptionist's text still goes through its Telnyx assistant", async () => {
+  test("a Telnyx receptionist's text goes through Telnyx's messages API (our own texting, not its assistant)", async () => {
     process.env.TELNYX_API_KEY = "KEYTEST-sms-0000000000000000";
     reply(/api\.telnyx\.com/, { data: {} });
     await sendSms(telnyxClient, { from: "+61412000999", to: "+61412345678", text: "Hi", meta: { twin_text_back: "after_call" } });
-    expect(sent[0].url).toBe("https://api.telnyx.com/v2/ai/assistants/asst-t/chat/sms");
-    expect(sent[0].json).toMatchObject({ from: "+61412000999", to: "+61412345678", text: "Hi", conversation_metadata: { twin_text_back: "after_call" } });
+    expect(sent[0].url).toBe("https://api.telnyx.com/v2/messages");
+    expect(sent[0].json).toMatchObject({ from: "+61412000999", to: "+61412345678", text: "Hi" });
     expect(sent.some((s) => s.url.includes("twilio.com"))).toBe(false);
   });
 

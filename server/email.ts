@@ -10,7 +10,7 @@ import { isPublicHost } from "./net";
 import { seal, unseal } from "./secrets";
 import { accessToken, mailServers, type OAuthProvider, type SignInResult } from "./oauth";
 import { ValidationError } from "./prompt";
-import { telnyx } from "./telnyx";
+import { chatCompletion } from "./llm";
 
 // The receptionist works inside the business's own mailbox: it reads new mail over
 // IMAP and either saves a suggested reply to their Drafts folder ("draft", the
@@ -39,7 +39,8 @@ type Mailbox = {
   activity: EmailActivity[];
 };
 
-const MODEL = "zai-org/GLM-5.3-Flash";
+// The default model (server/llm.ts); EMAIL_MODEL swaps in another for email only.
+const MODEL = (process.env.EMAIL_MODEL ?? "").trim() || undefined;
 const MAX_PER_CHECK = 8;
 
 function passwordOf(box: Mailbox): string {
@@ -376,16 +377,18 @@ Answer with JSON only, no other text: {"reply": true or false, "reason": "one sh
   const sender = mail.from?.value[0];
   const user = `From: ${sender?.name ?? ""} <${sender?.address ?? ""}>\nSubject: ${mail.subject ?? ""}\n\n<<<EMAIL\n${text}\nEMAIL>>>`;
 
-  const res = await telnyx<any>("POST", "/ai/chat/completions", {
+  const reply = await chatCompletion({
     model: MODEL,
+    title: "Email agent",
+    maxTokens: 1600,
+    temperature: 0.3,
+    timeoutMs: 60_000,
     messages: [
       { role: "system", content: system },
       { role: "user", content: user },
     ],
-    max_tokens: 1600,
-    temperature: 0.3,
   });
-  const raw = String(res?.choices?.[0]?.message?.content ?? "");
+  const raw = String(reply?.content ?? "");
   const start = raw.indexOf("{");
   const end = raw.lastIndexOf("}");
   if (start === -1 || end <= start) throw new Error("The AI didn't return a usable answer for this email.");

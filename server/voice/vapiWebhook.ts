@@ -1,6 +1,7 @@
 import { sql } from "../db";
+import { callerContext } from "../callerMemory";
 import { getClient, orgOfClient } from "../store";
-import { callRecord, secretMatches, toolCallsOf, type CallRecord } from "./vapiMap";
+import { CALLER_TOOL, callRecord, secretMatches, toolCallsOf, type CallRecord } from "./vapiMap";
 
 // What Vapi sends to this server (the addresses are set on each assistant by server/voice/vapi.ts):
 //   POST /hooks/vapi/<clientId>                      end-of-call-report (and other events, ignored)
@@ -107,4 +108,25 @@ export async function vapiToolHook(req: Request, clientId: string, action: strin
     results.push({ name: call.name, toolCallId: call.id, result: body.replace(/\s*\n\s*/g, " ") });
   }
   return json({ results });
+}
+
+/**
+ * POST /hooks/vapi/<clientId>/caller: the caller_history tool. Vapi can't be given per-call values
+ * when a call starts, so the assistant asks for them: the same notes (server/callerMemory.ts) the
+ * Telnyx receptionist is given, from this receptionist's own records only, for the number on the line.
+ */
+export async function vapiCallerHook(req: Request, clientId: string, deps: { getClient: typeof getClient; context: typeof callerContext } = { getClient, context: callerContext }): Promise<Response> {
+  const client = await deps.getClient(clientId);
+  if (!client || !secretMatches(req.headers, clientId)) return json({ error: "Not found" }, 404);
+  let message: any;
+  try {
+    message = JSON.parse(await req.text())?.message;
+  } catch {
+    return json({ error: "Invalid JSON." }, 400);
+  }
+  const caller = String(message?.call?.customer?.number ?? "");
+  const notes = client.settings.paused || !caller ? "" : await deps.context(client, caller);
+  const result = notes || "No earlier records for this caller: treat them as a new caller.";
+  const calls = toolCallsOf(message).filter((c) => c.name === CALLER_TOOL);
+  return json({ results: calls.map((c) => ({ name: c.name, toolCallId: c.id, result })) });
 }

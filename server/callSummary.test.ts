@@ -162,7 +162,29 @@ describe("summariseEnded (database)", () => {
     expect(await summariseEnded(rec(a), { detail, model, requests: async () => [] })).toBe(0);
   });
 
-  test("Vapi receptionists and web chats are left alone", async () => {
+  test("Vapi calls get a summary and an outcome too: Vapi's own summary is kept, the model fills the outcome", async () => {
+    const v = { ...rec(a), voice_provider: "vapi" };
+    const addV = (id: string, summary: string | null, outcome: string | null) =>
+      sql`insert into call_log (org_id, client_id, provider_call_id, provider, from_number, started_at, ended_at, duration_seconds, summary, outcome)
+        values (${orgId}, ${a.id}, ${id}, 'vapi', '+61412345678', ${min(14)}, ${min(10)}, 120, ${summary}, ${outcome})`;
+    await addV("v-bare", null, null);
+    await addV("v-own-summary", "Vapi's own words.", null);
+    await addV("v-complete", "Booked it.", "booked");
+    const asked: string[] = [];
+    const detail = async (id: string) => { asked.push(id); return { summary: "", messages: talk }; };
+    expect(await summariseEnded(v, { detail, model, requests: async () => [] })).toBe(2);
+    expect(asked.sort()).toEqual(["v-bare", "v-own-summary"]);
+    expect(await row("v-bare")).toMatchObject({ summary: "Sam rang about a drain.", outcome: "lead_captured" });
+    expect(await row("v-own-summary")).toMatchObject({ summary: "Vapi's own words.", outcome: "lead_captured" });
+    expect(await row("v-complete")).toMatchObject({ summary: "Booked it.", outcome: "booked" });
+    // A Vapi receptionist never touches Telnyx's calls, nor the reverse.
+    await add(a, "t-1");
+    expect(await summariseEnded(v, { detail: async () => ({ summary: "", messages: talk }), model, requests: async () => [] })).toBe(0);
+    expect((await row("t-1")).summary).toBeNull();
+    await sql`delete from call_log where provider_call_id = 't-1'`;
+  });
+
+  test("web chats are left alone", async () => {
     await sql`insert into call_log (org_id, client_id, provider_call_id, provider, channel, started_at, ended_at, duration_seconds) values (${orgId}, ${a.id}, 'web-1', 'telnyx', 'web', ${min(14)}, ${min(10)}, 120)`;
     expect(await summariseEnded({ ...rec(a), voice_provider: "vapi" }, { detail: async () => ({ summary: "", messages: talk }), model })).toBe(0);
     expect(await summariseEnded(rec(a), { detail: async () => ({ summary: "", messages: talk }), model })).toBe(0);

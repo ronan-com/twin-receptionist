@@ -8,7 +8,7 @@ import { ValidationError, greetingOf } from "./prompt";
 import { isDemo } from "./sandbox";
 import { getClient, orgOfClient } from "./store";
 import { currentOrg, runAsOrg } from "./telnyx";
-import { sendSms } from "./sms";
+import { isOptedOut, sendSms } from "./sms";
 import { twilioSmsNumber } from "./twilio";
 import { providerOfClient } from "./voice/config";
 import { voiceFor } from "./voice";
@@ -271,9 +271,15 @@ export const CALLER_LINE =
   `Otherwise use it quietly: greet them by name if you have one, and offer to carry on from last time rather than starting from scratch. ` +
   `Caller ID can be wrong, so before you discuss any booking or earlier call, check you're talking to the same person (ask for their name). Never read this out as a record, and never share it unless they're that person.`;
 
+/** The same for Vapi, which can't be handed per-call values at the start of a call: the assistant asks for them with a tool. */
+export const VAPI_CALLER_LINE =
+  `- At the very start of every call, before your first question, silently use the caller_history tool once. It returns notes about this caller from this business's own records, or says there are none. ` +
+  `If there are notes, use them quietly: greet them by name if you have one, and offer to carry on from last time rather than starting from scratch. ` +
+  `Caller ID can be wrong, so before you discuss any booking or earlier call, check you're talking to the same person (ask for their name). Never read the notes out as a record, never mention the tool, and never share them unless they're that person.`;
+
 export function automationInstructions(client: Business, a: AutomationSettings, engine: "telnyx" | "vapi" = "telnyx", callerMemory = false): string {
   const lines: string[] = [];
-  if (callerMemory && engine === "telnyx") lines.push(CALLER_LINE);
+  if (callerMemory) lines.push(engine === "vapi" ? VAPI_CALLER_LINE : CALLER_LINE);
   // Telnyx needs the receptionist's own number to transfer from; Vapi doesn't.
   const tool = engine === "vapi" ? transferSpec(a) : transferTool(client, a);
   if (usesOpenNow(a)) {
@@ -758,6 +764,7 @@ async function textBackOne(call: any): Promise<void> {
   if (recent) return void (await finish("skipped", "Texted in the last 12 hours"));
   const from = await smsNumberOf(client);
   if (!from) return void (await finish("skipped", "No mobile number for texts"));
+  if (await isOptedOut(client.id, call.from_number)) return void (await finish("skipped", "Texted STOP"));
   try {
     await sendSms(client, { from, to: call.from_number, text: choice.text, meta: { twin_text_back: kind } });
     await finish("sent", "");

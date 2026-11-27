@@ -8,7 +8,7 @@ import { ValidationError } from "./prompt";
 import { isDemo } from "./sandbox";
 import { getClient } from "./store";
 import { runAsOrg } from "./telnyx";
-import { sendSms } from "./sms";
+import { isOptedOut, sendSms } from "./sms";
 
 // Finds what is due each minute (called from the loop in server/automations.ts that
 // already drives text-back) and sends it: appointment reminders, missed-call follow-ups
@@ -76,6 +76,7 @@ async function dispatch(client: Business, o: Out): Promise<string> {
       if (o.channel === "sms") {
         from = (await smsNumberOf(client)) ?? null;
         if (!from) return "No mobile number for texts";
+        if (await isOptedOut(client.id, o.to)) return "Texted STOP";
         // Last check, in case the server was down through the morning.
         if (isQuietHour(Date.now(), client.settings.timezone)) return "Quiet hours";
       } else if (!mailerReady()) return "Email isn't set up";

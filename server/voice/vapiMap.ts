@@ -123,6 +123,8 @@ export type VapiBuild = {
   toolKey: string;
   /** Where end-of-call reports go (and the secret they carry); null with no public address. */
   events: { url: string; secret: string } | null;
+  /** The returning-caller lookup tool (server/voice/vapiWebhook.ts vapiCallerHook); null when this receptionist doesn't use it. */
+  memory: { url: string; secret: string } | null;
   transfer: TransferSpec | null;
   recording: boolean;
   language: "en-AU" | "multi";
@@ -197,6 +199,7 @@ export function voiceBody(provider: string, voiceId: string) {
  * Said only when a booking tool takes longer than 1.5 s (a slow calendar), so a quick answer
  * has no filler and a slow one has no dead air.
  */
+export const CALLER_TOOL = "caller_history";
 export const TOOL_DELAY_MESSAGE = { type: "request-response-delayed", timingMilliseconds: 1500, content: "Just a moment, I'm checking that for you." };
 
 /** How long Vapi waits for our booking hooks (/hooks/<id>/vapi/...). They answer in well under a second; 8 s caps a stuck calendar. */
@@ -205,6 +208,7 @@ export const TOOL_TIMEOUT_SECONDS = 8;
 /** What Vapi has no setting for, said honestly in the Calls and Automations screens. */
 export const UNMAPPED = {
   silenceLimit: "Vapi doesn't have a setting for ending a call after silence, so that limit isn't applied.",
+  // (Checked Nov 2026: Vapi's voicemailDetection is an assistant-level setting for calls it places; there is no equivalent for a transfer it makes, so none is mapped.)
   voicemail: "Vapi can't detect voicemail on a transfer, so a transfer that reaches voicemail isn't pulled back.",
   textBack: "Vapi has no texting of its own. Texts go out from a Twilio mobile number that this receptionist answers: connect Twilio under Connections, then add a Twilio mobile number under Call handling.",
 };
@@ -218,6 +222,17 @@ export function vapiAssistantBody(b: VapiBuild) {
   });
   const tools: unknown[] = [{ type: "endCall" }];
   if (b.hookBase) for (const d of BOOKING_TOOL_DEFS) if (b.tools.includes(d.name)) tools.push(functionTool(d));
+  if (b.memory) {
+    tools.push({
+      type: "function",
+      function: {
+        name: CALLER_TOOL,
+        description: "Notes about this caller from the business's own records (earlier calls, bookings, callbacks). Use once at the start of the call.",
+        parameters: { type: "object", properties: {} },
+      },
+      server: { url: b.memory.url, timeoutSeconds: 5, headers: { "X-Vapi-Secret": b.memory.secret } },
+    });
+  }
   if (b.transfer) {
     tools.push({
       type: "transferCall",

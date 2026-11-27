@@ -1,4 +1,4 @@
-import { assistantKey, assistantModel } from "./assistant";
+import { LlmError, chatText } from "./llm";
 import { isPublicHost } from "./net";
 import { ValidationError } from "./prompt";
 
@@ -300,24 +300,15 @@ export function parseDrafts(raw: unknown): Draft[] {
 export type DraftDeps = FetchDeps & { llm?: (system: string, user: string) => Promise<string> };
 
 async function callModel(system: string, user: string, doFetch: typeof fetch): Promise<string> {
-  if (!assistantKey()) throw new ValidationError("Importing from a website needs the AI service, which isn't set up on this server yet.");
-  let res: Response;
   try {
-    res = await doFetch("https://openrouter.ai/api/v1/chat/completions", {
-      method: "POST",
-      signal: AbortSignal.timeout(90_000),
-      headers: { Authorization: `Bearer ${assistantKey()}`, "Content-Type": "application/json", "HTTP-Referer": process.env.PUBLIC_URL || "https://openrouter.ai", "X-Title": "Knowledge import" },
-      body: JSON.stringify({ model: assistantModel(), max_tokens: 4_000, temperature: 0.2, messages: [{ role: "system", content: system }, { role: "user", content: user }] }),
-    });
-  } catch {
-    throw new ValidationError("The AI service couldn't be reached. Try again in a moment.");
-  }
-  if (!res.ok) {
-    console.error(`[site-import] provider answered ${res.status}`);
+    return await chatText({ title: "Knowledge import", maxTokens: 4_000, temperature: 0.2, timeoutMs: 90_000, fetch: doFetch, messages: [{ role: "system", content: system }, { role: "user", content: user }] });
+  } catch (err) {
+    if (!(err instanceof LlmError)) throw err;
+    if (err.reason === "no_key") throw new ValidationError("Importing from a website needs the AI service, which isn't set up yet. Add an OpenRouter key under Connections.");
+    if (err.reason === "unreachable") throw new ValidationError("The AI service couldn't be reached. Try again in a moment.");
+    if (err.reason === "empty") return "";
     throw new ValidationError("The AI service is busy. Try again in a moment.");
   }
-  const body: any = await res.json().catch(() => null);
-  return String(body?.choices?.[0]?.message?.content ?? "");
 }
 
 /** Reads the website and drafts knowledge items. Nothing is saved. */

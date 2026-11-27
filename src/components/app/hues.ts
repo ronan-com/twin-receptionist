@@ -4,16 +4,16 @@
 
 export type Hue = "indigo" | "cyan" | "magenta" | "coral" | "amber" | "green" | "violet" | "sky" | "slate";
 
-/** Hex for each hue, for SVG charts (they can't read CSS variables reliably). */
+/** Colour for each hue, for SVG charts. The brand hues are CSS variables, so charts follow the agency's colours. */
 export const HUE_HEX: Record<Hue, string> = {
-  indigo: "#635bff",
-  cyan: "#00b8e6",
-  magenta: "#ff5caa",
+  indigo: "var(--indigo)",
+  cyan: "var(--brand-2)",
+  magenta: "var(--brand-3)",
   coral: "#ff7a59",
   amber: "#f5a623",
   green: "#1ea672",
-  violet: "#9b6cff",
-  sky: "#3b8bff",
+  violet: "var(--brand-3)",
+  sky: "var(--brand-2)",
   slate: "#8898aa",
 };
 

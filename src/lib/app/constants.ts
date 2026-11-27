@@ -267,10 +267,10 @@ export const INTEGRATION_CATALOG: IntegrationDef[] = [
 ];
 
 export const CHART_COLORS = {
-  indigo: "#635bff",
+  indigo: "var(--indigo)",
   indigoDeep: "#533afd",
-  cyan: "#00d4ff",
-  magenta: "#ff5caa",
+  cyan: "var(--brand-2)",
+  magenta: "var(--brand-3)",
   coral: "#ff7a59",
   slate: "#425466",
   slateDeep: "#061b31",

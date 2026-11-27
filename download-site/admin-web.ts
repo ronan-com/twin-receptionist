@@ -11,11 +11,11 @@
 //   POST /admin/b/<id>/sync           "Sync now": ask their app for its health snapshot (sync.ts)
 //   POST /admin/b/<id>/view-as        a one-time sign-in link, only if THEY turned on Support access in their app
 // Never shows a buyer's keys: only which ones we hold and their last 4 characters, and only
-// while their setup is still running. The way into a buyer's dashboard is "View as", and only while the buyer
+// while their setup is still running. The way into a buyer's dashboard is "View as", and only while the agency
 // has switched Support access on in their own app; their app writes each sign-in to its audit log.
 import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 import nodemailer from "nodemailer";
-import { CONFIG, RAILWAY, addBuyer, db, now, setupLink, sha256, type Buyer } from "./lib";
+import { CONFIG, RAILWAY, addBuyer, currentPackage, db, now, setupLink, sha256, type Buyer } from "./lib";
 import { esc } from "./pages";
 import { welcomeEmail } from "./content";
 import { agencyUrl, allow, appUrlOf, stepDone, updateInfo } from "./setup";
@@ -24,6 +24,9 @@ import { alertHistory } from "./alerts";
 import { DEMO_READY } from "./demo";
 import { ALL_SECRETS, STEPS, getSetup, logRead, resetSetup, secretHint, type SetupData } from "./store";
 import { wizardPage } from "./wizard";
+import { deleteTickets, fileOf, navLinkHtml, replyToTicket, setTicketStatus, ticketById, ticketViewHtml, ticketsListHtml, type Status as TicketStatus } from "./tickets";
+import { assistPanel, assistRoute, isInstalling, statusJson } from "./assist-web";
+import { removeHost } from "./hosts";
 
 // ---------------- settings ----------------
 const ADMIN_EMAILS = (process.env.ADMIN_EMAILS || "").split(",").map((s) => s.trim().toLowerCase()).filter(Boolean);
@@ -107,6 +110,9 @@ function deleteBuyer(id: number) {
   db().transaction(() => {
     resetSetup(id);
     deleteSyncData(id);
+    deleteTickets(id);
+    removeHost(id);
+    db().query("DELETE FROM support_log WHERE buyer_id = ?").run(id);
     db().query("DELETE FROM download_log WHERE buyer_id = ?").run(id);
     db().query("DELETE FROM buyers WHERE id = ?").run(id);
   })();
@@ -140,7 +146,7 @@ function versionCell(b: Buyer, s: SetupData): string {
   return u ? `${esc(u.installed || "unknown")}${u.available ? ` <span class="pill installing" title="Version ${esc(u.latest)} is published; this agency hasn't updated yet">Update available</span>` : ""}` : "";
 }
 const copyBtn = (v: string) => `<button type="button" class="copy" data-copy="${esc(v)}">Copy</button>`;
-function page(title: string, body: string, opts: { sid?: string; email?: string; wide?: boolean } = {}) {
+function page(title: string, body: string, opts: { sid?: string; email?: string; wide?: boolean; live?: { status: string; rev: string } } = {}) {
   return `<!doctype html>
 <html lang="en-AU">
 <head>
@@ -201,9 +207,8 @@ function listPage(sid: string, email: string, q: string, filter: string, flash =
   const all = everyone.filter((r) => r.b.demo !== 1);
   const tests = everyone.filter((r) => r.b.demo === 1);
   const counts = Object.fromEntries(STATUSES.map((s) => [s, all.filter((r) => r.status === s).length]));
-  const demoCount = all.filter((r) => r.b.demo === 1).length;
   const needle = q.trim().toLowerCase();
-  const shown = all.filter((r) => (!filter || r.status === filter) && (!kind || (kind === "demo") === (r.b.demo === 1)) && (!needle || [r.b.name, r.b.email, r.s.brand?.productName, r.s.domain?.host].some((v) => String(v || "").toLowerCase().includes(needle))));
+  const shown = all.filter((r) => (!filter || r.status === filter) && (!needle || [r.b.name, r.b.email, r.s.brand?.productName, r.s.domain?.host].some((v) => String(v || "").toLowerCase().includes(needle))));
   const snaps = allSnapshots();
   const syncing = all.filter((r) => seen(snaps.get(r.b.id) ?? null) === "live").length;
   const tr = shown.map((r) => { const st = snaps.get(r.b.id) ?? null; return `<tr>
@@ -227,26 +232,26 @@ ${DEMO_READY ? `<form method="post" action="/admin/demo" target="_blank">${hidde
 </section>` : "";
   return page("Agencies", `${flash}
 <section class="card">
-<div class="titlerow"><h1>Buyers</h1>${DEMO_READY ? `<form method="post" action="/admin/demo" target="_blank">${hiddenT(sid)}<button class="btn p" type="submit" title="Makes a test buyer with pretend accounts and opens their setup in a new tab">Start a test run</button></form>` : ""}</div>
-<p class="lead">${all.length} buyer${all.length === 1 ? "" : "s"}${demoCount ? ` (${demoCount} test)` : ""}. ${counts.live} live, ${counts.installing} installing, ${counts.failed} failed. ${syncing} syncing now.</p>
+<div class="titlerow"><h1>Agencies</h1></div>
+<p class="lead">${all.length} agenc${all.length === 1 ? "y" : "ies"}. ${counts.live} live, ${counts.installing} installing, ${counts.failed} failed. ${syncing} syncing now.</p>
 <form method="get" action="/admin" class="filters">
   <input name="q" type="search" placeholder="Search name, email, brand or domain" value="${esc(q)}" aria-label="Search">
   <select name="status" aria-label="Status"><option value="">All statuses</option>${STATUSES.map((s) => `<option value="${s}"${s === filter ? " selected" : ""}>${s} (${counts[s]})</option>`).join("")}</select>
-  <select name="kind" aria-label="Type"><option value="">Real and test</option><option value="real"${kind === "real" ? " selected" : ""}>Real buyers only (${all.length - demoCount})</option><option value="demo"${kind === "demo" ? " selected" : ""}>Test runs only (${demoCount})</option></select>
   <button class="btn o" type="submit">Show</button>
 </form>
-${shown.length ? `<div style="overflow-x:auto"><table class="records buyers"><thead><tr><th>Buyer</th><th>Brand</th><th>Status</th><th>Live at</th><th>Sync</th><th>Version</th><th>Calls 7d</th><th>Receptionists</th><th>Last activity</th></tr></thead><tbody>${tr}</tbody></table></div>` : `<p class="hint">No buyers match.</p>`}
+${shown.length ? `<div style="overflow-x:auto"><table class="records buyers"><thead><tr><th>Agency</th><th>Brand</th><th>Status</th><th>Live at</th><th>Sync</th><th>Version</th><th>Calls 7d</th><th>Receptionists</th><th>Last activity</th></tr></thead><tbody>${tr}</tbody></table></div>` : `<p class="hint">${all.length ? "No agencies match." : "No agencies yet. Add one below."}</p>`}
 </section>
 <section class="card">
-<h2>Add a buyer</h2>
+<h2>Add an agency</h2>
 <form method="post" action="/admin/buyers" class="body">${hiddenT(sid)}
   <div class="two"><div><label class="f" for="name">Name</label><input id="name" name="name" required maxlength="120"></div>
   <div><label class="f" for="bemail">Email</label><input id="bemail" name="email" type="email" required maxlength="200"></div></div>
   ${DEMO_READY ? `<label class="opt inline"><input type="checkbox" name="demo" value="1"> <b>Test run (pretend accounts)</b> <span class="hint">No email is sent; their setup accepts anything and ends on a test dashboard.</span></label>` : ""}
   ${welcomeConfigured() ? `<label class="opt inline"><input type="checkbox" name="welcome" value="1" checked> <b>Send the welcome email</b></label>` : `<p class="hint">You'll get their private link to send. (Set SITE_SMTP_URL and SITE_MAIL_FROM to email it from here.)</p>`}
-  <div class="nav"><span></span><div class="right"><button class="btn p" type="submit">Add buyer</button></div></div>
+  <div class="nav"><span></span><div class="right"><button class="btn p" type="submit">Add agency</button></div></div>
 </form>
-</section>`, { sid, email });
+</section>
+${testsSection}`, { sid, email });
 }
 
 const yn = (v: boolean) => (v ? "Yes" : "No");
@@ -275,24 +280,19 @@ function healthSection(sid: string, b: Buyer, s: SetupData): string {
 </div>
 ${x ? `<div class="counts">${([["Calls 24h", x.counts.calls24h], ["Calls 7d", x.counts.calls7d], ["Calls 30d", x.counts.calls30d], ["Bookings 7d", x.counts.bookings7d], ["Errors 24h", x.counts.errors24h], ["Receptionists", x.counts.receptionists], ["Clients", x.counts.clients], ["Numbers", x.counts.numbers], ["Agencies", x.counts.agencies]] as [string, number][]).map(([l, n]) => `<div><b>${n}</b><span>${l}</span></div>`).join("")}</div>
 <p class="hint">Counts and health only: the app never sends caller names or numbers, messages, recordings or keys.</p>` : ""}
+<div class="summary"><div><span>Automatic updates</span><b>${esc(autoState(st).text || "Unknown")}${x ? ` · ${x.support.edit ? "support can make changes" : "support is read-only"}` : ""}</b></div></div>
 <div class="nav"><div class="right left">
   ${act("sync", "Sync now", "btn o")}
   ${accessOff ? `<button class="btn o" type="button" disabled>View as</button>` : act("view-as", "View as", "btn p")}
+  ${x && x.updates.available && x.updates.enabled ? (pushPending(b.id) ? `<button class="btn o" type="button" disabled title="They'll be asked on their next heartbeat (within 15 minutes)">Update requested</button>` : act("push-update", "Push update now", "btn o")) : `<button class="btn o" type="button" disabled title="${x ? (x.updates.available ? "The owner turned automatic updates off" : "This agency can't update itself: the agency presses Update on their setup link") : "Nothing heard yet"}">Push update now</button>`}
+  ${accessOff ? `<button class="btn o" type="button" disabled>Fetch recent logs</button>` : act("logs", "Fetch recent logs", "btn o")}
 </div></div>
 ${problemsPanel(b.id, st)}
 ${accessOff ? `<p class="hint"><b>Ask the agency to turn on Support access.</b> It's off in their app (Settings, Support). It's theirs to switch on, for 24 hours, 7 days or until they turn it off. "Sync now" refreshes this.</p>` : `<p class="hint">"View as" opens their dashboard read-only, through a link that works once for 60 seconds. It only works while they have Support access on, and their app records every sign-in in their audit log.</p>`}
-<div class="summary"><div><span>Automatic updates</span><b>${esc(autoState(st).text || "Unknown")}${x ? ` · ${x.support.edit ? "support can make changes" : "support is read-only"}` : ""}</b></div></div>
 ${beats.length ? `<details class="log"><summary>Recent heartbeats</summary><div class="beats">${beats.map((h) => `${esc(when(h.at))} · ${h.ok ? "healthy" : "needs a look"} · ${h.calls24h} calls today · ${h.errors24h} errors · v${esc(h.v)}`).join("<br>")}</div></details>` : ""}
 ${log.length ? `<details class="log"><summary>What we did (our side)</summary><div class="beats">${log.map((l) => `${esc(when(l.at))} · ${esc(l.admin_email)} · ${esc(l.action)}${l.note ? ` · ${esc(l.note)}` : ""}`).join("<br>")}</div></details>` : ""}`;
 }
-  ${x && x.updates.available && x.updates.enabled ? (pushPending(b.id) ? `<button class="btn o" type="button" disabled title="They'll be asked on their next heartbeat (within 15 minutes)">Update requested</button>` : act("push-update", "Push update now", "btn o")) : `<button class="btn o" type="button" disabled title="${x ? (x.updates.available ? "The owner turned automatic updates off" : "This agency can't update itself: the agency presses Update on their setup link") : "Nothing heard yet"}">Push update now</button>`}
-  ${accessOff ? `<button class="btn o" type="button" disabled>Fetch recent logs</button>` : act("logs", "Fetch recent logs", "btn o")}
 
-function buyerPage(sid: string, email: string, b: Buyer, flash = "") {
-  const s = getSetup(b.id);
-  const st = statusOf(b, s);
-  const link = setupLink(b.code);
-  const held = s.phase === "done" ? [] : ALL_SECRETS.map((n) => [n, secretHint(b.id, n)] as const).filter(([, h]) => h);
 const PROBLEM_HELP: Record<string, string> = {
   booking_sync: "Calendar or booking sync", text_failed: "Texts that didn't send", email_failed: "Emails that didn't send", provider_api: "Phone, AI or other provider errors",
   automation_apply: "Automations that couldn't be applied", update_failed: "Automatic update failed", call_sync: "Call history sync", server_error: "Unexpected server errors",
@@ -307,7 +307,13 @@ ${ps.length ? `<table class="records"><thead><tr><th>Kind</th><th>What</th><th>T
 ${h.length ? `<details class="log"><summary>Recent alerts for this agency</summary><div class="beats">${h.map((a) => `${esc(when(a.at))} · ${esc(a.kind)} · ${esc(a.message)}${a.sent ? ` · sent: ${esc(a.sent)}` : " · not sent (no channel set)"}`).join("<br>")}</div></details>` : ""}`;
 }
 
+function buyerPage(sid: string, email: string, b: Buyer, flash = "") {
+  const s = getSetup(b.id);
+  const st = statusOf(b, s);
+  const link = setupLink(b.code);
+  const held = ALL_SECRETS.map((n) => [n, secretHint(b.id, n)] as const).filter(([, h]) => h);
   const { text } = logRead(b.id);
+  const live = isInstalling(s);
   const steps = STEPS.map((id) => `<li class="${stepDone(b, s, id) ? "ok" : id === s.step ? "run" : ""}"><i></i>${esc(id)}</li>`).join("");
   const act = (what: string, label: string, cls: string, confirm = "") => `<form method="post" action="/admin/b/${b.id}/${what}">${hiddenT(sid)}<button class="${cls}" type="submit"${confirm ? ` data-confirm="${esc(confirm)}"` : ""}>${label}</button></form>`;
   const hostNote = RAILWAY ? "Their Railway project stays in their account." : "Their server stays in their DigitalOcean account.";
@@ -332,19 +338,13 @@ ${healthSection(sid, b, s)}
 ${held.length ? `<ul class="keys">${held.map(([n, h]) => `<li><b>${esc(n)}</b> <code>${esc(h)}</code></li>`).join("")}</ul>` : `<p class="hint">${s.phase === "done" ? "None: every key was deleted when the install finished." : "None yet."}</p>`}
 <h2>Steps</h2><ul class="stages small">${steps}</ul>
 <p><a class="btn o" href="/admin/b/${b.id}/setup">Open their setup (read-only)</a></p>
+${assistPanel({ hiddenT, notice, copyBtn, when, page }, sid, b, s)}
 <details class="log"${text ? "" : " hidden"}><summary>Install log (keys hidden)</summary><pre>${esc(text.slice(-60000))}</pre></details>
 <div class="nav"><div class="right left">
-  ${b.revoked_at ? act("restore", "Turn the link back on", "btn o") : act("revoke", "Turn the link off", "btn o", "Turn this buyer's setup link off?")}
+  ${b.revoked_at ? act("restore", "Turn the link back on", "btn o") : act("revoke", "Turn the link off", "btn o", "Turn this agency's setup link off?")}
   ${st === "failed" || st === "in setup" || st === "installing" ? act("reset", "Reset their setup", "btn o", `Wipe ${b.name}'s setup and any keys we hold, so they start again? ${hostNote}`) : ""}
-  ${act("delete", "Delete buyer", "btn danger", `Delete ${b.name} and everything we hold for them? Their link stops working. ${hostNote}`)}
+  ${act("delete", "Delete agency", "btn danger", `Delete ${b.name} and everything we hold for them? Their link stops working. ${hostNote}`)}
 </div></div>
-</section>`, { sid, email });
-}
-
-// ---------------- routes ----------------
-export interface AdminCtx {
-  ip: string;
-  sameOrigin: (req: Request) => boolean;
 </section>`, { sid, email, live: live ? { status: `/admin/b/${b.id}/status`, rev: statusJson(b, 0).rev } : undefined });
 }
 
@@ -369,6 +369,13 @@ function alertsPage(sid: string, email: string) {
 <section class="card"><h1>Alerts</h1>
 <p class="lead">Raised when an agency goes quiet for 30 minutes, a new kind of problem appears, or an automatic update fails. One per agency per kind per hour.${process.env.ALERT_WEBHOOK_URL || process.env.SITE_SMTP_URL ? "" : " <b>No alert channel is set (ALERT_WEBHOOK_URL, or SITE_SMTP_URL + SITE_MAIL_FROM), so these are only recorded here.</b>"}</p>
 ${list.length ? `<div style="overflow-x:auto"><table class="records"><thead><tr><th>When (UTC)</th><th>Agency</th><th>Kind</th><th>What</th><th>Sent to</th></tr></thead><tbody>${list.map((a) => `<tr><td data-l="When">${esc(when(a.at))}</td><td data-l="Agency"><a href="/admin/b/${a.buyer_id}">${esc(names.get(a.buyer_id) || `Buyer ${a.buyer_id}`)}</a></td><td data-l="Kind"><span class="pill failed">${esc(a.kind)}</span></td><td data-l="What">${esc(a.message)}</td><td data-l="Sent to">${esc(a.sent || "nowhere")}</td></tr>`).join("")}</tbody></table></div>` : `<p class="hint">No alerts yet.</p>`}
+</section>`, { sid, email });
+}
+
+// ---------------- routes ----------------
+export interface AdminCtx {
+  ip: string;
+  sameOrigin: (req: Request) => boolean;
   readForm: (req: Request) => Promise<Record<string, string> | null>;
   html: (body: string, status?: number, extra?: Record<string, string>) => Response;
   redirect: (to: string, extra?: Record<string, string>) => Response;
@@ -377,7 +384,7 @@ const flashOf = (url: URL) => {
   const m = url.searchParams.get("m");
   const msgs: Record<string, [string, string]> = {
     revoked: ["ok", "Link turned off."], restored: ["ok", "Link turned back on."], reset: ["ok", "Setup wiped. Their link starts from the beginning."],
-    deleted: ["ok", "Buyer deleted."],
+    deleted: ["ok", "Agency deleted."],
     "sync-ok": ["ok", "Synced: their app answered with its latest numbers."],
     "sync-off": ["info", "They've turned sharing off, so their app sends us nothing."],
     "sync-no-app": ["err", "We don't have this app's address, or it was installed before syncing existed."],
@@ -399,6 +406,10 @@ const flashOf = (url: URL) => {
     "view-unreachable": ["err", "Their app didn't answer. It may be down, restarting or asleep."],
     "view-refused": ["err", "Their app didn't accept our token. It was installed before syncing existed, or its settings changed."],
     "view-error": ["err", "Their app didn't give a usable sign-in link."],
+    "ticket-replied": ["ok", "Reply sent. Their app shows it within a few minutes."],
+    "ticket-empty": ["err", "Write a reply first."],
+    "ticket-closed": ["ok", "Ticket closed."],
+    "ticket-reopened": ["ok", "Ticket reopened."],
     bad: ["err", "That didn't work. Reload the page and try again."],
   };
   const x = m ? msgs[m] : null;
@@ -406,7 +417,7 @@ const flashOf = (url: URL) => {
 };
 
 export async function adminRoute(req: Request, url: URL, c: AdminCtx): Promise<Response> {
-  const path = url.pathname.replace(/\/+$/, "") || "/admin";
+  const path = (url.pathname.replace(/\/+$/, "") || "/admin").replace(/^\/admin\/agencies$/, "/admin").replace(/^\/admin\/a\/(?=\d)/, "/admin/b/");
   const method = req.method;
   if (!adminEnabled()) return c.html(page("Admin", `<section class="card narrow"><h1>Admin is off</h1><p class="lead">Set ADMIN_EMAILS (and ADMIN_PASSWORD_HASH, or use <code>bun admin.ts admin-link</code>) to turn it on.</p></section>`), 404);
   tables();
@@ -488,7 +499,7 @@ export async function adminRoute(req: Request, url: URL, c: AdminCtx): Promise<R
       mail = errMail ? notice("err", esc(errMail)) : notice("ok", `Welcome email sent to ${esc(b.email)}.`);
     }
     const link = setupLink(b.code);
-    return c.html(page("Buyer added", `<section class="card">
+    return c.html(page("Agency added", `<section class="card">
 <h1>${esc(b.name)} is added</h1><p class="lead">Send them this private link. It's the only way into their setup.</p>
 <div class="linkrow"><code id="new-link">${esc(link)}</code>${copyBtn(link)}</div>
 ${mail}
@@ -496,7 +507,47 @@ ${mail}
 </section>`, sess));
   }
 
-  m = path.match(/^\/admin\/b\/(\d{1,9})(?:\/(setup|revoke|restore|reset|delete|sync|view-as))?$/);
+  // "Set up for them" (assist.ts): the forms in the panel, and the install log's live status.
+  m = path.match(/^\/admin\/b\/(\d{1,9})\/(status|assist\/[a-z-]{2,30})$/);
+  if (m) {
+    const b = buyerById(Number(m[1]));
+    if (!b) return c.html(page("Not found", `<section class="card narrow"><h1>No such agency</h1><p><a href="/admin">← All agencies</a></p></section>`), 404);
+    const json = (o: unknown, status = 200) => new Response(JSON.stringify(o), { status, headers: { "Content-Type": "application/json", "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff" } });
+    if (m[2] === "status") return method === "GET" ? json(statusJson(b, Number(url.searchParams.get("from") || 0) || 0)) : c.redirect(`/admin/b/${b.id}`);
+    if (method !== "POST") return c.redirect(`/admin/b/${b.id}`);
+    console.log(`[admin] ${sess.email}: ${m[2]} buyer ${b.id}`);
+    return assistRoute(m[2].slice(7), b, f, { sid: sess.sid, email: sess.email, h: { hiddenT, notice, copyBtn, when, page }, redirect: (to) => c.redirect(to), html: (body, status) => c.html(body, status), json });
+  }
+
+  // ---- help tickets (tickets.ts) ----
+  if (path === "/admin/tickets" && method === "GET") {
+    const st = url.searchParams.get("status");
+    return c.html(page("Help tickets", ticketsListHtml(st === "waiting" || st === "closed" || st === "all" ? st : "open"), { sid: sess.sid, email: sess.email }));
+  }
+  m = path.match(/^\/admin\/tickets\/(\d{1,9})(?:\/(reply|close|reopen|file\/(\d{1,9})))?$/);
+  if (m) {
+    const t = ticketById(Number(m[1]));
+    if (!t) return c.html(page("Not found", `<section class="card narrow"><h1>No such ticket</h1><p><a href="/admin/tickets">← Help tickets</a></p></section>`), 404);
+    const what = m[2];
+    if (what?.startsWith("file/") && method === "GET") {
+      const f = fileOf(t.id, Number(m[3]));
+      if (!f) return c.html(page("Not found", `<section class="card narrow"><h1>No such file</h1></section>`), 404);
+      return new Response(f.data, { status: 200, headers: { "Content-Type": f.type, "Content-Disposition": "inline", "X-Content-Type-Options": "nosniff", "Content-Security-Policy": "default-src 'none'; sandbox", "Cache-Control": "private, no-store" } });
+    }
+    if (!what && method === "GET") return c.html(page(t.subject, ticketViewHtml(t, hiddenT(sess.sid), flashOf(url)), { sid: sess.sid, email: sess.email }));
+    if (method !== "POST") return c.redirect(`/admin/tickets/${t.id}`);
+    console.log(`[admin] ${sess.email}: ${what} ticket ${t.id}`);
+    if (what === "reply") {
+      const r = replyToTicket(t.id, sess.email, f.body || "");
+      return c.redirect(`/admin/tickets/${t.id}${r.ok ? "?m=ticket-replied" : "?m=ticket-empty"}`);
+    }
+    if (what === "close" || what === "reopen") {
+      setTicketStatus(t.id, (what === "close" ? "closed" : "open") as TicketStatus);
+      return c.redirect(what === "close" ? "/admin/tickets?m=ticket-closed" : `/admin/tickets/${t.id}?m=ticket-reopened`);
+    }
+  }
+
+  m = path.match(/^\/admin\/b\/(\d{1,9})(?:\/(setup|revoke|restore|reset|delete|sync|view-as|push-update|logs))?$/);
   if (m) {
     const b = buyerById(Number(m[1]));
     if (!b) return c.html(page("Not found", `<section class="card narrow"><h1>No such agency</h1><p><a href="/admin">← All agencies</a></p></section>`), 404);
@@ -519,10 +570,31 @@ ${mail}
     }
     if (method !== "POST") return c.redirect(`/admin/b/${b.id}`);
     console.log(`[admin] ${sess.email}: ${what} buyer ${b.id}`);
+    if (["revoke", "restore", "reset"].includes(what!)) logSupport(b.id, sess.email, what === "revoke" ? "turned their link off" : what === "restore" ? "turned their link back on" : "reset their setup");
     if (what === "revoke") { db().query("UPDATE buyers SET revoked_at = ? WHERE id = ? AND revoked_at IS NULL").run(now(), b.id); return c.redirect(`/admin/b/${b.id}?m=revoked`); }
     if (what === "restore") { db().query("UPDATE buyers SET revoked_at = NULL WHERE id = ?").run(b.id); return c.redirect(`/admin/b/${b.id}?m=restored`); }
     if (what === "reset") { resetSetup(b.id); return c.redirect(`/admin/b/${b.id}?m=reset`); }
     if (what === "delete") { deleteBuyer(b.id); return c.redirect("/admin?m=deleted"); }
+    if (what === "push-update") {
+      const wait = allow(`support:${sess.email}`, 60, 60 * 60_000);
+      if (wait) return c.redirect(`/admin/b/${b.id}?m=bad`);
+      const r = requestPush(b.id, sess.email);
+      logSupport(b.id, sess.email, "push-update", r.ok ? "requested" : `refused: ${r.reason}`);
+      return c.redirect(`/admin/b/${b.id}?m=${r.ok ? "push-ok" : `push-${r.reason}`}`);
+    }
+    if (what === "logs") {
+      const wait = allow(`support:${sess.email}`, 60, 60 * 60_000);
+      if (wait) return c.redirect(`/admin/b/${b.id}?m=bad`);
+      const r = await fetchLogs(b.id, appUrlOf(getSetup(b.id)));
+      logSupport(b.id, sess.email, "fetch-logs", r.ok ? `${r.lines.length} lines` : `refused: ${r.reason}`);
+      if (!r.ok) return c.redirect(`/admin/b/${b.id}?m=logs-${r.reason}`);
+      return c.html(page("Recent logs", `<section class="card">
+<h1>Recent logs: ${esc(b.name)}</h1>
+<p class="lead">The last ${r.lines.length} lines their app logged, with numbers, emails, links, keys and anything in quotes already masked by the app. Shown here only; we don't keep them. Their app records that we looked.</p>
+<pre class="loglines">${esc(r.lines.map((l) => `${l.at.slice(11, 19)} ${l.level.padEnd(5)} ${l.line}`).join("\n"))}</pre>
+<p><a href="/admin/b/${b.id}">← Back to ${esc(b.name)}</a></p>
+</section>`, sess));
+    }
     if (what === "sync" || what === "view-as") {
       const url = appUrlOf(getSetup(b.id));
       const wait = allow(`support:${sess.email}`, 60, 60 * 60_000);
@@ -546,24 +618,3 @@ ${mail}
   }
   return c.html(page("Not found", `<section class="card narrow"><h1>Page not found</h1><p><a href="/admin">← All agencies</a></p></section>`), 404);
 }
-    if (["revoke", "restore", "reset"].includes(what!)) logSupport(b.id, sess.email, what === "revoke" ? "turned their link off" : what === "restore" ? "turned their link back on" : "reset their setup");
-    if (what === "push-update") {
-      const wait = allow(`support:${sess.email}`, 60, 60 * 60_000);
-      if (wait) return c.redirect(`/admin/b/${b.id}?m=bad`);
-      const r = requestPush(b.id, sess.email);
-      logSupport(b.id, sess.email, "push-update", r.ok ? "requested" : `refused: ${r.reason}`);
-      return c.redirect(`/admin/b/${b.id}?m=${r.ok ? "push-ok" : `push-${r.reason}`}`);
-    }
-    if (what === "logs") {
-      const wait = allow(`support:${sess.email}`, 60, 60 * 60_000);
-      if (wait) return c.redirect(`/admin/b/${b.id}?m=bad`);
-      const r = await fetchLogs(b.id, appUrlOf(getSetup(b.id)));
-      logSupport(b.id, sess.email, "fetch-logs", r.ok ? `${r.lines.length} lines` : `refused: ${r.reason}`);
-      if (!r.ok) return c.redirect(`/admin/b/${b.id}?m=logs-${r.reason}`);
-      return c.html(page("Recent logs", `<section class="card">
-<h1>Recent logs: ${esc(b.name)}</h1>
-<p class="lead">The last ${r.lines.length} lines their app logged, with numbers, emails, links, keys and anything in quotes already masked by the app. Shown here only; we don't keep them. Their app records that we looked.</p>
-<pre class="loglines">${esc(r.lines.map((l) => `${l.at.slice(11, 19)} ${l.level.padEnd(5)} ${l.line}`).join("\n"))}</pre>
-<p><a href="/admin/b/${b.id}">← Back to ${esc(b.name)}</a></p>
-</section>`, sess));
-    }

@@ -97,19 +97,11 @@ describe("Hosting step and the Railway plan", () => {
     expect(RAILWAY_TRIAL_MSG).toMatch(/Hobby/);
   });
 
-  test("Done page: 'Before you go' items show no tick until the buyer presses one", async () => {
+  test("Done page: no token-deleting or backup to-dos (the dashboard button is the main action)", async () => {
     const b = await buyer("g");
     updateSetup(b.id, (s) => { s.railway = { confirmed: true, via: "paste" }; s.phase = "done"; s.step = "done"; s.resultUrl = "https://app-x.up.railway.app"; s.domain = { mode: "cloudflare", zone: "x.test" } as any; });
     const h = wizardPage(b, getSetup(b.id), b.code, "sid", "done" as any);
-    const block = h.slice(h.indexOf('<div class="checks">'), h.indexOf('class="lockedout"'));
-    expect(block).toContain("Before you go");
-    expect(block).toContain("Delete your Railway token.");
-    expect(block).toContain("Turn on backups for the database in Railway.");
-    expect(block).not.toContain('d="M20 6 9 17l-5-5"'); // the tick icon
-    const rows = block.match(/class="todo"/g) || [];
-    expect(rows.length).toBeGreaterThanOrEqual(3);
-    expect((block.match(/aria-checked="false"/g) || []).length).toBe(rows.length);
-    expect(block).not.toContain('aria-checked="true"');
-    expect(block).not.toContain('class="todo done"');
+    expect(h).not.toMatch(/Before you go|Delete your Railway|Revoke|backups/i);
+    expect(h).toContain("Open your dashboard");
   });
 });

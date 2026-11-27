@@ -97,7 +97,7 @@ describe("Telnyx first, Vapi and Twilio as backup options", () => {
     expect(await run(b, "vapi", VOK)).toBeNull();
     // Vapi on its own (Telnyx not connected): Vapi is the main engine and there is no Telnyx key.
     expect(phoneSettings(b.id, getSetup(b.id))).toEqual({ VOICE_PROVIDER: "vapi", VAPI_API_KEY: "priv-0123456789abcdef", VAPI_PUBLIC_KEY: "pub-0123456789abcdef" });
-    expect(firstOpen(b, getSetup(b.id))).toBe("install");
+    expect(firstOpen(b, getSetup(b.id))).toBe("extras"); // Connect more is the next stop; nothing on it is required
   });
 
   test("a Vapi key Vapi refuses is an error, and nothing is saved", async () => {
@@ -162,20 +162,35 @@ describe("Telnyx first, Vapi and Twilio as backup options", () => {
     expect((await run(b, "twilio", { twilioSid: "nope", twilioToken: "x" }))?.kind).toBe("err");
   });
 
-  test("the screens: Voice has Telnyx first, Vapi + Twilio tucked under it, and no old extras screen", async () => {
+  test("the Voice screen: Telnyx, Vapi or Skip (no sign-in buttons, no Twilio); each provider opens on its own with a link to where its key is made", async () => {
     const { wizardPage } = await import("../wizard");
     const b = await buyer("j");
-    const html = (view: string) => wizardPage(b, getSetup(b.id), b.code, "sid", view as any);
+    const html = (view: string, opt = "") => wizardPage(b, getSetup(b.id), b.code, "sid", view as any, undefined, opt);
     const phones = html("phones");
-    expect(phones).toContain("Telnyx API key");
-    expect(phones).toContain("Can't use Telnyx? Use Vapi + Twilio");
-    expect(phones.indexOf("Telnyx API key")).toBeLessThan(phones.indexOf("Use Vapi + Twilio"));
-    expect(phones).not.toContain('name="provider"');
-    expect(phones).not.toContain("Sign in with Telnyx"); // no Telnyx login registered on this site: paste only
+    expect(phones).toContain("Telnyx");
+    expect(phones).toContain("Vapi");
+    expect(phones).toContain("Skip for now");
+    expect(phones).toContain(`href="/setup/${b.code}?step=phones&amp;opt=telnyx"`);
+    expect(phones).not.toContain('name="key"'); // nothing to paste until a provider is chosen
+    expect(phones).not.toMatch(/Twilio/); // Twilio is not part of Voice any more
+    expect(phones).not.toContain("Sign in with"); // sign-ins are parked: paste a key only
+    const tel = html("phones", "telnyx");
+    expect(tel).toContain("Telnyx API key");
+    expect(tel).toContain('href="https://portal.telnyx.com/#/app/api-keys"');
+    expect(tel).toContain('target="_blank"');
+    expect(tel).not.toContain("Sign in with");
+    const vap = html("phones", "vapi");
+    expect(vap).toContain("Vapi private key");
+    expect(vap).toContain("Vapi public key");
+    expect(vap).toContain('href="https://dashboard.vapi.ai/org/api-keys"');
+    expect(vap).not.toMatch(/Twilio/);
     updateSetup(b.id, (s) => { s.phones = { confirmed: true, provider: "telnyx", numbers: ["+61 2 5550 0101"] }; });
-    expect(html("phones")).toContain("+61 2 5550 0101");
-    expect(html("phones")).toContain("Add Vapi as a backup");
-    expect(html("vapi")).toContain("Vapi for voice");
+    putSecret(b.id, "telnyx_key", TKEY);
+    const on = html("phones");
+    expect(on).toContain("+61 2 5550 0101");
+    expect(on).toContain("Telnyx connected");
+    expect(on).toContain("Choose a different provider");
+    expect(html("vapi")).toContain("Vapi for voice"); // the old DigitalOcean screen is still there
   });
 
   test("one Vapi guide (sign up, private key, public key) and a Twilio guide", async () => {

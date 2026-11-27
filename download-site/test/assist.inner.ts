@@ -174,8 +174,8 @@ describe("admin fills steps, the buyer's wizard sees them", () => {
     expect(welcome).toContain("Your provider helped set this up.");
     expect(welcome).toContain("Done for you: Brand, Hosting (Railway).");
     expect(welcome).toContain("Left for you: Phones (Telnyx, or Vapi + Twilio), AI (OpenRouter).");
-    expect(welcome).toContain("Done by your provider"); // the rail
-    expect(page(b, "phones")).toContain('name="key"'); // theirs: the normal form
+    expect(welcome).not.toContain('<span class="s">'); // the step list has no descriptions under the names
+    expect(page(b, "phones")).toContain("Choose who carries your calls"); // theirs: the normal Voice screen
     expect(page(b, "phones")).not.toContain("set up by your provider");
   });
 

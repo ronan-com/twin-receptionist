@@ -23,7 +23,7 @@ export const chatModel = () => (process.env.SETUP_CHAT_MODEL || "").trim() || DE
 const apiBase = () => (process.env.OPENROUTER_API_BASE || "https://openrouter.ai/api/v1").trim().replace(/\/$/, "");
 
 // ---------------- the bubble (HTML the pages drop in) ----------------
-export interface ChatMount { url: string; t?: string; view?: string }
+export interface ChatMount { url: string; t?: string; view?: string; /** The ask-a-person form (wizhelp.ts), shown in the panel behind a "Talk to a person" button. Setup pages only. */ person?: string }
 const esc = (s: unknown) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
 
 /** Style and script for the bubble. Nothing at all when the chat is off. */
@@ -31,9 +31,13 @@ export const chatHead = () => (chatEnabled() ? `<link rel="stylesheet" href="/ch
 export const chatBubble = (m: ChatMount) => !chatEnabled() ? "" : `<div id="chat" class="chat" hidden data-url="${esc(m.url)}" data-t="${esc(m.t || "")}" data-view="${esc(m.view || "")}" data-max="${CHAT_MAX_MESSAGE}">
 <section class="chat-panel" id="chat-panel" role="dialog" aria-label="Setup help" hidden>
   <header><b>Setup help</b><button type="button" class="chat-x" aria-label="Close help">&times;</button></header>
+  ${m.person ? `<div class="chat-tabs"><button type="button" class="chat-tab on" data-tab="ai">Ask the helper</button><button type="button" class="chat-tab chat-person-btn" data-tab="person">Talk to a person</button></div>` : ""}
+  <div class="chat-ai">
   <div class="chat-log" aria-live="polite"></div>
-  <p class="chat-note">Please don't paste your keys or tokens here.${m.url.startsWith("/setup/") ? ` <a href="#person" class="chat-person">Ask a person instead</a>` : ""}</p>
+  <p class="chat-note">Please don't paste your keys or tokens here.</p>
   <form class="chat-form"><label class="chat-sr" for="chat-q">Your question</label><textarea id="chat-q" rows="2" maxlength="${CHAT_MAX_MESSAGE}" placeholder="Ask anything about setup" autocomplete="off"></textarea><button type="submit" class="chat-send">Send</button></form>
+  </div>
+  ${m.person ? `<div class="chat-person-box" hidden><p class="chat-persontop"><b>Talk to a person</b> A real person on our team will help. It creates a help request we see straight away.</p>${m.person}</div>` : ""}
 </section>
 <button type="button" class="chat-fab" aria-expanded="false" aria-controls="chat-panel">Need help?</button>
 </div>`;
@@ -42,16 +46,16 @@ export const chatBubble = (m: ChatMount) => !chatEnabled() ? "" : `<div id="chat
 const STEP_NAMES: Record<StepId, string> = {
   welcome: "Welcome",
   brand: "Brand (your brand name and owner email)",
-  railway: "Hosting (Login with Railway, or paste a Railway token)",
+  railway: "Hosting (open Railway's Tokens page, create a token with No workspace, paste it here)",
   server: "Server (paste your DigitalOcean token)",
   domain: RAILWAY ? "Domain (optional: your own address)" : "Domain",
-  phones: "Voice (Sign in with Telnyx, or paste a Telnyx key; Vapi + Twilio if Telnyx isn't used)",
-  ai: "AI (Sign in with OpenRouter, or paste an OpenRouter key)",
+  phones: "Voice (choose Telnyx, Vapi or Skip; paste that provider's key)",
+  ai: "AI (Sign in with OpenRouter, or create and paste an OpenRouter key)",
   email: RAILWAY ? "Email (optional)" : "Email",
   calendars: "Calendars (optional)",
-  extras: "Extras (optional: email, your own domain, calendars)",
+  extras: "Connect more (optional: your own email, your own domain, Twilio; skip any)",
   vapi: "Vapi (optional backup voice provider; Telnyx is the main one)",
-  twilio: "Twilio (optional backup for numbers and texts; Telnyx is the main one)",
+  twilio: "Twilio (optional: Australian numbers and texts on your own Twilio account)",
   install: "Install",
   done: "Done (your agency is live)",
 };
@@ -76,7 +80,7 @@ function whereTheyAre(c: ChatContext): string {
   if (!b || !s) return "This person is reading the public guide and has not opened a setup link, so you don't know where they are. If it helps, ask which step they're on.";
   const view = c.view && (STEPS as string[]).includes(c.view) ? (c.view as StepId) : null;
   const done = STEPS.filter((id) => id !== "done" && stepDone(b, s, id)).map((id) => STEP_NAMES[id]);
-  const todo = STEPS.filter((id) => id !== "done" && !stepDone(b, s, id) && !(RAILWAY && ["email", "domain", "calendars"].includes(id))).map((id) => STEP_NAMES[id]);
+  const todo = STEPS.filter((id) => id !== "done" && !stepDone(b, s, id) && !(RAILWAY && ["email", "domain", "calendars", "twilio", "extras"].includes(id))).map((id) => STEP_NAMES[id]);
   const skipped = Object.entries(s.skipped || {}).filter(([, v]) => v).map(([k]) => k);
   const lines = [
     `Their saved step: ${STEP_NAMES[s.step]}.`,

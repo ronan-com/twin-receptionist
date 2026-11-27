@@ -96,10 +96,13 @@ export type StepId = "welcome" | "brand" | "railway" | "domain" | "server" | "ph
  * DigitalOcean still needs a domain (its server gets an https certificate for it), so it keeps the long path.
  */
 export const STEPS: StepId[] = RAILWAY
-  ? ["welcome", "brand", "railway", "phones", "ai", "install", "done"]
+  ? ["welcome", "brand", "railway", "phones", "ai", "extras", "email", "domain", "calendars", "twilio", "install", "done"]
   : ["welcome", "brand", "domain", "server", "phones", "vapi", "twilio", "email", "calendars", "install", "done"];
-/** Steps that are never required. Railway: none are in the path any more. DigitalOcean: the backup phone options. */
-export const OPTIONAL_STEPS: StepId[] = RAILWAY ? [] : ["vapi", "twilio"];
+/**
+ * Steps that are never required. Railway: the pages behind the "Connect more" screen (extras): email, your own domain and Twilio,
+ * each skippable. DigitalOcean: the backup phone options.
+ */
+export const OPTIONAL_STEPS: StepId[] = RAILWAY ? ["email", "domain", "calendars", "twilio"] : ["vapi", "twilio"];
 /**
  * Railway steps that used to be in the path (extras, email, domain, calendars, Vapi, Twilio). Email, your own domain and
  * calendars are now "later" items on the Done screen; Vapi + Twilio is on the Voice step. Old stored setups may sit on one
@@ -109,8 +112,8 @@ export const LEGACY_STEPS: StepId[] = ["extras", "email", "domain", "calendars",
 /** The backup phone options (Vapi, Twilio) are optional in both flows: Telnyx is the main path. */
 export const BACKUP_STEPS: StepId[] = ["vapi", "twilio"];
 export const isOptional = (id: StepId) => OPTIONAL_STEPS.includes(id);
-/** The screen optional steps go back to. */
-export const OPTIONAL_HUB: StepId = "phones";
+/** The screen optional steps hang off and go back to: "Connect more" (Railway), or Voice (DigitalOcean). */
+export const OPTIONAL_HUB: StepId = RAILWAY ? "extras" : "phones";
 
 export interface DnsRecord {
   key: string; // stable id, e.g. "a", "dkim", "spf-mx"
@@ -128,10 +131,12 @@ export interface DnsRecord {
 export type Phase = "idle" | "creating" | "create_failed" | "dns" | "starting" | "installing" | "deploying" | "domain" | "failed" | "done";
 
 export interface SetupData {
-  /** 2 once moved to the short wizard (see migrate). Old rows have none. */
+  /** 2 once moved to the short wizard, 3 once it has the "Connect more" step (see migrate). Old rows have none. */
   schema?: number;
   step: StepId;
-  brand?: { productName: string; ownerEmail: string; ownPhoneAccount: boolean ; logo?: string; colour?: string };
+  /** Set by nextStep(): where the buyer was just sent. The site uses it to redirect after a form (then clears it), so "Continue" always moves on, even from a step the buyer went Back to. */
+  moved?: StepId;
+  brand?: { productName: string; ownerEmail: string; ownPhoneAccount: boolean ; logo?: string; /** The main brand colour (the first one). */ colour?: string; /** 1 to 3 brand colours, the first is the main one. */ colours?: string[]; /** The look of the dashboard to start with; the owner can switch it later in the dashboard. */ theme?: "light" | "dark" };
   domain?: {
     mode: "cloudflare" | "godaddy" | "manual";
     zone?: string; // example.com
@@ -274,8 +279,15 @@ export function getSetup(buyerId: number): SetupData {
  * dropped, so it can't block the install. Pure and idempotent; the new shape is saved with the next write.
  */
 export function migrate(s: SetupData): SetupData {
-  if (!RAILWAY || s.schema === 2) return s;
-  s.schema = 2;
+  if (!RAILWAY || s.schema === 3) return s;
+  if (s.schema === 2) {
+    // The "Connect more" step is new: anyone already at Install (or past it) has nothing left to do there.
+    s.schema = 3;
+    if (s.phase !== "idle" || s.step === "install" || s.step === "done") s.extrasDone = true;
+    return s;
+  }
+  s.schema = 3;
+  if (s.phase !== "idle" || s.step === "install" || s.step === "done") s.extrasDone = true;
   if (s.phase === "idle" && !s.domain?.host) {
     if (s.email?.mode === "resend") { delete s.email; s.skipped = { ...s.skipped, email: true }; }
     if (s.calendars?.google || s.calendars?.microsoft) { s.calendars = { done: true }; s.skipped = { ...s.skipped, calendars: true }; }

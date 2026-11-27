@@ -89,9 +89,9 @@ export const canView = (b: Buyer, s: SetupData, id: StepId) => CONFIG.previewJum
 export const locked = (s: SetupData) => s.phase !== "idle";
 const nextStep = (b: Buyer, s: SetupData, from: StepId) => {
   // Finishing (or skipping) an optional step goes back to the extras screen.
-  if (isOptional(from)) { s.step = OPTIONAL_HUB; return; }
+  if (isOptional(from)) { s.step = s.moved = OPTIONAL_HUB; return; }
   const i = STEPS.indexOf(from);
-  s.step = STEPS.slice(i + 1).find((id) => !isOptional(id) && (!stepDone(b, s, id) || id === "done")) || "done";
+  s.step = s.moved = STEPS.slice(i + 1).find((id) => !isOptional(id) && (!stepDone(b, s, id) || id === "done")) || "done";
 };
 
 /** Telnyx is the default; Vapi only when the buyer added it as the backup option (or an older setup chose it). */
@@ -126,7 +126,7 @@ function extrasProblem(b: Buyer, s: SetupData): string | null {
 /** Telnyx is needed, unless the buyer switched to Vapi in the backup options. */
 function phonesProblem(b: Buyer, s: SetupData): string | null {
   if (s.phones?.confirmed || s.vapi?.confirmed || phoneSkipped(s)) return null;
-  return RAILWAY ? "Connect a phone account first: go back to Phones and add your Telnyx key or Vapi + Twilio, or press Skip for now." : "Telnyx is needed for your phones. Go back to Phones and add your Telnyx key, or Vapi + Twilio.";
+  return RAILWAY ? "Choose a voice provider first: connect Telnyx or Vapi on the Voice step, or press Skip for now." : "Telnyx is needed for your phones. Go back to Phones and add your Telnyx key, or Vapi + Twilio.";
 }
 
 const LOCKED_MSG = "Your server has already been made with these settings. To change them, delete the server on the Install step first.";
@@ -230,8 +230,13 @@ export const actions: Record<string, Action> = {
     }
     updateSetup(b.id, (s) => {
       if (!logo && f.removeLogo !== "1") logo = s.brand?.logo;
-      const colour = /^#[0-9a-fA-F]{6}$/.test(f.colour || "") ? f.colour.toLowerCase() : s.brand?.colour;
-      s.brand = { productName, ownerEmail, ownPhoneAccount: false, logo, colour }; nextStep(b, s, "brand");
+      // 1 to 3 brand colours (the first is the main one); the 2nd and 3rd only count when their box is ticked.
+      const hex = (v?: string) => (/^#[0-9a-fA-F]{6}$/.test(v || "") ? (v as string).toLowerCase() : "");
+      const picked = [hex(f.colour), f.colour2on === "1" ? hex(f.colour2) : "", f.colour3on === "1" ? hex(f.colour3) : ""].filter(Boolean);
+      const colours = picked.length ? [...new Set(picked)] : s.brand?.colours || (s.brand?.colour ? [s.brand.colour] : undefined);
+      const colour = colours?.[0];
+      const theme = f.theme === "dark" ? "dark" : f.theme === "light" ? "light" : s.brand?.theme;
+      s.brand = { productName, ownerEmail, ownPhoneAccount: false, logo, colour, colours, theme }; nextStep(b, s, "brand");
     });
     return null;
   },
@@ -349,7 +354,7 @@ export const actions: Record<string, Action> = {
   // No Telnyx account yet: go on to the backup options (Vapi) instead. Install still needs one of the two.
   "phones-backup"(b) {
     const g = guard(b, "phones"); if (g) return g;
-    updateSetup(b.id, (s) => { s.phones = { ...s.phones, deferred: true }; s.step = OPTIONAL_HUB; });
+    updateSetup(b.id, (s) => { s.phones = { ...s.phones, deferred: true }; s.step = RAILWAY ? "phones" : OPTIONAL_HUB; });
     return null;
   },
 
@@ -396,6 +401,19 @@ export const actions: Record<string, Action> = {
     updateSetup(b.id, (s) => {
       delete s.vapi; delete s.twilio;
       s.phones = { ...s.phones, provider: "telnyx" };
+      s.step = "phones";
+    });
+    return null;
+  },
+
+  /** Voice step, "Choose a different provider": forget the Telnyx and Vapi keys and show the three choices again. Twilio (a separate extra) stays. */
+  "phones-reset"(b) {
+    const g = guard(b, "phones"); if (g) return g;
+    for (const n of ["telnyx_key", "vapi_key", "vapi_public"] as const) deleteSecret(b.id, n);
+    updateSetup(b.id, (s) => {
+      delete s.vapi;
+      if (s.skipped) { delete s.skipped.phones; delete s.skipped.vapi; }
+      s.phones = undefined;
       s.step = "phones";
     });
     return null;
@@ -643,7 +661,8 @@ export const actions: Record<string, Action> = {
     const g = guard(b, "install"); if (g) return g;
     const s = getSetup(b.id);
     if (!["idle", "create_failed"].includes(s.phase)) return null;
-    const missing = STEPS.slice(0, STEPS.indexOf("install")).find((id) => !isOptional(id) && !stepDone(b, s, id));
+    // "Connect more" (extras) is only a screen to pass through: nothing on it is needed.
+    const missing = STEPS.slice(0, STEPS.indexOf("install")).find((id) => id !== "extras" && !isOptional(id) && !stepDone(b, s, id));
     if (missing) return err("Finish the earlier steps first.");
     const p = phonesProblem(b, s) || extrasProblem(b, s); if (p) return err(p);
     if (RAILWAY ? !hasSecret(b.id, "railway_token") : !hasSecret(b.id, "do_token")) return err(RAILWAY ? "Your Railway token is missing. Go back to the Railway step and check it again." : "Your DigitalOcean token is missing. Go back to the Server step and check it again.");
@@ -776,7 +795,7 @@ const demoActions: Record<string, Action> = {
     const g = guard(b, "install"); if (g) return g;
     const s = getSetup(b.id);
     if (!["idle", "create_failed", "failed"].includes(s.phase)) return null;
-    const missing = STEPS.slice(0, STEPS.indexOf("install")).find((id) => !isOptional(id) && !stepDone(b, s, id));
+    const missing = STEPS.slice(0, STEPS.indexOf("install")).find((id) => id !== "extras" && !isOptional(id) && !stepDone(b, s, id));
     if (missing) return err("Finish the earlier steps first.");
     updateSetup(b.id, (s) => { s.phase = "creating"; s.error = undefined; s.progress = []; s.rw = {}; s.step = "install"; });
     kick(b.id);
@@ -932,11 +951,14 @@ async function tickZone(id: number) {
   }
 }
 
-/** The logo and colour from the Brand step. The app applies them once, when the owner first signs up. */
+/** The logo, colours and look (light or dark) from the Brand step. The app applies them once, when the owner first signs up. */
 function brandSettings(s: SetupData): Record<string, string> {
   const v: Record<string, string> = {};
   if (s.brand?.logo) v.BRAND_LOGO_PNG = s.brand.logo.slice(s.brand.logo.indexOf(",") + 1);
-  if (s.brand?.colour) v.BRAND_COLOUR = s.brand.colour;
+  // BRAND_COLOURS: 1 to 3 hex colours, comma-separated, the first is the main one. BRAND_COLOUR stays the first, for older apps.
+  const colours = s.brand?.colours?.length ? s.brand.colours : s.brand?.colour ? [s.brand.colour] : [];
+  if (colours.length) { v.BRAND_COLOURS = colours.join(","); v.BRAND_COLOUR = colours[0]; }
+  if (s.brand?.theme) v.THEME = s.brand.theme;
   return v;
 }
 

@@ -40,8 +40,17 @@ export function endpoints(p: OAuthProvider) {
   }
 }
 
+/**
+ * "Sign in with ..." that is parked: the code stays, the button and the start route are off. Telnyx's sign-in could not make the
+ * key the agency needs and its popup took over the wizard, so for now Telnyx (and Vapi, which never had one) are paste-a-key only.
+ * Set OAUTH_PARKED_ON=1 to bring a parked sign-in back (tests do, to keep covering the code).
+ */
+export const PARKED: OAuthProvider[] = ["telnyx"];
+const parked = (p: OAuthProvider) => PARKED.includes(p) && env("OAUTH_PARKED_ON") !== "1";
+
 /** Is the "Login with ..." button shown for this provider? */
 export function oauthEnabled(p: OAuthProvider): boolean {
+  if (parked(p)) return false;
   if (CONFIG.mockOAuth) return true;
   switch (p) {
     case "railway": return !!env("RAILWAY_OAUTH_CLIENT_ID") || env("RAILWAY_OAUTH") === "1";
@@ -136,11 +145,20 @@ export type Consumed = { ok: true; buyerId: number; verifier: string } | { ok: f
  */
 export function consumeState(p: OAuthProvider, state: string, browser: string, at = Date.now()): Consumed {
   tables();
-  if (!/^[A-Za-z0-9_-]{20,80}$/.test(state)) return { ok: false, reason: "bad-state" };
-  const r = db().query("SELECT * FROM oauth_states WHERE state_hash = ?").get(sha256(state)) as { buyer_id: number; provider: string; verifier: string; browser_hash: Buffer; created_at: string; used_at: string | null } | null;
-  if (!r || r.provider !== p) return { ok: false, reason: "bad-state" };
-  if (r.used_at) return { ok: false, reason: "used" };
-  db().query("UPDATE oauth_states SET used_at = ? WHERE state_hash = ?").run(new Date(at).toISOString(), sha256(state));
+  type Row = { state_hash: Buffer; buyer_id: number; provider: string; verifier: string; browser_hash: Buffer; created_at: string; used_at: string | null };
+  let r: Row | null;
+  if (!state && p === "openrouter" && browser) {
+    // OpenRouter sends the buyer back with only ?code=: it does not hand our state back. The browser cookie (set when the sign-in
+    // started, and only ever sent by that browser) finds the login instead: the newest one this browser started that is still unused.
+    r = db().query("SELECT * FROM oauth_states WHERE provider = 'openrouter' AND browser_hash = ? AND used_at IS NULL ORDER BY created_at DESC LIMIT 1").get(sha256(browser)) as Row | null;
+    if (!r) return { ok: false, reason: "bad-state" };
+  } else {
+    if (!/^[A-Za-z0-9_-]{20,80}$/.test(state)) return { ok: false, reason: "bad-state" };
+    r = db().query("SELECT * FROM oauth_states WHERE state_hash = ?").get(sha256(state)) as Row | null;
+    if (!r || r.provider !== p) return { ok: false, reason: "bad-state" };
+    if (r.used_at) return { ok: false, reason: "used" };
+  }
+  db().query("UPDATE oauth_states SET used_at = ? WHERE state_hash = ?").run(new Date(at).toISOString(), r.state_hash);
   if (at - Date.parse(r.created_at) > STATE_MINUTES * 60_000) return { ok: false, reason: "expired" };
   const want = Buffer.from(r.browser_hash), got = sha256(browser || "-");
   if (want.length !== got.length || !timingSafeEqual(want, got)) return { ok: false, reason: "browser" };
@@ -224,7 +242,8 @@ export async function mockOAuthRoute(req: Request, url: URL): Promise<Response |
     if (!q.get("code_challenge") || q.get("code_challenge_method") !== "S256") return json({ error: "pkce required" }, 400);
     const back = new URL(q.get("redirect_uri") || q.get("callback_url") || "");
     if (q.get("mock") === "deny") back.searchParams.set("error", "access_denied"); else back.searchParams.set("code", `mock-code-${p}`);
-    if (q.get("state")) back.searchParams.set("state", q.get("state")!);
+    // The real OpenRouter does not send our state back (only ?code=); the fake behaves the same, so the callback is tested the real way.
+    if (q.get("state") && p !== "openrouter") back.searchParams.set("state", q.get("state")!);
     return new Response(null, { status: 302, headers: { Location: back.toString() } });
   }
   if (what === "register") return json({ client_id: "mock-telnyx-client", client_id_issued_at: Math.floor(Date.now() / 1000) }, 201);

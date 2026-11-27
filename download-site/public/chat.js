@@ -53,19 +53,21 @@
   fab.addEventListener("click", function () { setOpen(true); });
   root.querySelector(".chat-x").addEventListener("click", function () { setOpen(false); });
   document.addEventListener("keydown", function (e) { if (e.key === "Escape" && root.classList.contains("open")) setOpen(false); });
-  // "Ask a person instead": close the chat and open the "I need a person" form at the bottom of the step.
-  const toPerson = root.querySelector(".chat-person");
-  if (toPerson) toPerson.addEventListener("click", function (e) {
-    const box = document.querySelector("#person details.person-ask");
-    if (!box) return;
-    e.preventDefault();
-    setOpen(false); box.open = true;
-    const q = document.getElementById("person-problem");
-    const last = history.filter(function (m) { return m.role === "user"; }).pop();
-    if (q && !q.value && last) q.value = String(last.content).slice(0, 1000);
-    box.scrollIntoView({ behavior: "smooth", block: "center" });
-    if (q) q.focus();
-  });
+  // "Talk to a person": a tab in the panel with the same ask-a-person form as the box at the bottom of the step (it makes a help request for our team).
+  const aiPane = root.querySelector(".chat-ai"), personPane = root.querySelector(".chat-person-box");
+  const tabs = root.querySelectorAll(".chat-tab");
+  function show(which) {
+    if (!personPane) return;
+    aiPane.hidden = which === "person"; personPane.hidden = which !== "person";
+    Array.prototype.forEach.call(tabs, function (t) { t.classList.toggle("on", t.getAttribute("data-tab") === which); });
+    if (which === "person") {
+      const q = personPane.querySelector("textarea");
+      const last = history.filter(function (m) { return m.role === "user"; }).pop();
+      if (q && !q.value && last) q.value = String(last.content).slice(0, 1000);
+      if (q) q.focus();
+    } else box.focus();
+  }
+  Array.prototype.forEach.call(tabs, function (t) { t.addEventListener("click", function () { show(t.getAttribute("data-tab")); }); });
 
   async function ask(q) {
     q = String(q || "").trim();

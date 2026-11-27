@@ -35,7 +35,7 @@ async function buyer(n: string) {
   await run(b, "start");
   await run(b, "brand", { productName: "Acme Calls", ownerEmail: "boss@acme.test" });
   putSecret(b.id, "railway_token", "rail-token-0123456789");
-  updateSetup(b.id, (s) => { s.railway = { confirmed: true }; s.ai = { confirmed: true }; s.step = "phones"; });
+  updateSetup(b.id, (s) => { s.railway = { confirmed: true }; s.ai = { confirmed: true }; s.extrasDone = true; s.step = "phones"; });
   return b;
 }
 const html = (b: any, view: string) => wizardPage(b, getSetup(b.id), b.code, "sid", view as any);
@@ -46,9 +46,9 @@ describe("skip the phone step", () => {
     const b = await buyer("a");
     expect(html(b, "phones")).toContain("Skip for now");
     expect(html(b, "phones")).toContain('action="/setup/' + b.code + '/a/phones-skip"');
-    // Secondary: a small text link under the options, not a button in the bar.
-    expect(html(b, "phones")).toMatch(/<div class="skip-phones"><form[^>]*phones-skip"><input[\s\S]*?<button class="linkbtn"/);
-    expect(html(b, "phones").indexOf("Use Vapi + Twilio")).toBeLessThan(html(b, "phones").indexOf("data-skip-phones"));
+    // One of the three choices on the Voice step (Telnyx, Vapi, Skip), a plain button that posts to phones-skip.
+    expect(html(b, "phones")).toMatch(/<form[^>]*phones-skip"><input[\s\S]*?<button class="vc skip"[^>]*data-skip-phones/);
+    expect(html(b, "phones").indexOf("Telnyx")).toBeLessThan(html(b, "phones").indexOf("data-skip-phones"));
     expect(html(b, "vapi")).toContain("Skip for now");
   });
 
@@ -89,11 +89,10 @@ describe("skip the phone step", () => {
     const b = await buyer("d");
     await run(b, "phones-skip");
     expect(html(b, "install")).toContain(PHONE_LATER);
-    expect(html(b, "install")).toMatch(/<span class="s">Not connected yet — connect it in your dashboard \(Connections\)<\/span>/);
+    expect(html(b, "install")).not.toContain('<span class="s">'); // the step list has no descriptions under the names
     updateSetup(b.id, (s) => { s.phase = "done"; s.step = "done"; s.resultUrl = "https://acme.up.railway.app"; s.tempUrl = "https://acme.up.railway.app"; });
     const done = html(b, "done");
     expect(done).toContain("<b>No voice provider yet.</b> Not connected yet — connect it in your dashboard (Connections)");
-    expect(done).toContain('data-card="phone-later"');
   });
 
   test("adding a Telnyx key afterwards (the buyer, or our admin's Set up for them) undoes the skip", async () => {

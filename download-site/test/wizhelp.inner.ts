@@ -60,11 +60,11 @@ putSecret(acme.id, "do_token", TOKEN_VALUE);
 let ticketId = 0;
 
 describe("the wizard", () => {
-  test("every step shows the I need a person form, prefilled with their owner email", async () => {
+  test("every step shows the Talk to a person form, prefilled with their owner email", async () => {
     const b = await browser(acme.code);
     for (const step of ["welcome", "brand", "server"]) {
       const html = await b.page(step);
-      expect(html).toContain("I need a person");
+      expect(html).toContain("Talk to a person");
       expect(html).toContain(`action="/setup/${acme.code}/a/help-request"`);
       expect(personBlock(html)).toContain('value="owner@acme.test"');
       expect(personBlock(html)).toContain(`value="${step}"`); // the step rides along
@@ -226,7 +226,7 @@ describe("neutral style", () => {
     T.replyToTicket(t.id, "boss@example.com", "On it.");
     const html = await b.page("server");
     const block = personBlock(html);
-    expect(block).toContain("I need a person");
+    expect(block).toContain("Talk to a person");
     expect(block).toContain("On it.");
     expect(block).toContain("<b>Support</b>");
     expect(html).toContain(escd(HELP_SENT).slice(0, 20));

@@ -53,9 +53,11 @@ describe("demo buyer", () => {
     // Anything (even nothing, even rubbish) is accepted on every account step.
     expect(await run(b, "railway", { token: "not a real token" })).toBeNull();
     expect(await run(b, "phones", {})).toBeNull();
-    // The short path: Brand, Hosting, Voice, AI, then Install.
+    // The short path: Brand, Hosting, Voice, AI, Connect more (all skippable), then Install.
     expect(getSetup(b.id).step).toBe("ai");
     expect(await run(b, "ai", {})).toBeNull();
+    expect(getSetup(b.id).step).toBe("extras");
+    expect(await run(b, "extras-continue", {})).toBeNull();
     const s = getSetup(b.id);
     expect(s.step).toBe("install");
     expect(s.email).toBeUndefined();
@@ -76,7 +78,7 @@ describe("demo buyer", () => {
     const b = addBuyer("Demo 10:02", "demo-3@example.com", true);
     await run(b, "start"); await run(b, "brand", { productName: "Y", ownerEmail: "y@y.test" });
     await run(b, "railway"); await run(b, "phones"); await run(b, "ai");
-    expect(getSetup(b.id).step).toBe("install");
+    expect(getSetup(b.id).step).toBe("extras");
     expect(await run(b, "email", { key: "garbage", address: "also garbage" })).toBeNull();
     expect(await run(b, "domain", { domain: "", mode: "cloudflare", token: "x" })).toBeNull();
     expect(await run(b, "calendars", { googleId: "x", googleSecret: "y", microsoftId: "z", microsoftSecret: "w" })).toBeNull();
@@ -84,7 +86,7 @@ describe("demo buyer", () => {
     expect(await run(b, "vapi", { vapiKey: "x", vapiPublic: "y" })).toBeNull();
     expect(getSetup(b.id).vapi?.confirmed).toBe(true);
     expect(await run(b, "twilio", { twilioSid: "x", twilioToken: "y" })).toBeNull();
-    expect(getSetup(b.id).step).toBe("install");
+    expect(getSetup(b.id).step).toBe("extras"); // each extra comes back to Connect more
     expect(getSetup(b.id).domain?.host).toMatch(/^app\.demo-.+\.test$/);
     expect(calls).toEqual([]);
   });
@@ -93,7 +95,7 @@ describe("demo buyer", () => {
     spy();
     const b = addBuyer("Demo 10:01", "demo-2@example.com", true);
     await run(b, "start"); await run(b, "brand", { productName: "X", ownerEmail: "x@x.test" });
-    await run(b, "railway"); await run(b, "phones");
+    await run(b, "railway"); await run(b, "phones"); await run(b, "ai");
     expect(await run(b, "smtp", { host: "nope", port: "1", user: "", pass: "" })).toBeNull();
     expect(getSetup(b.id).email?.confirmed).toBe(true);
     expect((await run(b, "email-test"))?.kind).toBe("ok");
@@ -114,6 +116,9 @@ describe("real buyer, the short path", () => {
     expect((await run(b, "install-start"))?.kind).toBe("err"); // OpenRouter is required
     updateSetup(b.id, (s) => { s.ai = { confirmed: true, via: "paste" }; });
     expect(await run(b, "ai-continue")).toBeNull();
+    expect(getSetup(b.id).step).toBe("extras");
+    expect((await run(b, "install-start"))?.kind).toBe("err"); // Connect more comes first (nothing on it is needed: Skip all and continue)
+    expect(await run(b, "extras-continue")).toBeNull();
     expect(getSetup(b.id).step).toBe("install");
     // Email through Resend with no domain is still refused with a plain message.
     updateSetup(b.id, (s) => { s.email = { mode: "resend", confirmed: true, from: "X <a@mail.slim.test>" }; });

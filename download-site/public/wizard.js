@@ -62,6 +62,13 @@
   const root = document.querySelector(".wiz");
   if (!root) return;
 
+  // The browser's Back button can bring back a saved copy of an old step: a button stuck on "Working...", or "connected" when it no longer is.
+  // Load the real page instead, so every step shows its true state and its buttons work.
+  window.addEventListener("pageshow", function (e) { if (e.persisted) location.reload(); });
+  // The header's "Talk to a person" (#person) opens the form.
+  const openPerson = function () { if (location.hash === "#person") { const d = document.querySelector("#person details.person-ask"); if (d) d.open = true; } };
+  openPerson(); window.addEventListener("hashchange", openPerson);
+
   // Brand step: shrink the chosen logo to a small PNG (it travels to the agency's server as one
   // setting, so it must stay under about 30 KB) and put it in the form.
   const lf = document.getElementById("logoFile");
@@ -108,7 +115,12 @@
     if (msg && !window.confirm(msg)) { e.preventDefault(); return; }
     if (f.dataset.sent) { e.preventDefault(); return; }
     f.dataset.sent = "1";
-    if (b) { b.classList.add("busy"); b.innerHTML = '<span class="spin"></span> ' + (/check/i.test(b.textContent) ? "Checking..." : "Working..."); }
+    if (b) {
+      const label = b.innerHTML;
+      b.classList.add("busy"); b.innerHTML = '<span class="spin"></span> ' + (/check/i.test(b.textContent) ? "Checking..." : "Working...");
+      // If nothing came back (a dropped connection), give the button back so the step can be tried again instead of staying stuck.
+      setTimeout(function () { delete f.dataset.sent; b.classList.remove("busy"); b.innerHTML = label; }, 30000);
+    }
   });
 
   // Domain step: show the dashboard address as it's typed

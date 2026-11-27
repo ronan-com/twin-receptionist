@@ -4,6 +4,8 @@ import { CalendarCheck, Clock, PhoneIncoming } from "lucide-react";
 import { BrandMark, BrandWave } from "@/components/app/BrandMark";
 import type { Hue } from "@/components/app/hues";
 import { OTHER_BRAND, PRODUCT } from "@/lib/app/product";
+import { useQuery } from "@tanstack/react-query";
+import { sessionQuery } from "@/lib/app/workspace";
 
 const AUTH_FACTS: { label: string; value: string; hue: Hue; icon: typeof PhoneIncoming }[] = [
   { label: "Answers", value: "Every call", hue: "indigo", icon: PhoneIncoming },
@@ -13,6 +15,21 @@ const AUTH_FACTS: { label: string; value: string; hue: Hue; icon: typeof PhoneIn
 
 // Answered's sign-in layout: brand panel on the left (wide screens), form on the right.
 export function AuthLayout({ title, subtitle, children, footer }: { title: string; subtitle?: ReactNode; children: ReactNode; footer?: ReactNode }) {
+  // An agency's own install (SINGLE_AGENCY) has no sales pitch to make: just a clean card with its name and colours.
+  const single = (useQuery(sessionQuery()).data as { singleAgency?: boolean } | undefined)?.singleAgency;
+  if (single) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-[var(--page)] px-4 py-10 text-ink" data-auth-card>
+        <div className="w-full max-w-[400px] rounded-[16px] border border-hairline bg-[var(--surface)] p-6 shadow-[var(--shadow-2)] sm:p-8">
+          <div className="mb-6"><BrandMark to="/" size="lg" /></div>
+          <h1 className="text-[22px] font-semibold tracking-[-0.02em] text-ink">{title}</h1>
+          {subtitle ? <p className="mt-1.5 text-[13.5px] text-ink-muted">{subtitle}</p> : null}
+          {children}
+          {footer ? <div className="mt-6 text-[13px] text-ink-muted">{footer}</div> : null}
+        </div>
+      </div>
+    );
+  }
   return (
     <div className="min-h-screen bg-white text-ink lg:grid lg:grid-cols-[1.05fr_1fr]">
       <aside className="relative hidden overflow-hidden border-r border-hairline bg-canvas-2 lg:flex lg:flex-col lg:justify-between lg:p-10">

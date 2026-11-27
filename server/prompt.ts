@@ -9,6 +9,7 @@ import {
   defaultHours,
   describeHours,
   industry,
+  stripEditMarks,
   type CollectField,
   type Dialect,
   type Hours,
@@ -261,7 +262,7 @@ export function cleanClosures(value: unknown): string {
 
 /** What callers hear first: the greeting, or the pause message while paused. */
 export function greetingOf(s: Settings): string {
-  return s.paused ? s.paused.message : withoutRecordingLine(s.greeting);
+  return stripEditMarks(s.paused ? s.paused.message : withoutRecordingLine(s.greeting));
 }
 
 export function normaliseSettings(input: unknown, voiceNames: Map<string, string>, current: Partial<Settings> = {}): Settings {
@@ -326,7 +327,7 @@ export async function knowledgeFor(clientId: string): Promise<KnowledgeEntry[]> 
   const rows = await sql`
     select kind, question, answer from knowledge_items
     where client_id = ${clientId} and enabled order by created_at, id limit ${KNOWLEDGE_MAX_ITEMS}`;
-  return rows.map((r: any) => ({ kind: r.kind ?? "faq", question: r.question, answer: r.answer }));
+  return rows.map((r: any) => ({ kind: r.kind ?? "faq", question: stripEditMarks(String(r.question ?? "")), answer: stripEditMarks(String(r.answer ?? "")) }));
 }
 
 // The knowledge block of the instructions. Typed by the business, so cleaned like the
@@ -479,7 +480,12 @@ Moving or cancelling a booking they already have
 `;
 }
 
+/** The receptionist's instructions, with no template "[edit]" marks in them (see stripEditMarks). */
 export function buildInstructions(s: Settings, booking: { minutes: number } | null = null, knowledge: KnowledgeEntry[] = []): string {
+  return stripEditMarks(buildInstructionsRaw(s, booking, knowledge.map((k) => ({ ...k, question: stripEditMarks(k.question), answer: stripEditMarks(k.answer) }))));
+}
+
+function buildInstructionsRaw(s: Settings, booking: { minutes: number } | null, knowledge: KnowledgeEntry[]): string {
   const preset = industry(s.industry);
   const noun = businessNoun(s);
   const where = s.suburb ? ` in ${s.suburb}, Australia` : " in Australia";

@@ -39,7 +39,7 @@ import type { Business } from "../src/lib/shared";
  * route (server/helper.test.ts checks them against src/routeTree.gen.ts), so when pages are
  * renamed or moved the test says this list is out of date.
  */
-export const HELPER_PAGES: { path: string; label: string; about: string }[] = [
+export const HELPER_PAGES: { path: string; label: string; about: string; /** Only on an agency's own install (SINGLE_AGENCY), or only on a shared one. */ only?: "single" | "multi" }[] = [
   { path: "/admin", label: "Overview", about: "calls, bookings, what needs attention, the Get started checklist" },
   { path: "/admin/clients", label: "Clients", about: "the businesses the agency looks after" },
   { path: "/admin/clients/new", label: "New receptionist", about: "the step-by-step wizard to make a receptionist" },
@@ -52,7 +52,7 @@ export const HELPER_PAGES: { path: string; label: string; about: string }[] = [
   { path: "/admin/branding", label: "Branding", about: "logo and colours" },
   { path: "/admin/voices", label: "Voices", about: "the voices on offer" },
   { path: "/admin/phone-numbers", label: "Phone Numbers", about: "numbers connected, and orders waiting" },
-  { path: "/admin/number-requests", label: "Number Requests", about: "ask for a number for a client and track it" },
+  { path: "/admin/number-requests", label: "Number Requests", about: "ask for a number for a client and track it", only: "multi" },
   { path: "/admin/connections", label: "Connections", about: "phone account, AI key, calendars and email" },
   { path: "/admin/usage", label: "Usage", about: "call minutes and activity per client" },
   { path: "/admin/system", label: "System / QA", about: "failed calls and background problems" },
@@ -60,21 +60,30 @@ export const HELPER_PAGES: { path: string; label: string; about: string }[] = [
   { path: "/admin/tutorials", label: "Tutorials", about: "short step-by-step guides" },
   { path: "/admin/support-requests", label: "Support requests", about: "help requests from the agency's clients" },
   { path: "/admin/settings", label: "Settings", about: "team and invites" },
-  { path: "/admin/settings?tab=branding", label: "Branding settings", about: "logo and colours" },
   { path: "/admin/settings?tab=account", label: "Account settings", about: "the person's own account" },
+  { path: "/admin/settings?tab=sending", label: "Email sending settings", about: "how account emails (invites, password resets) are sent" },
   { path: "/admin/settings?tab=email", label: "Email and calendar settings", about: "email sending, Google and Outlook calendars (owners)" },
+  { path: "/admin/settings?tab=updates", label: "Updates", about: "which version this agency runs, updates, and the source code download", only: "single" },
+  { path: "/admin/settings?tab=backups", label: "Backups", about: "backups of the agency's data", only: "single" },
+  { path: "/admin/settings?tab=support", label: "Support access", about: "what is shared with the company that set this up", only: "single" },
 ];
 
 const CLIENT_PAGE = /^\/admin\/clients\/([a-f0-9-]{36})$/;
 // One receptionist's own page. The page loads it through the person's own agency, so an id from elsewhere finds nothing.
-const RECEPTIONIST_PAGE = /^\/admin\/receptionists\/[a-f0-9-]{36}$/;
+const RECEPTIONIST_PAGE = /^\/admin\/receptionists\/[a-f0-9-]{36}(\?tab=(voice|messages|email|booking|apps|advanced))?$/;
 
 /** A path the helper may open, cleaned; null for anything else. A client's page only for a client of this agency. */
+/** The pages on the list that exist for this install (an agency's own install has no number-request queue, a shared one no Updates tab). */
+export function helperPages(snapshot: AgencySnapshot | null) {
+  const single = Boolean(snapshot?.singleAgency);
+  return HELPER_PAGES.filter((p) => !p.only || (p.only === "single") === single);
+}
+
 export function allowedPath(input: unknown, snapshot: AgencySnapshot | null): { path: string; label: string } | null {
   if (typeof input !== "string") return null;
   const raw = input.trim();
   if (raw.length > 160 || !raw.startsWith("/") || raw.startsWith("//")) return null;
-  const hit = HELPER_PAGES.find((p) => p.path === raw);
+  const hit = helperPages(snapshot).find((p) => p.path === raw);
   if (hit) return { path: hit.path, label: hit.label };
   if (RECEPTIONIST_PAGE.test(raw)) return { path: raw, label: "Receptionist page" };
   const client = CLIENT_PAGE.exec(raw)?.[1];
@@ -592,7 +601,7 @@ async function runTool(name: string, rawArgs: string, env: ToolEnv): Promise<unk
     switch (name) {
       case "open_page": {
         const page = allowedPath(args.path, env.snapshot);
-        if (!page) return { error: `That page isn't available. Pages: ${HELPER_PAGES.map((p) => p.path).join(", ")}, /admin/clients/<id> from list_clients, or /admin/receptionists/<id> from list_receptionists.` };
+        if (!page) return { error: `That page isn't available. Pages: ${helperPages(env.snapshot).map((p) => p.path).join(", ")}, /admin/clients/<id> from list_clients, or /admin/receptionists/<id> from list_receptionists.` };
         env.actions.push({ type: "navigate", path: page.path, label: page.label });
         return { ok: true, opened: page.label };
       }

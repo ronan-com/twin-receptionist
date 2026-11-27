@@ -41,6 +41,7 @@ import {
 } from "@/lib/shared";
 import { READ_ONLY_HINT, useConsole } from "./-shared";
 import { PRODUCT } from "@/lib/app/product";
+import { Marked, editMarks } from "@/components/app/EditMark";
 import { ProfileEditor } from "@/components/app/profile/ProfileEditor";
 import { TemplatePicker } from "@/components/app/profile/TemplatePicker";
 import { cleanProfile, fillGreeting, profileOf, settingsToneFor, summarizeProfile, templatePatch, totalProgress, type WithProfile } from "@/components/app/profile/helpers";
@@ -342,9 +343,29 @@ function NewReceptionistWizard() {
               </ReviewRow>
               {settings.avoid?.length ? <ReviewRow label="Passed to staff">{settings.avoid.join(", ")}</ReviewRow> : null}
               {settings.profile?.template ? <ReviewRow label="Template">{templateById(settings.profile.template)?.label ?? settings.profile.template}</ReviewRow> : null}
-              {summarizeProfile(profileOf(settings)).map((r) => (
-                <ReviewRow key={r.label} label={r.label}>{r.value}</ReviewRow>
-              ))}
+              {(() => {
+                const rows = summarizeProfile(profileOf(settings));
+                const spots = editMarks(JSON.stringify(rows.map((r) => r.value)) + JSON.stringify(profileOf(settings).faqs ?? []));
+                return (
+                  <>
+                    {spots > 0 ? (
+                      <ReviewRow label="Check">
+                        <span data-fill-in-note>{spots} spot{spots === 1 ? "" : "s"} still need <b>{settings.businessName || "the business"}</b>'s own details. They show as <Marked text="[edit]" /> below and in the editor; fill them in when you can.</span>
+                      </ReviewRow>
+                    ) : null}
+                    {rows.length ? (
+                      <details className="py-2.5" data-review-more>
+                        <summary className="cursor-pointer text-ink-muted">All the call details ({rows.length})</summary>
+                        <dl className="mt-1 divide-y divide-hairline">
+                          {rows.map((r) => (
+                            <ReviewRow key={r.label} label={r.label}><Marked text={r.value} /></ReviewRow>
+                          ))}
+                        </dl>
+                      </details>
+                    ) : null}
+                  </>
+                );
+              })()}
               {faqCount > 0 ? (
                 <ReviewRow label="Saved answers">{faqCount} common question{faqCount === 1 ? "" : "s"} saved as answers the receptionist can use</ReviewRow>
               ) : settings.industry === "childcare" ? (

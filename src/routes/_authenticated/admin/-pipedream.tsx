@@ -75,7 +75,7 @@ export function BalancesCard() {
       <ul className="divide-y divide-hairline">
         {q.data.map((i) => (
           <li key={i.provider} className="flex flex-wrap items-center gap-3 py-2.5 text-[13.5px]">
-            <span className="w-28 font-medium capitalize text-ink">{i.provider}</span>
+            <span className="w-28 font-medium text-ink">{{ openrouter: "OpenRouter", telnyx: "Telnyx", twilio: "Twilio", vapi: "Vapi", database: "Database" }[i.provider as string] ?? i.provider}</span>
             <span className={cn("flex-1", i.low ? "text-[#8a4b00]" : "text-ink-muted")}>
               {i.balance != null ? `${i.balance.toLocaleString("en-AU", { maximumFractionDigits: 2 })} ${i.currency ?? ""}`.trim() : i.message || "OK"}
               {i.low && i.message ? ` · ${i.message}` : ""}

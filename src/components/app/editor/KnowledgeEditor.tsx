@@ -16,6 +16,7 @@ import { StatusBadge } from "@/components/app/StatusBadge";
 import { Field } from "@/components/app/forms";
 import { KnowledgeImportButton } from "@/components/app/KnowledgeImport";
 import { fmtNumber, fmtRelative, fmtSmartDate } from "@/lib/app/format";
+import { Marked } from "@/components/app/EditMark";
 import { knowledgeQuery, unansweredQuery } from "@/lib/app/queries";
 import { createKnowledge, deleteKnowledge, updateKnowledge, type KnowledgeSaved } from "@/lib/api/manage";
 import type { KnowledgeItem, KnowledgeStatus, KnowledgeType } from "@/lib/app/types";
@@ -137,7 +138,7 @@ export function KnowledgePage() {
       cell: (i) => (
         <div className="min-w-0 max-w-[52vw] sm:max-w-none">
           <div className="truncate font-medium">{i.title}</div>
-          <div className="truncate text-[12px] text-ink-muted">{i.answer ?? i.content ?? ""}</div>
+          <div className="truncate text-[12px] text-ink-muted"><Marked text={i.answer ?? i.content ?? ""} /></div>
         </div>
       ),
     },

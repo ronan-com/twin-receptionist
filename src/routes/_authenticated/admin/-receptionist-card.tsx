@@ -16,8 +16,7 @@ import { applyVapiVoiceSettings, getVoiceEngines, moveReceptionistEngine, reques
 import { connectEmail, disconnectEmail, getEmail, setEmailMode, type EmailState } from "@/lib/api/manage";
 import { describeHours, industry as industryPreset, type IndustryKey } from "@/lib/shared";
 import { AutomationChips, AutomationIcon, useConsole } from "./-shared";
-import { NumberPicker } from "./-number-picker";
-import { ImportNumber } from "./-import-number";
+import { NumberPicker, VapiNumberPicker } from "./-number-picker";
 import { AttachedNumbers } from "./-own-numbers";
 import { TextsSwitch } from "./-texts-switch";
 import { TestCall } from "@/components/app/TestCall";
@@ -263,13 +262,13 @@ export function ReceptionistCard({
           ) : null}
           {!readOnly && ownPhone ? (
             canManage ? (
-              r.provider === "vapi" ? <ImportNumber clientId={r.id} timezone={s.timezone} onDone={onChanged} /> : <div className="mt-3 border-t border-hairline pt-3"><NumberPicker clientId={r.id} onChanged={onChanged} /></div>
+              <div className="mt-3 border-t border-hairline pt-3">{r.provider === "vapi" ? <VapiNumberPicker clientId={r.id} timezone={s.timezone} onChanged={onChanged} /> : <NumberPicker clientId={r.id} onChanged={onChanged} />}</div>
             ) : (
               <p className="mt-3 border-t border-hairline pt-3 text-[12px] text-ink-muted">Ask an owner or admin to add a number.</p>
             )
           ) : !readOnly ? (
             <>
-            {r.provider === "vapi" && canManage && !platform ? <ImportNumber clientId={r.id} timezone={s.timezone} twilioOnly onDone={onChanged} /> : null}
+            {r.provider === "vapi" && canManage && !platform ? <div className="mt-3 border-t border-hairline pt-3"><VapiNumberPicker clientId={r.id} timezone={s.timezone} twilioOnly onChanged={onChanged} /></div> : null}
             <details className="mt-3 border-t border-hairline pt-3" open>
             <summary className="cursor-pointer text-[12.5px] font-medium text-ink">Get a number</summary>
             <form

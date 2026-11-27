@@ -392,7 +392,7 @@ export function AppShell({ nav, variant, brandTo, sidebarHeader, topbarRight, ba
 
         {supportOpen ? <SupportDialog open onOpenChange={setSupportOpen} allRequestsTo={requestsPage} /> : null}
 
-        <main className="mx-auto w-full max-w-[1400px] flex-1 px-3 py-5 sm:px-5 sm:py-6 lg:px-8">{children}</main>
+        <main className="mx-auto w-full max-w-[1400px] flex-1 px-3 pb-24 pt-5 sm:px-5 sm:pt-6 lg:px-8">{children}</main>
       </div>
     </div>
   );

@@ -381,6 +381,20 @@ describe("pages and the single-agency owner", () => {
     expect(allowedPath("/admin/receptionists/../agencies", snap)).toBeNull();
     expect(allowedPath("/admin/receptionists/not-an-id", snap)).toBeNull();
   });
+  test("an editor tab and a Settings tab can be opened, from a fixed list of names", () => {
+    const one: AgencySnapshot = { ...snap, singleAgency: true };
+    for (const t of ["voice", "messages", "email", "booking", "apps", "advanced"]) expect(allowedPath(`/admin/receptionists/${REC}?tab=${t}`, snap)?.path).toBe(`/admin/receptionists/${REC}?tab=${t}`);
+    expect(allowedPath(`/admin/receptionists/${REC}?tab=evil`, snap)).toBeNull();
+    expect(allowedPath(`/admin/receptionists/${REC}?tab=voice&x=1`, snap)).toBeNull();
+    expect(allowedPath("/admin/settings?tab=account", snap)?.path).toBe("/admin/settings?tab=account");
+    expect(allowedPath("/admin/settings?tab=updates", one)?.path).toBe("/admin/settings?tab=updates");
+    expect(allowedPath("/admin/settings?tab=updates", snap)).toBeNull(); // no Updates tab on a shared install
+    expect(allowedPath("/admin/settings?tab=branding", one)).toBeNull(); // that tab redirects to Brand
+  });
+  test("a single-agency copy has no number-request page to open (it redirects to Home)", () => {
+    expect(allowedPath("/admin/number-requests", { ...snap, singleAgency: true })).toBeNull();
+    expect(allowedPath("/admin/number-requests", snap)?.path).toBe("/admin/number-requests");
+  });
   test("on a single-agency copy the owner (marked platform admin by the install) may use Helper; on a platform install a platform admin may not", () => {
     const was = process.env.SINGLE_AGENCY;
     try {

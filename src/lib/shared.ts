@@ -1099,3 +1099,19 @@ export type PortalReceptionist = {
 export type PortalClient = { id: string; businessName: string; receptionistName: string; brand: Brand };
 
 export type InviteInfo = { orgName: string; email: string; role: OrgRole; hasAccount: boolean; businessName?: string };
+
+
+/**
+ * Starter templates mark the facts only the business knows with "[edit]". Those marks must never reach a caller (the receptionist
+ * could read "edit" aloud): the prompt, knowledge and greeting are built from text with the marks taken out, and the leftover
+ * spaces and the dangling "of [edit]" tidied.
+ */
+export function stripEditMarks(text: string): string {
+  if (!text || !text.includes("[edit]")) return text;
+  return text
+    .replace(/\bof \[edit\]/g, "of the business")
+    .replace(/\s*\[edit\]/g, "")
+    .replace(/[ \t]{2,}/g, " ")
+    .replace(/[ \t]+([.,;])/g, "$1")
+    .replace(/^[ \t]+|[ \t]+$/gm, "");
+}

@@ -1,6 +1,6 @@
 import { timingSafeEqual } from "node:crypto";
 import type { Business, Hours, Settings } from "../src/lib/shared";
-import { DAYS, withoutRecordingLine } from "../src/lib/shared";
+import { DAYS, stripEditMarks, withoutRecordingLine } from "../src/lib/shared";
 import { publicUrl } from "./booking";
 import { sql } from "./db";
 import { recordIncident, resolveIncidents } from "./incidents";
@@ -320,7 +320,7 @@ export function automationInstructions(client: Business, a: AutomationSettings, 
  * greeting follows the Call recording setting.
  */
 export function greetingFor(base: string, a: AutomationSettings): string {
-  const g = withoutRecordingLine(base);
+  const g = stripEditMarks(withoutRecordingLine(base));
   return a.recording.enabled ? `${g} ${a.recording.notice}`.trim() : g;
 }
 

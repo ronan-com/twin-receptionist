@@ -868,7 +868,7 @@ const HELP: Record<string, { say: string; chips: string[] }> = {
   phones: { say: "Telnyx is the easy pick. Vapi works too. Stuck on Telnyx's ID check? Pick Vapi now, add Telnyx later in your dashboard.", chips: ["Telnyx or Vapi?", "Telnyx wants an ID check"] },
   "phones:telnyx": { say: "Open Telnyx, create an API key, paste it here.", chips: ["How do I get my Telnyx key?", "Why upgrade my Telnyx account?"] },
   "phones:vapi": { say: "Copy both keys from Vapi and paste them here.", chips: ["Which two Vapi keys?", "Where do I add Vapi credit?"] },
-  ai: { say: "Needed so your receptionists can think. Sign in with OpenRouter, or paste a key.", chips: ["What is OpenRouter?", "How much credit do I need?"] },
+  ai: { say: "Needed so your receptionists can think. Open OpenRouter, create a key, paste it here.", chips: ["What is OpenRouter?", "How much credit do I need?"] },
   extras: { say: "All optional. Skip any and add them later.", chips: ["What does my own email do?", "Do I need my own domain?"] },
   email: { say: "Paste a Resend key to send from your own address.", chips: ["How do I get a Resend key?", "Can I skip email?"] },
   domain: { say: "Type your domain. We show you what to add.", chips: ["Do I need a domain?", "Where do I add the records?"] },

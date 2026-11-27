@@ -91,11 +91,10 @@ describe("Telnyx first, Vapi and Twilio as backup options", () => {
 
   test("no Telnyx account: go on to the backup options; install needs Telnyx or Vapi", async () => {
     const b = await buyer("d");
-    expect(await run(b, "phones-backup")).toBeNull();
     // Neither added yet: Install is refused.
     expect((await run(b, "install-start"))?.kind).toBe("err");
     stub(200);
-    expect(await run(b, "vapi", VOK)).toBeNull();
+    expect(await run(b, "phones-vapi", VOK)).toBeNull(); // Vapi as the voice provider, on the Voice step
     // Vapi on its own (Telnyx not connected): Vapi is the main engine and there is no Telnyx key.
     expect(phoneSettings(b.id, getSetup(b.id))).toEqual({ VOICE_PROVIDER: "vapi", VAPI_API_KEY: "priv-0123456789abcdef", VAPI_PUBLIC_KEY: "pub-0123456789abcdef" });
     expect(firstOpen(b, getSetup(b.id))).toBe("extras"); // Connect more is the next stop; nothing on it is required
@@ -122,8 +121,7 @@ describe("Telnyx first, Vapi and Twilio as backup options", () => {
   test("the Vapi path never asks for or keeps a Telnyx key", async () => {
     const b = await buyer("g");
     stub(200);
-    expect(await run(b, "phones-backup")).toBeNull();
-    expect(await run(b, "vapi", { ...VOK, key: TKEY })).toBeNull();
+    expect(await run(b, "phones-vapi", { ...VOK, key: TKEY })).toBeNull();
     expect(calls.some((c) => c.url.includes("telnyx"))).toBe(false);
     expect(getSecret(b.id, "telnyx_key")).toBeNull();
     expect("TELNYX_API_KEY" in phoneSettings(b.id, getSetup(b.id))).toBe(false);
@@ -191,7 +189,7 @@ describe("Telnyx first, Vapi and Twilio as backup options", () => {
     expect(on).toContain("+61 2 5550 0101");
     expect(on).toContain("Telnyx connected");
     expect(on).toContain("Choose a different provider");
-    expect(html("vapi")).toContain("Vapi for voice"); // the old DigitalOcean screen is still there
+    expect(html("vapi")).toContain("Backup voice (Vapi)"); // reached from Connect more once Telnyx is connected
   });
 
   test("one Vapi guide (sign up, private key, public key) and a Twilio guide", async () => {

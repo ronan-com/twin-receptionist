@@ -110,20 +110,24 @@ describe("Continue always moves on", () => {
     expect(loc(await br.post("ai-continue", { v: "ai" }))).toBe(`/setup/${b.code}?step=extras`);
   });
 
-  test("after a returned sign-in (OpenRouter) the buyer goes on, also when they had been sent Back to that step", async () => {
-    const b = await doneBuyer();
+  test("every sign-in is parked: Railway, Telnyx and OpenRouter are paste-a-key only; no Sign in button, and the start routes are off", async () => {
+    const b = await doneBuyer({ extrasDone: false, step: "ai" });
     const br = await browser(b.code);
-    const start = await br.get(`/setup/${b.code}/oauth/openrouter`);
-    expect(start.status).toBe(303);
-    const ob = (start.headers.get("set-cookie") || "").split(";")[0];
-    const auth = new URL(loc(start));
-    const back = await fetch(`${SITE}${auth.pathname}${auth.search}`, { redirect: "manual" }); // the fake provider sends the browser back
-    const cb = new URL(loc(back));
-    expect(cb.searchParams.get("state")).toBeNull(); // OpenRouter sends only ?code=
-    const done = await br.get(cb.pathname + cb.search, ob);
-    expect(done.status).toBe(303);
-    expect(loc(done)).toBe(`/setup/${b.code}?step=extras`);
-    expect(store.getSetup(b.id).ai).toMatchObject({ confirmed: true, via: "oauth" });
+    for (const p of ["openrouter", "railway", "telnyx"]) expect((await br.get(`/setup/${b.code}/oauth/${p}`)).status).toBe(404);
+    store.updateSetup(b.id, (s) => { s.ai = undefined; });
+    store.deleteSecret(b.id, "openrouter_key");
+    for (const step of ["railway", "phones", "ai"]) { const html = await br.page(step); expect(html).not.toMatch(/Sign in with|sign-in|data-oauth/i); }
+    const ai = await br.page("ai");
+    expect(ai).toContain("Open OpenRouter and create a key");
+    expect(ai).toContain('name="key"');
+    // paste a key: checked, saved, and the step shows it connected with Continue (it does not jump ahead)
+    const r = await br.post("ai", { v: "ai", key: "sk-or-v1-paste0123456789" });
+    expect(r.status).toBe(303);
+    expect(store.getSetup(b.id).ai).toMatchObject({ confirmed: true, via: "paste" });
+    const after = await br.page("ai");
+    expect(after).toContain("OpenRouter connected");
+    expect(after).toContain('/a/ai-continue"');
+    expect(loc(await br.post("ai-continue", { v: "ai" }))).toBe(`/setup/${b.code}`);
   });
 
   test("a form with nothing to move (e.g. Check key on Voice) stays on its step, and keeps the provider open", async () => {

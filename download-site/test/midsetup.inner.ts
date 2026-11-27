@@ -81,6 +81,8 @@ describe("Daniel: stored at Voice (welcome, brand and Railway done; Railway toke
       // AI: paste a key
       const k = await br.post("ai", { v: "ai", key: "sk-or-v1-daniel0123456789" });
       expect(k.status).toBe(303);
+      expect(await br.page()).toContain("OpenRouter connected"); // stays on AI until Continue
+      expect(loc(await br.post("ai-continue", { v: "ai" }))).toBe(`/setup/${b.code}`); // first time through: the plain link, which is now Connect more
       expect(titleOf(await br.page())).toStartWith("Connect more");
       expect(loc(await br.post("extras-continue", { v: "extras" }))).toBe(`/setup/${b.code}`);
       const install = await br.page();
@@ -117,6 +119,7 @@ describe("a buyer stored at AI (Voice done)", () => {
     expect(first).toContain("Jesse");
     noError(first);
     expect((await br.post("ai", { v: "ai", key: "sk-or-v1-atai0123456789" })).status).toBe(303);
+    await br.post("ai-continue", { v: "ai" });
     expect(titleOf(await br.page())).toStartWith("Connect more");
     await br.post("extras-continue", { v: "extras" });
     expect(titleOf(await br.page())).toStartWith("Install");

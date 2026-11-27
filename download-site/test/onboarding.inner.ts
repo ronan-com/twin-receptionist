@@ -10,6 +10,7 @@ process.env.DATA_DIR = dir;
 process.env.SETUP_SECRET_KEY = Buffer.alloc(32, 3).toString("base64");
 process.env.SITE_URL = "http://localhost:4500";
 process.env.MOCK_OAUTH = "1";
+process.env.OAUTH_PARKED_ON = "1"; // these tests cover the sign-in code, which is parked in the real wizard
 process.env.MOCK_TELNYX = "1";
 process.env.ADMIN_EMAILS = ADMIN;
 process.env.SITE_SMTP_URL = "smtp://127.0.0.1:1";
@@ -151,11 +152,12 @@ describe("OAuth: PKCE and state", () => {
     await setup.actions.start(b, {}); await setup.actions.brand(b, { productName: "Acme", ownerEmail: "o@acme.test" });
     store.updateSetup(b.id, (s) => { s.railway = { confirmed: true, via: "oauth" }; s.step = "phones"; });
     store.putSecret(b.id, "railway_token", "mock-rail-token-ok");
+    process.env.OAUTH_PARKED_ON = ""; // as on the real site: every sign-in is parked
     const before = wizardPage(b, store.getSetup(b.id), b.code, "sid", "phones", undefined, "telnyx");
     expect(before).not.toContain("Sign in with Telnyx"); // parked: paste a key only
     expect(before).not.toContain(`/oauth/telnyx`);
-    expect(oauth.oauthEnabled("telnyx")).toBe(false);
-    expect(oauth.oauthEnabled("openrouter")).toBe(true); // this one is kept
+    for (const p of ["telnyx", "openrouter", "railway"] as const) expect(oauth.oauthEnabled(p)).toBe(false);
+    process.env.OAUTH_PARKED_ON = "1"; // the code behind them is still covered below
     expect(await setup.oauthComplete(b, "telnyx", await oauth.exchangeCode("telnyx", "c", "v".repeat(60)))).toBeNull();
     const s = store.getSetup(b.id);
     expect(s.phones).toMatchObject({ confirmed: true, via: "oauth", numbers: ["+61 2 5550 0101", "+61 3 5550 0102"] });
@@ -167,7 +169,7 @@ describe("OAuth: PKCE and state", () => {
     expect(await setup.actions["phones-continue"](b, {})).toBeNull();
     expect(store.getSetup(b.id).step).toBe("ai");
     expect(await setup.oauthComplete(b, "openrouter", await oauth.exchangeCode("openrouter", "c", "v".repeat(60)))).toBeNull();
-    expect(store.getSetup(b.id)).toMatchObject({ ai: { confirmed: true, via: "oauth" }, step: "extras" });
+    expect(store.getSetup(b.id)).toMatchObject({ ai: { confirmed: true, via: "oauth" }, step: "ai" }); // stays: the buyer presses Continue
     expect(store.getSecret(b.id, "openrouter_key")).toMatch(/^sk-or-v1-/);
   });
 });
@@ -402,7 +404,7 @@ describe("Login with ... on the real site (mock providers)", () => {
 
   test("start sets a browser cookie and goes to the provider; the callback needs that browser and a good state", async () => {
     server = Bun.spawn(["bun", "server.ts"], { cwd: join(import.meta.dir, ".."), stdout: "ignore", stderr: "ignore",
-      env: { ...process.env, PORT: String(PORT), HOST: "127.0.0.1", SITE_URL: SITE, DATA_DIR: dir, MOCK_OAUTH: "1", MOCK_TELNYX: "1" } });
+      env: { ...process.env, PORT: String(PORT), HOST: "127.0.0.1", SITE_URL: SITE, DATA_DIR: dir, MOCK_OAUTH: "1", MOCK_TELNYX: "1", OAUTH_PARKED_ON: "1" } });
     for (let i = 0; i < 100; i++) { try { if ((await realFetch(`${SITE}/healthz`)).ok) break; } catch {} await Bun.sleep(100); }
     const b = newBuyer("http");
     await setup.actions.start(b, {}); await setup.actions.brand(b, { productName: "Http Co", ownerEmail: "o@h.test" });
@@ -437,8 +439,8 @@ describe("Login with ... on the real site (mock providers)", () => {
     const cb2 = new URL((await get(a2.pathname + a2.search)).headers.get("location")!);
     const done = await get(cb2.pathname + cb2.search, cookie2);
     expect(done.status).toBe(303);
-    expect(done.headers.get("location")).toBe(`/setup/${b.code}`); // s.step moved on to Connect more, so the plain link lands there
-    expect(store.getSetup(b.id)).toMatchObject({ ai: { confirmed: true, via: "oauth" }, step: "extras" });
+    expect(done.headers.get("location")).toBe(`/setup/${b.code}?step=ai`); // stays on AI, connected, with Continue
+    expect(store.getSetup(b.id)).toMatchObject({ ai: { confirmed: true, via: "oauth" }, step: "ai" });
     // Used once: the same callback again is refused.
     expect((await get(cb2.pathname + cb2.search, cookie2)).status).toBe(400);
     expect(store.getSecret(b.id, "openrouter_key")).toMatch(/^sk-or-v1-/);

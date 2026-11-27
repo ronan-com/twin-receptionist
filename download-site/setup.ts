@@ -187,7 +187,8 @@ async function saveOpenRouter(b: Buyer, key: string, via: "oauth" | "paste"): Pr
   const r = await checkOpenRouter(key);
   if (!r.ok) return err(r.message);
   putSecret(b.id, "openrouter_key", key);
-  updateSetup(b.id, (s) => { s.ai = { confirmed: true, via }; if (s.skipped) delete s.skipped.ai; nextStep(b, s, "ai"); });
+  // Stays on the step so the buyer sees "OpenRouter connected" and presses Continue (like Voice and Hosting).
+  updateSetup(b.id, (s) => { s.ai = { confirmed: true, via }; if (s.skipped) delete s.skipped.ai; });
   return null;
 }
 

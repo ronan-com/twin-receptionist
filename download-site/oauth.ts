@@ -41,11 +41,12 @@ export function endpoints(p: OAuthProvider) {
 }
 
 /**
- * "Sign in with ..." that is parked: the code stays, the button and the start route are off. Telnyx's sign-in could not make the
- * key the agency needs and its popup took over the wizard, so for now Telnyx (and Vapi, which never had one) are paste-a-key only.
+ * "Sign in with ..." that is parked: the code stays, the button and the start route are off. For launch every provider in the
+ * wizard is paste-an-API-key only: Railway (token), Telnyx and Vapi (keys), OpenRouter (key). Telnyx's sign-in could not make the
+ * key the agency needs and its popup took over the wizard; the others are parked with it so the whole wizard behaves the same.
  * Set OAUTH_PARKED_ON=1 to bring a parked sign-in back (tests do, to keep covering the code).
  */
-export const PARKED: OAuthProvider[] = ["telnyx"];
+export const PARKED: OAuthProvider[] = ["telnyx", "openrouter", "railway"];
 const parked = (p: OAuthProvider) => PARKED.includes(p) && env("OAUTH_PARKED_ON") !== "1";
 
 /** Is the "Login with ..." button shown for this provider? */

@@ -11,7 +11,7 @@ checked: 28 Nov 2026
 3. Open [Keys](https://openrouter.ai/settings/keys) and click **Create Key**.
 4. Name it, such as `Agency`. Leave the credit limit empty, or set one that is more than you will spend (when a key hits its limit it stops working).
 5. Click **Create** and copy the key straight away. OpenRouter shows it once. It starts with `sk-or-v1-`.
-6. Paste it into the setup page. Or use **Sign in with OpenRouter** instead, with no pasting.
+6. Paste it into the setup page and press **Check and continue**.
 
 ## Common problems
 - **Error 401 "invalid key".** The key was removed or disabled, or the copy has a hidden space or missing letters. Copy it again, or create a new one.

@@ -48,7 +48,7 @@ const STEP_NAMES: Record<StepId, string> = {
   server: "Server (not used: hosting is Railway)",
   domain: RAILWAY ? "Domain (optional: your own address)" : "Domain",
   phones: "Voice (required: choose Telnyx or Vapi and paste that provider's key; if Telnyx's ID check is slow, use Vapi now and add Telnyx later in the dashboard)",
-  ai: "AI (required: sign in with OpenRouter, or create and paste an OpenRouter key)",
+  ai: "AI (required: open OpenRouter's keys page, create a key and paste it)",
   email: RAILWAY ? "Email (optional)" : "Email",
   calendars: "Calendars (optional)",
   extras: "Connect more (optional: your own email, your own domain, Twilio; skip any)",

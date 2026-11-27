@@ -169,7 +169,7 @@ ${sec("wizard", "3. The setup page, step by step", `
   <li><b>Brand.</b> Type your brand name and owner email. You sign in with that email.</li>
   <li><b>Hosting.</b> Paste your Railway token and press <b>Check and continue</b>.</li>
   <li><b>Voice.</b> Paste your Telnyx key and press <b>Check key</b>. Or use <b>Vapi</b> and paste both its keys. Telnyx's ID check slow? Use <b>Vapi</b> now and add Telnyx later in your dashboard, under <b>Connections</b>.</li>
-  <li><b>AI.</b> Press <b>Sign in with OpenRouter</b>, or paste an OpenRouter key.</li>
+  <li><b>AI.</b> Press <b>Open OpenRouter and create a key</b>, then paste the key.</li>
   <li><b>Extras (optional).</b> Email, your own domain, calendars and Twilio. Press <b>Skip all and continue</b> to go straight on.</li>
   <li><b>Install.</b> Press <b>Install</b> and wait 5 to 10 minutes. You can close the page. If it stops, press <b>Try again</b>.</li>
   <li><b>Done.</b> Open your address and sign in. Then delete your Railway token (and Cloudflare token, if you made one).</li>

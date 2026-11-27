@@ -120,6 +120,12 @@ export type BookingRequest = {
   note: string;
   // The caller's email, when they gave one (their booking confirmation goes there).
   email?: string;
+  // The calendar event this booking made (Google/Outlook event id, or the built-in event's id), so it can be moved or cancelled.
+  eventId?: string;
+  // Set when the caller moved the booking by phone: the time it was moved from.
+  rescheduledFrom?: string;
+  // Set when the caller cancelled the booking by phone (the booking's apptStatus is then "cancelled").
+  cancelledAt?: string;
   // Where a callback stands, set by the business.
   stage?: "new" | "contacted" | "won" | "lost";
 };

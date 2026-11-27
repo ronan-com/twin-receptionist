@@ -107,6 +107,7 @@ import type { VoiceProvider } from "./voice/provider";
 import { toolAllowed } from "./voice/tools";
 import { startVapiHours } from "./voice/vapiHours";
 import { vapiEvents, vapiToolHook } from "./voice/vapiWebhook";
+import { cancel as cancelBooking, findBooking, reschedule as rescheduleBooking } from "./bookingChange";
 
 // The last 200 log lines (scrubbed) and a problem list for the support heartbeat (server/problems.ts).
 installLogCapture();
@@ -257,7 +258,8 @@ async function hook(req: Request, clientId: string, action: string): Promise<Res
   if (client.settings.paused && action !== "callback") return json({ error: "The receptionist is paused, so nothing can be booked. Take a message with request_callback instead." });
   if (!client.booking!.enabled) return json({ error: "Booking is switched off. Offer to take a message instead." });
   const mode = client.settings.profile?.bookingMode;
-  if (action === "book" && (mode === "request" || mode === "message_only")) return json({ error: "Bookings aren't made directly. Use request_callback so the team can confirm." });
+  const changing = action === "find" || action === "reschedule" || action === "cancel";
+  if ((action === "book" || changing) && (mode === "request" || mode === "message_only")) return json({ error: "Bookings aren't made directly. Use request_callback so the team can confirm." });
   if (action === "availability" && mode === "message_only") return json({ error: "Bookings aren't offered. Take a message with request_callback instead." });
   const closed = action === "callback" ? null : await bookingBlocked(client);
   if (closed) return json({ error: closed });
@@ -274,6 +276,11 @@ async function hook(req: Request, clientId: string, action: string): Promise<Res
     if (action === "availability") return json(await availability(client, body));
     if (action === "book") return json(await book(client, body));
     if (action === "callback") return json(await callback(client, body));
+    // The caller's own number, from the phone line (X-Twin-Caller), never from what the model says.
+    const caller = req.headers.get("x-twin-caller") ?? "";
+    if (action === "find") return json(await findBooking(client, body, caller));
+    if (action === "reschedule") return json(await rescheduleBooking(client, body, caller));
+    if (action === "cancel") return json(await cancelBooking(client, body, caller));
   } catch (err) {
     if (err instanceof CalendarError) {
       return json({ error: `${err.message} Use request_callback so the team can follow up.` });
@@ -552,10 +559,10 @@ async function route(req: Request, server?: { requestIP(r: Request): { address: 
   const path = url.pathname;
   const method = req.method;
 
-  const hookMatch = path.match(/^\/hooks\/([a-f0-9-]{36})\/(availability|book|callback)$/);
+  const hookMatch = path.match(/^\/hooks\/([a-f0-9-]{36})\/(availability|book|callback|find|reschedule|cancel)$/);
   if (hookMatch && method === "POST") return hook(req, hookMatch[1], hookMatch[2]);
   // Vapi: its tool calls (the same hook behind an envelope) and its end-of-call reports.
-  const vapiTool = path.match(/^\/hooks\/([a-f0-9-]{36})\/vapi\/(availability|book|callback)$/);
+  const vapiTool = path.match(/^\/hooks\/([a-f0-9-]{36})\/vapi\/(availability|book|callback|find|reschedule|cancel)$/);
   if (vapiTool && method === "POST") return vapiToolHook(req, vapiTool[1], vapiTool[2], hook);
   const vapiEvent = path.match(/^\/hooks\/vapi\/([a-f0-9-]{36})$/);
   if (vapiEvent && method === "POST") return vapiEvents(req, vapiEvent[1]);

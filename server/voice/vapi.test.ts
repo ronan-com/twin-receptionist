@@ -31,9 +31,9 @@ const client: Business = {
 const saved = (over: any) => ({ stored: true, settings: { ...normaliseAutomations(over, defaultAutomations()) } });
 
 describe("Telnyx tools are unchanged", () => {
-  test("the three booking tools keep their Telnyx webhook shape", () => {
+  test("the booking tools keep their Telnyx webhook shape", () => {
     const tools = bookingTools(client, BASE);
-    expect(tools.map((t: any) => t.webhook.name)).toEqual(["check_availability", "book_appointment", "request_callback"]);
+    expect(tools.map((t: any) => t.webhook.name)).toEqual(["check_availability", "book_appointment", "request_callback", "find_booking", "reschedule_appointment", "cancel_appointment"]);
     expect(tools[0]).toEqual({
       type: "webhook",
       timeout_ms: 10000,
@@ -52,6 +52,10 @@ describe("Telnyx tools are unchanged", () => {
     });
     expect((tools[1] as any).webhook.body_parameters.required).toEqual(["start", "name", "phone", "service", "channel"]);
     expect((tools[2] as any).webhook.url).toBe(`${BASE}/hooks/${client.id}/callback`);
+    // Changing a booking: the line's caller ID rides along as a header, and only on these.
+    expect((tools[5] as any).webhook.url).toBe(`${BASE}/hooks/${client.id}/cancel`);
+    expect((tools[5] as any).webhook.headers).toEqual([{ name: "X-Twin-Key", value: "tok-booking-123" }, { name: "X-Twin-Caller", value: "{{telnyx_end_user_target}}" }]);
+    expect((tools[1] as any).webhook.headers).toEqual([{ name: "X-Twin-Key", value: "tok-booking-123" }]);
   });
 
   test("the Telnyx transfer tool is still a transfer with targets and a from number", () => {

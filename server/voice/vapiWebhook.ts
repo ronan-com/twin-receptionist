@@ -66,10 +66,13 @@ export async function vapiEvents(req: Request, clientId: string, deps: EventDeps
   return json({ ok: true });
 }
 
-const ACTION: Record<string, "availability" | "book" | "callback"> = {
+const ACTION: Record<string, "availability" | "book" | "callback" | "find" | "reschedule" | "cancel"> = {
   check_availability: "availability",
   book_appointment: "book",
   request_callback: "callback",
+  find_booking: "find",
+  reschedule_appointment: "reschedule",
+  cancel_appointment: "cancel",
 };
 
 /**
@@ -88,11 +91,13 @@ export async function vapiToolHook(req: Request, clientId: string, action: strin
     return json({ error: "Invalid JSON." }, 400);
   }
   const calls = toolCallsOf(message);
+  // The caller's number as Vapi saw it on the line (a web call has none).
+  const caller = String(message?.call?.customer?.number ?? "");
   const results: { name: string; toolCallId: string; result: string }[] = [];
   for (const call of calls) {
     const inner = new Request(req.url, {
       method: "POST",
-      headers: { "x-twin-key": req.headers.get("x-twin-key") ?? "", "content-type": "application/json" },
+      headers: { "x-twin-key": req.headers.get("x-twin-key") ?? "", "x-twin-caller": caller, "content-type": "application/json" },
       body: JSON.stringify(call.args),
     });
     const res = await hook(inner, clientId, ACTION[call.name] ?? action);

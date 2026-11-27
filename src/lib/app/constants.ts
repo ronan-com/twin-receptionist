@@ -276,7 +276,7 @@ export const STORAGE_KEYS = {
 };
 
 export const LLM_MODELS = ["gpt-4o-mini", "gpt-4o", "gpt-4.1", "gpt-4.1-mini", "claude-3-5-sonnet", "gemini-2.0-flash"];
-export const TOOL_PERMISSIONS = ["book_appointment", "lookup_availability", "take_message", "transfer_call", "send_sms", "lookup_contact", "create_lead", "end_call"];
+export const TOOL_PERMISSIONS = ["book_appointment", "reschedule_appointment", "cancel_appointment", "lookup_availability", "take_message", "transfer_call", "send_sms", "lookup_contact", "create_lead", "end_call"];
 export const TIMEZONES = [
   "Australia/Sydney",
   "Australia/Melbourne",

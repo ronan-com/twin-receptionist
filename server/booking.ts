@@ -8,7 +8,7 @@ import {
   type DayKey,
 } from "../src/lib/shared";
 import { sql } from "./db";
-import { CalendarError, busyTimes, createEvent } from "./calendars";
+import { CalendarError, busyTimes, createEvent, type Busy } from "./calendars";
 import { confirmToCaller, notifyBusiness } from "./notify";
 import { mailerReady } from "./mailer";
 import { getSetting, putSetting } from "./store";
@@ -77,7 +77,7 @@ function offsetMinutes(at: number, tz: string): number {
 }
 
 // "2026-11-21" + "09:30" in Australia/Sydney -> epoch ms
-function localToEpoch(date: string, hhmm: string, tz: string): number {
+export function localToEpoch(date: string, hhmm: string, tz: string): number {
   const [y, m, d] = date.split("-").map(Number);
   const [h, min] = hhmm.split(":").map(Number);
   const guess = Date.UTC(y, m - 1, d, h, min);
@@ -88,7 +88,7 @@ function localToEpoch(date: string, hhmm: string, tz: string): number {
 }
 
 // epoch ms -> "2026-11-21T09:30:00+10:00"
-function isoLocal(at: number, tz: string): string {
+export function isoLocal(at: number, tz: string): string {
   const off = offsetMinutes(at, tz);
   const local = new Date(at + off * 60000).toISOString().slice(0, 19);
   const sign = off >= 0 ? "+" : "-";
@@ -96,11 +96,11 @@ function isoLocal(at: number, tz: string): string {
   return `${local}${sign}${String(Math.floor(abs / 60)).padStart(2, "0")}:${String(abs % 60).padStart(2, "0")}`;
 }
 
-function localDate(at: number, tz: string): string {
+export function localDate(at: number, tz: string): string {
   return isoLocal(at, tz).slice(0, 10);
 }
 
-function sayDay(date: string): string {
+export function sayDay(date: string): string {
   const [y, m, d] = date.split("-").map(Number);
   return new Date(Date.UTC(y, m - 1, d)).toLocaleDateString("en-AU", {
     weekday: "long",
@@ -141,7 +141,13 @@ function lastBookableDate(client: Business): string {
   return windowDays ? localDate(Date.now() + windowDays * 86400000, client.settings.timezone) : "";
 }
 
-async function freeSlots(client: Business, date: string): Promise<{ open: boolean; slots: Slot[]; starts: number[] }> {
+// `opts.ignore` is an appointment that is being moved: its own time doesn't block the new one.
+// `opts.busy` is the calendar lookup (tests stand in for it).
+export async function freeSlots(
+  client: Business,
+  date: string,
+  opts: { ignore?: Busy; busy?: typeof busyTimes } = {},
+): Promise<{ open: boolean; slots: Slot[]; starts: number[] }> {
   const s = client.settings;
   const setup = client.booking!;
   const hours = s.hours[dayKey(date)];
@@ -155,7 +161,10 @@ async function freeSlots(client: Business, date: string): Promise<{ open: boolea
   if (last && date > last) return { open: true, slots: [], starts: [] };
   const gap = rules.buffer * 60000;
 
-  const taken = (await busyTimes(client, opens - gap, closes + gap)).map((b) => [b.start, b.end] as const);
+  const ignore = opts.ignore;
+  const taken = (await (opts.busy ?? busyTimes)(client, opens - gap, closes + gap))
+    .filter((b) => !(ignore && b.start === ignore.start && b.end === ignore.end))
+    .map((b) => [b.start, b.end] as const);
 
   const earliest = Date.now() + rules.notice * 60000;
   const starts: number[] = [];
@@ -200,18 +209,22 @@ export async function availability(client: Business, input: any): Promise<unknow
   };
 }
 
-const clip = (v: unknown, max: number) => String(v ?? "").replace(/[\u0000-\u001f]/g, " ").trim().slice(0, max);
+export const clip = (v: unknown, max: number) => String(v ?? "").replace(/[\u0000-\u001f]/g, " ").trim().slice(0, max);
 
 // Bookings for one client run one at a time, so two people can't both be given
 // the same slot between the "is it free" check and the write.
 const bookingLocks = new Map<string, Promise<unknown>>();
 
-export function book(client: Business, input: any): Promise<unknown> {
-  const previous = bookingLocks.get(client.id) ?? Promise.resolve();
-  const next = previous.catch(() => {}).then(() => bookNow(client, input));
-  bookingLocks.set(client.id, next);
-  next.finally(() => bookingLocks.get(client.id) === next && bookingLocks.delete(client.id)).catch(() => {});
+export function withBookingLock<T>(clientId: string, job: () => Promise<T>): Promise<T> {
+  const previous = bookingLocks.get(clientId) ?? Promise.resolve();
+  const next = previous.catch(() => {}).then(job);
+  bookingLocks.set(clientId, next);
+  next.finally(() => bookingLocks.get(clientId) === next && bookingLocks.delete(clientId)).catch(() => {});
   return next;
+}
+
+export function book(client: Business, input: any): Promise<unknown> {
+  return withBookingLock(client.id, () => bookNow(client, input));
 }
 
 async function bookNow(client: Business, input: any): Promise<unknown> {
@@ -251,14 +264,14 @@ async function bookNow(client: Business, input: any): Promise<unknown> {
       return { booked: false, reason: "That time is no longer free. Check availability again and offer other times." };
     }
     const end = start + client.booking!.minutes * 60000;
-    await createEvent(client, {
+    const eventId = await createEvent(client, {
       start,
       end,
       title: `${service || "Appointment"} · ${name}`,
       description: `Name: ${name}\nPhone: ${phone}\n${email ? `Email: ${email}\n` : ""}Service: ${service || "not given"}\n${notes ? `Notes: ${notes}\n` : ""}Booked by the AI receptionist ${channel === "sms" ? "by text" : channel === "web" ? "in the website chat" : "by phone"}.`,
     });
     const when = `${sayDay(date)} at ${sayTime(isoLocal(start, s.timezone).slice(11, 16))}`;
-    const booked: BookingRequest = { ...entry, status: "booked", note: notes };
+    const booked: BookingRequest = { ...entry, status: "booked", note: notes, ...(eventId ? { eventId } : {}) };
     await record(client.id, booked).catch((err) => console.error(`[booking ${client.id}] couldn't log`, err.message));
     // Email the business and send it to their CRM. Never let that undo a booking that worked.
     notifyBusiness(client, booked).catch(() => {});
@@ -312,13 +325,13 @@ export function tokenMatches(setup: BookingSetup | undefined, given: string | nu
 
 // ---- Telnyx tool definitions ------------------------------------------------------
 
-// The three tools in provider-neutral form: what each is for and what it takes. Each
+// The tools in provider-neutral form: what each is for and what it takes. Each
 // voice engine (server/voice/) turns these into its own tool format. `action` is the
 // last part of the tool's address, /hooks/<clientId>/<action>.
 export type BookingToolDef = {
-  name: "check_availability" | "book_appointment" | "request_callback";
+  name: "check_availability" | "book_appointment" | "request_callback" | "find_booking" | "reschedule_appointment" | "cancel_appointment";
   description: string;
-  action: "availability" | "book" | "callback";
+  action: "availability" | "book" | "callback" | "find" | "reschedule" | "cancel";
   properties: Record<string, { type: "string"; description: string }>;
   required: string[];
 };
@@ -326,6 +339,13 @@ export type BookingToolDef = {
 const channel = {
   type: "string" as const,
   description: 'How they are talking to you: "call" for a phone call, "sms" for text messages.',
+};
+
+// Only needed when the caller's number didn't match a booking: who the booking is under and when it is for.
+const bookingWho = {
+  name: { type: "string" as const, description: "Their full name, only if the number they are calling from didn't find the booking." },
+  booked_date: { type: "string" as const, description: "The day of the booking they mean as YYYY-MM-DD, only if the number didn't find it." },
+  booked_time: { type: "string" as const, description: "The time of the booking they mean as HH:MM (24 hour), only if the number didn't find it." },
 };
 
 export const BOOKING_TOOL_DEFS: BookingToolDef[] = [
@@ -365,10 +385,46 @@ export const BOOKING_TOOL_DEFS: BookingToolDef[] = [
     },
     required: ["name", "phone", "reason", "channel"],
   },
+  {
+    name: "find_booking",
+    description:
+      "Find the caller's upcoming booking so it can be moved or cancelled. It looks under the number they are calling from. If it finds nothing, ask for their full name and the day and time of the booking and call it again with those.",
+    action: "find",
+    properties: bookingWho,
+    required: [],
+  },
+  {
+    name: "reschedule_appointment",
+    description: "Move the caller's existing booking to a new time from check_availability, once they have agreed to the new time. Never use book_appointment for a change.",
+    action: "reschedule",
+    properties: {
+      booking_id: { type: "string", description: "The booking_id from find_booking." },
+      new_start: { type: "string", description: "The start value of the new slot, exactly as check_availability returned it." },
+      ...bookingWho,
+    },
+    required: ["booking_id", "new_start"],
+  },
+  {
+    name: "cancel_appointment",
+    description: "Cancel the caller's existing booking. Only after you have read the booking back and they have clearly said yes to cancelling it.",
+    action: "cancel",
+    properties: {
+      booking_id: { type: "string", description: "The booking_id from find_booking." },
+      confirmed: { type: "string", description: 'Pass "yes" only once the caller has clearly confirmed they want this booking cancelled.' },
+      ...bookingWho,
+    },
+    required: ["booking_id", "confirmed"],
+  },
 ];
+
+// Tools that act on a caller's existing booking. They get the caller's number from the phone line
+// (never from the model), see server/bookingChange.ts.
+export const CHANGE_TOOLS = ["find_booking", "reschedule_appointment", "cancel_appointment"];
 
 export function bookingTools(client: Business, base: string) {
   const headers = [{ name: "X-Twin-Key", value: client.booking!.token }];
+  // The line's own caller ID, filled in by the phone service (not something the model can set).
+  const callerHeaders = [...headers, { name: "X-Twin-Caller", value: "{{telnyx_end_user_target}}" }];
   const url = (action: string) => `${base}/hooks/${client.id}/${action}`;
   return BOOKING_TOOL_DEFS.map((d) => ({
     type: "webhook",
@@ -378,7 +434,7 @@ export function bookingTools(client: Business, base: string) {
       description: d.description,
       url: url(d.action),
       method: "POST",
-      headers,
+      headers: CHANGE_TOOLS.includes(d.name) ? callerHeaders : headers,
       body_parameters: { type: "object", properties: d.properties, required: d.required },
     },
   }));

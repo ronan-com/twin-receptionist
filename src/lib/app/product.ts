@@ -1,13 +1,15 @@
 // The product's name on this copy of the app. One build serves every brand: the
 // server writes the name into the page (<meta name="product">, from PRODUCT_NAME),
-// and the screens read it here. With no tag the name is "Answered".
+// and the screens read it here. With no tag the name is the neutral "AI Receptionist"; a copy that sets PRODUCT_NAME=Answered
+// is the Answered build itself.
 
 function fromPage(): string {
   if (typeof document === "undefined") return "";
   return document.querySelector('meta[name="product"]')?.getAttribute("content")?.trim() ?? "";
 }
 
-export const PRODUCT = fromPage() || "Answered";
+export const DEFAULT_PRODUCT = "AI Receptionist";
+export const PRODUCT = fromPage() || DEFAULT_PRODUCT;
 
 /** True on a copy sold under another name (its own public site lives elsewhere). */
 export const OTHER_BRAND = PRODUCT !== "Answered";

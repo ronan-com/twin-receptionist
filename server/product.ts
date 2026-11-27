@@ -1,7 +1,7 @@
 // The product's name on this copy of the app (PRODUCT_NAME). The screens default to
-// "Answered"; a copy sold under another name (e.g. Chloe) sets its own.
+// the neutral "AI Receptionist"; a copy sold under another name (e.g. Chloe) sets its own.
 
-export const UI_PRODUCT = (process.env.PRODUCT_NAME ?? "").trim() || "Answered";
+export const UI_PRODUCT = (process.env.PRODUCT_NAME ?? "").trim() || "AI Receptionist";
 
 /** True on a copy sold under another name. */
 export const OTHER_BRAND = UI_PRODUCT !== "Answered";

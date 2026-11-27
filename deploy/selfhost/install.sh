@@ -44,7 +44,7 @@ elif [ -z "${CONF[TELNYX_API_KEY]:-}" ] && [ "${CONF[OWN_PHONE_ACCOUNT]:-}" != r
 fi
 [ -n "${CONF[SMTP_URL]:-}" ] || log "    note: SMTP_URL is empty, so emails (invites, password resets) only go to the app log"
 PUBLIC_URL="https://$DOMAIN"; [ "$PORT_ONLY" = 443 ] || PUBLIC_URL="$PUBLIC_URL:$PORT_ONLY"
-log "    domain $DOMAIN, product name '${CONF[PRODUCT_NAME]:-Answered}', first admin $ADMIN"
+log "    domain $DOMAIN, product name '${CONF[PRODUCT_NAME]:-AI Receptionist}', first admin $ADMIN"
 
 # ---------------------------------------------------------------------------
 step "Preparing the server (packages, swap, firewall)"

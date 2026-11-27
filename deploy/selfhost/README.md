@@ -38,7 +38,7 @@ The app image is built on the server. Measured: `bun install` peaks at about 1.1
 
 | Setting | |
 |---|---|
-| `PRODUCT_NAME` | The name shown everywhere (page title, emails, screens). Empty means "Answered". |
+| `PRODUCT_NAME` | The name shown everywhere (page title, emails, screens). Empty means "AI Receptionist". |
 | `DOMAIN` | The host name only, no `https://`. `PUBLIC_URL` becomes `https://<DOMAIN>`. |
 | `FIRST_ADMIN_EMAIL` | The only email that can create the first (platform admin) account. |
 | `TELNYX_API_KEY` | Your Telnyx key. Agencies without their own key use it. |

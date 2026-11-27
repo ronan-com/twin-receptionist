@@ -10,7 +10,7 @@ type Item = { provider: string; balance?: number; currency?: string; low?: boole
 
 export function ProviderWarnings({ enabled = true }: { enabled?: boolean }) {
   const q = useQuery({
-    queryKey: ["provider-status"],
+    queryKey: ["provider-status", "warnings"],
     enabled,
     retry: false,
     staleTime: 5 * 60_000,

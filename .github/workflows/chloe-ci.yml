@@ -1,0 +1,47 @@
+# Chloe CI: runs every check on GitHub's servers, so releases never depend on a busy laptop.
+# Runs on pushes to the Chloe branches, on pull requests, and on demand (Actions tab > Run workflow).
+name: chloe-ci
+on:
+  push:
+    branches: [own-phone-account, demo-flow, "fix-*", "delete-*", add-ci, chloe-finish]
+  pull_request:
+    branches: [own-phone-account]
+  workflow_dispatch:
+concurrency:
+  group: chloe-ci-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres" --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      # Throwaway values: tests make and drop their own databases, and use fake provider keys.
+      DATABASE_URL: postgres://postgres:postgres@localhost:5432/postgres
+      SESSION_SECRET: ci-session-secret-not-a-real-secret
+      MAILBOX_KEY: Y2ktbWFpbGJveC1rZXktMzItYnl0ZXMtbG9uZy0hISE=
+      TELNYX_API_KEY: platform-fake-ci
+      DASHBOARD_PASSWORD: ci-dashboard-password
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.0
+      - name: Install
+        run: bun install
+      - name: Typecheck
+        run: bunx tsc --noEmit
+      - name: Build
+        run: bun run build
+      - name: Server tests
+        run: bun test server/
+      - name: Setup-site tests
+        working-directory: download-site
+        run: bun test

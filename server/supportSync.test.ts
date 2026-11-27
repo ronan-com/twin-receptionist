@@ -23,7 +23,7 @@ test("support sync: token auth, whitelist, off switch, one-time links, audit", a
     });
     const [out, err, code] = await Promise.all([new Response(p.stdout).text(), new Response(p.stderr).text(), p.exited]);
     if (code !== 0) console.log((out + err).slice(-5000));
-    expect(out + err).toContain(" 27 pass");
+    expect(out + err).toContain(" 28 pass");
     expect(out + err).not.toMatch(/\b[1-9]\d* fail/);
     expect(code).toBe(0);
   } finally {

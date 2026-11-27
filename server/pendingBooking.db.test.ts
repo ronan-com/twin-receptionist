@@ -4,7 +4,7 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { blankSettings, type BookingRequest, type Business } from "../src/lib/shared";
 import { migrate, sql } from "./db";
 import { insertClient } from "./store";
-import { approveBooking, book, declineBooking, freeSlots, isoLocal, localDate, localToEpoch, type DecisionDeps } from "./booking";
+import { approveBooking, book, callback, declineBooking, freeSlots, isoLocal, localDate, localToEpoch, type DecisionDeps } from "./booking";
 
 const TZ = "Australia/Sydney";
 const hours = Object.fromEntries(["mon", "tue", "wed", "thu", "fri", "sat", "sun"].map((d) => [d, { open: true, from: "09:00", to: "17:00" }])) as any;
@@ -98,5 +98,17 @@ describe("pending bookings", () => {
     const [row] = await sql`select data from booking_requests where client_id = ${client.id} and data->>'status' = 'pending' and data->>'name' = 'Pat'`;
     await approveBooking(client, row.data.id, deps);
     expect(calls).toEqual(["event", "text:+61400333444"]);
+  });
+});
+
+describe("phone numbers are stored as +61", () => {
+  test("a booking and a callback saved with a local number are stored in international form", async () => {
+    if (!ready) return;
+    const start = at(5, "11:00");
+    await book(client, { name: "Local Lou", phone: "0491 570 006", service: "Consult", start: new Date(start).toISOString() });
+    await callback(client, { name: "Local Lou", phone: "0491570006", reason: "Question" });
+    const rows = await sql`select data from booking_requests where client_id = ${client.id} and data->>'name' = 'Local Lou'`;
+    expect(rows.length).toBe(2);
+    expect(rows.map((r: any) => r.data.phone)).toEqual(["+61491570006", "+61491570006"]);
   });
 });

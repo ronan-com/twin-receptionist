@@ -118,7 +118,7 @@ export type BookingRequest = {
   service: string;
   // The booked time, or the preferred callback time.
   start: string;
-  status: "booked" | "failed" | "saved" | "pending" | "declined";
+  status: "booked" | "failed" | "saved" | "pending" | "declined" | "cancelled";
   note: string;
   // The caller's email, when they gave one (their booking confirmation goes there).
   email?: string;
@@ -126,7 +126,9 @@ export type BookingRequest = {
   eventId?: string;
   // Set when the caller moved the booking by phone: the time it was moved from.
   rescheduledFrom?: string;
-  // Set when the caller cancelled the booking by phone (the booking's apptStatus is then "cancelled").
+  // When it was moved. A moved booking stays "booked", with its start set to the new time.
+  rescheduledAt?: string;
+  // Set when the caller cancelled the booking (its status and apptStatus are then "cancelled").
   cancelledAt?: string;
   // The business's decision on a pending booking ("declined"), set when it is declined.
   declinedAt?: string;

@@ -179,7 +179,7 @@ async function cancelNow(client: Business, input: any, caller: string, deps: Cha
     if (!eventId && providerOf(client) !== "builtin") return { cancelled: false, reason: `That booking can't be cancelled automatically. ${TEAM}` };
     if (eventId) await deps.remove(client, eventId);
     // apptStatus is how the dashboard marks a booking cancelled; reminders and review texts skip it.
-    await deps.patch(client.id, b.id, { apptStatus: "cancelled", cancelledAt: new Date(deps.now()).toISOString() }).catch((err) =>
+    await deps.patch(client.id, b.id, { status: "cancelled", apptStatus: "cancelled", cancelledAt: new Date(deps.now()).toISOString() }).catch((err) =>
       console.error(`[booking ${client.id}] cancelled in the calendar but couldn't update the log`, err.message),
     );
     const change: BookingChange = { kind: "cancelled", was: b.start };

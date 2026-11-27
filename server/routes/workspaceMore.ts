@@ -9,7 +9,7 @@ import { audit } from "../audit";
 import { appsRoutes } from "./apps";
 import { json, readBody, type ClientRouteArgs } from "./http";
 import { manageDeps } from "./manage";
-import { answeredCall, appointmentsFor, bizOf, isRefusedBooking, phoneKey, rangeOf, requestsOf, type CallRow, type StoredRequest } from "./workspace";
+import { answeredCall, appointmentsFor, bizOf, isCancelled, isRefusedBooking, phoneKey, rangeOf, requestsOf, type CallRow, type StoredRequest } from "./workspace";
 
 // The business app's Inbox, Calendar, Contacts and "connect your apps" box (the clean UI).
 // Paths: /api/workspace/<clientId>/inbox | calendar | contacts | contacts/<key> | contacts.csv | mcp
@@ -82,9 +82,9 @@ async function inbox(args: ClientRouteArgs) {
       phone: r?.phone || null,
       email: r?.email || null,
       summary: ch.first ? clip(ch.first, 200) : null,
-      outcome: ch.outcome === "booked" ? "booked" : ch.outcome === "callback" ? "callback_requested" : null,
+      outcome: ch.outcome === "booked" ? (r && isCancelled(r) ? "resolved" : "booked") : ch.outcome === "callback" ? "callback_requested" : null,
       callId: null,
-      booking: ch.outcome === "booked",
+      booking: ch.outcome === "booked" && !(r && isCancelled(r)),
     });
   }
   for (const m of mail?.activity ?? []) {
@@ -188,6 +188,11 @@ async function buildContacts(client: Business): Promise<Contact[]> {
     chatsOf(client.id, from, new Date()),
     sql`select key, name, notes, status from contact_notes where client_id = ${client.id}`,
   ]);
+  return assembleContacts({ requests, calls, chats, notes: notes as any[] });
+}
+
+/** The contact list from what was logged: one contact per phone number (+61 and 0 forms are the same number). */
+export function assembleContacts({ requests, calls, chats, notes }: { requests: StoredRequest[]; calls: CallRow[]; chats: Awaited<ReturnType<typeof chatsOf>>; notes: { key: string; name: string; notes: string; status: string }[] }): Contact[] {
   const byKey = new Map<string, Contact>();
   const emailKey = new Map<string, string>();
   const get = (key: string): Contact => {
@@ -208,23 +213,27 @@ async function buildContacts(client: Business): Promise<Contact[]> {
   const add = (c: Contact, at: string, e: Entry, who: { name?: string; phone?: string | null; email?: string | null }) => {
     c.timeline.push({ ...e, at });
     if (at > c.last_at) c.last_at = at;
-    // The newest entry's details win (requests/calls arrive newest first).
+    // The first known name is kept (requests are added oldest first); later names show in the timeline.
     if (!c.name && who.name) c.name = who.name;
-    if (!c.phone && who.phone) c.phone = who.phone;
+    // The same number can be saved as 0491570006 or +61491570006: show the international form.
+    if (who.phone && (!c.phone || (!c.phone.startsWith("+") && who.phone.startsWith("+")))) c.phone = who.phone;
     if (!c.email && who.email) c.email = who.email.toLowerCase();
   };
   // Requests with both a phone and an email first, so an email-only entry can join the phone's contact.
   for (const r of requests) keyOf(r.phone, r.email);
-  for (const r of requests) {
+  for (const r of [...requests].reverse()) {
     const key = keyOf(r.phone, r.email);
     if (!key) continue;
     const c = get(key);
+    // A different name on a later request doesn't rename the contact; it is shown on that entry instead.
+    const other = c.name && r.name && r.name.trim().toLowerCase() !== c.name.trim().toLowerCase() ? ` (as ${r.name})` : "";
     if (r.kind === "callback") {
-      add(c, r.at, { at: r.at, kind: "callback", title: r.service ? `Call back: ${r.service}` : "Asked for a call back", summary: r.note || null, callId: null }, r);
+      add(c, r.at, { at: r.at, kind: "callback", title: `${r.service ? `Call back: ${r.service}` : "Asked for a call back"}${other}`, summary: r.note || null, callId: null }, r);
     } else if (!isRefusedBooking(r)) {
       c.counts.bookings++;
-      const state = r.status === "pending" ? "needs approval" : r.status === "declined" ? "declined" : (r as any).apptStatus === "cancelled" ? "cancelled" : "booked";
-      add(c, r.at, { at: r.at, kind: "booking", title: `${r.service || "Booking"} (${state}) for ${r.start.slice(0, 16).replace("T", " ")}`, summary: r.note || null, callId: null }, r);
+      const moved = r.rescheduledFrom ? ` (moved from ${r.rescheduledFrom.slice(0, 16).replace("T", " ")})` : "";
+      const state = r.status === "pending" ? "needs approval" : r.status === "declined" ? "declined" : isCancelled(r as any) ? "cancelled" : r.rescheduledFrom ? "moved" : "booked";
+      add(c, r.at, { at: r.at, kind: "booking", title: `${r.service || "Booking"} (${state}) for ${r.start.slice(0, 16).replace("T", " ")}${state === "moved" ? moved : ""}${other}`, summary: r.note || null, callId: null }, r);
     }
   }
   for (const call of calls) {
@@ -246,7 +255,7 @@ async function buildContacts(client: Business): Promise<Contact[]> {
     const at = iso(ch.last_message_at);
     add(c, at, { at, kind: "chat", title: "Website chat", summary: ch.first ? clip(ch.first, 200) : null, callId: null }, { name: ch.visitor_name || r?.name });
   }
-  for (const n of notes as any[]) {
+  for (const n of notes) {
     const c = byKey.get(n.key);
     if (!c) continue;
     c.notes = n.notes;

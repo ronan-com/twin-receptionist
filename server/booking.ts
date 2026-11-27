@@ -1,6 +1,7 @@
 import { createHash, timingSafeEqual } from "node:crypto";
 import {
   DAYS,
+  countryForTimezone,
   sayTime,
   type BookingRequest,
   type BookingSetup,
@@ -135,7 +136,10 @@ function dayKey(date: string): DayKey {
 
 type Slot = { start: string; time: string };
 
-const MAX_SLOTS = 10;
+// What the voice model is handed for a day: everything is summarised as ranges, and the slot list is
+// capped (spread across the whole day, not the first few) to keep the tool answer short.
+const MAX_SLOTS = 8;
+const NEAR_EACH_SIDE = 2;
 // Don't offer a time that starts sooner than this.
 const LEAD_MINUTES = 30;
 const NOTICE_MINUTES: Record<string, number> = { none: 0, "1h": 60, "2h": 120, same_day: 60, "24h": 1440, "48h": 2880 };
@@ -188,19 +192,42 @@ export async function freeSlots(
     if (taken.some(([a, b]) => t < b + gap && t + length + gap > a)) continue;
     starts.push(t);
   }
-  return {
-    open: true,
-    starts,
-    slots: starts.slice(0, MAX_SLOTS).map((t) => ({
-      start: isoLocal(t, s.timezone),
-      time: sayTime(isoLocal(t, s.timezone).slice(11, 16)),
-    })),
-  };
+  return { open: true, starts, slots: starts.slice(0, MAX_SLOTS).map((t) => toSlot(t, s.timezone)) };
+}
+
+const toSlot = (t: number, tz: string): Slot => ({ start: isoLocal(t, tz), time: sayTime(isoLocal(t, tz).slice(11, 16)) });
+
+/** At most `n` items spread evenly across the list, always including the first and the last. */
+export function spread<T>(items: T[], n: number): T[] {
+  if (items.length <= n) return items;
+  const out: T[] = [];
+  for (let i = 0; i < n; i++) out.push(items[Math.round((i * (items.length - 1)) / (n - 1))]);
+  return out.filter((v, i) => out.indexOf(v) === i);
+}
+
+/** Free stretches of the day in words: "8am to 12pm, 1pm to 5pm" (each ends when its last appointment ends). */
+export function sayRanges(starts: number[], lengthMs: number, tz: string): string[] {
+  const runs: number[][] = [];
+  for (const t of starts) {
+    const run = runs[runs.length - 1];
+    if (run && t - run[run.length - 1] === lengthMs) run.push(t);
+    else runs.push([t]);
+  }
+  const hm = (t: number) => sayTime(isoLocal(t, tz).slice(11, 16));
+  return runs.map((r) => `${hm(r[0])} to ${hm(r[r.length - 1] + lengthMs)}`);
+}
+
+const PARTS: Record<string, [string, string]> = { morning: ["00:00", "12:00"], afternoon: ["12:00", "17:00"], evening: ["17:00", "24:00"] };
+
+function hhmmOf(v: unknown): string {
+  const m = /^(\d{1,2}):(\d{2})/.exec(String(v ?? "").trim());
+  if (!m || Number(m[1]) > 23 || Number(m[2]) > 59) return "";
+  return `${m[1].padStart(2, "0")}:${m[2]}`;
 }
 
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
 
-export async function availability(client: Business, input: any): Promise<unknown> {
+export async function availability(client: Business, input: any, opts: Parameters<typeof freeSlots>[2] = {}): Promise<unknown> {
   const date = String(input?.date ?? "").trim();
   if (!DATE.test(date) || Number.isNaN(Date.parse(date))) {
     return { error: "Send the date as YYYY-MM-DD." };
@@ -211,17 +238,69 @@ export async function availability(client: Business, input: any): Promise<unknow
   const last = lastBookableDate(client);
   if (last && date > last) return { date, day: sayDay(date), open: true, slots: [], message: `That is further ahead than bookings go (up to ${rulesOf(client).windowDays} days). Offer an earlier day, or take a message.` };
 
-  const { open, slots } = await freeSlots(client, date);
+  const tz = client.settings.timezone;
+  const { open, starts: all } = await freeSlots(client, date, opts);
   if (!open) return { date, day: sayDay(date), open: false, message: `The business is closed on ${sayDay(date)}. Offer another day.` };
-  if (slots.length === 0) return { date, day: sayDay(date), open: true, slots: [], message: "No free times left that day. Offer another day." };
+  if (all.length === 0) return { date, day: sayDay(date), open: true, slots: [], message: "No free times left that day. Offer another day." };
+
+  const length = client.booking!.minutes * 60000;
+  const hmOf = (t: number) => isoLocal(t, tz).slice(11, 16);
+  const part = PARTS[String(input?.part_of_day ?? "").trim().toLowerCase()];
+  const starts = part ? all.filter((t) => hmOf(t) >= part[0] && hmOf(t) < part[1]) : all;
+  const base = { date, day: sayDay(date), open: true, appointment_minutes: client.booking!.minutes };
+  const pass = "Pass the chosen slot's start value, unchanged, to book_appointment.";
+
+  if (part && starts.length === 0) {
+    return { ...base, slots: spread(all, 4).map((t) => toSlot(t, tz)), free_ranges: sayRanges(all, length, tz), message: `Nothing is free in the ${String(input.part_of_day).trim().toLowerCase()}. Say so, and offer a time from free_ranges. ${pass}` };
+  }
+
+  // A specific time: check that time itself, and give the nearest free times either side.
+  const asked = hhmmOf(input?.time);
+  if (asked) {
+    const want = localToEpoch(date, asked, tz);
+    const exact = starts.includes(want);
+    const before = starts.filter((t) => t < want).slice(-NEAR_EACH_SIDE);
+    const after = starts.filter((t) => t > want).slice(0, NEAR_EACH_SIDE);
+    const near = [...before, ...(exact ? [want] : []), ...after];
+    return {
+      ...base,
+      requested_time: sayTime(asked),
+      requested_time_free: exact,
+      slots: near.map((t) => toSlot(t, tz)),
+      free_ranges: sayRanges(starts, length, tz),
+      message: exact
+        ? `${sayTime(asked)} is free. Confirm it with them, or offer a nearby time. ${pass}`
+        : `${sayTime(asked)} is NOT free (it is taken, or not one of the booking times). Say so and offer one of the nearest times in slots. ${pass}`,
+    };
+  }
+
   return {
-    date,
-    day: sayDay(date),
-    open: true,
-    appointment_minutes: client.booking!.minutes,
-    slots,
-    message: "Offer two or three of these times. Pass the chosen slot's start value, unchanged, to book_appointment.",
+    ...base,
+    free_ranges: sayRanges(starts, length, tz),
+    slots: spread(starts, MAX_SLOTS).map((t) => toSlot(t, tz)),
+    message: `free_ranges is everything free that day. Offer two or three times from slots, spread across the day unless they asked for a time. If they ask for a time, call check_availability again with time (HH:MM). ${pass}`,
   };
+}
+
+/**
+ * A number as +<country code><number> for storing: "0491570006" -> "+61491570006" (or +1 in the US).
+ * Anything that can't be read as a whole number is returned as given, cleaned of stray punctuation.
+ */
+export function normalizePhone(raw: unknown, tz: string): string {
+  const text = String(raw ?? "").trim();
+  const digits = text.replace(/\D/g, "");
+  if (!digits) return text;
+  if (text.startsWith("+")) return digits.length >= 8 && digits.length <= 15 ? `+${digits}` : text;
+  if (digits.startsWith("00") && digits.length >= 10 && digits.length <= 17) return `+${digits.slice(2)}`;
+  if (countryForTimezone(tz) === "US") {
+    if (digits.length === 10 && /^[2-9]/.test(digits)) return `+1${digits}`;
+    if (digits.length === 11 && digits.startsWith("1")) return `+${digits}`;
+    return text;
+  }
+  if (digits.length === 10 && digits.startsWith("0")) return `+61${digits.slice(1)}`;
+  if (digits.length === 11 && digits.startsWith("61")) return `+${digits}`;
+  if (digits.length === 9 && /^[2-478]/.test(digits)) return `+61${digits}`;
+  return text;
 }
 
 export const clip = (v: unknown, max: number) => String(v ?? "").replace(/[\u0000-\u001f]/g, " ").trim().slice(0, max);
@@ -334,7 +413,7 @@ export function book(client: Business, input: any): Promise<unknown> {
 async function bookNow(client: Business, input: any): Promise<unknown> {
   const s = client.settings;
   const name = clip(input?.name, 80);
-  const phone = clip(input?.phone, 30);
+  const phone = normalizePhone(clip(input?.phone, 30), s.timezone);
   const service = clip(input?.service, 80);
   const notes = clip(input?.notes, 500);
   const channel = clip(input?.channel, 20) || "call";
@@ -409,7 +488,7 @@ export async function callback(client: Business, input: any): Promise<unknown> {
     at: new Date().toISOString(),
     channel: clip(input?.channel, 20) || "call",
     name: clip(input?.name, 80),
-    phone: clip(input?.phone, 30),
+    phone: normalizePhone(clip(input?.phone, 30), client.settings.timezone),
     service: clip(input?.reason, 200),
     start: clip(input?.preferred_time, 80),
     status: "saved",
@@ -464,7 +543,11 @@ export const BOOKING_TOOL_DEFS: BookingToolDef[] = [
     name: "check_availability",
     description: "Get the free appointment times on one day. Call it before offering any times.",
     action: "availability",
-    properties: { date: { type: "string", description: "The day to check, as YYYY-MM-DD in the business's time zone." } },
+    properties: {
+      date: { type: "string", description: "The day to check, as YYYY-MM-DD in the business's time zone." },
+      time: { type: "string", description: "A specific time they asked for, as HH:MM (24 hour). Optional: checks that exact time and gives the nearest free times either side." },
+      part_of_day: { type: "string", description: 'Optional: "morning", "afternoon" or "evening", when they only want that part of the day.' },
+    },
     required: ["date"],
   },
   {

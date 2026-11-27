@@ -127,7 +127,13 @@ export function isAfterHours(client: Business, startedAt: Date | string): boolea
   return p.hm < h.from || p.hm >= h.to;
 }
 
-function outcomeOf(call: CallRow, matched: StoredRequest[]): string | null {
+/** A booking that was made and later cancelled by the caller or the business. */
+export const isCancelled = (r: { status?: string; apptStatus?: string }) => r.status === "cancelled" || r.apptStatus === "cancelled";
+
+export function outcomeOf(call: CallRow, matched: StoredRequest[]): string | null {
+  const bookings = matched.filter((r) => r.kind === "booking" && r.status !== "failed");
+  // The call booked something that has since been cancelled: it is no longer a booked call.
+  if (bookings.length > 0 && bookings.every(isCancelled) && (!call.outcome || call.outcome === "booked")) return "resolved";
   if (call.outcome) return call.outcome;
   const r = matched[0];
   if (!r) return null;
@@ -236,7 +242,7 @@ export function answeredAppointment(r: StoredRequest, clientId: string, cal: Cal
     reason: null,
     notes: r.bizNotes ?? (r.note || null),
     source: r.channel === "web" ? "website_chat" : r.channel === "sms" ? "ai_receptionist" : "ai_call",
-    status: r.apptStatus ?? (r.status === "booked" ? "confirmed" : r.status === "declined" ? "declined" : "pending"),
+    status: r.apptStatus ?? (r.status === "booked" ? "confirmed" : r.status === "declined" ? "declined" : r.status === "cancelled" ? "cancelled" : "pending"),
     staff_name: null,
     location: null,
     contact_id: null,
@@ -544,6 +550,7 @@ export async function answeredCallDetail(client: Business, orgId: string, callId
   for (const r of matched) {
     if (r.kind === "callback") events.push(event(r.id, "crm.callback_requested", r.at, "info", r.service || null));
     else if (r.status === "booked") events.push(event(r.id, "calendar.booking_created", r.at, "info", r.service || null));
+    else if (r.status === "cancelled") events.push(event(r.id, "calendar.booking_cancelled", r.at, "info", r.service || null));
     else events.push(event(r.id, "calendar.booking_failed", r.at, "error", r.note || null));
   }
   if (transcriptError) events.push(event("transcript", "transcript.unavailable", new Date().toISOString(), "warning", "The transcript couldn't be loaded from the phone provider."));

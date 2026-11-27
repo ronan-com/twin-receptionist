@@ -45,7 +45,11 @@ describe("Telnyx tools are unchanged", () => {
         headers: [{ name: "X-Twin-Key", value: "tok-booking-123" }],
         body_parameters: {
           type: "object",
-          properties: { date: { type: "string", description: "The day to check, as YYYY-MM-DD in the business's time zone." } },
+          properties: {
+            date: { type: "string", description: "The day to check, as YYYY-MM-DD in the business's time zone." },
+            time: { type: "string", description: "A specific time they asked for, as HH:MM (24 hour). Optional: checks that exact time and gives the nearest free times either side." },
+            part_of_day: { type: "string", description: 'Optional: "morning", "afternoon" or "evening", when they only want that part of the day.' },
+          },
           required: ["date"],
         },
       },

@@ -61,6 +61,11 @@ bash src/deploy/aws/ensure-ondemand-tls.sh
 
 # Route the address through the main Caddy (https certificate is automatic).
 sed "s/__DOMAIN__/$DOMAIN/" src/deploy/aws/setupsite.caddy.tmpl > /opt/twin/sites/setupsite.caddy
+# The old address keeps working: its APIs (installed agencies' sync, tickets, releases) are served as before, and
+# every page forwards to the current address, so old links land on the new one.
+if [ "$DOMAIN" != "setup.chloeeai.co" ]; then
+  printf '\nsetup.chloeeai.co {\n\t@api path /api/* /healthz\n\thandle @api {\n\t\treverse_proxy setup-site:4500\n\t}\n\thandle {\n\t\tredir https://%s{uri} 308\n\t}\n}\n' "$DOMAIN" >> /opt/twin/sites/setupsite.caddy
+fi
 docker exec twin-caddy-1 caddy reload --config /etc/caddy/Caddyfile --adapter caddyfile
 
 # Nightly backup of site.db (SQLite VACUUM INTO, safe while running) to S3. The copies hold

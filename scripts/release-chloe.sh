@@ -46,7 +46,7 @@ else
 fi
 
 bash deploy/selfhost/make-bundle.sh | tail -1
-DOMAIN=setup.chloeeai.co BUNDLE=deploy/selfhost/out/selfhost-bundle.tgz VERSION="$VERSION" bash download-site/deploy/aws/deploy.sh
+DOMAIN="${SETUP_DOMAIN:-setup.13-211-218-61.sslip.io}" BUNDLE=deploy/selfhost/out/selfhost-bundle.tgz VERSION="$VERSION" bash download-site/deploy/aws/deploy.sh
 
 if [ -n "$NOTES" ]; then
   ID=$(aws ec2 describe-instances --region ap-southeast-2 --filters Name=tag:Name,Values=twinrecep-app Name=instance-state-name,Values=running --query "Reservations[].Instances[].InstanceId" --output text)

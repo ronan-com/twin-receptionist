@@ -11,7 +11,7 @@ export const Route = createFileRoute("/_authenticated/admin/branding")({
 function BrandPage() {
   return (
     <div className="space-y-5" data-page="admin-branding">
-      <PageHeader title="Brand" description="Your logo and colours." />
+      <PageHeader title="Brand & domain" description="Your name, logo, colours and dashboard address." />
       <BrandingSection />
     </div>
   );

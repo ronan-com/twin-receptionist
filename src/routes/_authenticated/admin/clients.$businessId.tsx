@@ -21,6 +21,7 @@ import { describeHours, INDUSTRIES, industry as industryPreset, type IndustryKey
 import type { AppointmentStatus, LeadStage } from "@/lib/app/types";
 import { AutomationChips, AutomationIcon, CallSheet, LinkBox, READ_ONLY_HINT, useConsole } from "./-shared";
 import { BrandEditor } from "./-brand";
+import { CustomerBilling } from "@/components/app/CustomerBilling";
 import { BuyNumber } from "./-buy-number";
 import { ImportNumber } from "./-import-number";
 import { AttachedNumbers } from "./-own-numbers";
@@ -386,6 +387,7 @@ function ClientDetailPage() {
         ) : null}
       </Panel>
 
+      {!ws.viewing && !platform && ws.session?.role === "owner" ? <CustomerBilling key={co.id} companyId={co.id} editable /> : null}
       <details className="panel px-4 py-3" data-section="client-branding">
         <summary className="cursor-pointer text-[14px] font-semibold text-ink">Branding <span className="ml-1 text-[12px] font-normal text-ink-muted">logo and colours</span></summary>
         <div className="mt-4">

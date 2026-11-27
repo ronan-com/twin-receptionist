@@ -612,3 +612,10 @@ a, button, summary { -webkit-tap-highlight-color: transparent; }
  .preview-panel { padding:16px; }
  .preview-empty { padding:40px 16px; }
 }
+
+.preview-content > .preview-panel + .preview-panel { margin-top: 16px; }
+.preview-form { display: grid; gap: 10px; margin: 16px 0; max-width: 480px; }
+.preview-form label.f { margin: 0; }
+.preview-form .btn { justify-self: start; }
+.preview-dashboard .btn.p { background: var(--preview-accent, #32343c); }
+.preview-notice .btn { margin-left: auto; }

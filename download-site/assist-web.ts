@@ -118,6 +118,7 @@ export function assistPanel(h: Helpers, sid: string, b: Buyer, s: SetupData): st
 
   return `<section class="assist" id="assist">
 <h2>Set up for them</h2>
+  <p class="lead">Brand, domain &amp; setup</p>
 <p class="hint">Fill in any step for ${esc(b.name)}, or all of them. Keys are checked with the same code the wizard uses, stored sealed, and deleted when the install finishes. When they open their link, the steps you did show as done ("Set up by your provider") and the rest are theirs.</p>
 ${flash ? h.notice(flash.kind || (flash.ok ? "ok" : "err"), esc(flash.message)).replace('class="notice ', 'class="notice flash ') : ""}
 ${table}

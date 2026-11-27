@@ -2,6 +2,7 @@ import type { Business, Business as Receptionist, CallMessage } from "../../src/
 import { countryOfNumber, formatNumber, industry, INDUSTRIES, type IndustryKey } from "../../src/lib/shared";
 import { AuthError, createInvite, emailOf, requireRole, type Ctx } from "../accounts";
 import { changeBrand, ownBrand, uploadAsset } from "../brand";
+import { readCustomerBilling, writeCustomerBilling } from "../customerBilling";
 import type { AgencySnapshot } from "../assistant";
 import { answeredBusiness } from "../answered";
 import { audit } from "../audit";
@@ -1362,6 +1363,23 @@ export async function agencySnapshot(ctx: Ctx, phone: AgencySnapshot["phone"], s
 export async function consoleRoutes({ req, url, path, method, ctx, appUrl }: RouteArgs, deps: ConsoleDeps): Promise<Response | null> {
   const rest = path.slice("/api/console".length) || "/";
   const get = method === "GET" || method === "HEAD";
+  const billing = rest.match(/^\/companies\/([^/]+)\/billing$/);
+  if (billing) {
+    if (ctx.viewing || ctx.role !== "owner" || isPlatformScope(ctx)) throw new AuthError("Only the agency owner can manage customer billing.", 403);
+    const m = await oneCompany(ctx, billing[1]);
+    if (get) return json({ billing: await readCustomerBilling(m.org_id, m.id) });
+    if (method === "PUT") {
+      const plan = await writeCustomerBilling(m.org_id, m.id, await readBody(req));
+      await audit(ctx, "company.billing_updated", { companyId: m.id, summary: "Customer billing updated" }, { orgId: m.org_id });
+      return json({ billing: plan });
+    }
+    if (method === "DELETE") {
+      await sql`delete from customer_billing where company_id=${m.id} and org_id=${m.org_id}`;
+      await audit(ctx, "company.billing_removed", { companyId: m.id, summary: "Customer payment link removed" }, { orgId: m.org_id });
+      return json({ billing: null });
+    }
+    return null;
+  }
 
   if (get) {
     if (rest === "/overview") return json(await overview(ctx));

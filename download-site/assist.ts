@@ -5,7 +5,7 @@
 // if the admin ticks "keep for later changes". Every action is written to the audit log (support_log) with who and when,
 // never with a key. The buyer's wizard (wizard.ts) shows the steps done here as "Set up by your provider".
 import nodemailer from "nodemailer";
-import { CONFIG, RAILWAY, currentPackage, now, type Buyer } from "./lib";
+import { CONFIG, RAILWAY, currentPackage, markInvited, now, setupLink, unbrand, type Buyer } from "./lib";
 import { asAdmin } from "./ctx";
 import { actions, allow, appUrlOf, firstOpen, hostOf, kick, stepDone, type Flash } from "./setup";
 import { OPTIONAL_STEPS, STEPS, deleteSecret, getSecret, getSetup, hasSecret, putSecret, secretHint, updateSetup, type DnsRecord, type SetupData, type StepId } from "./store";
@@ -179,10 +179,23 @@ export async function installFor(b: Buyer, admin: string): Promise<Out> {
   return good("The install has started. The log below updates by itself.");
 }
 
-// ---------------- Send owner their login ----------------
+// ---------------- our site's own email (SITE_SMTP_URL + SITE_MAIL_FROM) ----------------
 const SITE_SMTP = () => (process.env.SITE_SMTP_URL || "").trim();
 const SITE_FROM = () => (process.env.SITE_MAIL_FROM || "").trim();
 export const mailConfigured = () => !!SITE_SMTP() && !!SITE_FROM();
+/** The sign-off and wording follow the agency's style: a neutral agency never sees our product or company name. */
+export const signOff = (b: Pick<Buyer, "style">) => (b.style === "neutral" ? "" : CONFIG.sellerName);
+export const styled = (b: Pick<Buyer, "style">, text: string) => (b.style === "neutral" ? unbrand(text) : text);
+/** Sends one plain-text email from our site. null = sent; otherwise a sentence for the admin. */
+export async function siteMail(b: Pick<Buyer, "id" | "style">, to: string, subject: string, text: string): Promise<string | null> {
+  if (!mailConfigured()) return "Email isn't set up on the setup site — copy and send it yourself.";
+  const t = nodemailer.createTransport(SITE_SMTP(), { connectionTimeout: 15000, greetingTimeout: 15000, socketTimeout: 20000 } as any);
+  try { await t.sendMail({ from: SITE_FROM(), to, subject: styled(b, subject), text: styled(b, text) }); return null; }
+  catch (e: any) { console.error(`[admin] email to buyer ${b.id} failed: ${e?.code || e?.name || "error"}`); return "The email didn't send. Copy the link and send it yourself."; }
+  finally { t.close(); }
+}
+
+// ---------------- Send owner their login ----------------
 export type OwnerLogin = { ok: true; kind: "reset" | "first"; url: string; minutes: number; to: string; mailed: boolean; mailError?: string } | { ok: false; message: string };
 /**
  * The owner's way in: a one-time "set your password" link from their app when an owner account exists (the same call as the
@@ -204,20 +217,81 @@ export async function ownerLogin(b: Buyer, admin: string, email: boolean, doFetc
   const to = s.brand?.ownerEmail || b.email;
   let mailed = false, mailError: string | undefined;
   if (email) {
-    if (!mailConfigured()) mailError = "Our site has no outgoing email set up, so copy the link and send it yourself.";
-    else {
-      const name = s.brand?.productName || "your agency";
-      const text = kind === "reset"
-        ? `Hi,\n\n${name} is ready. Open this link to choose your password and sign in as the owner:\n\n${url}\n\nIt works once and runs out in ${minutes} minutes. If it has run out, reply to this email and we'll send a new one.\n\n${CONFIG.sellerName}`
-        : `Hi,\n\n${name} is ready. Open ${url} and create your account with this email address (${to}); only that address can create the first account. Then pick a password.\n\n${CONFIG.sellerName}`;
-      const t = nodemailer.createTransport(SITE_SMTP(), { connectionTimeout: 15000, greetingTimeout: 15000, socketTimeout: 20000 } as any);
-      try { await t.sendMail({ from: SITE_FROM(), to, subject: `${name} is ready`, text }); mailed = true; }
-      catch { mailError = "The email didn't send. Copy the link and send it yourself."; }
-      finally { t.close(); }
-    }
+    const m = ownerLoginEmail(b, s, kind, url, minutes, to);
+    mailError = (await siteMail(b, to, m.subject, m.text)) ?? undefined;
+    mailed = !mailError;
+    if (mailed) markInvited(b.id);
   }
   audit(b, admin, kind === "reset" ? "owner login: reset link made" : "owner login: first-account link", `${mailed ? `emailed to ${to}` : email ? "email failed, link shown" : "link shown"}`);
   return { ok: true, kind, url, minutes, to, mailed, mailError };
+}
+export function ownerLoginEmail(b: Pick<Buyer, "style">, s: SetupData, kind: "reset" | "first", url: string, minutes: number, to: string): { subject: string; text: string } {
+  const name = s.brand?.productName || "Your agency";
+  const sign = signOff(b) ? `\n\n${signOff(b)}` : "";
+  const text = kind === "reset"
+    ? `Hi,\n\n${name} is ready. Open this link to choose your password and sign in as the owner:\n\n${url}\n\nIt works once and runs out in ${minutes} minutes. If it has run out, reply to this email and we'll send a new one.${sign}`
+    : `Hi,\n\n${name} is ready. Open ${url} and create your account with this email address (${to}); only that address can create the first account. Then pick a password.${sign}`;
+  return { subject: `${name} is ready`, text };
+}
+
+// ---------------- Invite them (the last step: we did the setup, now they get their way in) ----------------
+export interface InviteState {
+  /** dashboard: their install is live, so they get their owner login. setup: not finished, so they get their setup link. */
+  kind: "dashboard" | "setup";
+  to: string;
+  /** What the admin can copy and send by hand: their dashboard address, or their private setup link. */
+  link: string;
+  /** Steps we filled in for them, and what's still theirs to do (setup only). */
+  done: string[];
+  left: string[];
+}
+export function inviteState(b: Buyer, s: SetupData): InviteState {
+  if (s.phase === "done") return { kind: "dashboard", to: s.brand?.ownerEmail || b.email, link: appUrlOf(s) || "", done: [], left: [] };
+  const mine = hostOfBuyer(b.id);
+  const link = mine?.dns_ok_at ? `https://${mine.host}/` : setupLink(b.code);
+  const rows = stepRows(b, s);
+  const done = rows.filter((r) => r.by === "you").map((r) => r.title);
+  const left = installBlockers(b, s);
+  if (s.phase === "idle" || s.phase === "failed" || s.phase === "create_failed") left.push("Install");
+  return { kind: "setup", to: b.email, link, done, left };
+}
+export function setupInviteEmail(b: Buyer, st: InviteState): { subject: string; text: string } {
+  const first = b.name.split(/\s+/)[0] || b.name;
+  const did = st.done.length ? `We've already done this part for you: ${st.done.join(", ")}.\n\n` : "";
+  const todo = st.left.length ? `What's left for you: ${st.left.join(", ")}.` : "Everything's filled in; open the link to see where it's up to.";
+  const sign = signOff(b) ? `\n\n${signOff(b)}` : "";
+  return {
+    subject: b.style === "neutral" ? "Your private setup link" : `Your private ${CONFIG.productName} setup link`,
+    text: `Hi ${first},\n\nYour AI receptionist agency is being set up. ${did}${todo}\n\nOpen your private setup link to carry on:\n\n${st.link}\n\nIt's just for you, so please don't share it. You can close it and come back whenever you like.${sign}`,
+  };
+}
+export type InviteOut = { ok: true; kind: InviteState["kind"]; to: string; link: string; mailed: boolean; mailError?: string; minutes?: number; loginKind?: "reset" | "first" } | { ok: false; message: string };
+/**
+ * "Send invite email to <email>": their dashboard login if they're live, otherwise their setup link with what's done and what's left.
+ * Records invited_at when the email goes. With no site email set up, nothing is sent and the link comes back to copy.
+ */
+export async function sendInvite(b: Buyer, admin: string, doFetch: typeof fetch = fetch): Promise<InviteOut> {
+  if (b.revoked_at) return { ok: false, message: "Their link is turned off. Turn it back on first." };
+  const s = getSetup(b.id);
+  const st = inviteState(b, s);
+  if (st.kind === "dashboard") {
+    const r = await ownerLogin(b, admin, true, doFetch);
+    if (!r.ok) return r;
+    return { ok: true, kind: "dashboard", to: r.to, link: r.url, mailed: r.mailed, mailError: r.mailError, minutes: r.minutes, loginKind: r.kind };
+  }
+  const wait = allow(`invite:${b.id}`, 6, 10 * 60_000);
+  if (wait) return { ok: false, message: `That was a lot of tries. Wait ${Math.ceil(wait / 60)} minutes.` };
+  const m = setupInviteEmail(b, st);
+  const err = await siteMail(b, st.to, m.subject, m.text);
+  if (!err) markInvited(b.id);
+  audit(b, admin, "invite: setup link", err ? `not sent: ${err.slice(0, 80)}` : `emailed to ${st.to}`);
+  return { ok: true, kind: "setup", to: st.to, link: st.link, mailed: !err, mailError: err ?? undefined };
+}
+/** "I've sent it myself": records the invite without our email. */
+export function markInvitedByHand(b: Buyer, admin: string): Out {
+  markInvited(b.id);
+  audit(b, admin, "invite: marked as sent by hand");
+  return good("Marked as invited.");
 }
 
 // ---------------- Domain and DNS ----------------

@@ -156,7 +156,7 @@ function lookupBuyer(code: string, ip: string): { buyer?: Buyer; error?: Respons
     const retry = allow(`bad:${ip}`, CONFIG.lookupsPerMinute, 60_000);
     return { error: retry ? tooMany(retry) : html(badCodePage(), 404) };
   }
-  if (b.revoked_at) return { error: html(revokedPage(), 410) };
+  if (b.revoked_at) return { error: html(b.style === "neutral" ? inactivePage("neutral") : revokedPage(), 410) };
   return { buyer: b };
 }
 

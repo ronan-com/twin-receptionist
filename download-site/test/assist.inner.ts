@@ -397,7 +397,7 @@ describe("install for them", () => {
     expect(seen[0]).toContain("https://app.login.test/api/support/owner-reset-link Bearer sc_");
     const first = await A.ownerLogin(b, ADMIN, true, reply(404, { ok: false, error: "not_supported", message: "There's no agency owner to reset yet." }));
     expect(first).toMatchObject({ ok: true, kind: "first", url: "https://app.login.test/", mailed: false });
-    expect((first as any).mailError).toMatch(/no outgoing email/);
+    expect((first as any).mailError).toMatch(/Email isn.t set up on the setup site/);
     const down = await A.ownerLogin(b, ADMIN, false, (async () => { throw new Error("down"); }) as any);
     expect(down.ok).toBe(false);
     const entries = log(b).map((e) => `${e.action} ${e.note}`).join("\n");

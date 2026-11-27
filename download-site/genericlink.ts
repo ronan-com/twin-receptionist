@@ -82,7 +82,7 @@ export function rotateLink(admin: string, id: number): boolean {
 
 // ---------------- admin panel ----------------
 interface PanelHelpers { hiddenT: (sid: string) => string; copyBtn: (v: string) => string }
-/** The onboarding link panel at the top of the Agencies page: two links, Chloe-branded and generic (nothing of ours shows),
+/** The onboarding link panel at the top of the Agencies page: two links, generic (the default: nothing of ours shows) and Chloe-branded,
  *  each with on/off, the address with Copy, and "Make a new link". */
 export function linksPanel(sid: string, h: PanelHelpers): string {
   const T = h.hiddenT(sid);
@@ -100,8 +100,8 @@ ${l && l.enabled ? `<div class="linkrow"><code id="${style === "neutral" ? "neut
   return `<section class="card" id="onboarding-link">
 <h2>Onboarding links</h2>
 <p class="lead">Reusable addresses anyone can open to start their own onboarding; each person then gets their own private setup link. Or leave them off and send a private link per person (Add an agency, below).</p>
-${row("branded", `${CONFIG.productName} onboarding link`, `Shows the ${CONFIG.productName} name and look.`)}
-${row("neutral", "Generic onboarding link", "No Chloe name or logo anywhere, for sharing under someone else's name.")}
+${row("neutral", "Generic onboarding link (default)", "No Chloe name or logo anywhere. Use this one unless you want the Chloe look.")}
+${row("branded", "Chloe-branded onboarding link", `Shows the ${CONFIG.productName} name and look.`)}
 </section>`;
 }
 

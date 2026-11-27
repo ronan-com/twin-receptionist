@@ -82,6 +82,7 @@ try {
 
   // ---- add buyers ----
   await p.type("#name", "Wendy Welcome"); await p.type("#bemail", "wendy@example.com");
+  await p.click("input[name=welcome]"); // "Email them now" is off by default
   await click(p, "form[action='/admin/buyers'] button[type=submit]");
   const link = await text(p, "#new-link");
   check("admin: adding a buyer shows their private link", /\/setup\/[A-Za-z0-9_-]{22}$/.test(link), link);

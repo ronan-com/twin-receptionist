@@ -354,3 +354,17 @@ input[type=color] { display: block; width: 64px; height: 40px; padding: 2px; bor
 .phone-alt .extras-head { margin-top: 0; }
 .skip-phones { margin-top: 18px; text-align: center; font-size: 13px; }
 .skip-phones .linkbtn { color: var(--muted); }
+/* "I need a person" (wizhelp.ts): at the bottom of every step. */
+.person { margin-top: 14px; }
+.person-ask > summary { cursor: pointer; display: inline-block; font-size: 13.5px; font-weight: 600; color: var(--muted); padding: 6px 12px; border: 1px solid var(--line); border-radius: 999px; background: #fff; list-style: none; }
+.person-ask > summary::-webkit-details-marker { display: none; }
+.person-ask[open] > summary { color: var(--ink); }
+.person-form { margin-top: 10px; background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; }
+.person-form textarea { width: 100%; box-sizing: border-box; font: inherit; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; }
+.person-form input[type="tel"] { margin-top: 8px; }
+.person-req { background: var(--card); border: 1px solid var(--amber-line); border-radius: 12px; padding: 12px 16px; margin-bottom: 10px; }
+.person-head { display: flex; gap: 8px; align-items: center; margin-bottom: 6px; }
+.person-msg { border-top: 1px solid var(--line); padding: 8px 0; font-size: 14px; }
+.person-msg .who span { color: var(--muted); font-size: 12px; }
+.person-msg.us .who b { color: var(--indigo, #635bff); }
+.person-msg .text { white-space: pre-wrap; overflow-wrap: anywhere; margin-top: 2px; }

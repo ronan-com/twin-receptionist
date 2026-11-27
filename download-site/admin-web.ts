@@ -33,7 +33,7 @@ import { alertHistory } from "./alerts";
 import { DEMO_READY } from "./demo";
 import { ALL_SECRETS, STEPS, getSetup, logRead, resetSetup, secretHint, type SetupData } from "./store";
 import { wizardPage } from "./wizard";
-import { deleteTickets, fileOf, navLinkHtml, replyToTicket, setTicketStatus, ticketById, ticketViewHtml, ticketsListHtml, type Status as TicketStatus } from "./tickets";
+import { agenciesNavHtml, liveAlerts, needsHelp, deleteTickets, fileOf, navLinkHtml, replyToTicket, setTicketStatus, ticketById, ticketViewHtml, ticketsListHtml, type Status as TicketStatus } from "./tickets";
 import { assistPanel, assistRoute, inviteCard, isInstalling, statusJson } from "./assist-web";
 import { removeHost } from "./hosts";
 import { createLink, rotateLink, toggleLink, listLinks } from "./genericlink";
@@ -174,11 +174,13 @@ function page(title: string, body: string, opts: { sid?: string; email?: string;
 <link rel="stylesheet" href="/wizard.css">
 <link rel="stylesheet" href="/tickets.css">
 <script src="/wizard.js" defer></script>
+${opts.sid ? `<script src="/admin-live.js" defer></script>` : ""}
 </head>
-<body class="adm">
+<body class="adm"${opts.sid ? ` data-live-alerts="/admin/alerts/live" data-since="${esc(now())}"` : ""}>
+${opts.sid ? `<div class="livebar" id="livebar" role="alert" hidden><span class="livetext"></span><span><a class="liveopen" href="/admin/tickets">Open</a> <button type="button" class="livex" aria-label="Dismiss">Dismiss</button></span></div>` : ""}
 <div class="ribbon" aria-hidden="true"></div>
 <header class="top"><a class="mark" href="/admin"><span>${esc(CONFIG.sellerName)} · Admin</span></a>
-<nav>${opts.sid ? `<a href="/admin">Agencies</a> <a href="/admin/problems">Problems</a> <a href="/admin/alerts">Alerts</a> ${navLinkHtml()} <span class="who">${esc(opts.email || "")}</span><form method="post" action="/admin/logout"><input type="hidden" name="t" value="${esc(csrf(opts.sid))}"><button class="linkbtn" type="submit">Sign out</button></form>` : ""}</nav></header>
+<nav>${opts.sid ? `${agenciesNavHtml()} <a href="/admin/problems">Problems</a> <a href="/admin/alerts">Alerts</a> ${navLinkHtml()} <button type="button" class="linkbtn notifbtn" id="notifbtn" hidden>Turn on desktop alerts</button> <span class="who">${esc(opts.email || "")}</span><form method="post" action="/admin/logout"><input type="hidden" name="t" value="${esc(csrf(opts.sid))}"><button class="linkbtn" type="submit">Sign out</button></form>` : ""}</nav></header>
 <div class="shell wiz admshell"${opts.live ? ` data-live="1" data-status="${esc(opts.live.status)}" data-rev="${esc(opts.live.rev)}"` : ""}><main>${body}</main></div>
 </body>
 </html>`;
@@ -228,8 +230,9 @@ function listPage(sid: string, email: string, q: string, filter: string, flash =
   const shown = all.filter((r) => (!filter || r.status === filter) && (!needle || [r.b.name, r.b.email, r.s.brand?.productName, r.s.domain?.host].some((v) => String(v || "").toLowerCase().includes(needle))));
   const snaps = allSnapshots();
   const syncing = all.filter((r) => seen(snaps.get(r.b.id) ?? null) === "live").length;
+  const help = needsHelp();
   const tr = shown.map((r) => { const st = snaps.get(r.b.id) ?? null; return `<tr>
-<td data-l="Agency"><a href="/admin/b/${r.b.id}"><b>${esc(r.b.name)}</b></a>${problemBadge(st)}<br><span class="hint">${esc(r.b.email)}</span></td>
+<td data-l="Agency"><a href="/admin/b/${r.b.id}"><b>${esc(r.b.name)}</b></a>${help.has(r.b.id) ? ` <a class="pill failed" href="/admin/tickets/${help.get(r.b.id)}" title="They asked for a person during setup">Needs help</a>` : ""}${problemBadge(st)}<br><span class="hint">${esc(r.b.email)}</span></td>
 <td data-l="Brand">${esc(r.s.brand?.productName || "")}</td>
 <td data-l="Status">${pill(r.status)}</td>
 <td data-l="Invited">${invitedCell(r.b)}</td>
@@ -348,7 +351,8 @@ function buyerPage(sid: string, email: string, b: Buyer, flash = "") {
   return page(b.name, `${flash}
 <p><a href="/admin">← All agencies</a></p>
 <section class="card">
-<h1>${esc(b.name)}${b.demo === 1 ? ` <span class="pill demo">Test</span>` : ""}</h1>
+<h1>${esc(b.name)}${b.demo === 1 ? ` <span class="pill demo">Test</span>` : ""}${needsHelp().has(b.id) ? ` <span class="pill failed">Needs help</span>` : ""}</h1>
+${needsHelp().has(b.id) ? notice("err", `<b>They asked for a person during setup.</b> <a href="/admin/tickets/${needsHelp().get(b.id)}">Read and reply</a> · <a href="#assist">Set up for them</a>`) : ""}
 <div class="summary">${rowsHtml.filter(([, v]) => v).map(([k, v]) => `<div><span>${k}</span><b>${v}</b></div>`).join("")}</div>
 ${styleForm}
 ${s.error && st === "failed" ? notice("err", esc(s.error)) : ""}
@@ -481,6 +485,16 @@ export async function adminRoute(req: Request, url: URL, c: AdminCtx): Promise<R
   }
 
   const sess = sessionOf(req);
+  // The live alert every admin page polls (admin-live.js): help requests waiting on us, and what came in since.
+  if (path === "/admin/alerts/live") {
+    const json = (o: unknown, status = 200) => new Response(JSON.stringify(o), { status, headers: { "Content-Type": "application/json", "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff" } });
+    if (!sess) return json({ error: "sign in" }, 401);
+    if (method !== "GET") return json({ error: "GET only" }, 405);
+    const raw = url.searchParams.get("since") || "";
+    const t = /^\d{10,15}$/.test(raw) ? Number(raw) : Date.parse(raw);
+    const since = Number.isFinite(t) ? new Date(Math.min(t, Date.now())).toISOString() : now();
+    return json({ ok: true, now: now(), ...liveAlerts(since) });
+  }
   if (!sess) return method === "GET" && path === "/admin" ? c.html(loginPage()) : method === "GET" ? c.redirect("/admin") : c.html(loginPage("Please sign in again."), 401);
 
   // ---- every change: same origin + the session's CSRF token ----

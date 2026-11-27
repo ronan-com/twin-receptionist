@@ -223,6 +223,8 @@ export interface SetupData {
   purgedAt?: string;
   sshKeyAdded?: boolean;
   flash?: { kind: "ok" | "err" | "info"; text: string; form?: Record<string, string>; link?: string };
+  /** The last error message each step showed (kept after the flash is gone), for "I need a person" (wizhelp.ts). Never a key. */
+  lastErrors?: Partial<Record<StepId, { text: string; at: string }>>;
   /**
    * "Set up for them" (assist.ts): steps our admin filled in for the buyer, so the wizard shows them done with
    * "Set up by your provider" and a change link. Never holds a secret.

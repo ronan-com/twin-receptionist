@@ -35,7 +35,7 @@ function tables() {
     CREATE TABLE IF NOT EXISTS tickets (
       id INTEGER PRIMARY KEY AUTOINCREMENT, buyer_id INTEGER NOT NULL, app_id TEXT NOT NULL, subject TEXT NOT NULL,
       status TEXT NOT NULL DEFAULT 'open', context TEXT NOT NULL DEFAULT '{}', from_name TEXT NOT NULL DEFAULT '',
-      created_at TEXT NOT NULL, updated_at TEXT NOT NULL, UNIQUE (buyer_id, app_id)
+      created_at TEXT NOT NULL, updated_at TEXT NOT NULL, source TEXT NOT NULL DEFAULT 'app', UNIQUE (buyer_id, app_id)
     );
     CREATE INDEX IF NOT EXISTS tickets_status ON tickets (status, updated_at);
     CREATE TABLE IF NOT EXISTS ticket_messages (
@@ -48,10 +48,14 @@ function tables() {
     );
     CREATE INDEX IF NOT EXISTS ticket_events_buyer ON ticket_events (buyer_id, id);
   `);
+  // Older sites made the table before "source" existed: app = sent from their installed app, wizard = "I need a person" on the setup wizard.
+  if (!(db().query("PRAGMA table_info(tickets)").all() as { name: string }[]).some((c) => c.name === "source")) db().exec("ALTER TABLE tickets ADD COLUMN source TEXT NOT NULL DEFAULT 'app'");
   made = true;
 }
+export const ticketTables = tables;
 
-export interface Ticket { id: number; buyer_id: number; app_id: string; subject: string; status: Status; context: string; from_name: string; created_at: string; updated_at: string }
+export type Source = "app" | "wizard";
+export interface Ticket { id: number; buyer_id: number; app_id: string; subject: string; status: Status; context: string; from_name: string; created_at: string; updated_at: string; source: Source }
 export interface TicketMessage { id: number; ticket_id: number; author: "agency" | "support"; author_name: string; app_msg_id: string | null; body: string; at: string; file_type: string | null; file_name: string | null; has_file: number }
 export interface TicketContext { url: string; appVersion: string; browser: string; agencyId: string; receptionistId: string; page: string }
 
@@ -66,7 +70,7 @@ export function redactSecrets(s: string): string {
     .replace(/\bsk-[A-Za-z0-9_-]{16,}\b/g, "[hidden key]")
     .replace(/[A-Za-z0-9_\-+/=]{40,}/g, "[hidden key]");
 }
-const text = (v: unknown, max: number, multiline = false) => {
+export const text = (v: unknown, max: number, multiline = false) => {
   const t = typeof v === "string" ? v.replace(/\r\n?/g, "\n").replace(multiline ? /[\u0000-\u0009\u000b-\u001f\u007f]/g : /[\u0000-\u001f\u007f]/g, multiline ? "" : " ").trim() : "";
   return redactSecrets(t).slice(0, max);
 };
@@ -125,8 +129,9 @@ export const ticketHooks = {
 
 // ---------------- storing ----------------
 export const ticketById = (id: number): Ticket | null => (tables(), db().query("SELECT * FROM tickets WHERE id = ?").get(id) as Ticket | null);
-const touch = (id: number, status: Status) => db().query("UPDATE tickets SET status = ?, updated_at = ? WHERE id = ?").run(status, now(), id);
-const event = (t: Ticket, messageId: number | null) => db().query("INSERT INTO ticket_events (buyer_id, ticket_id, message_id, at) VALUES (?, ?, ?, ?)").run(t.buyer_id, t.id, messageId, now());
+export const touch = (id: number, status: Status) => db().query("UPDATE tickets SET status = ?, updated_at = ? WHERE id = ?").run(status, now(), id);
+// A setup-wizard request has no app to tell: its replies show on the wizard page instead.
+const event = (t: Ticket, messageId: number | null) => t.source === "wizard" ? undefined : db().query("INSERT INTO ticket_events (buyer_id, ticket_id, message_id, at) VALUES (?, ?, ?, ?)").run(t.buyer_id, t.id, messageId, now());
 
 export type ReceiveResult = { status: number; body: Record<string, unknown> };
 
@@ -139,7 +144,7 @@ export async function receiveTicket(buyerId: number, rawBody: string): Promise<R
   const appId = typeof t?.id === "string" && UUID.test(t.id) ? t.id.toLowerCase() : "";
   if (!appId) return { status: 400, body: { error: "ticket id missing" } };
   const msgs: any[] = Array.isArray(raw.messages) ? raw.messages.slice(0, MAX_MESSAGES_PER_POST) : [];
-  const existing = db().query("SELECT * FROM tickets WHERE buyer_id = ? AND app_id = ?").get(buyerId, appId) as Ticket | null;
+  const existing = db().query("SELECT * FROM tickets WHERE buyer_id = ? AND app_id = ? AND source = 'app'").get(buyerId, appId) as Ticket | null;
   const subject = text(t.subject, MAX_SUBJECT);
   if (!existing && (!subject || !msgs.length)) return { status: 400, body: { error: "a ticket needs a subject and a message" } };
   if (!existing && (db().query("SELECT COUNT(*) AS n FROM tickets WHERE buyer_id = ? AND status <> 'closed'").get(buyerId) as { n: number }).n >= MAX_OPEN_PER_AGENCY) return { status: 429, body: { error: "too many open tickets" } };
@@ -181,7 +186,7 @@ export async function receiveTicket(buyerId: number, rawBody: string): Promise<R
 /** What happened on our side since `since`: replies and status changes, for this agency only. */
 export function ticketUpdates(buyerId: number, since: number) {
   tables();
-  const ev = db().query("SELECT e.id, e.ticket_id, e.message_id FROM ticket_events e WHERE e.buyer_id = ? AND e.id > ? ORDER BY e.id LIMIT 100").all(buyerId, Math.max(0, since)) as { id: number; ticket_id: number; message_id: number | null }[];
+  const ev = db().query("SELECT e.id, e.ticket_id, e.message_id FROM ticket_events e JOIN tickets t ON t.id = e.ticket_id AND t.source = 'app' WHERE e.buyer_id = ? AND e.id > ? ORDER BY e.id LIMIT 100").all(buyerId, Math.max(0, since)) as { id: number; ticket_id: number; message_id: number | null }[];
   const items = ev.map((e) => {
     const t = ticketById(e.ticket_id);
     const m = e.message_id ? (db().query("SELECT id, body, at, author_name FROM ticket_messages WHERE id = ? AND author = 'support'").get(e.message_id) as { id: number; body: string; at: string; author_name: string } | null) : null;
@@ -283,11 +288,11 @@ export function ticketsListHtml(filter: Status | "all"): string {
   const tab = (s: Status | "all", label: string, n: number) => `<a class="tab${s === filter ? " on" : ""}" href="/admin/tickets${s === "open" ? "" : `?status=${s}`}">${label} <span class="n">${n}</span></a>`;
   return `${CSS}<section class="card">
 <h1>Help tickets</h1>
-<p class="lead">Requests from agencies, sent from their own app. A reply from here shows up in their dashboard within a few minutes.</p>
+<p class="lead">Requests from agencies: from their own app (a reply shows up in their dashboard within a few minutes) and, marked <span class="pill in-setup">Setup</span>, from someone stuck in the setup wizard (a reply shows on their setup page).</p>
 <div class="tabs">${tab("open", "Open", counts.open)}${tab("waiting", "Waiting on agency", counts.waiting)}${tab("closed", "Closed", counts.closed)}${tab("all", "All", counts.open + counts.waiting + counts.closed)}</div>
 ${rows.length ? `<div style="overflow-x:auto"><table class="records tickets"><thead><tr><th>Agency</th><th>Subject</th><th>From</th><th>Status</th><th>Age</th></tr></thead><tbody>${rows.map((r) => `<tr>
 <td data-l="Agency"><a href="/admin/b/${r.buyer_id}"><b>${esc(r.agency)}</b></a></td>
-<td data-l="Subject"><a href="/admin/tickets/${r.id}">${esc(r.subject)}</a></td>
+<td data-l="Subject"><a href="/admin/tickets/${r.id}">${esc(r.subject)}</a>${r.source === "wizard" ? ` <span class="pill in-setup" title="Asked for a person during setup">Setup</span>${wizardCtx(r).lastError ? `<br><span class="hint bad">${esc(wizardCtx(r).lastError!.slice(0, 140))}</span>` : ""}` : ""}</td>
 <td data-l="From">${esc(r.from_name)}</td>
 <td data-l="Status">${pill(r.status)}</td>
 <td data-l="Age" title="${esc(when(r.created_at))} UTC">${esc(ago(r.last_at))}</td></tr>`).join("")}</tbody></table></div>` : `<p class="hint">${filter === "open" ? "Nothing open. Nice." : "No tickets here."}</p>`}
@@ -298,7 +303,11 @@ export function ticketViewHtml(t: Ticket, hidden: string, flash = ""): string {
   const ctx = (() => { try { return JSON.parse(t.context) as Partial<TicketContext>; } catch { return {}; } })();
   const buyer = db().query("SELECT id, name FROM buyers WHERE id = ?").get(t.buyer_id) as { id: number; name: string } | null;
   const msgs = messagesOf(t.id);
-  const ctxRows: [string, string][] = [["Page", ctx.url ? esc(ctx.url) : ""], ["App version", esc(ctx.appVersion || "")], ["Browser", esc(ctx.browser || "")], ["Agency id", ctx.agencyId ? `<code>${esc(ctx.agencyId)}</code>` : ""], ["Receptionist id", ctx.receptionistId ? `<code>${esc(ctx.receptionistId)}</code>` : ""]];
+  const wz = t.source === "wizard" ? wizardCtx(t) : null;
+  const ctxRows: [string, string][] = wz
+    ? [["Where", `<span class="pill in-setup">Setup</span> step: ${esc(wz.stepLabel || wz.step || "")}`], ["Last error on that step", wz.lastError ? `<span class="bad">${esc(wz.lastError)}</span>` : "None shown"], ["Brand", esc(wz.brand || "")],
+      ["Keys they've given", wz.keysSet?.length ? esc(wz.keysSet.join(", ")) : "None yet"], ["Reach them at", [wz.contactEmail, wz.contactPhone].filter(Boolean).map((v) => esc(v!)).join(" · ")], ["Browser", esc(wz.browser || "")]]
+    : [["Page", ctx.url ? esc(ctx.url) : ""], ["App version", esc(ctx.appVersion || "")], ["Browser", esc(ctx.browser || "")], ["Agency id", ctx.agencyId ? `<code>${esc(ctx.agencyId)}</code>` : ""], ["Receptionist id", ctx.receptionistId ? `<code>${esc(ctx.receptionistId)}</code>` : ""]];
   const act = (what: string, label: string, cls: string) => `<form method="post" action="/admin/tickets/${t.id}/${what}">${hidden}<button class="${cls}" type="submit">${label}</button></form>`;
   return `${CSS}<p><a href="/admin/tickets">← Help tickets</a></p>
 <section class="card">
@@ -306,7 +315,9 @@ ${flash}
 <div class="titlerow"><h1>${esc(t.subject)}</h1>${pill(t.status)}</div>
 <p class="lead">${buyer ? `<a href="/admin/b/${buyer.id}"><b>${esc(buyer.name)}</b></a>` : "A deleted agency"}${t.from_name ? ` · from ${esc(t.from_name)}` : ""} · opened ${esc(when(t.created_at))} UTC</p>
 <div class="summary">${ctxRows.filter(([, v]) => v).map(([k, v]) => `<div><span>${k}</span><b>${v}</b></div>`).join("")}</div>
-${buyer ? `<p class="hint">On their agency page: <a href="/admin/b/${buyer.id}">health, problems and recent logs</a>, and "View as" while Support access is on (it is unless they switched it off).</p>` : ""}
+${buyer && wz ? `<div class="nav"><div class="right left"><a class="btn o" href="/admin/b/${buyer.id}">Agency page</a><a class="btn p" href="/admin/b/${buyer.id}#assist">Set up for them</a><a class="btn o" href="/admin/b/${buyer.id}/setup${wz.step ? `?step=${esc(wz.step)}` : ""}">See their step (read-only)</a></div></div>
+<p class="hint">Your reply shows on their setup page next time they load it. They asked from the setup wizard, so nothing is installed yet${wz.contactEmail ? `; you can also email them at ${esc(wz.contactEmail)}` : ""}.</p>` : ""}
+${buyer && !wz ? `<p class="hint">On their agency page: <a href="/admin/b/${buyer.id}">health, problems and recent logs</a>, and "View as" while Support access is on (it is unless they switched it off).</p>` : ""}
 <div class="thread">${msgs.map((m) => `<div class="msg ${m.author}"><div class="who"><b>${m.author === "support" ? `You${m.author_name ? ` (${esc(m.author_name)})` : ""}` : esc(m.author_name || t.from_name || "Agency")}</b> <span class="hint">${esc(when(m.at))} UTC</span></div>
 <div class="text">${esc(m.body)}</div>${m.has_file ? `<a href="/admin/tickets/${t.id}/file/${m.id}" target="_blank" rel="noopener noreferrer"><img class="shot" src="/admin/tickets/${t.id}/file/${m.id}" alt="Screenshot${m.file_name ? `: ${esc(m.file_name)}` : ""}"></a>` : ""}</div>`).join("")}</div>
 ${t.status === "closed" ? `<p class="hint">This ticket is closed. Replying reopens it for them.</p>` : ""}
@@ -318,5 +329,35 @@ ${t.status === "closed" ? `<p class="hint">This ticket is closed. Replying reope
 </section>`;
 }
 
+// ---------------- the setup wizard's "I need a person" (wizhelp.ts makes them) ----------------
+export interface WizardContext { source: "wizard"; step: string; stepLabel: string; lastError: string; brand: string; keysSet: string[]; browser: string; contactEmail: string; contactPhone: string }
+export function wizardCtx(t: Pick<Ticket, "context">): Partial<WizardContext> { try { return JSON.parse(t.context); } catch { return {}; } }
+/** Agencies with a setup-wizard request waiting on us (status open), with the newest ticket id. */
+export function needsHelp(): Map<number, number> {
+  tables();
+  const out = new Map<number, number>();
+  for (const r of db().query("SELECT buyer_id, MAX(id) AS id FROM tickets WHERE source = 'wizard' AND status = 'open' GROUP BY buyer_id").all() as { buyer_id: number; id: number }[]) out.set(r.buyer_id, r.id);
+  return out;
+}
+/**
+ * For the live alert on every admin page (/admin/alerts/live): how many requests are waiting on us, and the newest
+ * few that came in (or got a new message) after `since`. Never a message body: just who, where and a link.
+ */
+export function liveAlerts(sinceIso: string) {
+  tables();
+  const rows = db().query("SELECT t.id, t.buyer_id, t.source, t.subject, t.context, t.from_name, t.updated_at, COALESCE(b.name, 'Deleted agency') AS agency FROM tickets t LEFT JOIN buyers b ON b.id = t.buyer_id WHERE t.status = 'open' AND t.updated_at > ? ORDER BY t.updated_at DESC LIMIT 5").all(sinceIso) as (Ticket & { agency: string })[];
+  return {
+    open: openCount(),
+    needsHelp: needsHelp().size,
+    items: rows.map((r) => {
+      const w = r.source === "wizard" ? wizardCtx(r) : null;
+      return { id: r.id, agency: r.agency, source: r.source, step: w?.stepLabel || "", at: r.updated_at, url: `/admin/tickets/${r.id}`,
+        text: w ? `${r.agency} needs help at the ${w.stepLabel || "setup"} step` : `${r.agency} sent a help request: ${r.subject.slice(0, 80)}` };
+    }),
+  };
+}
+/** "Agencies" in the nav, with a red count of agencies stuck in setup and asking for a person. */
+export const agenciesNavHtml = (): string => { const n = needsHelp().size; return `<a href="/admin" data-nav="agencies">Agencies${n ? ` <span class="badge" data-badge="help" title="${n} need${n === 1 ? "s" : ""} help with setup">${n}</span>` : ` <span class="badge" data-badge="help" hidden></span>`}</a>`; };
+
 /** The nav link, with a count when something is waiting for us. */
-export const navLinkHtml = (): string => { const n = openCount(); return `<a href="/admin/tickets">Help tickets${n ? ` <span class="badge" title="${n} open">${n}</span>` : ""}</a>`; };
+export const navLinkHtml = (): string => { const n = openCount(); return `<a href="/admin/tickets" data-nav="tickets">Help tickets${n ? ` <span class="badge" data-badge="open" title="${n} open">${n}</span>` : ` <span class="badge" data-badge="open" hidden></span>`}</a>`; };

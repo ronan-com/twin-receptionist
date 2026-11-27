@@ -32,7 +32,7 @@ export const chatBubble = (m: ChatMount) => !chatEnabled() ? "" : `<div id="chat
 <section class="chat-panel" id="chat-panel" role="dialog" aria-label="Setup help" hidden>
   <header><b>Setup help</b><button type="button" class="chat-x" aria-label="Close help">&times;</button></header>
   <div class="chat-log" aria-live="polite"></div>
-  <p class="chat-note">Please don't paste your keys or tokens here.</p>
+  <p class="chat-note">Please don't paste your keys or tokens here.${m.url.startsWith("/setup/") ? ` <a href="#person" class="chat-person">Ask a person instead</a>` : ""}</p>
   <form class="chat-form"><label class="chat-sr" for="chat-q">Your question</label><textarea id="chat-q" rows="2" maxlength="${CHAT_MAX_MESSAGE}" placeholder="Ask anything about setup" autocomplete="off"></textarea><button type="submit" class="chat-send">Send</button></form>
 </section>
 <button type="button" class="chat-fab" aria-expanded="false" aria-controls="chat-panel">Need help?</button>

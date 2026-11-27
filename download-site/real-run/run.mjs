@@ -24,16 +24,16 @@
 //   --with-email         also add Resend (needs RESEND_API_KEY; implies --with-domain: Resend sends from your domain)
 //   --with-domain        also add the custom domain app.<TEST_DOMAIN> (manual DNS records, polled with dig)
 //   --dry-run            use local fakes (mock/serve.ts) with fake keys; DNS records are "added" by the script
-//   OWNER_EMAIL          buyer + owner email (required for a real run; dry run uses owner@chloe-dry.test)
+//   OWNER_EMAIL          buyer + owner email (required for a real run; dry run uses owner@acme-dry.test)
 //   TEST_DOMAIN          default t1.chloeeai.co (dashboard goes to app.<TEST_DOMAIN>); dry run default chloeeai.co
-//   BRAND_NAME           default "Chloe Test"
+//   BRAND_NAME           default "Acme Test"
 //   SETUP_SITE           default https://setup.chloeeai.co
 //   ADMIN_EMAIL          default ronanyeats21@gmail.com
 //   WAIT_MINUTES         per waiting phase (DNS / Resend / install), default 180
 //   POLL_SECONDS         dig / page poll interval, default 30 (dry run 3)
 //   --finish-now         if the app is running but its two DNS records never resolve, press "Finish now"
 //   --keep               dry run: leave the local site and fake containers running afterwards
-//   --shots DIR          where screenshots and summary.json go (default: <system temp>/chloe-real-run)
+//   --shots DIR          where screenshots and summary.json go (default: <system temp>/agency-real-run)
 //   CHROME_PATH          the browser to drive (default: the first Chromium / Chrome / Edge found)
 //   BUN_BIN              the bun executable (default: bun, or bun.exe from npm's folder on Windows)
 // DNS is checked with Node's own resolver against 1.1.1.1 and 8.8.8.8 (dry run: the fake DNS), so dig isn't needed.
@@ -57,7 +57,7 @@ const DRY = flag("--dry-run");
 const WITH_EMAIL = flag("--with-email");
 const WITH_DOMAIN = flag("--with-domain") || WITH_EMAIL;
 const SECRETS = "/home/ronan/aibiz/.secrets";
-const SHOTS = argVal("--shots") || join(tmpdir(), "chloe-real-run");
+const SHOTS = argVal("--shots") || join(tmpdir(), "agency-real-run");
 const WIN = process.platform === "win32";
 /** bun itself: on Windows npm installs a bun.cmd shim, which spawn() can't run without a shell. */
 function findBun() {
@@ -82,12 +82,12 @@ function findChrome() {
 const CHROME = findChrome();
 const DOMAIN = (process.env.TEST_DOMAIN || (DRY ? "chloeeai.co" : "t1.chloeeai.co")).toLowerCase();
 const ROOT = DOMAIN.split(".").slice(-2).join("."); // the zone you edit at GoDaddy
-const BRAND = process.env.BRAND_NAME || "Chloe Test";
+const BRAND = process.env.BRAND_NAME || "Acme Test";
 const COLOUR = "#0b8f6a";
 const WAIT_MS = Number(process.env.WAIT_MINUTES || 180) * 60_000;
 const POLL_MS = Number(process.env.POLL_SECONDS || (DRY ? 3 : 30)) * 1000;
 const ADMIN_EMAIL = process.env.ADMIN_EMAIL || (DRY ? "dry-admin@example.test" : "ronanyeats21@gmail.com");
-const OWNER_EMAIL = process.env.OWNER_EMAIL || (DRY ? "owner@chloe-dry.test" : "");
+const OWNER_EMAIL = process.env.OWNER_EMAIL || (DRY ? "owner@acme-dry.test" : "");
 mkdirSync(SHOTS, { recursive: true });
 
 const t0 = Date.now();

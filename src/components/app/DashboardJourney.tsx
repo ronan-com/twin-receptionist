@@ -158,13 +158,13 @@ export function DashboardJourney() {
 
       <div className="journey-footer">
         <div className="flex flex-wrap gap-x-5 gap-y-1">
-          <Link to="/app/calls" className="journey-link">
+          <Link to="/app/inbox" className="journey-link">
             Open call <ArrowRight size={13} />
           </Link>
-          <Link to="/app/bookings" className="journey-link">
+          <Link to="/app/calendar" className="journey-link">
             Open booking <ArrowRight size={13} />
           </Link>
-          <Link to="/app/leads" className="journey-link">
+          <Link to="/app/contacts" className="journey-link">
             View follow-ups <ArrowRight size={13} />
           </Link>
         </div>

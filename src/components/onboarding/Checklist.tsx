@@ -120,7 +120,7 @@ function ItemLink({ item, companyId, className, children }: { item: Item; compan
     );
   if (item.to === "/admin/settings")
     return (
-      <Link to="/admin/settings" search={{ tab: "branding" }} className={className} data-cta={`gs-${item.key}`}>
+      <Link to="/admin/branding" className={className} data-cta={`gs-${item.key}`}>
         {children}
       </Link>
     );

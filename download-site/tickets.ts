@@ -7,7 +7,7 @@
 // What a ticket carries is fixed here, like the heartbeat: a subject, a message, an optional screenshot (an image,
 // at most 2 MB) and a small context (page address with no query or token, app version, browser, agency and
 // receptionist ids). Never a key. Anything that looks like one is masked before it is stored.
-import { db, now } from "./lib";
+import { addColumn, db, now } from "./lib";
 import { esc } from "./pages";
 import { allow } from "./setup";
 import { ago, bearerOf, buyerBySyncToken } from "./sync";
@@ -49,7 +49,7 @@ function tables() {
     CREATE INDEX IF NOT EXISTS ticket_events_buyer ON ticket_events (buyer_id, id);
   `);
   // Older sites made the table before "source" existed: app = sent from their installed app, wizard = "I need a person" on the setup wizard.
-  if (!(db().query("PRAGMA table_info(tickets)").all() as { name: string }[]).some((c) => c.name === "source")) db().exec("ALTER TABLE tickets ADD COLUMN source TEXT NOT NULL DEFAULT 'app'");
+  addColumn(db(), "tickets", "source", "TEXT NOT NULL DEFAULT 'app'");
   made = true;
 }
 export const ticketTables = tables;
@@ -290,7 +290,7 @@ export function ticketsListHtml(filter: Status | "all"): string {
 <h1>Help tickets</h1>
 <p class="lead">Requests from agencies: from their own app (a reply shows up in their dashboard within a few minutes) and, marked <span class="pill in-setup">Setup</span>, from someone stuck in the setup wizard (a reply shows on their setup page).</p>
 <div class="tabs">${tab("open", "Open", counts.open)}${tab("waiting", "Waiting on agency", counts.waiting)}${tab("closed", "Closed", counts.closed)}${tab("all", "All", counts.open + counts.waiting + counts.closed)}</div>
-${rows.length ? `<div style="overflow-x:auto"><table class="records tickets"><thead><tr><th>Agency</th><th>Subject</th><th>From</th><th>Status</th><th>Age</th></tr></thead><tbody>${rows.map((r) => `<tr>
+${rows.length ? `<div class="xscroll"><table class="records tickets"><thead><tr><th>Agency</th><th>Subject</th><th>From</th><th>Status</th><th>Age</th></tr></thead><tbody>${rows.map((r) => `<tr>
 <td data-l="Agency"><a href="/admin/b/${r.buyer_id}"><b>${esc(r.agency)}</b></a></td>
 <td data-l="Subject"><a href="/admin/tickets/${r.id}">${esc(r.subject)}</a>${r.source === "wizard" ? ` <span class="pill in-setup" title="Asked for a person during setup">Setup</span>${wizardCtx(r).lastError ? `<br><span class="hint bad">${esc(wizardCtx(r).lastError!.slice(0, 140))}</span>` : ""}` : ""}</td>
 <td data-l="From">${esc(r.from_name)}</td>

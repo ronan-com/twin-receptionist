@@ -6,7 +6,7 @@ import { greetingOf, ValidationError } from "../prompt";
 import { UI_PRODUCT } from "../product";
 import { currentOrg } from "../telnyx";
 import { VapiError, vapiCredsFor } from "./config";
-import { buyTwilioNumber, ownedTwilioNumbers, parseTwilioInput, requireTwilio, type TwilioCreds } from "../twilio";
+import { buyTwilioNumber, ownedTwilioNumbers, parseTwilioInput, pointTextsAtUs, releaseTexts, requireTwilio, twilioCredsFor, type TwilioCreds } from "../twilio";
 import type { Conversation, VoiceProvider } from "./provider";
 import { toolAllowed } from "./tools";
 import { BOOKING_TOOL_DEFS } from "../booking";
@@ -62,7 +62,7 @@ export function buildVapi(client: Business, settings: Settings, instructions: st
   const a = row?.stored && !settings.paused ? row.settings : null;
   const open = openNow(settings, at);
   const withClient = { ...client, settings };
-  const script = toVapiScript(instructions + (a ? automationInstructions(withClient, a, "vapi") : ""), open);
+  const script = toVapiScript(instructions + (a ? automationInstructions(withClient, a, "vapi", Boolean(base)) : ""), open);
   let greeting = greetingOf(settings);
   if (a) greeting = a.hoursMode.enabled && !open ? afterHoursGreeting(withClient, a) : greetingFor(settings.greeting, a);
   const live = Boolean(client.booking?.enabled && base);
@@ -74,7 +74,10 @@ export function buildVapi(client: Business, settings: Settings, instructions: st
     tools: live ? BOOKING_TOOL_DEFS.map((d) => d.name).filter((n) => toolAllowed(settings, n)) : [],
     hookBase: live ? `${base}/hooks/${client.id}` : null,
     toolKey: client.booking?.token ?? "",
+    mcp: client.mcp?.url ? client.mcp : null,
     events: base ? { url: `${base}/hooks/vapi/${client.id}`, secret: eventsSecret(client.id) } : null,
+    // Returning callers: the assistant asks for its notes on the caller at the start of the call.
+    memory: a && base ? { url: `${base}/hooks/vapi/${client.id}/caller`, secret: eventsSecret(client.id) } : null,
     transfer: a ? transferSpec(a) : null,
     recording: a?.recording.enabled ?? false,
     language: a?.language.code ?? "en-AU",
@@ -128,7 +131,9 @@ export async function attachNumber(client: Business, input: unknown): Promise<Nu
     const creds = await requireTwilio();
     const bought = await buyTwilioNumber(creds, b, name);
     try {
-      return toOrder(await vapi("POST", "/phone-number", { provider: "twilio", number: bought.phoneNumber, twilioAccountSid: creds.accountSid, ...twilioImportAuth(creds), smsEnabled: false, assistantId, name }));
+      const order = toOrder(await vapi("POST", "/phone-number", { provider: "twilio", number: bought.phoneNumber, twilioAccountSid: creds.accountSid, ...twilioImportAuth(creds), smsEnabled: false, assistantId, name }));
+      await pointTextsAtUs(creds, client.id, bought.phoneNumber);
+      return order;
     } catch (err) {
       if (err instanceof VapiError) {
         throw new ValidationError(`${bought.phoneNumber} was bought on your Twilio account, but Vapi couldn't connect it (${err.message}). Choose it from "A number I already have" to try again.`);
@@ -145,7 +150,10 @@ export async function attachNumber(client: Business, input: unknown): Promise<Nu
       const creds = await requireTwilio();
       const owned = await ownedTwilioNumbers(creds);
       if (!owned.some((n) => n.phoneNumber === number)) throw new ValidationError("That number isn't on your connected Twilio account.");
-      return toOrder(await vapi("POST", "/phone-number", { provider: "twilio", number, twilioAccountSid: creds.accountSid, ...twilioImportAuth(creds), smsEnabled: false, assistantId, name }));
+      const order = toOrder(await vapi("POST", "/phone-number", { provider: "twilio", number, twilioAccountSid: creds.accountSid, ...twilioImportAuth(creds), smsEnabled: false, assistantId, name }));
+      // Voice goes to Vapi; texts to our text chatbot (the same brain as the website chat).
+      await pointTextsAtUs(creds, client.id, number);
+      return order;
     }
     const pasted = parseTwilioInput(b);
     return toOrder(await vapi("POST", "/phone-number", { provider: "twilio", number, twilioAccountSid: pasted.accountSid, ...twilioImportAuth({ ...pasted, own: true }), smsEnabled: false, assistantId, name }));
@@ -181,6 +189,9 @@ export const vapiProvider: VoiceProvider = {
 
   async applyAutomations(client) {
     await push(client, client.settings, client.instructions);
+    // Numbers attached before the text chatbot existed get its address too (best effort).
+    const creds = await twilioCredsFor(currentOrg()).catch(() => null);
+    if (creds) for (const n of client.phoneNumbers ?? []) await pointTextsAtUs(creds, client.id, n);
   },
 
   async deleteAssistant(client) {
@@ -252,7 +263,10 @@ export const vapiProvider: VoiceProvider = {
         if (n.provider === "vapi") await vapi("PATCH", `/phone-number/${n.id}`, { assistantId: null });
         else await vapi("DELETE", `/phone-number/${n.id}`);
       }
-      return mine.map((n) => String(n.number ?? n.sipUri ?? "")).filter(Boolean);
+      const gone = mine.map((n) => String(n.number ?? n.sipUri ?? "")).filter(Boolean);
+      const creds = await twilioCredsFor(currentOrg()).catch(() => null);
+      if (creds) for (const n of mine.filter((m) => m.provider === "twilio")) await releaseTexts(creds, client.id, String(n.number));
+      return gone;
     },
   },
 

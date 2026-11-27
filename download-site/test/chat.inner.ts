@@ -173,7 +173,7 @@ describe("POST /setup/<code>/chat", () => {
     const all = JSON.stringify(seen[before].body);
     const system: string = seen[before].body.messages[0].content;
     // knows where they are
-    expect(system).toContain("Their saved step: Phones");
+    expect(system).toContain("Their saved step: Voice");
     expect(system).toContain("Finished:");
     expect(system).toContain("Get your Railway token"); // the guides
     expect(system).toContain("No workspace"); // the common errors

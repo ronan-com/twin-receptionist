@@ -47,6 +47,7 @@ describe("tokens", () => {
     expect(callToken).toMatch(/^sc_[A-Za-z0-9_-]{43}$/);
     expect(callToken).not.toBe(token);
     expect(sync.callToken(b.id)).toBe(callToken);
+    for (const t = Date.now(); Date.now() - t < 5; ); // the call token is derived from the creation time (ms): don't create both in the same ms
     const second = sync.newSyncToken(b.id);
     expect(sync.buyerBySyncToken(token)).toBeNull();
     expect(sync.buyerBySyncToken(second.token)).toBe(b.id);

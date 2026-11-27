@@ -8,7 +8,7 @@ import { ValidationError, greetingOf } from "./prompt";
 import { isDemo } from "./sandbox";
 import { getClient, orgOfClient } from "./store";
 import { currentOrg, runAsOrg } from "./telnyx";
-import { sendSms } from "./sms";
+import { isOptedOut, sendSms } from "./sms";
 import { twilioSmsNumber } from "./twilio";
 import { providerOfClient } from "./voice/config";
 import { voiceFor } from "./voice";
@@ -16,6 +16,8 @@ import { UNMAPPED } from "./voice/vapiMap";
 import type { FollowupSettings } from "../src/lib/followups";
 import { defaultFollowups, followupStatuses, normaliseFollowups } from "./followups";
 import { textingState } from "./texting";
+import { callerContext } from "./callerMemory";
+import { BLOCKED_GREETING, defaultSpam, normaliseSpam, spamLines, spamStatus, spamUsesHook, spamVariables, type SpamSettings } from "./spam";
 
 // Per-receptionist automations (area T): transfer to a person, text-back after a
 // call, call recording with a notice, language, call limits and after-hours mode.
@@ -63,10 +65,10 @@ export type AutomationSettings = {
   language: { code: LanguageCode };
   callLimits: { maxMinutes: number; idleSeconds: number };
   hoursMode: { enabled: boolean; greeting: string; mode: "message_only" | "message_and_booking" };
-} & FollowupSettings; // reminders, missedFollowup, reviews: server/followups.ts
+} & FollowupSettings & SpamSettings; // reminders, missedFollowup, reviews: server/followups.ts; spam: server/spam.ts
 
 export type AutomationKey = keyof AutomationSettings;
-const KEYS: AutomationKey[] = ["transfer", "textBack", "recording", "language", "callLimits", "hoursMode", "reminders", "missedFollowup", "reviews"];
+const KEYS: AutomationKey[] = ["transfer", "textBack", "recording", "language", "callLimits", "hoursMode", "reminders", "missedFollowup", "reviews", "spam"];
 
 export const LANGUAGES: { code: LanguageCode; label: string; note?: string }[] = [
   { code: "en-AU", label: "English (Australian)" },
@@ -99,6 +101,7 @@ export function defaultAutomations(): AutomationSettings {
       mode: "message_only",
     },
     ...defaultFollowups(),
+    ...defaultSpam(),
   };
 }
 
@@ -186,7 +189,7 @@ export function normaliseAutomations(input: unknown, current: AutomationSettings
     mode: pick(h.mode, ["message_only", "message_and_booking"] as const, "message_only"),
   };
 
-  return { transfer, textBack, recording, language, callLimits, hoursMode, ...normaliseFollowups(src, current) };
+  return { transfer, textBack, recording, language, callLimits, hoursMode, ...normaliseFollowups(src, current), ...normaliseSpam(src, current) };
 }
 
 // Fills {business}, {name}, {time}, {service}; anything else in braces is dropped.
@@ -262,8 +265,21 @@ export function transferTool(client: Business, a: AutomationSettings) {
 
 const usesOpenNow = (a: AutomationSettings) => a.hoursMode.enabled || (a.transfer.enabled && a.transfer.when === "hours");
 
-export function automationInstructions(client: Business, a: AutomationSettings, engine: "telnyx" | "vapi" = "telnyx"): string {
+/** The script line for returning callers; {{twin_caller_context}} is filled per call by the dynamic-variables webhook. */
+export const CALLER_LINE =
+  `- About this caller (from this business's own records): "{{twin_caller_context}}". If it is empty, or still shows curly braces, treat them as a new caller. ` +
+  `Otherwise use it quietly: greet them by name if you have one, and offer to carry on from last time rather than starting from scratch. ` +
+  `Caller ID can be wrong, so before you discuss any booking or earlier call, check you're talking to the same person (ask for their name). Never read this out as a record, and never share it unless they're that person.`;
+
+/** The same for Vapi, which can't be handed per-call values at the start of a call: the assistant asks for them with a tool. */
+export const VAPI_CALLER_LINE =
+  `- At the very start of every call, before your first question, silently use the caller_history tool once. It returns notes about this caller from this business's own records, or says there are none. ` +
+  `If there are notes, use them quietly: greet them by name if you have one, and offer to carry on from last time rather than starting from scratch. ` +
+  `Caller ID can be wrong, so before you discuss any booking or earlier call, check you're talking to the same person (ask for their name). Never read the notes out as a record, never mention the tool, and never share them unless they're that person.`;
+
+export function automationInstructions(client: Business, a: AutomationSettings, engine: "telnyx" | "vapi" = "telnyx", callerMemory = false): string {
   const lines: string[] = [];
+  if (callerMemory) lines.push(engine === "vapi" ? VAPI_CALLER_LINE : CALLER_LINE);
   // Telnyx needs the receptionist's own number to transfer from; Vapi doesn't.
   const tool = engine === "vapi" ? transferSpec(a) : transferTool(client, a);
   if (usesOpenNow(a)) {
@@ -294,6 +310,7 @@ export function automationInstructions(client: Business, a: AutomationSettings, 
     lines.push(`- If the caller speaks another language, reply in that language for the rest of the conversation. Otherwise use Australian English.`);
   }
   if (a.textBack.enabled) lines.push(`- After a phone call, the caller gets a short text from this number. You can tell them to expect it.`);
+  lines.push(...spamLines(a, engine));
   return lines.length ? `\n\nAutomations (these take priority over anything above)\n${lines.join("\n")}` : "";
 }
 
@@ -322,28 +339,31 @@ export function overlayPayload<P extends { instructions?: string; tools?: unknow
   client: Business,
   a: AutomationSettings,
   payload: P,
-  opts: { publicUrl: string; token: string },
+  opts: { publicUrl: string; token: string; callerMemory?: boolean },
 ): P & Record<string, unknown> {
   const out: Record<string, unknown> = { ...payload };
-  if (typeof payload.instructions === "string") out.instructions = payload.instructions + automationInstructions(client, a);
+  // Returning-caller memory needs the webhook, so it is only offered once there is an address and a key.
+  const memory = Boolean(opts.callerMemory && opts.publicUrl && opts.token);
+  if (typeof payload.instructions === "string") out.instructions = payload.instructions + automationInstructions(client, a, "telnyx", memory);
   if (Array.isArray(payload.tools)) {
     const tool = transferTool(client, a);
     out.tools = tool ? [...payload.tools, tool] : payload.tools;
   }
   if (typeof payload.greeting === "string") {
     const greeting = greetingFor(payload.greeting, a);
-    if (a.hoursMode.enabled) {
+    if (a.hoursMode.enabled || spamUsesHook(a)) {
       // The greeting is picked per call by the dynamic-variables webhook; the default
       // (no answer from us in time) is the normal greeting.
       out.greeting = "{{twin_greeting}}";
-      out.dynamic_variables = { twin_greeting: greeting, twin_open_now: "unknown" };
+      out.dynamic_variables = { twin_greeting: greeting, twin_open_now: "unknown", ...(spamUsesHook(a) ? { twin_blocked: "no", twin_anonymous: "no" } : {}) };
     } else {
       out.greeting = greeting;
       out.dynamic_variables = { twin_open_now: "unknown" };
     }
+    if (memory) out.dynamic_variables = { ...(out.dynamic_variables as object), twin_caller_context: "" };
     // Only ever set, never cleared: once set, our webhook keeps answering correctly
     // even when no automation needs it (clearing it isn't documented).
-    if (usesOpenNow(a) && opts.publicUrl && opts.token) out.dynamic_variables_webhook_url = hookUrl(opts.publicUrl, client.id, opts.token);
+    if ((usesOpenNow(a) || memory || spamUsesHook(a)) && opts.publicUrl && opts.token) out.dynamic_variables_webhook_url = hookUrl(opts.publicUrl, client.id, opts.token);
   }
   return out as P & Record<string, unknown>;
 }
@@ -426,10 +446,24 @@ async function markApplied(clientId: string, error: string | null) {
  * greeting. With nothing stored, the payload goes through as it is.
  */
 export async function withAutomations<P extends { instructions?: string; tools?: unknown[]; greeting?: string }>(client: Business, payload: P): Promise<P> {
-  const row = await loadAutomations(client.id).catch(() => null);
   // Paused by the business (server/prompt.ts): the pause script and greeting go as they are.
-  if (!row?.stored || client.settings.paused) return payload;
-  return overlayPayload(client, row.settings, payload, { publicUrl: publicUrl(), token: row.token });
+  if (client.settings.paused) return payload;
+  const row = await ensureAutomationRow(client.id).catch(() => null);
+  if (!row) return payload;
+  return overlayPayload(client, row.settings, payload, { publicUrl: publicUrl(), token: row.token, callerMemory: true });
+}
+
+/**
+ * The saved automations, or (for a receptionist that never saved any) the defaults with a hook key
+ * stored, so the dynamic-variables webhook has an address to be set on the assistant. The defaults
+ * change nothing a caller hears: every automation is off.
+ */
+export async function ensureAutomationRow(clientId: string): Promise<Row> {
+  const row = await loadAutomations(clientId);
+  if (row.stored && row.token) return row;
+  const token = row.token || newToken();
+  await storeAutomations(clientId, row.settings, token, null, row.settings.textBack.enabled);
+  return { ...row, token, stored: true };
 }
 
 // ---- Applying a change ----------------------------------------------------------------
@@ -553,11 +587,13 @@ export function statusFor(client: Business, a: AutomationSettings, i: StatusInpu
     return { state: "on", label: openNow(client.settings) ? "On · open now" : "On · closed now", detail: `${what} ${how}` };
   })();
 
-  return { transfer, textBack, recording, language, callLimits, hoursMode, ...followupStatuses(client, a, { demo: i.demo, smsNumber: i.smsNumber, emailReady: Boolean(i.emailReady), engine: i.engine }) };
+  return { transfer, textBack, recording, language, callLimits, hoursMode, ...followupStatuses(client, a, { demo: i.demo, smsNumber: i.smsNumber, emailReady: Boolean(i.emailReady), engine: i.engine }), spam: spamStatus(a, { engine: i.engine, publicUrl: i.publicUrl }) };
 }
 
 export async function smsNumberOf(client: Business): Promise<string | null | undefined> {
   if (isDemo(client.assistantId)) return null;
+  // The owner switched Texts off: nothing goes out by text either.
+  if (client.textsPref === "off") return null;
   try {
     // Vapi has no texting of its own: a Twilio number of the agency's that it answers sends them.
     if (providerOfClient(client) === "vapi") return await twilioSmsNumber(currentOrg(), client.phoneNumbers ?? []);
@@ -595,7 +631,7 @@ export async function automationsState(client: Business, canEdit: boolean) {
 // Telnyx calls it at the start of each conversation. The token in the path is the key;
 // the answer only says whether the business is open and which greeting to use.
 
-export async function dynamicVariables(clientId: string, token: string): Promise<Response> {
+export async function dynamicVariables(clientId: string, token: string, call: { caller?: unknown; channel?: unknown } = {}): Promise<Response> {
   const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
   const client = await getClient(clientId);
   const row = client ? await loadAutomations(clientId) : null;
@@ -605,10 +641,19 @@ export async function dynamicVariables(clientId: string, token: string): Promise
   const a = row.settings;
   const open = openNow(client.settings);
   const normal = client.settings.paused ? greetingOf(client.settings) : greetingFor(client.settings.greeting, a);
+  const spam = spamVariables(a, call.caller, call.channel);
+  const phone = typeof call.caller === "string" ? call.caller : "";
+  // Telnyx gives up after about 1.5 seconds: never let the history lookup hold the answer up.
+  const context = await Promise.race([
+    client.settings.paused || !phone || spam.reject ? Promise.resolve("") : callerContext(client, phone),
+    new Promise<string>((r) => setTimeout(() => r(""), 1000)),
+  ]).catch(() => "");
   return json({
     dynamic_variables: {
       twin_open_now: open ? "yes" : "no",
-      twin_greeting: a.hoursMode.enabled && !open && !client.settings.paused ? afterHoursGreeting(client, a) : normal,
+      twin_greeting: spam.reject ? BLOCKED_GREETING : a.hoursMode.enabled && !open && !client.settings.paused ? afterHoursGreeting(client, a) : normal,
+      twin_caller_context: context,
+      ...(spamUsesHook(a) ? { twin_blocked: spam.twin_blocked, twin_anonymous: spam.twin_anonymous } : {}),
     },
   });
 }
@@ -721,6 +766,7 @@ async function textBackOne(call: any): Promise<void> {
   if (recent) return void (await finish("skipped", "Texted in the last 12 hours"));
   const from = await smsNumberOf(client);
   if (!from) return void (await finish("skipped", "No mobile number for texts"));
+  if (await isOptedOut(client.id, call.from_number)) return void (await finish("skipped", "Texted STOP"));
   try {
     await sendSms(client, { from, to: call.from_number, text: choice.text, meta: { twin_text_back: kind } });
     await finish("sent", "");

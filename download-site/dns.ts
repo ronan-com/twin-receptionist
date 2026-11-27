@@ -187,7 +187,7 @@ export function writerFor(id: number, s: SetupData, opts: { replace?: boolean } 
 export const dnsKeyMissing = (s: SetupData) => (s.domain?.mode === "godaddy" ? "Your GoDaddy key is missing. Check it again on the Domain step." : "Your Cloudflare token is missing. Check it again on the Domain step.");
 
 /** A Cloudflare link that opens "create token" already filled in: Zone Read + DNS Edit, for all zones. */
-export const cloudflareTokenLink = (label = `${CONFIG.productName} setup`) =>
+export const cloudflareTokenLink = (label = "AI agency setup") =>
   `https://dash.cloudflare.com/profile/api-tokens?${new URLSearchParams({ permissionGroupKeys: JSON.stringify([{ key: "zone", type: "read" }, { key: "dns", type: "edit" }]), name: label, accountId: "*", zoneId: "all" })}`;
 
 export { cfFindZone, cfRecords };

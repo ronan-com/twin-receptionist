@@ -4,7 +4,7 @@
 // Keys are stored exactly like the buyer's own (sealed, deleted when the install finishes); a DNS login is kept only
 // if the admin ticks "keep for later changes". Every action is written to the audit log (support_log) with who and when,
 // never with a key. The buyer's wizard (wizard.ts) shows the steps done here as "Set up by your provider".
-import nodemailer from "nodemailer";
+import { sendSiteMail, siteMailConfigured } from "./mailer";
 import { CONFIG, RAILWAY, currentPackage, markInvited, now, setupLink, unbrand, type Buyer } from "./lib";
 import { asAdmin } from "./ctx";
 import { actions, allow, appUrlOf, firstOpen, hostOf, kick, stepDone, type Flash } from "./setup";
@@ -26,11 +26,12 @@ const errText = (e: unknown) => (e instanceof ProviderError ? e.message : "Somet
 export function audit(b: { id: number }, admin: string, action: string, note = "") { logSupport(b.id, admin, action, note); }
 
 // ---------------- the steps our admin can fill ----------------
-export type AssistId = "brand" | "railway" | "server" | "phones" | "email" | "domain" | "calendars" | "vapi" | "twilio";
+export type AssistId = "brand" | "railway" | "server" | "phones" | "ai" | "email" | "domain" | "calendars" | "vapi" | "twilio";
 export const ASSIST_STEPS: { id: AssistId; title: string; optional: boolean }[] = [
   { id: "brand", title: "Brand", optional: false },
   ...(RAILWAY ? [{ id: "railway" as const, title: "Hosting (Railway)", optional: false }] : [{ id: "server" as const, title: "Server (DigitalOcean)", optional: false }]),
   { id: "phones", title: "Phones (Telnyx, or Vapi + Twilio)", optional: false },
+  { id: "ai", title: "AI (OpenRouter)", optional: false },
   { id: "email", title: "Email", optional: true },
   { id: "domain", title: "Own domain and DNS", optional: true },
   { id: "calendars", title: "Calendars", optional: true },
@@ -44,6 +45,7 @@ export function didStep(s: SetupData, id: AssistId): boolean {
     case "railway": return !!s.railway?.confirmed;
     case "server": return !!s.server?.chosen;
     case "phones": return !!s.phones?.confirmed || !!s.vapi?.confirmed;
+    case "ai": return !!s.ai?.confirmed;
     case "email": return !!s.email?.confirmed;
     case "domain": return !!s.domain?.confirmed && !!s.domain.host;
     case "calendars": return !!s.calendars?.google || !!s.calendars?.microsoft;
@@ -52,7 +54,7 @@ export function didStep(s: SetupData, id: AssistId): boolean {
   }
 }
 /** Steps that need the brand first (the wizard's own actions read it). */
-const NEEDS_BRAND: AssistId[] = ["phones", "email", "vapi"];
+const NEEDS_BRAND: AssistId[] = ["phones", "ai", "email", "vapi"];
 
 export interface StepRow { id: AssistId; title: string; optional: boolean; done: boolean; skipped: boolean; by: "you" | "buyer" | null; who?: string; at?: string; detail: string }
 export function stepRows(b: Buyer, s: SetupData): StepRow[] {
@@ -71,6 +73,7 @@ export function detailOf(b: { id: number }, s: SetupData, id: AssistId): string 
     case "railway": return s.railway?.confirmed ? `${s.railway.workspaceName || "workspace"}${s.railway.plan ? ` · ${s.railway.plan}` : ""} ${h("railway_token")}`.trim() : "";
     case "server": return s.server?.chosen ? `${s.server.region || ""} ${s.server.size || ""} ${h("do_token")}`.trim() : "";
     case "phones": return !s.phones?.confirmed && s.vapi?.confirmed ? `Vapi ${h("vapi_key")}${s.twilio?.confirmed ? ` + Twilio ${s.twilio.sid || ""}` : ""}`.trim() : s.phones?.confirmed ? `Telnyx ${h("telnyx_key")}${s.phones.balance ? ` · ${s.phones.balance}` : ""}`.trim() : s.skipped?.phones && !s.vapi?.confirmed ? "Skipped: the buyer connects it later in their dashboard (Connections)" : "";
+    case "ai": return s.ai?.confirmed ? `OpenRouter ${h("openrouter_key")}`.trim() : "";
     case "email": return s.email?.confirmed ? `${s.email.mode === "smtp" ? "SMTP" : "Resend"} · ${s.email.address || ""}` : "";
     case "domain": return s.domain?.host ? `${s.domain.host} · DNS by ${s.domain.mode === "manual" ? "hand" : s.domain.mode === "godaddy" ? "GoDaddy" : "Cloudflare"}${s.domain.confirmed ? "" : " (not finished)"}` : "";
     case "calendars": return [s.calendars?.google ? "Google" : "", s.calendars?.microsoft ? "Microsoft" : ""].filter(Boolean).join(" + ");
@@ -83,7 +86,7 @@ export function detailOf(b: { id: number }, s: SetupData, id: AssistId): string 
 export function installBlockers(b: Buyer, s: SetupData): string[] {
   const out: string[] = [];
   for (const id of STEPS.slice(0, STEPS.indexOf("install"))) {
-    if (OPTIONAL_STEPS.includes(id) || id === "welcome" || id === "extras") continue;
+    if (OPTIONAL_STEPS.includes(id) || id === "welcome") continue;
     if (!stepDone(b, s, id)) out.push(ASSIST_STEPS.find((x) => x.id === id)?.title || id);
   }
   if (!s.phones?.confirmed && !s.vapi?.confirmed && !s.skipped?.phones && !out.some((x) => /Phones/.test(x))) out.push("Phones (Telnyx, or Vapi + Twilio)");
@@ -108,7 +111,7 @@ function lockedOut(b: Buyer): Out | null {
   return null;
 }
 
-const ACTION_OF: Record<AssistId, string> = { brand: "brand", railway: "railway", server: "server", phones: "phones", email: "email", domain: "domain", calendars: "calendars", vapi: "vapi", twilio: "twilio" };
+const ACTION_OF: Record<AssistId, string> = { brand: "brand", railway: "railway", server: "server", phones: "phones", ai: "ai", email: "email", domain: "domain", calendars: "calendars", vapi: "vapi", twilio: "twilio" };
 
 /** Fill one step for the buyer. `f` holds the same field names the wizard form uses. Never audits a key. */
 export async function fillStep(b: Buyer, admin: string, step: AssistId, f: Record<string, string>, as?: "phones-vapi" | "phones-skip"): Promise<Out> {
@@ -142,7 +145,7 @@ export async function setOpenRouter(b: Buyer, admin: string, key: string): Promi
   const r = await checkOpenRouter(k);
   if (!r.ok) { audit(b, admin, "tried: openrouter", r.message.slice(0, 120)); return bad(r.message); }
   putSecret(b.id, "openrouter_key", k);
-  updateSetup(b.id, (s) => { mark("openrouter", admin)(s); s.assist!.openrouter = true; });
+  updateSetup(b.id, (s) => { mark("openrouter", admin)(s); s.assist!.openrouter = true; s.ai = { confirmed: true, via: "paste" }; mark("ai", admin)(s); });
   audit(b, admin, "filled: openrouter");
   return good("OpenRouter key saved. Their dashboard gets the Ask for help button.");
 }
@@ -171,7 +174,6 @@ export async function installFor(b: Buyer, admin: string): Promise<Out> {
   const s = getSetup(b.id);
   const can = canInstall(b, s);
   if (!can.ok) return bad(can.why);
-  if (!s.extrasDone) { const e = await finishExtras(b, admin); if (!e.ok) return e; }
   const retry = ["failed"].includes(getSetup(b.id).phase);
   const f = await run(b, admin, retry ? "install-retry" : "install-start", {});
   if (f && f.kind === "err") { audit(b, admin, "tried: install", f.text.slice(0, 120)); return bad(f.text); }
@@ -181,20 +183,14 @@ export async function installFor(b: Buyer, admin: string): Promise<Out> {
   return good("The install has started. The log below updates by itself.");
 }
 
-// ---------------- our site's own email (SITE_SMTP_URL + SITE_MAIL_FROM) ----------------
-const SITE_SMTP = () => (process.env.SITE_SMTP_URL || "").trim();
-const SITE_FROM = () => (process.env.SITE_MAIL_FROM || "").trim();
-export const mailConfigured = () => !!SITE_SMTP() && !!SITE_FROM();
-/** The sign-off and wording follow the agency's style: a neutral agency never sees our product or company name. */
-export const signOff = (b: Pick<Buyer, "style">) => (b.style === "neutral" ? "" : CONFIG.sellerName);
-export const styled = (b: Pick<Buyer, "style">, text: string) => (b.style === "neutral" ? unbrand(text) : text);
-/** Sends one plain-text email from our site. null = sent; otherwise a sentence for the admin. */
-export async function siteMail(b: Pick<Buyer, "id" | "style">, to: string, subject: string, text: string): Promise<string | null> {
-  if (!mailConfigured()) return "Email isn't set up on the setup site — copy and send it yourself.";
-  const t = nodemailer.createTransport(SITE_SMTP(), { connectionTimeout: 15000, greetingTimeout: 15000, socketTimeout: 20000 } as any);
-  try { await t.sendMail({ from: SITE_FROM(), to, subject: styled(b, subject), text: styled(b, text) }); return null; }
-  catch (e: any) { console.error(`[admin] email to buyer ${b.id} failed: ${e?.code || e?.name || "error"}`); return "The email didn't send. Copy the link and send it yourself."; }
-  finally { t.close(); }
+// ---------------- our site's own email (mailer.ts: SITE_SMTP_URL, or RESEND_API_KEY, with SITE_MAIL_FROM) ----------------
+export const mailConfigured = siteMailConfigured;
+/** Emails are generic: no sign-off, and our product and company names are taken out of the text. */
+export const signOff = (_b?: unknown) => "";
+export const styled = (_b: unknown, text: string) => unbrand(text);
+/** Sends one email from our site. null = sent; otherwise a sentence for the admin. `button` makes the link a button in the HTML twin. */
+export async function siteMail(b: Pick<Buyer, "id" | "style">, to: string, subject: string, text: string, button?: { label: string; url: string }): Promise<string | null> {
+  return sendSiteMail(to, styled(b, subject), styled(b, text), button);
 }
 
 // ---------------- Send owner their login ----------------
@@ -220,7 +216,7 @@ export async function ownerLogin(b: Buyer, admin: string, email: boolean, doFetc
   let mailed = false, mailError: string | undefined;
   if (email) {
     const m = ownerLoginEmail(b, s, kind, url, minutes, to);
-    mailError = (await siteMail(b, to, m.subject, m.text)) ?? undefined;
+    mailError = (await siteMail(b, to, m.subject, m.text, { label: kind === "reset" ? "Choose your password" : "Open your dashboard", url })) ?? undefined;
     mailed = !mailError;
     if (mailed) markInvited(b.id);
   }
@@ -231,7 +227,7 @@ export function ownerLoginEmail(b: Pick<Buyer, "style">, s: SetupData, kind: "re
   const name = s.brand?.productName || "Your agency";
   const sign = signOff(b) ? `\n\n${signOff(b)}` : "";
   const text = kind === "reset"
-    ? `Hi,\n\n${name} is ready. Open this link to choose your password and sign in as the owner:\n\n${url}\n\nIt works once and runs out in ${minutes} minutes. If it has run out, reply to this email and we'll send a new one.${sign}`
+    ? `Hi,\n\n${name} is ready. Choose your password and sign in as the owner:\n\n${url}\n\nThe link works once and runs out in ${minutes} minutes.${sign}`
     : `Hi,\n\n${name} is ready. Open ${url} and create your account with this email address (${to}); only that address can create the first account. Then pick a password.${sign}`;
   return { subject: `${name} is ready`, text };
 }
@@ -259,12 +255,12 @@ export function inviteState(b: Buyer, s: SetupData): InviteState {
 }
 export function setupInviteEmail(b: Buyer, st: InviteState): { subject: string; text: string } {
   const first = b.name.split(/\s+/)[0] || b.name;
-  const did = st.done.length ? `We've already done this part for you: ${st.done.join(", ")}.\n\n` : "";
-  const todo = st.left.length ? `What's left for you: ${st.left.join(", ")}.` : "Everything's filled in; open the link to see where it's up to.";
+  const did = st.done.length ? `Already done for you: ${st.done.join(", ")}.\n\n` : "";
+  const todo = st.left.length ? `Left for you: ${st.left.join(", ")}.` : "Everything is filled in.";
   const sign = signOff(b) ? `\n\n${signOff(b)}` : "";
   return {
-    subject: b.style === "neutral" ? "Your private setup link" : `Your private ${CONFIG.productName} setup link`,
-    text: `Hi ${first},\n\nYour AI receptionist agency is being set up. ${did}${todo}\n\nOpen your private setup link to carry on:\n\n${st.link}\n\nIt's just for you, so please don't share it. You can close it and come back whenever you like.${sign}`,
+    subject: "Your private setup link",
+    text: `Hi ${first},\n\nYour AI receptionist agency is ready to set up. ${did}${todo}\n\n${st.link}\n\nThis link is just for you. Close it and come back any time.${sign}`,
   };
 }
 export type InviteOut = { ok: true; kind: InviteState["kind"]; to: string; link: string; mailed: boolean; mailError?: string; minutes?: number; loginKind?: "reset" | "first" } | { ok: false; message: string };
@@ -284,7 +280,7 @@ export async function sendInvite(b: Buyer, admin: string, doFetch: typeof fetch 
   const wait = allow(`invite:${b.id}`, 6, 10 * 60_000);
   if (wait) return { ok: false, message: `That was a lot of tries. Wait ${Math.ceil(wait / 60)} minutes.` };
   const m = setupInviteEmail(b, st);
-  const err = await siteMail(b, st.to, m.subject, m.text);
+  const err = await siteMail(b, st.to, m.subject, m.text, { label: "Open your setup", url: st.link });
   if (!err) markInvited(b.id);
   audit(b, admin, "invite: setup link", err ? `not sent: ${err.slice(0, 80)}` : `emailed to ${st.to}`);
   return { ok: true, kind: "setup", to: st.to, link: st.link, mailed: !err, mailError: err ?? undefined };
@@ -424,7 +420,7 @@ export function dropHost(b: Buyer, admin: string): Out {
 
 // ---------------- the buyer's side of it ----------------
 // Registered here so every place that loads the admin also has these (server.ts imports admin-web, which imports this).
-const STEP_OF_ACTION: Record<string, AssistId> = { brand: "brand", railway: "railway", server: "server", phones: "phones", email: "email", smtp: "email", domain: "domain", calendars: "calendars", vapi: "vapi", twilio: "twilio",
+const STEP_OF_ACTION: Record<string, AssistId> = { brand: "brand", railway: "railway", server: "server", phones: "phones", ai: "ai", email: "email", smtp: "email", domain: "domain", calendars: "calendars", vapi: "vapi", twilio: "twilio",
   "email-skip": "email", "domain-skip": "domain", "cal-skip": "calendars", "vapi-skip": "vapi", "twilio-skip": "twilio", "phones-skip": "phones", "phones-vapi": "phones" };
 for (const [name, step] of Object.entries(STEP_OF_ACTION)) {
   const real = actions[name];

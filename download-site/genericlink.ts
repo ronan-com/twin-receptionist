@@ -2,13 +2,12 @@
 // opens it, as an alternative to the private /setup/<code> link our admin makes for one named person.
 //   GET  /start/<code>   a short form (name, email); opens the visitor's own private setup if this browser already started
 //   POST /start/<code>   makes a normal agency record (marked with this link), then sends them to their private /setup/<code>
-// From then on everything is exactly the normal wizard. Each link has a Style: "branded" (our name and wording, the default)
-// or "neutral" (nothing of ours shows, for links shared under someone else's name). The style is stored on the link and
-// copied onto every agency that starts from it, so the visitor pages and their wizard all follow it.
+// From then on everything is exactly the normal wizard. Every link is generic: no product or company name of ours shows
+// anywhere (the buyer's own brand name once they enter it). The old "style" column is kept but is always "neutral".
 // Safety: per-IP sign-up limit, a hidden honeypot field, a minimum time to fill the form, the same same-origin + per-browser
 // CSRF checks as the wizard, an email format check and length limits. A visitor never learns about other agencies: an email
 // that already started here is only ever sent back to its own private link by the cookie that browser holds, or by email.
-import nodemailer from "nodemailer";
+import { mailDeps, siteMailConfigured, htmlMail, mailFrom } from "./mailer";
 import { CONFIG, addBuyer, asStyle, db, findBuyer, hashCode, newCode, now, CODE_RE, type Buyer, type Style } from "./lib";
 import { allow } from "./setup";
 import { esc } from "./pages";
@@ -82,18 +81,17 @@ export function rotateLink(admin: string, id: number): boolean {
 
 // ---------------- admin panel ----------------
 interface PanelHelpers { hiddenT: (sid: string) => string; copyBtn: (v: string) => string }
-/** The onboarding link panel at the top of the Agencies page: two links, generic (the default: nothing of ours shows) and Chloe-branded,
- *  each with on/off, the address with Copy, and "Make a new link". */
+/** The onboarding link panel at the top of the Agencies page: each link with on/off, the address with Copy, and "Make a new link". */
 export function linksPanel(sid: string, h: PanelHelpers): string {
   const T = h.hiddenT(sid);
   const links = listLinks();
   const rows = links.map((l) => {
     const url = linkUrl(l);
-    const name = l.label || (l.style === "neutral" ? "Generic link" : `${CONFIG.productName} link`);
-    return `<div class="linkblock" data-style="${l.style}" data-link="${l.id}">
-<div class="titlerow"><b>${esc(name)}</b> <span class="pill">${l.style === "neutral" ? "Generic" : "Branded"}</span> ${l.enabled ? `<span class="pill live">On</span>` : `<span class="pill">Off</span>`} <span class="hint">${l.started} started</span>
+    const name = l.label || "Onboarding link";
+    return `<div class="linkblock" data-link="${l.id}">
+<div class="titlerow"><b>${esc(name)}</b> ${l.enabled ? `<span class="pill live">On</span>` : `<span class="pill">Off</span>`} <span class="hint">${l.started} started</span>
 <form method="post" action="/admin/links/${l.id}/toggle">${T}<button class="btn ${l.enabled ? "o" : "p"}" type="submit">${l.enabled ? "Turn off" : "Turn on"}</button></form></div>
-${l.enabled ? `<div class="linkrow"><code${l.style === "neutral" && l.id === links.find((x) => x.style === "neutral")?.id ? ' id="neutral-link"' : ""}>${esc(url)}</code>${h.copyBtn(url)}</div>
+${l.enabled ? `<div class="linkrow"><code${l.id === links[0]?.id ? ' id="neutral-link"' : ""}>${esc(url)}</code>${h.copyBtn(url)}</div>
 <form method="post" action="/admin/links/${l.id}/rotate">${T}<button class="btn o" type="submit" data-confirm="Make a new address for this link? Its old address stops working straight away. Other links are not affected. People who already started keep their own private links.">New address for this link</button></form>` : ""}
 </div>`;
   }).join("\n");
@@ -103,7 +101,6 @@ ${l.enabled ? `<div class="linkrow"><code${l.style === "neutral" && l.id === lin
 ${rows || '<p class="hint">No links yet.</p>'}
 <form method="post" action="/admin/links/add" class="linkadd">${T}
 <label>Label <input name="label" maxlength="60" placeholder="e.g. Facebook post, Jesse's list"></label>
-<label>Style <select name="style"><option value="neutral" selected>Generic (no Chloe branding)</option><option value="branded">${esc(CONFIG.productName)} branded</option></select></label>
 <button class="btn p" type="submit">Add a link</button>
 </form>
 </section>`;
@@ -134,7 +131,7 @@ function tsAge(gf: string, code: string, tok: string): number | null {
 const isEmail = (v: string) => v.length <= 200 && /^[^\s@<>"]+@[^\s@<>"]+\.[^\s@<>"]+$/.test(v);
 const note = (kind: "err" | "info" | "ok", text: string) => `<div class="notice ${kind}"><div>${esc(text)}</div></div>`;
 
-const heading = (style: Style) => (style === "neutral" ? "Start your AI receptionist agency" : `Start your ${CONFIG.productName} agency`);
+const heading = (_style?: Style) => "Start your AI receptionist agency";
 function formPage(l: GenericLink, gf: string, c: { error?: string; name?: string; email?: string } = {}) {
   const t = csrfToken(gf, `start:${l.code}`);
   return startShell(l.style, heading(l.style), `
@@ -160,23 +157,18 @@ const messagePage = (style: Style, title: string, text: string) => startShell(st
 const gsCookie = (code: string, secure: boolean) => `gs=${code}; Path=/start; HttpOnly; SameSite=Lax${secure ? "; Secure" : ""}; Max-Age=${30 * 86400}`;
 
 /** Emails a person their own private link, when this site can send email (SITE_SMTP_URL). Returns false if it can't. */
-export const resumeEmailConfigured = () => !!(process.env.SITE_SMTP_URL || "").trim() && !!(process.env.SITE_MAIL_FROM || "").trim();
+export const resumeEmailConfigured = siteMailConfigured;
 async function sendResume(b: Buyer): Promise<boolean> {
   if (!resumeEmailConfigured()) return false;
-  const neutral = b.style === "neutral";
   const link = `${CONFIG.siteUrl}/setup/${b.code}`;
-  const t = nodemailer.createTransport(process.env.SITE_SMTP_URL!.trim(), { connectionTimeout: 15000, greetingTimeout: 15000, socketTimeout: 20000 } as any);
+  const text = `Hi ${b.name.split(/\s+/)[0] || b.name},\n\nHere is your private setup link:\n\n${link}\n\nIt's just for you, so please don't share it.`;
   try {
-    await t.sendMail({
-      from: process.env.SITE_MAIL_FROM!.trim(), to: b.email,
-      subject: neutral ? "Your private setup link" : `Your private ${CONFIG.productName} setup link`,
-      text: `Hi ${b.name.split(/\s+/)[0] || b.name},\n\nHere is your private setup link, to pick up where you left off:\n\n${link}\n\nIt's just for you, so please don't share it.\n\n${neutral ? "Your provider" : CONFIG.sellerName}\n`,
-    });
+    await mailDeps.deliver((process.env.SITE_SMTP_URL || "").trim(), { from: mailFrom(), to: b.email, subject: "Your private setup link", text, html: htmlMail(text, { label: "Continue setup", url: link }) });
     return true;
   } catch (e: any) {
     console.error(`[start] resume email failed: ${e?.code || e?.name || "error"}`);
     return false;
-  } finally { t.close(); }
+  }
 }
 
 export async function startRoute(req: Request, code: string, c: StartCtx): Promise<Response> {

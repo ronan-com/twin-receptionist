@@ -32,8 +32,8 @@ function decrypt(box: string, aad: string): string {
   return Buffer.concat([d.update(b.subarray(28)), d.final()]).toString("utf8");
 }
 
-export type SecretName = "do_token" | "railway_token" | "cf_token" | "telnyx_key" | "vapi_key" | "vapi_public" | "twilio_token" | "resend_key" | "smtp_password" | "google_secret" | "microsoft_secret" | "godaddy_key" | "godaddy_secret" | "openrouter_key";
-export const ALL_SECRETS: SecretName[] = ["do_token", "railway_token", "cf_token", "telnyx_key", "vapi_key", "vapi_public", "twilio_token", "resend_key", "smtp_password", "google_secret", "microsoft_secret", "godaddy_key", "godaddy_secret", "openrouter_key"];
+export type SecretName = "do_token" | "railway_token" | "cf_token" | "telnyx_key" | "vapi_key" | "vapi_public" | "twilio_token" | "resend_key" | "smtp_password" | "google_secret" | "microsoft_secret" | "godaddy_key" | "godaddy_secret" | "openrouter_key" | "railway_refresh" | "telnyx_refresh";
+export const ALL_SECRETS: SecretName[] = ["do_token", "railway_token", "cf_token", "telnyx_key", "vapi_key", "vapi_public", "twilio_token", "resend_key", "smtp_password", "google_secret", "microsoft_secret", "godaddy_key", "godaddy_secret", "openrouter_key", "railway_refresh", "telnyx_refresh"];
 /** DNS logins: the only keys that may outlive the install, and only when our admin ticked "keep for later changes". */
 export const DNS_SECRETS: SecretName[] = ["cf_token", "godaddy_key", "godaddy_secret"];
 
@@ -89,22 +89,28 @@ export function redact(text: string, values: string[]): string {
 }
 
 // ---------------- wizard state ----------------
-export type StepId = "welcome" | "brand" | "railway" | "domain" | "server" | "phones" | "email" | "calendars" | "extras" | "vapi" | "twilio" | "install" | "done";
+export type StepId = "welcome" | "brand" | "railway" | "domain" | "server" | "phones" | "ai" | "email" | "calendars" | "extras" | "vapi" | "twilio" | "install" | "done";
 /**
  * Railway (the default): only Brand, Railway and Telnyx are needed. "extras" is one screen of
  * optional cards (email, your own domain, calendars); each opens its own step, which can be skipped.
  * DigitalOcean still needs a domain (its server gets an https certificate for it), so it keeps the long path.
  */
 export const STEPS: StepId[] = RAILWAY
-  ? ["welcome", "brand", "railway", "phones", "extras", "email", "domain", "calendars", "vapi", "twilio", "install", "done"]
+  ? ["welcome", "brand", "railway", "phones", "ai", "install", "done"]
   : ["welcome", "brand", "domain", "server", "phones", "vapi", "twilio", "email", "calendars", "install", "done"];
-/** Steps that are never required: opened from the extras screen, and each one can be skipped. */
-export const OPTIONAL_STEPS: StepId[] = RAILWAY ? ["email", "domain", "calendars", "vapi", "twilio"] : ["vapi", "twilio"];
+/** Steps that are never required. Railway: none are in the path any more. DigitalOcean: the backup phone options. */
+export const OPTIONAL_STEPS: StepId[] = RAILWAY ? [] : ["vapi", "twilio"];
+/**
+ * Railway steps that used to be in the path (extras, email, domain, calendars, Vapi, Twilio). Email, your own domain and
+ * calendars are now "later" items on the Done screen; Vapi + Twilio is on the Voice step. Old stored setups may sit on one
+ * of these: migrate() moves them on, and what they stored (email, domain, ...) is still installed.
+ */
+export const LEGACY_STEPS: StepId[] = ["extras", "email", "domain", "calendars", "vapi", "twilio"];
 /** The backup phone options (Vapi, Twilio) are optional in both flows: Telnyx is the main path. */
 export const BACKUP_STEPS: StepId[] = ["vapi", "twilio"];
 export const isOptional = (id: StepId) => OPTIONAL_STEPS.includes(id);
-/** The screen optional steps hang off and go back to: the extras screen (Railway), or Phones (DigitalOcean has no extras screen). */
-export const OPTIONAL_HUB: StepId = RAILWAY ? "extras" : "phones";
+/** The screen optional steps go back to. */
+export const OPTIONAL_HUB: StepId = "phones";
 
 export interface DnsRecord {
   key: string; // stable id, e.g. "a", "dkim", "spf-mx"
@@ -122,6 +128,8 @@ export interface DnsRecord {
 export type Phase = "idle" | "creating" | "create_failed" | "dns" | "starting" | "installing" | "deploying" | "domain" | "failed" | "done";
 
 export interface SetupData {
+  /** 2 once moved to the short wizard (see migrate). Old rows have none. */
+  schema?: number;
   step: StepId;
   brand?: { productName: string; ownerEmail: string; ownPhoneAccount: boolean ; deferred?: boolean; logo?: string; colour?: string };
   domain?: {
@@ -156,15 +164,17 @@ export interface SetupData {
   // provider: the voice engine chosen on the phones step (missing means Telnyx).
   // Telnyx is the main path. provider is kept in step with the backup choice below (vapi when Vapi is confirmed).
   // deferred: the buyer has no Telnyx account yet and went on to the backup options instead.
-  phones?: { balance?: string; checked?: boolean; confirmed?: boolean; provider?: "telnyx" | "vapi"; deferred?: boolean; /** Legacy: a Twilio Account SID saved on the phones step. Now see twilio. */ twilioSid?: string };
+  phones?: { via?: "oauth" | "paste"; /** Phone numbers already on the Telnyx account (read-only, shown after connecting). */ numbers?: string[]; numbersAt?: string; balance?: string; checked?: boolean; confirmed?: boolean; provider?: "telnyx" | "vapi"; deferred?: boolean; /** Legacy: a Twilio Account SID saved on the phones step. Now see twilio. */ twilioSid?: string };
+  /** AI step (OpenRouter): confirmed once a key is saved (pasted, or from "Sign in with OpenRouter"). The key itself is the openrouter_key secret. */
+  ai?: { confirmed?: boolean; via?: "oauth" | "paste" };
   /** Backup option: Vapi instead of Telnyx for voice. Its keys are the vapi_key and vapi_public secrets. */
   vapi?: { confirmed?: boolean };
   /** Backup option: a Twilio account for numbers and texts (with Vapi). Its token is the twilio_token secret. */
   twilio?: { sid?: string; confirmed?: boolean };
-  railway?: { email?: string; workspaceId?: string; workspaceName?: string; plan?: string; confirmed?: boolean };
+  railway?: { via?: "oauth" | "paste"; expiresAt?: string; email?: string; workspaceId?: string; workspaceName?: string; plan?: string; /** On Railway's free trial: it can set up, but stops after 30 days or US$5. Shown on the Hosting step until they upgrade. */ trial?: boolean; /** We could not read the plan. */ planUnknown?: boolean; /** They saw the plan warning and chose to go on. */ planAck?: boolean; confirmed?: boolean };
   /** What we made in the buyer's Railway account (ids only). */
   rw?: {
-    projectId?: string; environmentId?: string; pgId?: string; pgVolume?: boolean; appId?: string; varsSet?: boolean; settingsSet?: boolean;
+    projectId?: string; environmentId?: string; pgId?: string; pgVolume?: boolean; appId?: string; appVolume?: boolean; varsSet?: boolean; settingsSet?: boolean;
     deploymentId?: string; deployStatus?: string; deployedAt?: string; serviceDomain?: string;
     customDomainId?: string; records?: DnsRecord[]; certStatus?: string; domainOk?: boolean; cfWritten?: boolean; healthy?: boolean;
     uploadedAt?: string; createdAt?: string;
@@ -185,7 +195,7 @@ export interface SetupData {
   extrasDone?: boolean;
   /** Railway: extras the buyer chose to leave for later. */
   /** phones: the buyer skipped the phone provider (Telnyx approval can take a day or two) and connects it later in their dashboard (Connections). Railway only. */
-  skipped?: { email?: boolean; domain?: boolean; calendars?: boolean; vapi?: boolean; twilio?: boolean; phones?: boolean };
+  skipped?: { ai?: boolean; email?: boolean; domain?: boolean; calendars?: boolean; vapi?: boolean; twilio?: boolean; phones?: boolean };
   /**
    * "Update your agency" (Railway, after Done): the buyer pastes a Railway token again and we send the newest
    * app to the same project. ask = token screen, running = deploying, failed = nothing changed, done = last result.
@@ -193,7 +203,7 @@ export interface SetupData {
   update?: {
     phase: "ask" | "running" | "failed" | "done";
     from?: string; to?: string;
-    envId?: string; appId?: string; varsSet?: boolean;
+    envId?: string; appId?: string; varsSet?: boolean; volumeSet?: boolean;
     deploymentId?: string; deployStatus?: string; uploadedAt?: string; healthSince?: string;
     error?: string; startedAt?: string; at?: string; attempt?: number;
   };
@@ -255,7 +265,26 @@ export function getSetup(buyerId: number): SetupData {
     db().query("INSERT OR IGNORE INTO setups (buyer_id, data, created_at, updated_at) VALUES (?, ?, ?, ?)").run(buyerId, JSON.stringify({ step: "welcome", phase: "idle" }), t, t);
     return { step: "welcome", phase: "idle" };
   }
-  return JSON.parse(r.data);
+  return migrate(JSON.parse(r.data));
+}
+/**
+ * The short wizard (schema 2). Old stored setups keep working: whatever they stored stays, and a buyer who was sitting
+ * on a step that is no longer in the path (Extras, Email, Domain, Calendars, Vapi, Twilio) is moved to the next step that is.
+ * Email through Resend and calendar sign-in need a domain: a half-finished one (the domain step was never completed) is
+ * dropped, so it can't block the install. Pure and idempotent; the new shape is saved with the next write.
+ */
+export function migrate(s: SetupData): SetupData {
+  if (!RAILWAY || s.schema === 2) return s;
+  s.schema = 2;
+  if (s.phase === "idle" && !s.domain?.host) {
+    if (s.email?.mode === "resend") { delete s.email; s.skipped = { ...s.skipped, email: true }; }
+    if (s.calendars?.google || s.calendars?.microsoft) { s.calendars = { done: true }; s.skipped = { ...s.skipped, calendars: true }; }
+  }
+  if (LEGACY_STEPS.includes(s.step)) {
+    const phonesDone = !!(s.phones?.confirmed || s.phones?.deferred || s.vapi?.confirmed || s.skipped?.phones);
+    s.step = !s.brand ? "brand" : phonesDone ? "ai" : "phones";
+  }
+  return s;
 }
 export function saveSetup(buyerId: number, s: SetupData) {
   getSetup(buyerId); // makes the row

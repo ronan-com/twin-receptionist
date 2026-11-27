@@ -36,6 +36,7 @@ export function TwilioCard({ engine, canManage, isOwner, readOnly }: { engine: V
   const keys = (): TwilioKeys => (kind === "token" ? { accountSid: sid.trim(), authToken: token.trim() } : { accountSid: sid.trim(), apiKeySid: keySid.trim(), apiKeySecret: keySecret.trim() });
   const ready = Boolean(sid.trim()) && (kind === "token" ? Boolean(token.trim()) : Boolean(keySid.trim() && keySecret.trim()));
   const reset = () => {
+    test.reset();
     setSid("");
     setToken("");
     setKeySid("");
@@ -60,6 +61,12 @@ export function TwilioCard({ engine, canManage, isOwner, readOnly }: { engine: V
       toast.success("Twilio disconnected", { description: "Numbers already connected to receptionists keep working in Vapi." });
     },
     onError: (e: Error) => toast.error("Couldn't disconnect", { description: e.message }),
+  });
+
+  const test = useMutation({
+    mutationFn: (typed: boolean) => twilioApi.test(typed ? keys() : {}),
+    onSuccess: (r) => toast.success("Twilio accepts these", { description: [r.name, r.source === "typed" ? "Not saved yet." : r.source === "server" ? "The account set on the server." : "The account saved here."].filter(Boolean).join(" · ") }),
+    onError: (e: Error) => toast.error("Twilio test failed", { description: e.message }),
   });
 
   if (!q.data) return null;
@@ -101,12 +108,17 @@ export function TwilioCard({ engine, canManage, isOwner, readOnly }: { engine: V
             </p>
           </div>
         </div>
-        {!readOnly && canManage && !a.installed ? (
+        {!readOnly && canManage ? (
           <div className="flex shrink-0 flex-wrap gap-2">
+            {a.connected ? (
+              <Button size="sm" variant="outline" className="h-8 text-[12.5px]" onClick={() => test.mutate(false)} disabled={test.isPending} data-action="test-twilio">
+                {test.isPending && !test.variables ? "Testing…" : "Test"}
+              </Button>
+            ) : null}
             <Button size="sm" variant={a.connected ? "outline" : "default"} className="h-8 text-[12.5px]" onClick={() => setOpen(true)} data-action={a.connected ? "replace-twilio" : "connect-twilio"}>
               <KeyRound /> {a.connected ? "Replace" : "Connect Twilio"}
             </Button>
-            {a.connected && isOwner ? (
+            {a.mode === "own" && isOwner ? (
               <Button size="sm" variant="ghost" className="h-8 text-[12.5px] text-[#a41d1d] hover:bg-[#fff7f7] hover:text-[#a41d1d]" onClick={() => setRemoving(true)} data-action="disconnect-twilio">
                 Disconnect
               </Button>
@@ -210,6 +222,9 @@ export function TwilioCard({ engine, canManage, isOwner, readOnly }: { engine: V
           <DialogFooter>
             <Button variant="outline" onClick={() => setOpen(false)}>
               Cancel
+            </Button>
+            <Button variant="outline" disabled={!ready || test.isPending} onClick={() => test.mutate(true)} data-action="test-twilio-typed">
+              Test
             </Button>
             <Button type="submit" form="connect-twilio" disabled={!ready || connect.isPending} data-action="save-twilio">
               {connect.isPending ? "Checking…" : "Check and save"}

@@ -14,6 +14,7 @@ import { PageHeader, Panel, ErrorState, Notice, MetricCard, MetricGrid } from "@
 import { DataTable, TableToolbar, type Column } from "@/components/app/DataTable";
 import { StatusBadge } from "@/components/app/StatusBadge";
 import { Field } from "@/components/app/forms";
+import { KnowledgeImportButton } from "@/components/app/KnowledgeImport";
 import { fmtNumber, fmtRelative, fmtSmartDate } from "@/lib/app/format";
 import { knowledgeQuery, unansweredQuery } from "@/lib/app/queries";
 import { createKnowledge, deleteKnowledge, updateKnowledge, type KnowledgeSaved } from "@/lib/api/manage";
@@ -162,9 +163,12 @@ function KnowledgePage() {
         description="Everything your receptionist knows about your business: services, pricing, policies and the questions callers ask."
         actions={
           canEdit ? (
-            <Button size="sm" onClick={() => setEditing(emptyForm())}>
-              <Plus className="mr-1.5 h-3.5 w-3.5" /> Add knowledge
-            </Button>
+            <div className="flex flex-wrap items-center gap-2">
+              {ws.businessId ? <KnowledgeImportButton businessId={ws.businessId} /> : null}
+              <Button size="sm" onClick={() => setEditing(emptyForm())}>
+                <Plus className="mr-1.5 h-3.5 w-3.5" /> Add knowledge
+              </Button>
+            </div>
           ) : null
         }
       />

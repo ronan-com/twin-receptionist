@@ -52,7 +52,7 @@ const SRC_SHA = createHash("sha256").update(SRC).digest("hex");
   mkdirSync(work, { recursive: true });
   writeFileSync(join(work, "app-src.tgz"), SRC);
   mkdirSync(PACKAGES_DIR, { recursive: true });
-  const file = "chloe-server-1.2.3.tgz";
+  const file = "agency-server-1.2.3.tgz";
   // A bare archive name with cwd: GNU tar (Git Bash) reads "C:\..." in -f as a remote host.
   const p = Bun.spawnSync(["tar", "-czf", file, "-C", work, "./app-src.tgz"], { cwd: PACKAGES_DIR });
   if (p.exitCode !== 0) throw new Error("tar failed");

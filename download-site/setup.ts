@@ -9,8 +9,8 @@ import { join } from "node:path";
 import { CONFIG, PACKAGES_DIR, PLAIN_AGENCY_NAME, RAILWAY, currentPackage, db, listPackages, now, slug, type Buyer } from "./lib";
 import {
   DEFAULT_REGION, DEFAULT_SIZE, ProviderError, cfCanEdit, cfEnsure, cfFindZone, cfRecords, cfZone, checkCloudflare,
-  checkDigitalOcean, checkGoogle, checkMicrosoft, checkRailway, checkResend, checkSmtp, checkTelnyx, checkTwilio, checkVapi, doApi, lookup, normalizeDomain,
-  RAILWAY_API, railway, railwayUpload, recordLive, resendDomain, resendSend, resendSendingKey, resendStatus, resendVerify, smtpSend, smtpUrl,
+  checkDigitalOcean, checkGoogle, checkMicrosoft, checkRailway, checkResend, checkOpenRouter, checkSmtp, checkTelnyx, checkTwilio, checkVapi, listTelnyxNumbers, doApi, lookup, normalizeDomain,
+  RAILWAY_API, RAILWAY_TOKEN_MSG, railway, railwayUpload, recordLive, resendDomain, resendSend, resendSendingKey, resendStatus, resendVerify, smtpSend, smtpUrl,
 } from "./providers";
 import {
   STEPS, OPTIONAL_HUB, isOptional, buyerByAttemptToken, buyerByDropletToken, deleteAllSecrets, getSecret, getSetup, hasSecret, logAppend, logBytes,
@@ -19,8 +19,10 @@ import {
 } from "./store";
 import { USER_DATA_LIMIT, buildEnv, buildUserData } from "./userdata";
 import { SYNC_URL, latestSnapshot, newSyncToken } from "./sync";
+import { brokerOn } from "./broker";
 import { appSource } from "./releases";
 import { createProjectToken, RailwayError } from "./railwayUp";
+import { railwayToken, telnyxKeyFrom, type OAuthProvider, type Tokens } from "./oauth";
 import { asAdmin } from "./ctx";
 import { checkGoDaddy, cloudflareWriter, dnsKeyMissing, godaddyExisting, godaddyWriter, writerFor, type DnsWriter } from "./dns";
 
@@ -39,8 +41,19 @@ const err = (text: string, form?: Record<string, string>): Flash => ({ kind: "er
 
 // ---------------- rate limits (per buyer, in memory) ----------------
 const buckets = new Map<string, number[]>();
+const LONGEST_WINDOW = 24 * 3600_000; // the longest window any caller uses
+let lastSweep = 0;
+/** Drops buckets nobody has touched for a day. Without this every address that ever hit the site (scanners too) stays in memory. */
+export function sweepBuckets(t = Date.now()): number {
+  lastSweep = t;
+  let n = 0;
+  for (const [k, arr] of buckets) if (!arr.length || t - arr[arr.length - 1] > LONGEST_WINDOW) { buckets.delete(k); n++; }
+  return n;
+}
+export const bucketCount = () => buckets.size;
 export function allow(key: string, max: number, windowMs: number): number {
   const t = Date.now();
+  if (buckets.size > 2000 && t - lastSweep > 60_000) sweepBuckets(t);
   const arr = (buckets.get(key) || []).filter((x) => t - x < windowMs);
   if (arr.length >= max) { buckets.set(key, arr); return Math.ceil((arr[0] + windowMs - t) / 1000); }
   arr.push(t); buckets.set(key, arr);
@@ -62,6 +75,7 @@ export function stepDone(b: Buyer, s: SetupData, id: StepId): boolean {
     case "twilio": return !!s.twilio?.confirmed || !!s.skipped?.twilio;
     case "email": return !!s.email?.confirmed || !!s.skipped?.email;
     case "calendars": return !!s.calendars?.done || !!s.skipped?.calendars;
+    case "ai": return !!s.ai?.confirmed || hasSecret(b.id, "openrouter_key") || s.phase !== "idle";
     case "extras": return !!s.extrasDone;
     case "install": return s.phase === "done";
     case "done": return s.phase === "done";
@@ -124,6 +138,73 @@ function guard(b: Buyer, step: StepId): Flash | null {
   return null;
 }
 const go = (b: Buyer, from: StepId) => updateSetup(b.id, (s) => nextStep(b, s, from));
+
+// ---- what saving a step does: shared by the paste forms and "Login with ..." (oauthComplete) ----
+const OAUTH_RAILWAY_MSG = "Railway let you in, but we couldn't use that login. Try again, or paste a Railway token instead.";
+
+/** Railway: check the login, keep it (an OAuth login also keeps its refresh token), go on. */
+async function saveRailway(b: Buyer, token: string, via: "oauth" | "paste", tokens?: Tokens): Promise<Flash | null> {
+  const r = await checkRailway(token);
+  if (!r.ok) return err(via === "oauth" && r.message === RAILWAY_TOKEN_MSG ? OAUTH_RAILWAY_MSG : r.message);
+  putSecret(b.id, "railway_token", token);
+  if (tokens?.refresh) putSecret(b.id, "railway_refresh", tokens.refresh); else deleteSecret(b.id, "railway_refresh");
+  const expiresAt = via === "oauth" && tokens?.expiresIn ? new Date(Date.now() + tokens.expiresIn * 1000).toISOString() : undefined;
+  // On a free trial (or a plan we can't read) stay on the Hosting step, so the warning is read before they go on; "Continue" then moves on.
+  const warn = r.trial || !r.planKnown;
+  updateSetup(b.id, (s) => {
+    s.railway = { via, expiresAt, email: r.email, workspaceId: r.workspace.id, workspaceName: r.workspace.name, plan: r.workspace.plan, trial: r.trial || undefined, planUnknown: !r.planKnown || undefined, confirmed: true };
+    if (!warn) nextStep(b, s, "railway");
+  });
+  return null;
+}
+
+/**
+ * Telnyx: check the key (pretrial keeps the key so "Check again" works), keep it, read the numbers already on the
+ * account. Stays on the Voice step: the buyer sees those numbers, then presses Continue.
+ */
+async function telnyxAttempt(b: Buyer, key: string, via: "oauth" | "paste", keep?: Form): Promise<Flash | null> {
+  const r = await checkTelnyx(key);
+  if (!r.ok && r.pretrial) { putSecret(b.id, "telnyx_key", key); updateSetup(b.id, (s) => { s.phones = { ...s.phones, checked: true, confirmed: false }; }); return err(r.message); }
+  if (!r.ok) return err(r.message, keep);
+  return saveTelnyx(b, key, r.balance, via);
+}
+async function saveTelnyx(b: Buyer, key: string, balance: string, via: "oauth" | "paste"): Promise<Flash | null> {
+  putSecret(b.id, "telnyx_key", key);
+  const numbers = await listTelnyxNumbers(key);
+  updateSetup(b.id, (s) => {
+    s.brand!.ownPhoneAccount = false;
+    s.phones = { ...s.phones, via, numbers, numbersAt: now(), balance, checked: true, confirmed: true, provider: "telnyx", deferred: undefined };
+    if (s.skipped) delete s.skipped.phones;
+  });
+  return null;
+}
+
+/** OpenRouter: check the key, keep it, go on. */
+async function saveOpenRouter(b: Buyer, key: string, via: "oauth" | "paste"): Promise<Flash | null> {
+  const r = await checkOpenRouter(key);
+  if (!r.ok) return err(r.message);
+  putSecret(b.id, "openrouter_key", key);
+  updateSetup(b.id, (s) => { s.ai = { confirmed: true, via }; if (s.skipped) delete s.skipped.ai; nextStep(b, s, "ai"); });
+  return null;
+}
+
+/** The step each "Login with ..." belongs to. */
+export const OAUTH_STEP: Record<OAuthProvider, StepId> = { railway: "railway", telnyx: "phones", openrouter: "ai" };
+/** May this buyer start a login for that provider now? (Same rule as the step's own form.) Null when yes. */
+export const oauthGuard = (b: Buyer, p: OAuthProvider): Flash | null => guard(b, OAUTH_STEP[p]);
+/** A login came back with a token: do what the step's paste form would do with it. */
+export async function oauthComplete(b: Buyer, p: OAuthProvider, t: Tokens): Promise<Flash | null> {
+  const g = oauthGuard(b, p); if (g) return g;
+  const wait = checkLimit(b); if (wait) return tooMany(wait);
+  try {
+    if (p === "railway") return await saveRailway(b, t.access, "oauth", t);
+    if (p === "openrouter") return await saveOpenRouter(b, t.access, "oauth");
+    // Telnyx: an OAuth token runs out and the app needs a key that doesn't, so ask Telnyx for one with it.
+    const key = await telnyxKeyFrom(t.access);
+    if (!key) return err("Telnyx let you in, but wouldn't make the key your agency needs. Paste a Telnyx API key instead.");
+    return await telnyxAttempt(b, key, "oauth");
+  } catch (e) { safeLog("oauth", e); return err(errMsg(e)); }
+}
 
 export const actions: Record<string, Action> = {
   start(b) {
@@ -251,17 +332,13 @@ export const actions: Record<string, Action> = {
     return fits ? null : err("That size isn't offered in that location. Pick another.", f);
   },
 
-  // ---- Railway: an account token; we check it and the plan ----
+  // ---- Railway: "Login with Railway" (oauthComplete), or an account token; we check it and the plan ----
   async railway(b, f) {
     const g = guard(b, "railway"); if (g) return g;
     const token = str(f.token, 300) || getSecret(b.id, "railway_token") || "";
     if (!token) return err("Paste your Railway token.");
     const wait = checkLimit(b); if (wait) return tooMany(wait);
-    const r = await checkRailway(token);
-    if (!r.ok) return err(r.message);
-    putSecret(b.id, "railway_token", token);
-    updateSetup(b.id, (s) => { s.railway = { email: r.email, workspaceId: r.workspace.id, workspaceName: r.workspace.name, plan: r.workspace.plan, confirmed: true }; nextStep(b, s, "railway"); });
-    return null;
+    return saveRailway(b, token, "paste");
   },
 
   // ---- Phones: Telnyx is the main path. The buyer's key is the app's main phone key ----
@@ -270,18 +347,7 @@ export const actions: Record<string, Action> = {
     const key = str(f.key, 300) || getSecret(b.id, "telnyx_key") || "";
     if (!key) return err("Paste your Telnyx API key.", f);
     const wait = checkLimit(b); if (wait) return tooMany(wait);
-    const r = await checkTelnyx(key);
-    // Pretrial: the key is fine, the account isn't upgraded yet. Keep the key so "Check again" works without pasting it again.
-    if (!r.ok && r.pretrial) { putSecret(b.id, "telnyx_key", key); updateSetup(b.id, (s) => { s.phones = { ...s.phones, checked: true, confirmed: false }; }); return err(r.message); }
-    if (!r.ok) return err(r.message, f);
-    putSecret(b.id, "telnyx_key", key);
-    updateSetup(b.id, (s) => {
-      s.brand!.ownPhoneAccount = false;
-      s.phones = { balance: r.balance, checked: true, confirmed: true, provider: useVapi(s) ? "vapi" : "telnyx" };
-      if (s.skipped) delete s.skipped.phones;
-      nextStep(b, s, "phones");
-    });
-    return null;
+    return telnyxAttempt(b, key, "paste", f);
   },
   // No Telnyx account yet: go on to the backup options (Vapi) instead. Install still needs one of the two.
   "phones-backup"(b) {
@@ -313,13 +379,14 @@ export const actions: Record<string, Action> = {
     putSecret(b.id, "vapi_key", vKey);
     putSecret(b.id, "vapi_public", vPublic);
     if (withTwilio) putSecret(b.id, "twilio_token", token);
-    // The Vapi path uses nothing from Telnyx.
-    deleteSecret(b.id, "telnyx_key");
+    // With Telnyx connected, Vapi is added as the backup engine and Telnyx stays the main one. Without it, Vapi runs alone.
+    const withTelnyx = !!s0.phones?.confirmed;
+    if (!withTelnyx) deleteSecret(b.id, "telnyx_key");
     updateSetup(b.id, (s) => {
       s.brand!.ownPhoneAccount = false;
       s.vapi = { confirmed: true };
       if (withTwilio) s.twilio = { sid, confirmed: true };
-      s.phones = { checked: true, provider: "vapi" };
+      s.phones = withTelnyx ? { ...s.phones } : { checked: true, provider: "vapi" };
       if (s.skipped) { delete s.skipped.vapi; delete s.skipped.twilio; delete s.skipped.phones; }
       nextStep(b, s, "phones");
     });
@@ -560,6 +627,20 @@ export const actions: Record<string, Action> = {
     return null;
   },
 
+  // "Continue" on a screen that is already done (Login with ... and pasting both stay on the screen so the buyer sees the result).
+  "railway-continue"(b) { const g = guard(b, "railway"); if (g) return g; updateSetup(b.id, (s) => { if (s.railway?.confirmed) nextStep(b, s, "railway"); }); return null; },
+  "phones-continue"(b) { const g = guard(b, "phones"); if (g) return g; updateSetup(b.id, (s) => { if (stepDone(b, s, "phones")) nextStep(b, s, "phones"); }); return null; },
+  "ai-continue"(b) { const g = guard(b, "ai"); if (g) return g; updateSetup(b.id, (s) => { if (s.ai?.confirmed) nextStep(b, s, "ai"); }); return null; },
+
+  // ---- AI (OpenRouter): "Login with OpenRouter" (oauthComplete) or paste a key. The key goes to the app as OPENROUTER_API_KEY. ----
+  async ai(b, f) {
+    const g = guard(b, "ai"); if (g) return g;
+    const key = str(f.key, 300) || getSecret(b.id, "openrouter_key") || "";
+    if (!key) return err("Paste your OpenRouter key.");
+    const wait = checkLimit(b); if (wait) return tooMany(wait);
+    return saveOpenRouter(b, key, "paste");
+  },
+
   // ---- Install ----
   "install-start"(b) {
     const g = guard(b, "install"); if (g) return g;
@@ -651,6 +732,11 @@ const demoActions: Record<string, Action> = {
     updateSetup(b.id, (s) => { s.brand!.ownPhoneAccount = false; s.phones = { balance: "demo", checked: true, confirmed: true, provider: "telnyx" }; nextStep(b, s, "phones"); });
     return null;
   },
+  ai(b) {
+    const g = guard(b, "ai"); if (g) return g;
+    updateSetup(b.id, (s) => { s.ai = { confirmed: true, via: "paste" }; nextStep(b, s, "ai"); });
+    return null;
+  },
   // The backup options accept anything in a test run and store nothing.
   vapi(b) {
     const g = guard(b, "vapi"); if (g) return g;
@@ -722,7 +808,7 @@ async function tickDemoInstall(id: number) {
   const stages: [string, (s: SetupData) => void][] = [
     ["Creating your project", (s) => { s.rw = { ...s.rw, projectId: "demo" }; }],
     ["Adding your database", (s) => { s.rw!.pgVolume = true; }],
-    ["Adding the app and your settings", (s) => { s.rw!.deploymentId = "demo"; s.phase = "deploying"; s.rw!.deployStatus = "BUILDING"; }],
+    ["Adding the app and your settings", (s) => { s.rw!.appVolume = true; s.rw!.deploymentId = "demo"; s.phase = "deploying"; s.rw!.deployStatus = "BUILDING"; }],
     ["Building the app", (s) => { s.rw!.deployStatus = "DEPLOYING"; }],
     ["Starting the app", () => {}],
   ];
@@ -859,21 +945,31 @@ function brandSettings(s: SetupData): Record<string, string> {
   return v;
 }
 
-/** The phone keys the installed app is given: Telnyx's, or Vapi's with VOICE_PROVIDER=vapi (the backup option). */
+/** Telnyx is connected (the main voice engine). */
+export const hasTelnyx = (id: number, s: SetupData) => !!s.phones?.confirmed && hasSecret(id, "telnyx_key");
+/**
+ * The phone keys the installed app is given:
+ *   Telnyx only         TELNYX_API_KEY, VOICE_PROVIDER=telnyx
+ *   Telnyx + Vapi       both, VOICE_PROVIDER=telnyx (Telnyx stays the main engine; Vapi is the backup one)
+ *   Vapi (+ Twilio)     VAPI_*, VOICE_PROVIDER=vapi, no Telnyx key (only when Telnyx was not connected)
+ * Twilio (numbers and texts) goes with whichever is there. Skipped: nothing at all.
+ */
 export function phoneSettings(id: number, s: SetupData): Record<string, string> {
   const sid = twilioSidOf(s);
-  // The backup Twilio account: numbers and the texts sent from them.
   const twilio: Record<string, string> = sid && getSecret(id, "twilio_token") ? { TWILIO_ACCOUNT_SID: sid, TWILIO_AUTH_TOKEN: getSecret(id, "twilio_token") || "" } : {};
   // Skipped: no voice key at all. The app (SINGLE_AGENCY) then expects the owner's own key, pasted in Connections.
   if (phoneSkipped(s)) return {};
-  if (!useVapi(s)) return { TELNYX_API_KEY: getSecret(id, "telnyx_key") || "", ...twilio };
-  return {
-    VOICE_PROVIDER: "vapi",
-    VAPI_API_KEY: getSecret(id, "vapi_key") || "",
-    VAPI_PUBLIC_KEY: getSecret(id, "vapi_public") || "",
-    // No Telnyx key on the Vapi path (AI email replies stay off for Vapi agencies for now).
-    ...twilio,
-  };
+  const telnyx = hasTelnyx(id, s);
+  const vapi = useVapi(s) && hasSecret(id, "vapi_key");
+  const out: Record<string, string> = {};
+  if (telnyx || !vapi) out.TELNYX_API_KEY = getSecret(id, "telnyx_key") || "";
+  if (telnyx) out.VOICE_PROVIDER = "telnyx";
+  if (vapi) {
+    if (!telnyx) out.VOICE_PROVIDER = "vapi";
+    out.VAPI_API_KEY = getSecret(id, "vapi_key") || "";
+    out.VAPI_PUBLIC_KEY = getSecret(id, "vapi_public") || "";
+  }
+  return { ...out, ...twilio };
 }
 
 /**
@@ -886,12 +982,12 @@ export function phoneSettings(id: number, s: SetupData): Record<string, string> 
 function supportSettings(id: number): Record<string, string> {
   const { token, callToken } = newSyncToken(id);
   const buyer = db().query("SELECT style FROM buyers WHERE id = ?").get(id) as { style: string } | null;
-  return { SUPPORT_SYNC_URL: SYNC_URL(), SUPPORT_SYNC_TOKEN: token, SUPPORT_CALL_TOKEN: callToken, SUPPORT_SELLER_NAME: buyer?.style === "neutral" ? "Support" : CONFIG.sellerName, APP_VERSION: currentPackage()?.version || "" };
+  return { SUPPORT_SYNC_URL: SYNC_URL(), SUPPORT_SYNC_TOKEN: token, SUPPORT_CALL_TOKEN: callToken, SUPPORT_SELLER_NAME: buyer?.style === "neutral" ? "Support" : CONFIG.sellerName, APP_VERSION: currentPackage()?.version || "", ...(brokerOn() ? { OAUTH_BROKER: "1" } : {}) };
 }
 
 export function buildSettings(id: number, s: SetupData): string {
   const resendKey = getSecret(id, "resend_key");
-  const smtp = s.email?.mode === "resend" ? `smtps://resend:${resendKey}@smtp.resend.com:465` : smtpUrl(s.email!.smtp!.host, s.email!.smtp!.port, s.email!.smtp!.user, getSecret(id, "smtp_password") || "");
+  const smtp = s.email?.mode === "resend" ? `smtp://resend:${resendKey}@smtp.resend.com:2587` : smtpUrl(s.email!.smtp!.host, s.email!.smtp!.port, s.email!.smtp!.user, getSecret(id, "smtp_password") || "");
   return buildEnv({
     PRODUCT_NAME: s.brand!.productName,
     DOMAIN: hostOf(s),
@@ -899,6 +995,7 @@ export function buildSettings(id: number, s: SetupData): string {
     ...phoneSettings(id, s),
     ...brandSettings(s),
     ...supportSettings(id),
+    ...(getSecret(id, "openrouter_key") ? { OPENROUTER_API_KEY: getSecret(id, "openrouter_key")! } : {}),
     // Fresh installs only (a droplet is made once): Support access starts ON, as on Railway. The owner can switch it off.
     SUPPORT_ACCESS_DEFAULT: "on",
     OWN_PHONE_ACCOUNT: "", // the buyer is the agency: every client runs on their Telnyx key
@@ -1131,7 +1228,7 @@ function finish(id: number, url: string) {
     brand: s.brand ? { productName: s.brand.productName, ownerEmail: s.brand.ownerEmail, ownPhoneAccount: s.brand.ownPhoneAccount, ...(demo ? { logo: s.brand.logo, colour: s.brand.colour } : {}) } : undefined,
     domain: s.domain ? { mode: s.domain.mode, zone: s.domain.zone, sub: s.domain.sub, host: s.domain.host, confirmed: true } : undefined,
     server: s.server ? { region: s.server.region, size: s.server.size, price: s.server.price, chosen: true, sshPublicKey: s.server.sshPublicKey ? "yes" : undefined } : undefined,
-    phones: phoneSkipped(s) ? { deferred: true, provider: "telnyx" } : { confirmed: true, provider: useVapi(s) ? "vapi" : "telnyx" }, email: s.email ? { mode: s.email.mode, address: s.email.address, from: s.email.from, confirmed: true, resend: s.email.resend ? { status: s.email.resend.status } : undefined } : undefined,
+    phones: phoneSkipped(s) ? { deferred: true, provider: "telnyx" } : { confirmed: true, provider: hasTelnyx(id, s) || !useVapi(s) ? "telnyx" : "vapi" }, email: s.email ? { mode: s.email.mode, address: s.email.address, from: s.email.from, confirmed: true, resend: s.email.resend ? { status: s.email.resend.status } : undefined } : undefined,
     calendars: s.calendars ? { google: s.calendars.google, microsoft: s.calendars.microsoft, done: true } : undefined,
     skipped: s.skipped, extrasDone: s.extrasDone,
     assist: s.assist ? { steps: s.assist.steps, keepDns: s.assist.keepDns, dnsBy: s.assist.dnsBy, installBy: s.assist.installBy, openrouter: s.assist.openrouter } : undefined,
@@ -1260,7 +1357,7 @@ async function domainRailway(b: Buyer, f: Form): Promise<Flash | null> {
 
 async function deleteRailwayProject(b: Buyer): Promise<Flash | null> {
   const s = getSetup(b.id);
-  const token = getSecret(b.id, "railway_token");
+  const token = await railwayToken(b.id);
   if (!token) return err("We no longer hold your Railway token: delete the project in Railway, under its Settings.");
   if (busy.has(b.id)) return err("One moment: we're still working on your project. Try again in a few seconds.");
   busy.add(b.id);
@@ -1304,7 +1401,7 @@ export async function railwayVars(id: number, s: SetupData, token: string): Prom
     if (!key || !s.email.resend?.domainId) throw new ProviderError("Your Resend key is missing. Go back to the Email step and check it again.");
     // The server gets a send-only key for this one domain, never the Full access key.
     const send = await resendSendingKey(key, `${s.brand!.productName} server`, s.email.resend.domainId);
-    smtp = `smtps://resend:${send}@smtp.resend.com:465`;
+    smtp = `smtp://resend:${send}@smtp.resend.com:2587`;
   } else smtp = smtpUrl(s.email.smtp!.host, s.email.smtp!.port, s.email.smtp!.user, getSecret(id, "smtp_password") || "");
   const v: Record<string, string> = {
     PRODUCT_NAME: s.brand!.productName,
@@ -1324,6 +1421,7 @@ export async function railwayVars(id: number, s: SetupData, token: string): Prom
     PORT: String(APP_PORT),
     DATABASE_URL: "${{Postgres.DATABASE_URL}}",
     RAILWAY_DOCKERFILE_PATH: "deploy/Dockerfile",
+    RAILWAY_RUN_UID: "0", // a Railway volume is owned by root: the app writes its backups to one
   };
   if (s.calendars?.google) { v.GOOGLE_CLIENT_ID = s.calendars.google.clientId; v.GOOGLE_CLIENT_SECRET = getSecret(id, "google_secret") || ""; }
   if (s.calendars?.microsoft) { v.MICROSOFT_CLIENT_ID = s.calendars.microsoft.clientId; v.MICROSOFT_CLIENT_SECRET = getSecret(id, "microsoft_secret") || ""; }
@@ -1366,7 +1464,7 @@ function setRw(id: number, fn: (rw: NonNullable<SetupData["rw"]>, s: SetupData) 
 
 async function tickRailCreate(id: number) {
   let s = getSetup(id);
-  const token = getSecret(id, "railway_token");
+  const token = await railwayToken(id);
   if (!token) return fail(id, "create_failed", "Your Railway token is missing. Go back to the Railway step and check it again.");
   const rw = s.rw || {};
   try {
@@ -1408,6 +1506,12 @@ async function tickRailCreate(id: number) {
       progress(id, "Adding the app and your settings");
       const svc = (await railway(token, "mutation($input: ServiceCreateInput!) { serviceCreate(input: $input) { id } }", { input: { ...base, name: "app" } })).serviceCreate;
       setRw(id, (r) => { r.appId = String(svc.id); });
+      return;
+    }
+    // The app's own volume: the daily backups (server/backup.ts) are kept on it. Railway sets RAILWAY_VOLUME_MOUNT_PATH.
+    if (!rw.appVolume) {
+      await railway(token, "mutation($input: VolumeCreateInput!) { volumeCreate(input: $input) { id } }", { input: { ...base, serviceId: rw.appId, mountPath: APP_VOLUME_PATH } });
+      setRw(id, (r) => { r.appVolume = true; });
       return;
     }
     // Railway's own address first: with no custom domain it is the app's PUBLIC_URL.
@@ -1471,7 +1575,7 @@ async function railLogs(id: number, token: string, deploymentId: string, runtime
 
 async function tickRailDeploy(id: number) {
   const s = getSetup(id);
-  const token = getSecret(id, "railway_token");
+  const token = await railwayToken(id);
   if (!token || !s.rw?.deploymentId) return fail(id, "create_failed", "We lost track of the build. Press Try again.");
   if (!due(`rw-dep:${id}`, fast ? 2000 : 6000)) return;
   try {
@@ -1503,7 +1607,7 @@ async function tickRailDomain(id: number) {
     if (healthy) { progress(id, `${temp} is ready`); finish(id, temp); }
     return;
   }
-  const token = getSecret(id, "railway_token");
+  const token = await railwayToken(id);
   if (!token || !s.rw?.customDomainId) return;
   if (!due(`rw-dom:${id}`, fast ? 2000 : 15_000)) return;
   const healthy = await fetch(`${webUrl(s.rw.serviceDomain)}/api/health`, { signal: AbortSignal.timeout(8000) }).then((r) => r.ok).catch(() => false);
@@ -1561,6 +1665,27 @@ export const updateVarHooks: ((buyerId: number, existing: Record<string, string>
 updateVarHooks.push((id, have) => ("SUPPORT_SYNC_TOKEN" in have ? {} : supportSettings(id)));
 
 const UPDATE_TOKEN_MSG = "That token can't see your agency's project. Paste the token from the Railway account you installed with (workspace set to No workspace).";
+/** Where the app's volume is mounted (the backups go to <this>/backups). */
+export const APP_VOLUME_PATH = "/data";
+
+/**
+ * An agency installed before backups existed has no volume on its app service: add one (once). Returns true if it
+ * created one. Best effort: a failure is logged and the update carries on (the app then keeps backups on its
+ * temporary disk and says so in Settings, Backups).
+ */
+export async function ensureAppVolume(token: string, projectId: string, envId: string, appId: string): Promise<boolean> {
+  try {
+    const p = (await railway(token, "query($id: String!) { project(id: $id) { volumes { edges { node { id volumeInstances { edges { node { serviceId environmentId } } } } } } } }", { id: projectId })).project;
+    const has = (p?.volumes?.edges || []).some((v: any) => (v.node?.volumeInstances?.edges || []).some((i: any) => String(i.node?.serviceId) === appId));
+    if (has) return false;
+    await railway(token, "mutation($input: VolumeCreateInput!) { volumeCreate(input: $input) { id } }", { input: { projectId, environmentId: envId, serviceId: appId, mountPath: APP_VOLUME_PATH } });
+    return true;
+  } catch (e) {
+    console.log(`[setup] couldn't add the app volume: ${(e as Error).message}`);
+    return false;
+  }
+}
+
 async function locateAgency(token: string, projectId: string): Promise<{ envId: string; appId: string }> {
   let p: any;
   try {
@@ -1635,7 +1760,7 @@ async function tickUpdate(id: number) {
   const u = s.update;
   if (!u || u.phase !== "running") return;
   if (isDemoBuyer(id)) return tickDemoUpdate(id);
-  const token = getSecret(id, "railway_token");
+  const token = await railwayToken(id);
   if (!token || !s.rw?.projectId) return failUpdate(id, "We don't have your Railway token any more. Press Try again and paste it.");
   const projectId = s.rw.projectId;
   try {
@@ -1652,6 +1777,7 @@ async function tickUpdate(id: number) {
       const to = currentPackage()?.version || u.to || "";
       const add: Record<string, string> = {};
       for (const h of updateVarHooks) for (const [k, v] of Object.entries(h(id, have))) if (!(k in have) && !(k in add)) add[k] = v;
+      if (!("RAILWAY_RUN_UID" in have)) add.RAILWAY_RUN_UID = "0"; // so the app can write to its backup volume
       add.APP_VERSION = to; // ours: says which version this agency is
       // Automatic updates: a new project token for the app if it has none yet, its last automatic update failed, or its
       // latest heartbeat says automatic updates are unavailable (a token Railway no longer accepts). Not kept by us.
@@ -1660,6 +1786,11 @@ async function tickUpdate(id: number) {
       }
       await railway(token, "mutation($input: VariableCollectionUpsertInput!) { variableCollectionUpsert(input: $input) }", { input: { ...base, serviceId: u.appId, variables: add, skipDeploys: true } });
       setUpdate(id, (u) => { u.varsSet = true; u.to = to; });
+      return;
+    }
+    if (!u.volumeSet) {
+      if (await ensureAppVolume(token, projectId, u.envId, u.appId)) progress(id, "Adding a volume for your daily backups");
+      setUpdate(id, (u) => { u.volumeSet = true; });
       return;
     }
     if (!u.deploymentId) {

@@ -29,6 +29,7 @@ export interface AppShellProps {
 }
 
 export function isNavActive(item: NavItem, pathname: string) {
+  if (item.matchExact?.includes(pathname)) return true;
   if (item.exact) return pathname === item.to;
   if (pathname === item.to || pathname.startsWith(item.to + "/")) return true;
   return (item.match ?? []).some((m) => pathname === m || pathname.startsWith(m + "/"));
@@ -132,7 +133,7 @@ export function AppShell({ nav, variant, brandTo, sidebarHeader, topbarRight, ba
   const needsAttention = notifications.filter((n) => n.tone === "warning" || n.tone === "danger").length;
 
   return (
-    <div data-app-shell className="min-h-screen bg-canvas-2 text-ink">
+    <div data-app-shell className="min-h-screen bg-white text-ink">
       {/* Desktop sidebar */}
       <aside className="fixed inset-y-0 left-0 z-30 hidden w-[232px] border-r border-hairline bg-white lg:block">
         <SidebarBody nav={nav} variant={variant} brandTo={brandTo} sidebarHeader={sidebarHeader} notifications={notifications} />
@@ -148,7 +149,6 @@ export function AppShell({ nav, variant, brandTo, sidebarHeader, topbarRight, ba
 
       <div className="flex min-h-screen flex-col lg:pl-[232px]">
         <header className="sticky top-0 z-20 flex h-14 items-center gap-2 border-b border-hairline bg-white/95 px-3 backdrop-blur sm:px-5">
-          <span className="ribbon-gradient pointer-events-none absolute inset-x-0 top-0 h-[2px] opacity-90" aria-hidden />
           <button
             type="button"
             onClick={() => setOpen(true)}
@@ -158,8 +158,6 @@ export function AppShell({ nav, variant, brandTo, sidebarHeader, topbarRight, ba
             <Menu className="h-5 w-5" />
           </button>
           <div className="flex min-w-0 items-center gap-2 text-[13px]">
-            <span className="hidden text-ink-muted sm:inline">{variant === "admin" ? "Admin console" : "Workspace"}</span>
-            <span className="hidden text-hairline sm:inline">/</span>
             <span className="truncate font-medium text-ink">{current?.label ?? "Overview"}</span>
           </div>
           <div className="ml-auto flex items-center gap-1.5">

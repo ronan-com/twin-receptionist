@@ -64,13 +64,13 @@ test("changing owner email preserves the manual branding and other buyers are in
   expect(vars.BRAND_COLOUR).toBe("#125588");
   expect(vars).not.toHaveProperty("NEUTRAL_DASHBOARD");
 });
-test("explicitly branded installations retain their existing validation and styling", async () => {
+test("legacy buyer styles use the neutral portal and preserve supplied business branding", async () => {
   const b = addBuyer("Existing", "existing@example.com", false, { style: "branded" });
+  expect(b.style).toBe("neutral");
   await actions.start(b, {});
-  expect((await actions.brand(b, { ownerEmail: b.email }))?.text).toBe("Give your brand a name.");
   expect(await actions.brand(b, { ownerEmail: b.email, productName: "Existing Brand" })).toBeNull();
   expect(getSetup(b.id).brand?.deferred).not.toBe(true);
-  expect((await actions.brand(b, { ownerEmail: "changed@example.com" }))?.kind).toBe("err");
-  expect(getSetup(b.id).brand?.ownerEmail).toBe(b.email);
-  expect(wizardPage(b, getSetup(b.id), b.code, "sid", "brand")).toContain('name="productName"');
+  expect(await actions.brand(b, { ownerEmail: "changed@example.com" })).toBeNull();
+  expect(getSetup(b.id).brand).toMatchObject({ productName: "Existing Brand", ownerEmail: "changed@example.com" });
+  expect(wizardPage(b, getSetup(b.id), b.code, "sid", "brand")).not.toContain('name="productName"');
 });

@@ -43,7 +43,7 @@ export function assistPanel(h: Helpers, sid: string, b: Buyer, s: SetupData): st
   const table = `<table class="records steps"><thead><tr><th>Step</th><th>Status</th><th>What's set</th><th>When</th></tr></thead><tbody>${rows.map((r) => `<tr><td data-l="Step"><b>${esc(r.title)}</b>${r.optional ? ` <span class="hint">optional</span>` : ""}</td><td data-l="Status">${by(r)}</td><td data-l="What's set">${esc(r.detail)}</td><td data-l="When">${r.at ? `${esc(h.when(r.at))} · ${esc(r.who || "")}` : ""}</td></tr>`).join("")}${s.assist?.steps?.openrouter ? `<tr><td data-l="Step"><b>AI help (OpenRouter)</b> <span class="hint">optional</span></td><td data-l="Status"><span class="pill live">Done by you</span></td><td data-l="What's set">${esc(secretHint(b.id, "openrouter_key") || "key saved")}</td><td data-l="When">${esc(h.when(s.assist.steps.openrouter.at))} · ${esc(s.assist.steps.openrouter.by)}</td></tr>` : ""}</tbody></table>`;
 
   const brand = s.brand;
-  const brandForm = form("brand", `<div class="two"><div>${text("productName", "Brand name", brand?.productName, "e.g. Chloe", "required")}</div><div>${text("ownerEmail", "Owner email", brand?.ownerEmail || b.email, "", 'type="email" required')}</div></div>
+  const brandForm = form("brand", `<div class="two"><div>${text("productName", "Brand name", brand?.productName, "e.g. Acme AI", "required")}</div><div>${text("ownerEmail", "Owner email", brand?.ownerEmail || b.email, "", 'type="email" required')}</div></div>
   <label class="f" for="logoFile">Logo (optional)</label><input id="logoFile" type="file" accept="image/png,image/jpeg,image/webp">
   <input type="hidden" id="logo" name="logo" value="${esc(brand?.logo || "")}"><input type="hidden" id="removeLogo" name="removeLogo" value="">
   <p class="hint" id="logoNote">${brand?.logo ? "Logo added. Choose another file to replace it." : "A PNG or JPG works best. It's shrunk in your browser, like the buyer's."}</p>
@@ -57,7 +57,7 @@ export function assistPanel(h: Helpers, sid: string, b: Buyer, s: SetupData): st
   const email = form("email", `<p class="hint">Resend (the wizard adds the sending domain, and the records go in with their domain's DNS below).</p>${pass("key", "Resend API key", secretHint(b.id, "resend_key"), "re_...")}${text("address", "Send from", s.email?.address || "", "hello@mail.theirbusiness.com")}`, "Check and save")
     + form("email-smtp", `<p class="hint">Or their own SMTP.</p><div class="two"><div>${text("host", "SMTP server", s.email?.smtp?.host, "smtp.example.com")}</div><div>${text("port", "Port", String(s.email?.smtp?.port || 587))}</div></div><div class="two"><div>${text("user", "Username", s.email?.smtp?.user)}</div><div>${pass("pass", "Password", secretHint(b.id, "smtp_password"))}</div></div>${text("address", "Send from", s.email?.address || "", "hello@theirbusiness.com")}`, "Check and save", "btn o");
   const cal = form("calendars", `<p class="hint">Needs their own domain below. Redirect: <code>https://${esc(hostOf(s) || "app.theirdomain")}/api/oauth/google/callback</code> (and /microsoft/).</p><div class="two"><div>${text("googleId", "Google client ID", s.calendars?.google?.clientId)}</div><div>${pass("googleSecret", "Google client secret", secretHint(b.id, "google_secret"))}</div></div><div class="two"><div>${text("microsoftId", "Microsoft client ID", s.calendars?.microsoft?.clientId)}</div><div>${pass("microsoftSecret", "Microsoft client secret", secretHint(b.id, "microsoft_secret"))}</div></div>`, "Check and save");
-  const backups = form("openrouter", `<p class="hint">Switches on "Ask for help" in their dashboard.</p>${pass("key", "OpenRouter API key", secretHint(b.id, "openrouter_key"))}`, "Check and save", "btn o");
+  const backups = form("openrouter", `<p class="hint">Powers their receptionists and the "Ask for help" button.</p>${pass("key", "OpenRouter API key", secretHint(b.id, "openrouter_key"))}`, "Check and save");
 
   // ---- domain + DNS ----
   const d = s.domain;
@@ -80,7 +80,7 @@ export function assistPanel(h: Helpers, sid: string, b: Buyer, s: SetupData): st
   <form method="post" action="/admin/b/${b.id}/assist/check-dns-now" class="sf">${h.hiddenT(sid)}<button class="btn o" type="submit">Check DNS now</button> <span class="hint" data-dns-note>It keeps checking by itself every few seconds while this page is open.</span></form></div>` : `<p class="hint">No records yet. They appear here once the domain and email are filled in, and again when the install makes their address.</p>`;
   const held = (["cf_token", "godaddy_key"] as const).filter((n) => hasSecret(b.id, n));
   const dnsState = `${d?.host ? `<p>Domain: <b>${esc(d.host)}</b> · DNS by <b>${d.mode === "manual" ? "hand" : d.mode === "godaddy" ? "GoDaddy" : "Cloudflare"}</b>${d.confirmed ? "" : " · <b>not finished</b> (Cloudflare may be waiting for the nameserver switch: " + esc((d.cf?.nameServers || []).join(", ")) + ")"}</p>` : ""}
-  ${held.length ? `<p class="hint">We hold their ${held[0] === "cf_token" ? "Cloudflare token" : "GoDaddy key"}${s.assist?.keepDns ? " and will keep it after the install (you ticked keep)" : "; it's deleted when the install finishes"}. <form method="post" action="/admin/b/${b.id}/assist/dns-drop" style="display:inline">${h.hiddenT(sid)}<button class="linkbtn" type="submit">Delete it now</button></form></p>` : ""}`;
+  ${held.length ? `<p class="hint">We hold their ${held[0] === "cf_token" ? "Cloudflare token" : "GoDaddy key"}${s.assist?.keepDns ? " and will keep it after the install (you ticked keep)" : "; it's deleted when the install finishes"}. <form method="post" action="/admin/b/${b.id}/assist/dns-drop" class="inl">${h.hiddenT(sid)}<button class="linkbtn" type="submit">Delete it now</button></form></p>` : ""}`;
 
   // ---- their setup link on their own domain ----
   const hostForm = (idle || s.phase === "done") && !b.revoked_at ? form("host", `<p class="hint">Their private link as <code>https://setup.theirbusiness.com/</code>: the wizard opens at the root, with their brand and no code in the address. The normal link keeps working. The record is a CNAME to our site; the https certificate is issued by our server on first use.</p>
@@ -88,7 +88,7 @@ export function assistPanel(h: Helpers, sid: string, b: Buyer, s: SetupData): st
   <label class="f" for="a-hprov">DNS</label><select id="a-hprov" name="provider"><option value="cloudflare">Cloudflare (write it)</option><option value="godaddy">GoDaddy (write it)</option><option value="manual">I'll add it / they will</option></select>
   ${pass("token", "Cloudflare token (empty = the one we hold)", secretHint(b.id, "cf_token"))}
   <div class="two"><div>${pass("gdKey", "GoDaddy key (empty = the one we hold)", secretHint(b.id, "godaddy_key"))}</div><div>${pass("gdSecret", "GoDaddy secret", secretHint(b.id, "godaddy_secret"))}</div></div>${keep}`, "Use this address") : "";
-  const hostLine = mine ? `<p>Their setup link on their domain: <a href="https://${esc(mine.host)}/" target="_blank" rel="noopener noreferrer"><b>https://${esc(mine.host)}/</b></a> ${h.copyBtn(`https://${mine.host}/`)} <span class="pill ${mine.dns_ok_at ? "live" : "in-setup"}">${mine.dns_ok_at ? "DNS points here" : "DNS not seen yet"}</span> <form method="post" action="/admin/b/${b.id}/assist/host-drop" style="display:inline">${h.hiddenT(sid)}<button class="linkbtn" type="submit" data-confirm="Remove their own-domain link? The normal link keeps working.">Remove</button></form></p>` : "";
+  const hostLine = mine ? `<p>Their setup link on their domain: <a href="https://${esc(mine.host)}/" target="_blank" rel="noopener noreferrer"><b>https://${esc(mine.host)}/</b></a> ${h.copyBtn(`https://${mine.host}/`)} <span class="pill ${mine.dns_ok_at ? "live" : "in-setup"}">${mine.dns_ok_at ? "DNS points here" : "DNS not seen yet"}</span> <form method="post" action="/admin/b/${b.id}/assist/host-drop" class="inl">${h.hiddenT(sid)}<button class="linkbtn" type="submit" data-confirm="Remove their own-domain link? The normal link keeps working.">Remove</button></form></p>` : "";
 
   // ---- install for them ----
   const can = canInstall(b, s);
@@ -104,7 +104,6 @@ export function assistPanel(h: Helpers, sid: string, b: Buyer, s: SetupData): st
     if (s.phase === "failed" || s.phase === "create_failed") return `${h.notice("err", esc(s.error || "The install stopped."))}<form method="post" action="/admin/b/${b.id}/assist/install" class="sf">${h.hiddenT(sid)}<button class="btn p" type="submit">Try the install again</button></form>`;
     return `<form method="post" action="/admin/b/${b.id}/assist/install" class="sf">${h.hiddenT(sid)}${can.ok ? `<p class="hint">Everything required is filled in. Optional extras left empty are simply not added. This runs the same install as the buyer's Install button, in their ${RAILWAY ? "Railway" : "DigitalOcean"} account.</p><button class="btn p" type="submit" data-confirm="Install ${esc(b.name)} now?">Install for them</button>` : `<p class="hint">${esc(can.why)}</p><button class="btn p" type="button" disabled>Install for them</button>`}</form>`;
   })();
-  const extrasBtn = idle && !s.extrasDone ? `<form method="post" action="/admin/b/${b.id}/assist/extras" class="sf">${h.hiddenT(sid)}<button class="btn o" type="submit">Mark optional extras finished (so the buyer skips that screen)</button></form>` : "";
 
   const audit = supportLog(b.id, 40);
   const auditHtml = audit.length ? `<ul class="audit">${audit.map((l) => `<li><span class="hint">${esc(h.when(l.at))}</span> · <b>${esc(l.admin_email)}</b> · ${esc(l.action)}${l.note ? ` · <span class="hint">${esc(l.note)}</span>` : ""}</li>`).join("")}</ul>` : `<p class="hint">Nothing yet.</p>`;
@@ -119,8 +118,7 @@ ${box(RAILWAY ? "Hosting: Railway token" : "Server: DigitalOcean token", hosting
 ${box("Phones: Telnyx key, or Vapi + Twilio", phones)}
 ${box("Optional: email (Resend or SMTP)", email)}
 ${box("Optional: calendars (Google, Microsoft)", cal)}
-${box("Optional: AI help (OpenRouter)", backups)}
-${extrasBtn}
+${box("AI: OpenRouter key", backups)}
 <h3>Domain and DNS</h3>
 ${dnsState}
 ${box("Their own domain: Cloudflare, GoDaddy or by hand", dnsForms, !!d && !d.confirmed)}
@@ -201,7 +199,6 @@ export async function assistRoute(what: string, b: Buyer, f: Record<string, stri
       return back(await setupHost(b, c.email, { host: f.host || "", provider, token: f.token, gdKey: f.gdKey, gdSecret: f.gdSecret, replace: bool(f.replace), keep: bool(f.keep) }));
     }
     case "host-drop": return back(dropHost(b, c.email));
-    case "extras": return back(await finishExtras(b, c.email));
     case "install": return back(await installFor(b, c.email));
     case "check-dns-now": {
       if (allow(`assist-dns:${b.id}`, 30, 5 * 60_000)) return back({ ok: false, message: "Checked a lot just now. Wait a minute.", kind: "err" });

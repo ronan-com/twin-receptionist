@@ -11,15 +11,15 @@ const SITE = `http://127.0.0.1:${PORT}`;
 process.env.DATA_DIR = dir;
 process.env.SETUP_SECRET_KEY = Buffer.alloc(32, 7).toString("base64");
 process.env.SITE_URL = SITE;
-process.env.PRODUCT_NAME = "Chloe";
-process.env.SELLER_NAME = "Chloe Co";
+process.env.PRODUCT_NAME = "Zorbo";
+process.env.SELLER_NAME = "Zorbo Co";
 for (const k of ["MOCK_DO", "MOCK_RAILWAY", "MOCK_CF", "MOCK_RESEND", "MOCK_TELNYX", "MOCK_OAUTH", "HOSTING", "PREVIEW_JUMP", "OPENROUTER_API_KEY"]) delete process.env[k];
 
 const { addBuyer, db } = await import("../lib");
 const { putSecret, updateSetup, getSetup } = await import("../store");
 const T = await import("../tickets");
 const { newAdminLink } = await import("../admin-web");
-const { HELP_SENT, HELP_PER_HOUR } = await import("../wizhelp");
+const { HELP_SENT, HELP_EMPTY, HELP_PER_HOUR } = await import("../wizhelp");
 
 const UA = "Mozilla/5.0 (X11; Linux x86_64) Firefox/131.0";
 const TOKEN_VALUE = "rail-token-abcdef0123456789-secret";
@@ -54,7 +54,7 @@ async function browser(code: string) {
 }
 const personBlock = (html: string) => html.slice(html.indexOf('<div class="person"'), html.indexOf('<p class="foot">'));
 
-const acme = addBuyer("Acme Agency", "acme@example.com", false, { style: "branded" });
+const acme = addBuyer("Acme Agency", "acme@example.com", false, { style: "neutral" });
 updateSetup(acme.id, (s) => { s.brand = { productName: "Acme Calls", ownerEmail: "owner@acme.test" } as any; s.domain = { host: "app.acme.test", zone: "acme.test", confirmed: true } as any; s.step = "server"; });
 putSecret(acme.id, "do_token", TOKEN_VALUE);
 let ticketId = 0;
@@ -118,8 +118,19 @@ describe("the wizard", () => {
     expect(hooked.some((h) => String(h?.text || "").includes("Help request from Acme Agency at step Brand"))).toBe(true);
   });
 
+  test("an empty or blank message is refused: no ticket, an error shown, and the box says it is required", async () => {
+    const x = addBuyer("Quiet Agency", "quiet@example.com", false, { style: "neutral" });
+    const b = await browser(x.code);
+    for (const problem of ["", "   \n  "]) await b.post("help-request", { v: "welcome", problem, contact: "q@example.com" });
+    await b.post("help-request", { v: "welcome", contact: "q@example.com" });
+    expect(T.listTickets("all", x.id)).toHaveLength(0);
+    const html = await b.page("welcome");
+    expect(html).toContain(escd(HELP_EMPTY));
+    expect(personBlock(html)).toMatch(/<textarea[^>]* required/);
+  });
+
   test("rate limit: 5 an hour per setup code", async () => {
-    const x = addBuyer("Busy Agency", "busy@example.com", false, { style: "branded" });
+    const x = addBuyer("Busy Agency", "busy@example.com", false, { style: "neutral" });
     const b = await browser(x.code);
     for (let i = 0; i < HELP_PER_HOUR; i++) await b.post("help-request", { v: "welcome", problem: `try ${i}` });
     await b.post("help-request", { v: "welcome", problem: "one too many" });
@@ -219,7 +230,7 @@ describe("neutral style", () => {
     expect(block).toContain("On it.");
     expect(block).toContain("<b>Support</b>");
     expect(html).toContain(escd(HELP_SENT).slice(0, 20));
-    for (const name of ["Chloe", "Twin"]) expect(block).not.toContain(name);
+    for (const name of ["Zorbo", "Twin"]) expect(block).not.toContain(name);
     expect(getSetup(n.id).flash).toBeUndefined();
   });
 });

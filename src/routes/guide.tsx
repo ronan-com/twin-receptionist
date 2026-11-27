@@ -130,7 +130,7 @@ const STEPS: Step[] = [
     intro: "Each client's receptionist answers its own number. You can test a receptionist from the browser before it has one.",
     items: [
       <>
-        Add a client, open its page and click <B>Buy a number</B>.
+        Add a client, open its page, click <B>Add a number</B> and choose <B>Buy a new number</B>.
       </>,
       <>Pick a number. You see its monthly price before you buy, and Telnyx charges your account.</>,
       <>Australian numbers need proof of address, and mobiles also need ID. Telnyx approves them in about three days.</>,

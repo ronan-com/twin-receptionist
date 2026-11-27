@@ -44,8 +44,8 @@ process.env.SITE_URL = "http://localhost:4500";
 process.env.MOCK_RAILWAY = "1";
 process.env.MOCK_TELNYX = "1";
 process.env.ADMIN_EMAILS = ADMIN;
-process.env.PRODUCT_NAME = "Chloe";
-process.env.SELLER_NAME = "Chloe AI";
+process.env.PRODUCT_NAME = "Zorbo";
+process.env.SELLER_NAME = "Zorbo AI";
 process.env.SITE_SMTP_URL = `smtp://127.0.0.1:${smtp.port}`;
 process.env.SITE_MAIL_FROM = "setup@example.com";
 for (const k of ["HOSTING", "SUPPORT_EMAIL", "DEMO_APP_URL", "OPENROUTER_API_KEY"]) delete process.env[k];
@@ -88,17 +88,20 @@ test("sign in (one-time link)", async () => {
   expect(await adminPage()).toContain("Add an agency");
 });
 
-describe("no Chloe branding by default", () => {
-  test("Add agency: Style select defaults to Generic, 'Email them now' is off, onboarding links list Generic first as the default", async () => {
+describe("generic setup site: no product name anywhere", () => {
+  test("Add agency: no Style select, 'Email them now' is off, no onboarding links panel", async () => {
     const html = await adminPage();
-    expect(html).toContain(`<option value="neutral" selected>Generic (no Chloe branding)</option><option value="branded">Chloe branded</option>`);
+    expect(html).not.toContain('name="style"');
+    expect(html).not.toMatch(/branded/i);
+    expect(html).toContain("AI Agency Admin");
+    expect(html).not.toMatch(/Zorbo/i);
     expect(html).toMatch(/<input type="checkbox" name="welcome" value="1"> <b>Email them now<\/b>/);
     expect(html).not.toMatch(/name="welcome" value="1" checked/);
     // No onboarding links panel on the dashboard: agencies are invited one by one with Add an agency.
     expect(html).not.toContain(`id="onboarding-link"`);
   });
 
-  test("Add agency with the defaults: neutral style, and nobody is emailed (even with site email set up)", async () => {
+  test("Add agency with the defaults: generic style, and nobody is emailed (even with site email set up)", async () => {
     const before = mails.length;
     const r = await call("POST", "/admin/buyers", { t: tok(await adminPage()), name: "Ann Agency", email: "ann@example.com" });
     expect(r.res.status).toBe(200);
@@ -109,50 +112,44 @@ describe("no Chloe branding by default", () => {
     expect(mails.length).toBe(before);
   });
 
-  test("Add agency picking 'Chloe branded' makes a branded agency; the agency page shows the style and can switch it", async () => {
-    await call("POST", "/admin/buyers", { t: tok(await adminPage()), name: "Ben Branded", email: "ben@example.com", style: "branded" });
+  test("a posted style=branded is ignored, and a stored 'branded' buyer renders generic", async () => {
+    await call("POST", "/admin/buyers", { t: tok(await adminPage()), name: "Ben Old", email: "ben@example.com", style: "branded" });
     const b = buyerByEmail("ben@example.com");
-    expect(b.style).toBe("branded");
+    expect(b.style).toBe("neutral");
+    db().query("UPDATE buyers SET style = 'branded' WHERE id = ?").run(b.id);
+    const old = findBuyer(buyerByEmail("ben@example.com").code)!;
+    const html = wizardPage(old, getSetup(old.id), old.code, "sid-x", "welcome");
+    expect(html).not.toMatch(/Zorbo/i);
     const page = (await call("GET", `/admin/b/${b.id}`)).body;
-    expect(page).toContain("<span>Style</span><b>Chloe branded</b>");
-    expect(page).toContain("Switch to Generic (no Chloe branding)");
-    const sw = await call("POST", `/admin/b/${b.id}/style`, { t: tok(page), style: "neutral" });
-    expect(sw.loc).toBe(`/admin/b/${b.id}?m=style-neutral`);
-    expect(buyerByEmail("ben@example.com").style).toBe("neutral");
-    await call("POST", `/admin/b/${b.id}/style`, { t: tok(page), style: "branded" });
-    expect(buyerByEmail("ben@example.com").style).toBe("branded");
+    expect(page).not.toMatch(/Zorbo|branded/i);
+    expect((await call("POST", `/admin/b/${b.id}/style`, { t: tok(page), style: "branded" })).res.status).not.toBe(302);
   });
 
-  test("a neutral agency's wizard, every step, shows no Chloe (title, header, footer, guides); a branded one does", async () => {
+  test("the wizard, every step, shows no product name (title, header, footer); the /guide link stays", async () => {
     const n = findBuyer(buyerByEmail("ann@example.com").code)!;
     for (const view of STEPS) {
       const html = wizardPage(n, getSetup(n.id), n.code, "sid-x", view);
-      expect(html).not.toMatch(/Chloe/i);
-      expect(html).not.toContain('href="/guide"');
+      expect(html).not.toMatch(/Zorbo/i);
     }
     expect(await A.fillStep(n, ADMIN, "brand", { productName: "Acme Voice", ownerEmail: "owner@acme.test", logo: "", removeLogo: "", colour: "" })).toMatchObject({ ok: true });
-    for (const view of STEPS) expect(wizardPage(n, getSetup(n.id), n.code, "sid-x", view)).not.toMatch(/Chloe/i);
-    const br = findBuyer(buyerByEmail("ben@example.com").code)!;
-    expect(wizardPage(br, getSetup(br.id), br.code, "sid-x", "welcome")).toContain("Chloe");
+    for (const view of STEPS) expect(wizardPage(n, getSetup(n.id), n.code, "sid-x", view)).not.toMatch(/Zorbo/i);
   });
 
-  test("the help chat's instructions, the start pages and the link-off page say no Chloe for a neutral agency", () => {
+  test("the help chat's instructions, the start pages and the link-off page name no product", () => {
     const n = findBuyer(buyerByEmail("ann@example.com").code)!;
-    expect(systemPrompt({ buyer: n, setup: getSetup(n.id), view: "brand" })).not.toMatch(/Chloe/i);
-    const br = findBuyer(buyerByEmail("ben@example.com").code)!;
-    expect(systemPrompt({ buyer: br, setup: getSetup(br.id) })).toContain("Chloe");
-    expect(startShell("neutral", "Start", "<p>x</p>")).not.toMatch(/Chloe/i);
-    expect(inactivePage("neutral")).not.toMatch(/Chloe/i);
+    expect(systemPrompt({ buyer: n, setup: getSetup(n.id), view: "brand" })).not.toMatch(/Zorbo/i);
+    expect(startShell("neutral", "Start", "<p>x</p>")).not.toMatch(/Zorbo/i);
+    expect(inactivePage("neutral")).not.toMatch(/Zorbo/i);
   });
 
-  test("'Email them now' on a neutral agency: the welcome email has no Chloe, and counts as invited", async () => {
+  test("'Email them now' on a neutral agency: the welcome email has no product name, and counts as invited", async () => {
     const before = mails.length;
     const r = await call("POST", "/admin/buyers", { t: tok(await adminPage()), name: "Wendy Welcome", email: "wendy@example.com", welcome: "1" });
     expect(r.body).toContain("Welcome email sent to wendy@example.com");
     expect(mails.length).toBe(before + 1);
     const m = mails[mails.length - 1];
     expect(m.to).toBe("wendy@example.com");
-    expect(m.data).not.toMatch(/Chloe/i);
+    expect(m.data).not.toMatch(/Zorbo/i);
     expect(buyerByEmail("wendy@example.com").invited_at).toBeTruthy();
   });
 });
@@ -173,7 +170,7 @@ describe("Invite them", () => {
     expect(list).toMatch(/Ann Agency[\s\S]*?Not invited yet/);
   });
 
-  test("Send invite email: the setup link goes to them (no Chloe for a neutral agency) and invited-at is recorded and shown", async () => {
+  test("Send invite email: the setup link goes to them (no product name) and invited-at is recorded and shown", async () => {
     const b = buyerByEmail("ann@example.com");
     const before = mails.length;
     const page = (await call("GET", `/admin/b/${b.id}`)).body;
@@ -184,7 +181,7 @@ describe("Invite them", () => {
     expect(m.to).toBe("ann@example.com");
     expect(m.data).toContain(`/setup/${b.code}`);
     expect(m.data).toContain("Brand");
-    expect(m.data).not.toMatch(/Chloe/i);
+    expect(m.data).not.toMatch(/Zorbo/i);
     const after = buyerByEmail("ann@example.com");
     expect(after.invited_at).toBeTruthy();
     const again = (await call("GET", `/admin/b/${b.id}`)).body;

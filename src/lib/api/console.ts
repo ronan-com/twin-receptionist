@@ -1,6 +1,6 @@
 import type { ResolvedRange } from "../app/date-range";
 import type { AuditRow, CallListRow, CallOutcome, CallStatus } from "../app/types";
-import type { AdminNumberRequest, Agency, AvailableNumber, Brand, NumberCountry, NumberState, NumberType, Settings, TeamState, TestLogin, Voice as TwinVoice } from "../shared";
+import type { AdminNumberRequest, Agency, AvailableNumber, Brand, NumberCountry, NumberState, NumberType, Settings, TextsStatus, TeamState, TestLogin, Voice as TwinVoice } from "../shared";
 import type { OwnedNumber } from "../ownNumbers";
 import { api, qs } from "./base";
 
@@ -363,7 +363,7 @@ export const companyApi = {
   upload: (id: string, kind: "logo" | "background", file: File) => uploadBrand(`/api/console/companies/${id}/brand/${kind}`, file),
 };
 
-export type BrandChange = { bgColor?: string; primaryColor?: string; accentColor?: string; sidebarColor?: string; removeLogo?: boolean; removeBackground?: boolean };
+export type BrandChange = { bgColor?: string; primaryColor?: string; accentColor?: string; sidebarColor?: string; removeLogo?: boolean; removeBackground?: boolean; lockClient?: boolean };
 
 async function uploadBrand(path: string, file: File): Promise<Brand> {
   const res = await fetch(path, { method: "POST", credentials: "same-origin", body: file });
@@ -399,6 +399,9 @@ export const attachOwnedNumber = (clientId: string, numberId: string, confirm: b
   api.post<NumberState & { movedFrom: string; automationsError?: string }>(`/api/clients/${clientId}/numbers/attach`, { numberId, confirm });
 /** Let a number go from a receptionist. It stays on the Telnyx account. */
 export const detachOwnedNumber = (clientId: string, numberId: string) => api.post<NumberState & { movedFrom: string }>(`/api/clients/${clientId}/numbers/detach`, { numberId });
+/** The Texts switch for one receptionist: its status, and on/off (switching on again is the retry). */
+export const getTexts = (clientId: string) => api.get<TextsStatus>(`/api/clients/${clientId}/texting`);
+export const setTexts = (clientId: string, on: boolean) => api.put<TextsStatus>(`/api/clients/${clientId}/texting`, { on });
 export const getNumberState = (clientId: string) => api.get<NumberState>(`/api/clients/${clientId}/numbers`);
 export const requestNumberFor = (id: string, type: "local" | "mobile", note: string) => api.post(`/api/console/businesses/${id}/number-requests`, { type, note });
 export const resolveIncident = (id: string) => api.post<AdminSystem>(`/api/console/incidents/${id}/resolve`);

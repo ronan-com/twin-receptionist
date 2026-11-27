@@ -2,6 +2,31 @@
 
 Written for an outside reviewer (GPT/Claude) to audit. Read with `HANDOVER-NEXT-DEV.md` (to-do list) and `REVIEW-NOTES.md` (product, branches). The checks below were run against live systems on 27 Nov 2026.
 
+## Update, release/1.0.19 (27 Nov 2026): read this first
+The sections below were written at ~16:00 and are older than this one. Where they differ, this one is right.
+
+**What is in release/1.0.19** (branch `release/1.0.19`, built on `integrate/1.0.18`, not yet on `own-phone-account` and not yet released):
+- Everything in 1.0.14 to 1.0.18: neutral product name, call summaries, reschedule/cancel by phone, spam filter, simple onboarding (Brand, Hosting, Voice, AI), one brain on OpenRouter, daily backups to an app volume, app connectors, shared Google/Microsoft sign-in broker (off by default), agency quick guide, Connections tab for Telnyx/Vapi/Twilio keys, 10-minute number check.
+- Onboarding rehearsal fixes (`fix/onboarding-rehearsal`): admin tables scroll under the CSP, AI row on the Install summary, the plan error says "Try again", the mock SMTP records mail.
+- Resend over port 2587 (STARTTLS). **Railway blocks outbound 465 and 587 on plans below Pro**, so installs on Hobby could not send email on those ports.
+- Leftovers fixed in 1.0.19: (a) Done page "Before you go" items start empty and only tick when the buyer presses them (we cannot see whether a token was deleted); (b) "I need a person" refuses an empty message; (c) `site.db` migrations run under one write lock and tolerate "duplicate column", so the server and `admin.ts publish` can open a fresh file together; (d) the Hosting step now says up front what plan is needed. A Railway free trial or an unreadable plan keeps the buyer on Hosting with a warning (per Railway's docs the trial ends after 30 days or when its US$5 is spent and the services stop; a Limited Trial has restricted outbound ports). The Free plan is refused with the Hobby message. **Not tested against a real trial account**: we only had a Hobby account, so the trial behaviour is from the docs and a stubbed Railway API.
+
+**How the master admin is reached:** https://setup.sageai.agency/admin (the admin domain; buyer setup links stay on the generic sslip address). The old sslip `/admin` and setup.chloeeai.co still answer for installed agencies' `/api/*`.
+
+**Test agency:** "Sage AI Test" on Ronan's Railway, https://app-production-4f265fb1.up.railway.app (login and Railway token are in `~/aibiz/.secrets/`, never in git). It has the "Test Plumbing" business. Installed by uploading a bundle built on the ThinkCentre, keeping env, DB and volume.
+
+**Email:** the platform sends through Resend from the verified domain mail.twintechnologies.co (key in `~/aibiz/.secrets/test-install.env`).
+
+**Building and testing:** this laptop is overloaded. Run builds and tests on the ThinkCentre with `~/aibiz/bin/tc-run.sh <folder> '<command>'` (rsyncs the folder, installs deps, gives a scratch Postgres as DATABASE_URL). Full check: `bunx tsc --noEmit && bun run build && bunx tsc --noEmit -p download-site && bun test server/ && (cd download-site && bun test)`. CI is `gh workflow run chloe-ci --ref <branch>`.
+
+**Release process is unchanged:** `scripts/release-chloe.sh` releases from `own-phone-account` after a green CI run for that commit; the setup site and the app bundle are published together and every installed agency auto-updates from it. The exact steps for 1.0.19 are in `~/aibiz/reports/release-1.0.19-plan.md`.
+
+**Open items**
+1. Release 1.0.19 (plan above); nothing in it is live yet.
+2. Railway free-trial behaviour at Install is unproven on a real trial account.
+3. Everything in "Not proven yet" below still stands except the test agency now runs current code: no real phone call or booking has been proven on a buyer copy; auto-update against real Railway; the undocumented Railway upload endpoint; whether Hobby includes volume backups.
+4. chloeeai.com DNS (Jesse), rotating the secrets pasted in chat, "Daniel" (admin buyer 10) is still an unclear setup link.
+
 ## What Chloe is
 A packaged AI receptionist **agency**. A buyer (the agency) goes through our hosted setup wizard and connects their own accounts (Railway for hosting and Telnyx for voice and numbers; Vapi or Twilio optional; email, domain and calendars optional). The wizard installs the agency dashboard onto the buyer's own Railway. After setup we keep no keys and have no access. Telnyx is the main voice provider. Code: private repo `ronan-com/twin-receptionist`, release branch `own-phone-account`. `main` is Twin production, a different product: do not merge Chloe into it.
 

@@ -3,8 +3,7 @@
 //   POST /admin/login                 email + password (ADMIN_EMAILS + ADMIN_PASSWORD_HASH)
 //   GET  /admin/login/<token>         one-time sign-in link from `bun admin.ts admin-link`; POST uses it
 //   POST /admin/logout
-//   POST /admin/buyers                add an agency: Generic style (no Chloe branding) by default; emails nobody unless "Email them now" is ticked
-//   POST /admin/b/<id>/style          switch an agency between Generic (neutral) and branded
+//   POST /admin/buyers                add an agency (generic: no product name anywhere); emails nobody unless "Email them now" is ticked
 //   POST /admin/demo                  "Start a test run": a test agency, then straight to their setup link
 //   GET  /admin/problems              every problem every agency reported in the last 24 hours
 //   GET  /admin/alerts                every alert we raised (alerts.ts)
@@ -23,8 +22,8 @@
 // access is on in their own app (on by default, with "Support can make changes"; the owner can switch either off); their app
 // writes each sign-in and each change to its audit log.
 import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
-import nodemailer from "nodemailer";
-import { CONFIG, RAILWAY, addBuyer, currentPackage, db, markInvited, now, setBuyerStyle, setupLink, sha256, unbrand, type Buyer, type Style } from "./lib";
+import { sendSiteMail, siteMailConfigured } from "./mailer";
+import { CONFIG, RAILWAY, addBuyer, currentPackage, db, markInvited, now, setupLink, sha256, unbrand, type Buyer } from "./lib";
 import { esc } from "./pages";
 import { welcomeEmail } from "./content";
 import { agencyUrl, allow, appUrlOf, stepDone, updateInfo } from "./setup";
@@ -41,8 +40,7 @@ import { createLink, rotateLink, toggleLink, listLinks } from "./genericlink";
 // ---------------- settings ----------------
 const ADMIN_EMAILS = (process.env.ADMIN_EMAILS || "").split(",").map((s) => s.trim().toLowerCase()).filter(Boolean);
 const ADMIN_HASH = (process.env.ADMIN_PASSWORD_HASH || "").trim();
-const SITE_SMTP = (process.env.SITE_SMTP_URL || "").trim(); // our own mail sender, for welcome emails
-const SITE_FROM = (process.env.SITE_MAIL_FROM || "").trim();
+const SITE_FROM = () => (process.env.SITE_MAIL_FROM || "").trim();
 export const adminEnabled = () => ADMIN_EMAILS.length > 0;
 export const isAdminEmail = (e: string) => ADMIN_EMAILS.includes(e.trim().toLowerCase());
 const SESSION_HOURS = 12;
@@ -129,25 +127,19 @@ function deleteBuyer(id: number) {
 }
 
 // ---------------- welcome email ----------------
-export const welcomeConfigured = () => !!SITE_SMTP && !!SITE_FROM;
+export const welcomeConfigured = siteMailConfigured;
 async function sendWelcome(b: Buyer): Promise<string | null> {
   const w = welcomeEmail();
   if (!w) return "There's no welcome email text (handoff-content/welcome-email.md).";
-  const neutral = b.style === "neutral";
-  const vars: Record<string, string> = { buyer_first_name: b.name.split(/\s+/)[0] || b.name, setup_link: setupLink(b.code), seller_name: neutral ? "" : CONFIG.sellerName, support_email: CONFIG.supportEmail || SITE_FROM };
-  // A neutral (Generic) agency never sees our product or company name, whatever the template says.
-  const fill = (t: string) => { const x = t.replace(/\{\{(\w+)\}\}/g, (_m, k) => vars[k] ?? ""); return neutral ? unbrand(x) : x; };
+  const vars: Record<string, string> = { buyer_first_name: b.name.split(/\s+/)[0] || b.name, setup_link: setupLink(b.code), seller_name: "", support_email: CONFIG.supportEmail || SITE_FROM() };
+  // Emails are generic: no product or company name, whatever the template says.
+  const fill = (t: string) => unbrand(t.replace(/\{\{(\w+)\}\}/g, (_m, k) => vars[k] ?? ""));
   let body = fill(w.body);
   if (RAILWAY) body = body.replace(/A DigitalOcean account with a payment method/g, "A Railway account on the Hobby plan (it needs a card)");
-  const t = nodemailer.createTransport(SITE_SMTP, { connectionTimeout: 15000, greetingTimeout: 15000, socketTimeout: 20000 } as any);
-  try {
-    await t.sendMail({ from: SITE_FROM, to: b.email, subject: fill(w.subject), text: body });
-    markInvited(b.id);
-    return null;
-  } catch (e: any) {
-    console.error(`[admin] welcome email to buyer ${b.id} failed: ${e?.code || e?.name || "error"}`);
-    return "The welcome email didn't send. Copy the link and send it yourself.";
-  } finally { t.close(); }
+  const err = await sendSiteMail(b.email, fill(w.subject), body, { label: "Open your setup", url: setupLink(b.code) });
+  if (err) return "The welcome email didn't send. Copy the link and send it yourself.";
+  markInvited(b.id);
+  return null;
 }
 
 // ---------------- HTML ----------------
@@ -158,8 +150,6 @@ function versionCell(b: Buyer, s: SetupData): string {
   const u = updateInfo(b, s);
   return u ? `${esc(u.installed || "unknown")}${u.available ? ` <span class="pill installing" title="Version ${esc(u.latest)} is published; this agency hasn't updated yet">Update available</span>` : ""}` : "";
 }
-const STYLE_LABEL: Record<Style, string> = { neutral: "Generic (no Chloe branding)", branded: "Chloe branded" };
-const styleLabel = (st: Style) => STYLE_LABEL[st === "branded" ? "branded" : "neutral"];
 const invitedCell = (b: Buyer) => (b.invited_at ? `<span class="pill live">Invited ${esc(when(b.invited_at))}</span>` : `<span class="pill not-started">Not invited yet</span>`);
 const copyBtn = (v: string) => `<button type="button" class="copy" data-copy="${esc(v)}">Copy</button>`;
 function page(title: string, body: string, opts: { sid?: string; email?: string; wide?: boolean; live?: { status: string; rev: string } } = {}) {
@@ -169,7 +159,7 @@ function page(title: string, body: string, opts: { sid?: string; email?: string;
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex, nofollow">
-<title>${esc(title)} · Admin</title>
+<title>${esc(title)} · AI Agency Admin</title>
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
 <link rel="stylesheet" href="/wizard.css">
 <link rel="stylesheet" href="/tickets.css">
@@ -179,7 +169,7 @@ ${opts.sid ? `<script src="/admin-live.js" defer></script>` : ""}
 <body class="adm"${opts.sid ? ` data-live-alerts="/admin/alerts/live" data-since="${esc(now())}"` : ""}>
 ${opts.sid ? `<div class="livebar" id="livebar" role="alert" hidden><span class="livetext"></span><span><a class="liveopen" href="/admin/tickets">Open</a> <button type="button" class="livex" aria-label="Dismiss">Dismiss</button></span></div>` : ""}
 <div class="ribbon" aria-hidden="true"></div>
-<header class="top"><a class="mark" href="/admin"><span>${esc(CONFIG.sellerName)} · Admin</span></a>
+<header class="top"><a class="mark" href="/admin"><span>AI Agency Admin</span></a>
 <nav>${opts.sid ? `${agenciesNavHtml()} <a href="/admin/problems">Problems</a> <a href="/admin/alerts">Alerts</a> ${navLinkHtml()} <button type="button" class="linkbtn notifbtn" id="notifbtn" hidden>Turn on desktop alerts</button> <span class="who">${esc(opts.email || "")}</span><form method="post" action="/admin/logout"><input type="hidden" name="t" value="${esc(csrf(opts.sid))}"><button class="linkbtn" type="submit">Sign out</button></form>` : ""}</nav></header>
 <div class="shell wiz admshell"${opts.live ? ` data-live="1" data-status="${esc(opts.live.status)}" data-rev="${esc(opts.live.rev)}"` : ""}><main>${body}</main></div>
 </body>
@@ -188,15 +178,42 @@ ${opts.sid ? `<div class="livebar" id="livebar" role="alert" hidden><span class=
 const hiddenT = (sid: string) => `<input type="hidden" name="t" value="${esc(csrf(sid))}">`;
 const notice = (kind: "ok" | "err" | "info", html: string) => `<div class="notice ${kind}"><div>${html}</div></div>`;
 
+/**
+ * Emails an admin a one-time sign-in link. Only for an address in ADMIN_EMAILS, at most 3 an hour per address (older unused
+ * links for it are cancelled first). Returns what happened for tests and logs; the page never says which.
+ */
+export async function sendForgotLink(email: string): Promise<"sent" | "unknown" | "limited" | "no-mail" | "failed"> {
+  tables();
+  if (!isAdminEmail(email)) return "unknown";
+  if (allow(`adminforgot-mail:${email}`, 3, 60 * 60_000)) return "limited";
+  if (!siteMailConfigured()) { console.log("[admin] forgot password asked, but this site can't send email"); return "no-mail"; }
+  db().query("DELETE FROM admin_links WHERE email = ? AND used_at IS NULL").run(email);
+  const link = newAdminLink(email);
+  const err = await sendSiteMail(email, "Sign in to AI Agency Admin", `Hi,\n\nUse this link to sign in. It works once and runs out in ${LINK_MINUTES} minutes.\n\n${link}\n\nIf you didn't ask for it, ignore this email.`, { label: "Sign in", url: link });
+  return err ? "failed" : "sent";
+}
+function forgotPage(msg = "", sent = false) {
+  return page("Forgot password", `<section class="card narrow">
+<h1>Forgot your password?</h1>
+${sent ? notice("ok", "If that address is an admin, a sign-in link is on its way. It works once and runs out in 15 minutes.") : `<p class="lead">We'll email you a one-time sign-in link.</p>`}
+${msg ? notice("err", esc(msg)) : ""}
+${sent ? "" : `<form method="post" action="/admin/forgot" class="body">
+  <label class="f" for="email">Email</label><input id="email" name="email" type="email" required autocomplete="username">
+  <div class="nav"><span></span><div class="right"><button class="btn p" type="submit">Email me a link</button></div></div>
+</form>`}
+<p><a href="/admin">Back to sign in</a></p>
+</section>`);
+}
 function loginPage(msg = "", email = "") {
   return page("Sign in", `<section class="card narrow">
-<h1>Admin sign-in</h1><p class="lead">For ${esc(CONFIG.sellerName)} staff only.</p>
+<h1>AI Agency Admin</h1><p class="lead">Sign in to manage your agencies.</p>
 ${msg ? notice("err", esc(msg)) : ""}
 ${ADMIN_HASH ? `<form method="post" action="/admin/login" class="body">
   <label class="f" for="email">Email</label><input id="email" name="email" type="email" required autocomplete="username" value="${esc(email)}">
   <label class="f" for="password">Password</label><input id="password" name="password" type="password" required autocomplete="current-password">
   <div class="nav"><span></span><div class="right"><button class="btn p" type="submit">Sign in</button></div></div>
-</form>` : `<p class="hint">Sign in with a one-time link: run <code>bun admin.ts admin-link you@yourcompany.com</code> on the server.</p>`}
+</form>
+<p class="hint"><a href="/admin/forgot">Forgot your password?</a></p>` : `<p class="hint">Sign in with a one-time link: run <code>bun admin.ts admin-link you@yourcompany.com</code> on the server.</p>`}
 </section>`);
 }
 
@@ -248,7 +265,7 @@ function listPage(sid: string, email: string, q: string, filter: string, flash =
 <td data-l="Status">${pill(r.status)}</td>
 <td data-l=""><form method="post" action="/admin/b/${r.b.id}/delete">${hiddenT(sid)}<button class="linkbtn" type="submit" data-confirm="${esc(`Delete the test run ${r.b.name}?`)}">Delete</button></form></td></tr>`).join("");
   const testsSection = tests.length || DEMO_READY ? `<section class="card tests">
-<div class="titlerow"><details><summary>Test runs (${tests.length})</summary>${tests.length ? `<div style="overflow-x:auto"><table class="records"><thead><tr><th>Name</th><th>Created</th><th>Status</th><th></th></tr></thead><tbody>${testRows}</tbody></table></div>` : `<p class="hint">No test runs.</p>`}</details>
+<div class="titlerow"><details><summary>Test runs (${tests.length})</summary>${tests.length ? `<form method="post" action="/admin/demo/delete-all">${hiddenT(sid)}<button class="btn danger" type="submit" data-confirm="${esc(`Delete all ${tests.length} test runs?`)}">Delete all test runs</button></form>` : ""}${tests.length ? `<div class="xscroll"><table class="records"><thead><tr><th>Name</th><th>Created</th><th>Status</th><th></th></tr></thead><tbody>${testRows}</tbody></table></div>` : `<p class="hint">No test runs.</p>`}</details>
 ${DEMO_READY ? `<form method="post" action="/admin/demo" target="_blank">${hiddenT(sid)}<button class="btn o" type="submit" title="Makes a test agency with pretend accounts and opens their setup in a new tab">Start a test run</button></form>` : ""}</div>
 </section>` : "";
   return page("Agencies", `${flash}
@@ -260,15 +277,13 @@ ${DEMO_READY ? `<form method="post" action="/admin/demo" target="_blank">${hidde
   <select name="status" aria-label="Status"><option value="">All statuses</option>${STATUSES.map((s) => `<option value="${s}"${s === filter ? " selected" : ""}>${s} (${counts[s]})</option>`).join("")}</select>
   <button class="btn o" type="submit">Show</button>
 </form>
-${shown.length ? `<div style="overflow-x:auto"><table class="records buyers"><thead><tr><th>Agency</th><th>Brand</th><th>Status</th><th>Invited</th><th>Live at</th><th>Sync</th><th>Version</th><th>Calls 7d</th><th>Receptionists</th><th>Last activity</th></tr></thead><tbody>${tr}</tbody></table></div>` : `<p class="hint">${all.length ? "No agencies match." : "No agencies yet. Add one below."}</p>`}
+${shown.length ? `<div class="xscroll"><table class="records buyers"><thead><tr><th>Agency</th><th>Brand</th><th>Status</th><th>Invited</th><th>Live at</th><th>Sync</th><th>Version</th><th>Calls 7d</th><th>Receptionists</th><th>Last activity</th></tr></thead><tbody>${tr}</tbody></table></div>` : `<p class="hint">${all.length ? "No agencies match." : "No agencies yet. Add one below."}</p>`}
 </section>
 <section class="card">
 <h2>Add an agency</h2>
 <form method="post" action="/admin/buyers" class="body">${hiddenT(sid)}
   <div class="two"><div><label class="f" for="name">Name</label><input id="name" name="name" required maxlength="120"></div>
   <div><label class="f" for="bemail">Email</label><input id="bemail" name="email" type="email" required maxlength="200"></div></div>
-  <label class="f" for="bstyle">Style</label><select id="bstyle" name="style"><option value="neutral" selected>${esc(styleLabel("neutral"))}</option><option value="branded">${esc(styleLabel("branded"))}</option></select>
-  ${DEMO_READY ? `<label class="opt inline"><input type="checkbox" name="demo" value="1"> <b>Test run (pretend accounts)</b> <span class="hint">No email is sent; their setup accepts anything and ends on a test dashboard.</span></label>` : ""}
   ${welcomeConfigured() ? `<label class="opt inline"><input type="checkbox" name="welcome" value="1"> <b>Email them now</b> <span class="hint">Off: nobody is emailed. Set things up for them first, then send the invite from their agency page.</span></label>` : `<p class="hint">Nobody is emailed. Set things up for them, then invite them from their agency page. (Set SITE_SMTP_URL and SITE_MAIL_FROM to email from here.)</p>`}
   <div class="nav"><span></span><div class="right"><button class="btn p" type="submit">Add agency</button></div></div>
 </form>
@@ -344,17 +359,14 @@ function buyerPage(sid: string, email: string, b: Buyer, flash = "") {
     ["Domain", esc(s.domain?.host || "")], ["Status", pill(st)], ["Step", esc(s.phase === "done" ? "Done" : `${s.step}${s.phase !== "idle" ? ` (${s.phase})` : ""}`)],
     ["Live at", s.resultUrl ? `<a href="${esc(s.resultUrl)}" target="_blank" rel="noopener noreferrer">${esc(s.resultUrl)}</a>${s.domainPending && s.tempUrl ? ` · now at <a href="${esc(s.tempUrl)}" target="_blank" rel="noopener noreferrer">${esc(s.tempUrl)}</a>` : ""}` : ""],
     ["Created", esc(when(b.created_at))], ["Installed", esc(when(s.installedAt))], ["App version", versionCell(b, s)],
-    ["Style", esc(styleLabel(b.style))], ["Invited", invitedCell(b)],
+    ["Invited", invitedCell(b)],
   ];
-  const other: Style = b.style === "branded" ? "neutral" : "branded";
-  const styleForm = b.demo === 1 ? "" : `<form method="post" action="/admin/b/${b.id}/style" class="sf">${hiddenT(sid)}<input type="hidden" name="style" value="${other}"><button class="linkbtn" type="submit" data-confirm="${esc(`Switch ${b.name} to ${styleLabel(other)}? Their setup pages and emails follow it from now on.`)}">Switch to ${esc(styleLabel(other))}</button></form>`;
   return page(b.name, `${flash}
 <p><a href="/admin">← All agencies</a></p>
 <section class="card">
 <h1>${esc(b.name)}${b.demo === 1 ? ` <span class="pill demo">Test</span>` : ""}${needsHelp().has(b.id) ? ` <span class="pill failed">Needs help</span>` : ""}</h1>
 ${needsHelp().has(b.id) ? notice("err", `<b>They asked for a person during setup.</b> <a href="/admin/tickets/${needsHelp().get(b.id)}">Read and reply</a> · <a href="#assist">Set up for them</a>`) : ""}
 <div class="summary">${rowsHtml.filter(([, v]) => v).map(([k, v]) => `<div><span>${k}</span><b>${v}</b></div>`).join("")}</div>
-${styleForm}
 ${s.error && st === "failed" ? notice("err", esc(s.error)) : ""}
 <label class="f">Private setup link</label>
 <div class="linkrow"><code id="setup-link">${esc(link)}</code>${copyBtn(link)}</div>
@@ -386,7 +398,7 @@ function problemsPage(sid: string, email: string) {
   return page("Problems", `<p><a href="/admin">← All agencies</a></p>
 <section class="card"><h1>Problems</h1>
 <p class="lead">${all.length ? `${all.length} problem${all.length === 1 ? "" : "s"} across ${agencies} agenc${agencies === 1 ? "y" : "ies"}, from the last 24 hours.` : "Nothing reported by any agency in the last 24 hours."} The apps send a kind and a masked one-line description, never names, numbers or what anyone said.</p>
-${all.length ? `<div style="overflow-x:auto"><table class="records"><thead><tr><th>Agency</th><th>Kind</th><th>What</th><th>Times</th><th>Last</th></tr></thead><tbody>${all.map((x) => `<tr><td data-l="Agency"><a href="/admin/b/${x.id}"><b>${esc(x.name)}</b></a>${x.brand ? `<br><span class="hint">${esc(x.brand)}</span>` : ""}</td><td data-l="Kind"><span class="pill failed">${esc(x.p.kind)}</span></td><td data-l="What">${esc(x.p.msg)}</td><td data-l="Times">${x.p.count}</td><td data-l="Last">${esc(ago(x.p.last))}</td></tr>`).join("")}</tbody></table></div>` : ""}
+${all.length ? `<div class="xscroll"><table class="records"><thead><tr><th>Agency</th><th>Kind</th><th>What</th><th>Times</th><th>Last</th></tr></thead><tbody>${all.map((x) => `<tr><td data-l="Agency"><a href="/admin/b/${x.id}"><b>${esc(x.name)}</b></a>${x.brand ? `<br><span class="hint">${esc(x.brand)}</span>` : ""}</td><td data-l="Kind"><span class="pill failed">${esc(x.p.kind)}</span></td><td data-l="What">${esc(x.p.msg)}</td><td data-l="Times">${x.p.count}</td><td data-l="Last">${esc(ago(x.p.last))}</td></tr>`).join("")}</tbody></table></div>` : ""}
 </section>`, { sid, email });
 }
 
@@ -396,7 +408,7 @@ function alertsPage(sid: string, email: string) {
   return page("Alerts", `<p><a href="/admin">← All agencies</a></p>
 <section class="card"><h1>Alerts</h1>
 <p class="lead">Raised when an agency goes quiet for 30 minutes, a new kind of problem appears, or an automatic update fails. One per agency per kind per hour.${process.env.ALERT_WEBHOOK_URL || process.env.SITE_SMTP_URL ? "" : " <b>No alert channel is set (ALERT_WEBHOOK_URL, or SITE_SMTP_URL + SITE_MAIL_FROM), so these are only recorded here.</b>"}</p>
-${list.length ? `<div style="overflow-x:auto"><table class="records"><thead><tr><th>When (UTC)</th><th>Agency</th><th>Kind</th><th>What</th><th>Sent to</th></tr></thead><tbody>${list.map((a) => `<tr><td data-l="When">${esc(when(a.at))}</td><td data-l="Agency"><a href="/admin/b/${a.buyer_id}">${esc(names.get(a.buyer_id) || `Buyer ${a.buyer_id}`)}</a></td><td data-l="Kind"><span class="pill failed">${esc(a.kind)}</span></td><td data-l="What">${esc(a.message)}</td><td data-l="Sent to">${esc(a.sent || "nowhere")}</td></tr>`).join("")}</tbody></table></div>` : `<p class="hint">No alerts yet.</p>`}
+${list.length ? `<div class="xscroll"><table class="records"><thead><tr><th>When (UTC)</th><th>Agency</th><th>Kind</th><th>What</th><th>Sent to</th></tr></thead><tbody>${list.map((a) => `<tr><td data-l="When">${esc(when(a.at))}</td><td data-l="Agency"><a href="/admin/b/${a.buyer_id}">${esc(names.get(a.buyer_id) || `Buyer ${a.buyer_id}`)}</a></td><td data-l="Kind"><span class="pill failed">${esc(a.kind)}</span></td><td data-l="What">${esc(a.message)}</td><td data-l="Sent to">${esc(a.sent || "nowhere")}</td></tr>`).join("")}</tbody></table></div>` : `<p class="hint">No alerts yet.</p>`}
 </section>`, { sid, email });
 }
 
@@ -412,8 +424,7 @@ const flashOf = (url: URL) => {
   const m = url.searchParams.get("m");
   const msgs: Record<string, [string, string]> = {
     revoked: ["ok", "Link turned off."], restored: ["ok", "Link turned back on."], reset: ["ok", "Setup wiped. Their link starts from the beginning."],
-    deleted: ["ok", "Agency deleted."],
-    "style-neutral": ["ok", "Switched to Generic: their setup pages and emails show none of our branding."], "style-branded": ["ok", "Switched to branded."],
+    deleted: ["ok", "Agency deleted."], "tests-deleted": ["ok", "All test runs deleted."], "tests-none": ["info", "There are no test runs."],
     "link-on": ["ok", "The generic onboarding link is on."], "link-off": ["ok", "The generic onboarding link is off."], "link-rotated": ["ok", "Made a new link. The old one no longer works."],
     "sync-ok": ["ok", "Synced: their app answered with its latest numbers."],
     "sync-off": ["info", "They've turned sharing off, so their app sends us nothing."],
@@ -484,6 +495,18 @@ export async function adminRoute(req: Request, url: URL, c: AdminCtx): Promise<R
     return c.redirect("/admin", { "Set-Cookie": startSession(email) });
   }
 
+  // ---- forgot password: a one-time sign-in link by email (15 minutes, same as `admin-link`). Same answer for every address. ----
+  if (path === "/admin/forgot") {
+    if (method === "GET") return c.html(forgotPage());
+    if (method !== "POST" || !c.sameOrigin(req)) return c.html(forgotPage("Please try again."), 403);
+    const f2 = (await c.readForm(req)) || {};
+    const email = String(f2.email || "").trim().toLowerCase().slice(0, 200);
+    const wait = allow(`adminforgot:${c.ip}`, 5, 60 * 60_000);
+    if (wait) return c.html(forgotPage(`Too many tries. Wait ${Math.ceil(wait / 60)} minutes.`), 429);
+    await sendForgotLink(email);
+    return c.html(forgotPage("", true));
+  }
+
   const sess = sessionOf(req);
   // The live alert every admin page polls (admin-live.js): help requests waiting on us, and what came in since.
   if (path === "/admin/alerts/live") {
@@ -525,17 +548,24 @@ export async function adminRoute(req: Request, url: URL, c: AdminCtx): Promise<R
     return c.redirect(`/setup/${b.code}`);
   }
 
+  // "Delete all test runs": every demo buyer and what we hold for them. Real agencies are never touched.
+  if (path === "/admin/demo/delete-all" && method === "POST") {
+    const ids = (db().query("SELECT id FROM buyers WHERE demo = 1").all() as { id: number }[]).map((r) => r.id);
+    for (const id of ids) deleteBuyer(id);
+    console.log(`[admin] ${sess.email} deleted ${ids.length} test runs`);
+    return c.redirect(`/admin?m=${ids.length ? "tests-deleted" : "tests-none"}`);
+  }
+
   // The generic onboarding link (genericlink.ts): turn it on/off, make a new address.
   if (path === "/admin/links/add" && method === "POST") {
-    const l = createLink(sess.email, f.label, f.style === "branded" ? "branded" : "neutral", "");
+    const l = createLink(sess.email, f.label, "neutral", "");
     return c.redirect(l ? "/admin?m=link-on#onboarding-link" : "/admin?m=bad");
   }
-  m = path.match(/^\/admin\/links\/(new|new-branded|new-neutral|\d{1,9}\/(?:toggle|rotate))$/);
+  m = path.match(/^\/admin\/links\/(new|new-neutral|\d{1,9}\/(?:toggle|rotate))$/);
   if (m && method === "POST") {
     const [what, act] = m[1].split("/");
     if (what.startsWith("new")) {
-      const style = what === "new-branded" ? "branded" : "neutral";
-      const l = listLinks().find((x) => x.style === style) ?? createLink(sess.email, "", style, "");
+      const l = listLinks()[0] ?? createLink(sess.email, "", "neutral", "");
       if (l && !l.enabled) toggleLink(sess.email, l.id);
       return c.redirect("/admin?m=link-on");
     }
@@ -548,12 +578,10 @@ export async function adminRoute(req: Request, url: URL, c: AdminCtx): Promise<R
     const name = String(f.name || "").trim().replace(/[\r\n]/g, " ").slice(0, 120);
     const email = String(f.email || "").trim().toLowerCase().slice(0, 200);
     if (!name || !/^[^\s@<>"]+@[^\s@<>"]+\.[^\s@<>"]+$/.test(email)) return c.html(listPage(sess.sid, sess.email, "", "", notice("err", "Give a name and a real email address.").replace('class="notice ', 'class="notice flash ')), 400);
-    const demo = f.demo === "1" && DEMO_READY;
-    // Generic (neutral) unless "Chloe branded" was picked; a test run keeps its usual look.
-    const b = addBuyer(name, email, demo, demo ? {} : { style: f.style === "branded" ? "branded" : "neutral" });
-    console.log(`[admin] ${sess.email} added ${demo ? "demo " : ""}buyer ${b.id}`);
+    const b = addBuyer(name, email, false);
+    console.log(`[admin] ${sess.email} added buyer ${b.id}`);
     let mail = "";
-    if (!demo && f.welcome === "1" && welcomeConfigured()) {
+    if (f.welcome === "1" && welcomeConfigured()) {
       const wait = allow(`welcome:${sess.email}`, 30, 60 * 60_000);
       const errMail = wait ? "Too many welcome emails just now; send this one yourself." : await sendWelcome(b);
       mail = errMail ? notice("err", esc(errMail)) : notice("ok", `Welcome email sent to ${esc(b.email)}.`);
@@ -563,7 +591,6 @@ export async function adminRoute(req: Request, url: URL, c: AdminCtx): Promise<R
 <h1>${esc(b.name)} is added</h1><p class="lead">${mail ? "Their private setup link:" : `Nobody was emailed. Set up what you can for them on their agency page, then use <b>Invite them</b> at the bottom of it.`}</p>
 <div class="linkrow"><code id="new-link">${esc(link)}</code>${copyBtn(link)}</div>
 ${mail}
-<p class="hint">Style: ${esc(styleLabel(b.style))}.</p>
 <div class="nav"><a class="btn g" href="/admin">← All agencies</a><div class="right"><a class="btn p" href="/admin/b/${b.id}">Open agency</a></div></div>
 </section>`, sess));
   }
@@ -608,7 +635,7 @@ ${mail}
     }
   }
 
-  m = path.match(/^\/admin\/b\/(\d{1,9})(?:\/(setup|revoke|restore|reset|delete|sync|view-as|push-update|logs|style))?$/);
+  m = path.match(/^\/admin\/b\/(\d{1,9})(?:\/(setup|revoke|restore|reset|delete|sync|view-as|push-update|logs))?$/);
   if (m) {
     const b = buyerById(Number(m[1]));
     if (!b) return c.html(page("Not found", `<section class="card narrow"><h1>No such agency</h1><p><a href="/admin">← All agencies</a></p></section>`), 404);
@@ -636,12 +663,6 @@ ${mail}
     if (what === "restore") { db().query("UPDATE buyers SET revoked_at = NULL WHERE id = ?").run(b.id); return c.redirect(`/admin/b/${b.id}?m=restored`); }
     if (what === "reset") { resetSetup(b.id); return c.redirect(`/admin/b/${b.id}?m=reset`); }
     if (what === "delete") { deleteBuyer(b.id); return c.redirect("/admin?m=deleted"); }
-    if (what === "style") {
-      const style: Style = f.style === "branded" ? "branded" : "neutral";
-      setBuyerStyle(b.id, style);
-      logSupport(b.id, sess.email, "style", style);
-      return c.redirect(`/admin/b/${b.id}?m=style-${style}`);
-    }
     if (what === "push-update") {
       const wait = allow(`support:${sess.email}`, 60, 60 * 60_000);
       if (wait) return c.redirect(`/admin/b/${b.id}?m=bad`);

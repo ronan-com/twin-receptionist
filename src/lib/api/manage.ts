@@ -91,6 +91,16 @@ export const updateKnowledge = (businessId: string, id: string, body: KnowledgeI
   api.patch<KnowledgeSaved>(`${base(businessId)}/knowledge/${encodeURIComponent(id)}`, body);
 export const deleteKnowledge = (businessId: string, id: string) => api.del<KnowledgeSaved>(`${base(businessId)}/knowledge/${encodeURIComponent(id)}`);
 
+export type ImportDraft = { type: "faq" | "service" | "pricing" | "policy" | "location" | "fact"; question: string; answer: string; exists?: boolean };
+/** Reads the business's website and drafts knowledge items. Saves nothing. */
+export const draftKnowledgeFromWebsite = (businessId: string, url: string) =>
+  api.post<{ pages: string[]; drafts: ImportDraft[] }>(`${base(businessId)}/knowledge/import/draft`, { url });
+/** Saves the drafts the owner kept, as new items. Existing items are never replaced. */
+export const acceptImportedKnowledge = (businessId: string, items: ImportDraft[]) =>
+  api.post<{ added: number; skipped: number; synced: boolean; warning?: string }>(`${base(businessId)}/knowledge/import/accept`, {
+    items: items.map(({ type, question, answer }) => ({ type, question, answer })),
+  });
+
 /* ---------------- Integrations ---------------- */
 
 export async function getIntegrations(businessId: string): Promise<Integration[]> {
@@ -127,6 +137,7 @@ export type EmailState = { connected: boolean; address: string; mode: "draft" | 
 export const getEmail = (businessId: string) => api.get<EmailState>(`${base(businessId)}/email`);
 export const connectEmail = (businessId: string, body: { address: string; password: string; mode: "draft" | "send" }) =>
   api.put<EmailState>(`${base(businessId)}/email`, body);
+export const setEmailMode = (businessId: string, mode: "draft" | "send") => api.patch<EmailState>(`${base(businessId)}/email`, { mode });
 export const disconnectEmail = (businessId: string) => api.del<EmailState>(`${base(businessId)}/email`);
 export const checkEmail = (businessId: string) => api.post<EmailState>(`${base(businessId)}/email/check`);
 
@@ -183,7 +194,7 @@ export const updateAccount = (body: { name?: string; currentPassword?: string; n
 
 export type BrandLook = { logo: string; bgColor: string; bgImage: string; primaryColor: string; accentColor: string; /** Set per company in the console. */ sidebarColor?: string };
 /** own: set on this business; agency: the agency's defaults; effective: what the workspace shows. */
-export type BrandState = { own: BrandLook; agency: BrandLook; effective: BrandLook };
+export type BrandState = { own: BrandLook; agency: BrandLook; effective: BrandLook; /** The agency has locked this business's branding. */ locked?: boolean };
 export type BrandChange = { bgColor?: string; primaryColor?: string; accentColor?: string; removeLogo?: boolean; removeBackground?: boolean };
 
 export const getBrand = (businessId: string) => api.get<BrandState>(`${base(businessId)}/brand`);

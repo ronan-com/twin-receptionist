@@ -26,17 +26,20 @@ import { loadContent } from "./content";
 import { chatEnabled, chatReply, parseChatBody } from "./chat";
 import { badCodePage, demoOfflinePage, forbiddenPage, guidePage, homePage, limitedPage, notFoundPage, revokedPage } from "./pages";
 import { actions, allow, appUrlOf, canView, firstOpen, pBundle, pExit, pLog, pNext, startTicker } from "./setup";
-import { STEPS, csrfOk, getSetup, logRead, newSessionId, redact, secretValues, siteKey, updateSetup, type StepId } from "./store";
+import { STEPS, csrfOk, getSetup, logRead, newSessionId, redact, secretValues, siteKey, updateSetup, type SetupData, type StepId } from "./store";
 import { HELP_SENT, noteStepError, wizardHelpRequest } from "./wizhelp";
 import { statusRev, wizardPage } from "./wizard";
 import { adminRoute } from "./admin-web";
 import { inactivePage, startRoute } from "./genericlink";
 import { ticketsApi } from "./tickets";
+import { brokerApi } from "./broker";
 import { MAX_SYNC_BODY, bearerOf, buyerBySyncToken, ownerResetLink, receive } from "./sync";
 import { appSource, bundleSignatureOk, latestRelease, signBundleUrl } from "./releases";
 import { startAlerts } from "./alerts";
 import { DEMO, DEMO_KEY, DemoOffline, demoBuyer, demoDashboard } from "./demo";
 import { serveOwnHost, tlsAllowedResponse } from "./hosts";
+import { consumeState, exchangeCode, isProvider, mockOAuthRoute, oauthEnabled, oauthStart, readBrowserCookie, type OAuthProvider } from "./oauth";
+import { oauthComplete, oauthGuard, OAUTH_STEP } from "./setup";
 
 if ((process.env.PREVIEW_JUMP || "").trim() === "1" && !ANY_MOCK) {
   console.error("PREVIEW_JUMP=1 is for test sites only and needs a MOCK_* switch on too. Refusing to start.");
@@ -191,6 +194,52 @@ async function handle(req: Request, srv: Bun.Server<unknown>): Promise<Response>
   const r0 = allow(`ip:${ip}`, CONFIG.requestsPerMinute, 60_000);
   if (r0) return tooMany(r0);
 
+  // ---- "Login with Railway / Telnyx / OpenRouter" (oauth.ts). The fakes only answer when MOCK_OAUTH=1. ----
+  if (path.startsWith("/__mock/oauth/")) { const r = await mockOAuthRoute(req, url); if (r) return r; return html(notFoundPage(), 404); }
+  const os = isGet && path.match(/^\/setup\/([^/]*)\/oauth\/([a-z]+)$/);
+  if (os) {
+    const r = lookupBuyer(os[1], ip);
+    if (r.error) return r.error;
+    const b = r.buyer!;
+    if (!isProvider(os[2]) || !oauthEnabled(os[2])) return html(notFoundPage(), 404);
+    const p: OAuthProvider = os[2];
+    const wait = allow(`oauthstart:${b.id}`, 20, 10 * 60_000);
+    if (wait) return tooMany(wait);
+    const step = OAUTH_STEP[p];
+    if (oauthGuard(b, p)) return redirect(`/setup/${os[1]}`);
+    try {
+      const o = await oauthStart(b.id, p);
+      return redirect(o.url, { "Set-Cookie": o.cookie });
+    } catch (e) {
+      console.error(`[oauth] start ${p}: ${(e as Error)?.message || "error"}`);
+      updateSetup(b.id, (s) => { s.flash = { kind: "err", text: "That sign-in isn't available just now. Paste a key instead." }; });
+      return redirect(`/setup/${os[1]}?step=${step}`);
+    }
+  }
+  const oc = isGet && path.match(/^\/oauth\/([a-z]+)\/callback$/);
+  if (oc) {
+    if (!isProvider(oc[1])) return html(notFoundPage(), 404);
+    const p: OAuthProvider = oc[1];
+    const wait = allow(`oauthcb:${ip}`, 30, 10 * 60_000);
+    if (wait) return tooMany(wait);
+    const c = consumeState(p, url.searchParams.get("state") || "", readBrowserCookie(req));
+    const clear = { "Set-Cookie": "ob=; Path=/oauth; HttpOnly; Max-Age=0" };
+    if (!c.ok) return html(badCodePage(), 400, clear);
+    const b = db().query("SELECT * FROM buyers WHERE id = ?").get(c.buyerId) as Buyer | null;
+    if (!b || b.revoked_at) return html(badCodePage(), 404, clear);
+    const step = OAUTH_STEP[p];
+    const back = `/setup/${b.code}?step=${step}`;
+    let flash: SetupData["flash"] | null = null;
+    const before = getSetup(b.id).step;
+    if (url.searchParams.get("error") || !url.searchParams.get("code")) flash = { kind: "err", text: "Sign-in was cancelled. Try again, or paste a key instead." };
+    else {
+      try { flash = await oauthComplete(b, p, await exchangeCode(p, url.searchParams.get("code")!, c.verifier)); }
+      catch (e) { console.error(`[oauth] ${p}: ${(e as Error)?.message || "error"}`); flash = { kind: "err", text: "That sign-in didn't work. Try again, or paste a key instead." }; }
+    }
+    const after = updateSetup(b.id, (s) => { if (flash) s.flash = flash; });
+    return redirect(after.step !== before ? `/setup/${b.code}` : back, clear);
+  }
+
   // ---- team demo: a fresh start link, and the door into the real dashboard ----
   if (DEMO && isGet && DEMO_KEY && path === `/demo/${DEMO_KEY}`) return redirect(`/setup/${demoBuyer()}`);
   // The door into the demo dashboard: the global team demo, or a demo buyer once their install has finished.
@@ -209,6 +258,9 @@ async function handle(req: Request, srv: Bun.Server<unknown>): Promise<Response>
       throw e;
     }
   }
+
+  // ---- the shared Google / Microsoft sign-in for agencies (broker.ts). Answers 404 unless OAUTH_BROKER=1. ----
+  if (path.startsWith("/api/broker/") || path.startsWith("/oauth/broker/")) { const r = await brokerApi(req, url, ip, allow); if (r) return respond(r.body, r.status, Object.fromEntries(r.headers)); }
 
   // ---- the buyer's app reporting its health: counts only, token auth, rate-limited ----
   if (path === "/api/sync") {
@@ -428,5 +480,5 @@ if (CONFIG.extraListen) {
 startTicker();
 startAlerts();
 
-console.log(`Setup site for ${CONFIG.productName} (${CONFIG.sellerName}) on http://${server.hostname}:${server.port}${CONFIG.extraListen ? ` and ${CONFIG.extraListen}` : ""}  data: ${CONFIG.dataDir}`);
+console.log(`AI agency setup site on http://${server.hostname}:${server.port}${CONFIG.extraListen ? ` and ${CONFIG.extraListen}` : ""}  data: ${CONFIG.dataDir}`);
 if (ANY_MOCK) console.log(`TEST MODE: ${Object.entries({ PREVIEW_JUMP: CONFIG.previewJump, MOCK_RAILWAY: CONFIG.mockRailway, MOCK_DO: CONFIG.mockDO, MOCK_CF: CONFIG.mockCF, MOCK_RESEND: CONFIG.mockResend, MOCK_TELNYX: CONFIG.mockTelnyx, MOCK_OAUTH: CONFIG.mockOAuth }).filter(([, v]) => v).map(([k]) => k).join(" ")} (fake providers; nothing real is called)`);

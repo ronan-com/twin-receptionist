@@ -7,6 +7,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
+import { TelegramSetup } from "@/components/app/telegram/TelegramSetup";
+import { telegramApi, telegramKey } from "@/lib/api/telegram";
 import { PauseControl } from "@/components/app/receptionist/PauseControl";
 import { saveReceptionist, type ReceptionistRow } from "@/components/app/receptionist/model";
 import { agentsQuery, knowledgeQuery, phoneNumbersQuery } from "@/lib/app/queries";
@@ -76,6 +78,7 @@ export function ClientSettings() {
   const agentsQ = useQuery(agentsQuery(businessId));
   const numbersQ = useQuery(phoneNumbersQuery(businessId));
   const knowledgeQ = useQuery(knowledgeQuery(businessId));
+  const telegramQ = useQuery({ queryKey: telegramKey(businessId ?? ""), queryFn: () => telegramApi.get(businessId!), enabled: !!businessId });
   const agent = (agentsQ.data?.[0] as ReceptionistRow | undefined) ?? null;
   const numbers = (numbersQ.data ?? []).filter((n) => n.e164 && n.status === "active");
   const bookingSet = asRecord(agent?.booking_rules)["configured"] === true;
@@ -139,6 +142,17 @@ export function ClientSettings() {
     onSuccess: (r) => {
       setNewService("");
       toast.success(r.applied ? "Saved. Callers hear it from the next call." : "Saved");
+      refresh();
+    },
+    onError: (e: Error) => toast.error("Couldn't save", { description: e.message }),
+  });
+
+  /* ---- Bookings need my approval ---- */
+  const needsApproval = asRecord(agent?.booking_rules)["require_approval"] === true;
+  const saveApproval = useMutation({
+    mutationFn: (v: boolean) => saveReceptionist(businessId!, { booking_rules: { require_approval: v } }),
+    onSuccess: (r) => {
+      toast.success(r.applied ? "Saved" : "Saved");
       refresh();
     },
     onError: (e: Error) => toast.error("Couldn't save", { description: e.message }),
@@ -278,6 +292,16 @@ export function ClientSettings() {
 
         <LinkRow to="/app/knowledge" title="Answers to common questions" summary={knowledgeQ.isPending ? undefined : nKnow ? `${nKnow} answer${nKnow === 1 ? "" : "s"} saved` : "Teach your receptionist what to say"} />
 
+        {bookingSet ? (
+          <div className="flex min-h-[64px] items-center gap-3 border-b border-hairline px-4 py-3" data-setting="approval">
+            <span className="min-w-0 flex-1">
+              <span className="block text-[16px] font-semibold text-ink">Bookings need my approval</span>
+              <span className="mt-0.5 block text-[13.5px] text-ink-muted">{needsApproval ? "On. Approve them in Calendar." : "Off. Bookings are confirmed straight away."}</span>
+            </span>
+            <Switch checked={needsApproval} disabled={!canEdit || saveApproval.isPending} onCheckedChange={(v) => saveApproval.mutate(v)} aria-label="Bookings need my approval" />
+          </div>
+        ) : null}
+
         <Section id="messages" title="Where messages go" summary={savedEmail || "In your dashboard"} open={open === "messages"} onToggle={() => toggle("messages")}>
           <p className="text-[14px] text-ink-muted">Every message and booking is on your Home page. You can also get them by email.</p>
           {bookingSet ? (
@@ -292,6 +316,11 @@ export function ClientSettings() {
             <p className="text-[14px] text-ink-muted">Email alerts aren't switched on yet. {AGENCY_NOTE(who)}</p>
           )}
           <p className="text-[13px] text-ink-muted">Want calls put through to your mobile too? {AGENCY_NOTE(who)}</p>
+        </Section>
+
+        <Section id="chatbot" title="Chatbot" summary={telegramQ.data?.connected ? `Telegram: @${telegramQ.data.username}` : "Telegram: not connected"} open={open === "chatbot"} onToggle={() => toggle("chatbot")}>
+          <h3 className="text-[15px] font-semibold text-ink">Telegram</h3>
+          {businessId ? <TelegramSetup clientId={businessId} /> : null}
         </Section>
 
         <LinkRow to="/app/team" title="Team logins" summary="Who can sign in and see your calls" />

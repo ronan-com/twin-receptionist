@@ -1,3 +1,4 @@
+import { backupsRoute, startBackups } from "./backup";
 import { countryForTimezone, defaultHours, typeOfNumber, type Business, type IndustryKey, type NumberState, type Settings, type Voice } from "../src/lib/shared";
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { join, normalize } from "node:path";
@@ -32,7 +33,7 @@ import {
 } from "./accounts";
 import { isLocal } from "./auth";
 import { migrate, sql } from "./db";
-import { checkEmail, connectEmail, connectedClientIds, disconnectEmail, emailStatus } from "./email";
+import { checkEmail, connectEmail, connectedClientIds, disconnectEmail, emailStatus, setEmailMode } from "./email";
 import { SAMPLE_OWNED, attachNumber, detachNumber, ownedUnassigned, sampleOwned } from "./ownNumbers";
 import { checkBuyable, sampleNumbers, searchFor } from "./numbers";
 import { ValidationError, buildInstructions, greetingOf, knowledgeFor, normaliseSettings } from "./prompt";
@@ -54,17 +55,20 @@ import { OTHER_BRAND, UI_PRODUCT, brandedIndex } from "./product";
 import { agencySnapshot, consoleRoutes, isClientPaused } from "./routes/console";
 import { assistantRoute } from "./assistant";
 import { webchatAdmin, webchatPublic } from "./webchat";
+import { liveTelegramDeps, telegramAdmin, telegramHook, type TelegramDeps } from "./telegram";
 import { manageRoutes, setManageDeps } from "./routes/manage";
 import { signupRoutes } from "./routes/signup";
 import { automationHooks, automationRoutes } from "./routes/automations";
 import { applyAutomations, bookingBlocked, startAutomations, withAutomations } from "./automations";
 import { workspaceRoutes } from "./routes/workspace";
+import { workspaceMoreRoutes } from "./routes/workspaceMore";
+import { pipedreamConsoleRoutes } from "./routes/apps";
 import type { ClientAccess, RouteArgs } from "./routes/http";
 import { changeBrand, ownBrand, serveAsset, uploadAsset } from "./brand";
 import { accessibleClients, customerClientId, setFollowUpStage, customersFor, inviteCustomer, removeCustomer, revokeCustomerInvite } from "./customers";
 import { createRequest, declineRequest, listRequests, markDone, pendingCount, pendingRequest, requestsForClient, settleRequests } from "./numberRequests";
 import { createAgency, exitView, inviteAgencyOwner, viewAs, isSuspended, listAgencies, telnyxSettings, updateAgency } from "./agencies";
-import { canBuyNumbers, canUseOwnNumbers, canUseTwilio, checkNewKey, checkVapiKeys, connectPhoneAccount, connectTwilio, countCheck, disconnectPhoneAccount, disconnectTwilio, phoneAccount, pretendAccount, requirePhoneAccount, testTwilio, twilioAccount } from "./phoneAccount";
+import { canBuyNumbers, canUseOwnNumbers, canUseTwilio, connectPhoneAccount, connectTwilio, disconnectPhoneAccount, disconnectTwilio, phoneAccount, pretendAccount, requirePhoneAccount, testPhoneKeys, testTwilio, twilioAccount } from "./phoneAccount";
 import { availableTwilioNumbers, isTestTwilio, requireTwilio, twilioNumbersFor, twilioRegulatory } from "./twilio";
 import { previewEmail, sendSimText, startTextSim } from "./simulator";
 import {
@@ -89,7 +93,7 @@ import {
   savePublicUrl,
   tokenMatches,
 } from "./booking";
-import { CalendarError, calendarLink, cancelEvent, disconnectCalendar, providerOf, upcomingEvents } from "./calendars";
+import { CalendarError, calendarLink, disconnectCalendar, providerOf, upcomingEvents } from "./calendars";
 import { mailerReady, startOutbox } from "./mailer";
 import { checkEmailAddress, checkWebhookUrl, webhookSecret } from "./notify";
 import { oauthAvailable } from "./oauth";
@@ -98,6 +102,8 @@ import { platformSettingsRoutes } from "./platformSettingsApi";
 import { emailSettingsRoutes } from "./emailSettings";
 import type { BookingProvider, BookingState } from "../src/lib/shared";
 import { connectNumberForTexts, enableTexting, sendTestText, textingState } from "./texting";
+import { setTexts, splitNumbers, textsAfterBuy, textsStatus } from "./textsControl";
+import { recordNumbers, startNumberSync } from "./numberSync";
 import { BOOKING_TOOL_DEFS } from "./booking";
 import { VapiError, asProvider, connectedEngines, installProvider, ownKeyInstall, providerOfClient, providerOfOrg } from "./voice/config";
 import { providerById, voiceFor, voiceForOrg } from "./voice";
@@ -106,7 +112,11 @@ import { ENGINE_LABEL, NUMBER_RULE, closestVoice, numberFits, pickEngine, source
 import type { VoiceProvider } from "./voice/provider";
 import { toolAllowed } from "./voice/tools";
 import { startVapiHours } from "./voice/vapiHours";
-import { vapiEvents, vapiToolHook } from "./voice/vapiWebhook";
+import { vapiCallerHook, vapiEvents, vapiToolHook } from "./voice/vapiWebhook";
+import { telnyxTextHook, twilioTextHook } from "./smsBot";
+import { checkOpenRouterKey, clearLlmKey, LlmError, llmKeyState, parseOpenRouterKey, saveLlmKey } from "./llm";
+import { providerStatus, startProviderAlerts } from "./providerStatus";
+import { cancel as cancelBooking, cancelFromDashboard, findBooking, reschedule as rescheduleBooking } from "./bookingChange";
 
 // The last 200 log lines (scrubbed) and a problem list for the support heartbeat (server/problems.ts).
 installLogCapture();
@@ -211,6 +221,11 @@ async function setUpBooking(client: Business, input: any) {
   return syncAssistant(next);
 }
 
+// The MCP header value is a secret: it never leaves the server once saved.
+function noMcpSecret<T extends Business>(c: T): T {
+  return c.mcp ? { ...c, mcp: { url: c.mcp.url, ...(c.mcp.headerName ? { headerName: c.mcp.headerName } : {}) } } : c;
+}
+
 async function changeBooking(client: Business, input: any) {
   if (!client.booking) throw new ValidationError("Set up a calendar first.");
   const booking = { ...client.booking, provider: providerOf(client) };
@@ -219,6 +234,7 @@ async function changeBooking(client: Business, input: any) {
     if (!MINUTES.includes(Number(input.minutes))) throw new ValidationError("Choose an appointment length from the list.");
     booking.minutes = Number(input.minutes);
   }
+  if (typeof input?.requireApproval === "boolean") booking.requireApproval = input.requireApproval || undefined;
   if (input?.notifyEmail !== undefined) booking.notifyEmail = checkEmailAddress(input.notifyEmail);
   if (input?.leadWebhook !== undefined) booking.leadWebhook = await checkWebhookUrl(input.leadWebhook);
   return syncAssistant({ ...client, booking });
@@ -257,7 +273,8 @@ async function hook(req: Request, clientId: string, action: string): Promise<Res
   if (client.settings.paused && action !== "callback") return json({ error: "The receptionist is paused, so nothing can be booked. Take a message with request_callback instead." });
   if (!client.booking!.enabled) return json({ error: "Booking is switched off. Offer to take a message instead." });
   const mode = client.settings.profile?.bookingMode;
-  if (action === "book" && (mode === "request" || mode === "message_only")) return json({ error: "Bookings aren't made directly. Use request_callback so the team can confirm." });
+  const changing = action === "find" || action === "reschedule" || action === "cancel";
+  if ((action === "book" || changing) && (mode === "request" || mode === "message_only")) return json({ error: "Bookings aren't made directly. Use request_callback so the team can confirm." });
   if (action === "availability" && mode === "message_only") return json({ error: "Bookings aren't offered. Take a message with request_callback instead." });
   const closed = action === "callback" ? null : await bookingBlocked(client);
   if (closed) return json({ error: closed });
@@ -274,6 +291,11 @@ async function hook(req: Request, clientId: string, action: string): Promise<Res
     if (action === "availability") return json(await availability(client, body));
     if (action === "book") return json(await book(client, body));
     if (action === "callback") return json(await callback(client, body));
+    // The caller's own number, from the phone line (X-Twin-Caller), never from what the model says.
+    const caller = req.headers.get("x-twin-caller") ?? "";
+    if (action === "find") return json(await findBooking(client, body, caller));
+    if (action === "reschedule") return json(await rescheduleBooking(client, body, caller));
+    if (action === "cancel") return json(await cancelBooking(client, body, caller));
   } catch (err) {
     if (err instanceof CalendarError) {
       return json({ error: `${err.message} Use request_callback so the team can follow up.` });
@@ -391,6 +413,12 @@ async function moveEngine(ctx: Ctx, orgId: string, client: Business, to: VoicePr
   return { client: moved, detached };
 }
 
+/** The live and still-pending numbers of a receptionist, for the Texts switch. */
+async function engineNumbers(ctx: Ctx, client: Business) {
+  const { numbers, pending } = await numberState(ctx, client);
+  return splitNumbers({ numbers, pending });
+}
+
 async function numberState(ctx: Ctx, client: Business): Promise<NumberState> {
   // The demo receptionist never asks the carrier.
   if (isDemo(client.assistantId)) {
@@ -400,11 +428,9 @@ async function numberState(ctx: Ctx, client: Business): Promise<NumberState> {
   }
   const engine = voiceFor(client);
   const { numbers, pending, balance } = await engine.numbers.state(ctx, client);
-  // Remember the connected numbers so the client list can show them without asking Telnyx again.
-  const current = numbers.map((n) => n.phoneNumber);
-  if (JSON.stringify(current) !== JSON.stringify(client.phoneNumbers ?? [])) {
-    await saveClient({ ...client, phoneNumbers: current });
-  }
+  // Remember the connected numbers (and which are still waiting for approval) so the client list can show them
+  // without asking again, and so a number approved later is noticed (server/numberSync.ts).
+  await recordNumbers(client, { numbers, pending });
   return { provider: engine.id, support: { ...engine.numbers.support(), rule: NUMBER_RULE[engine.id] }, numbers, pending, balance, canBuy: await canBuyNumbers(ctx), canUseOwn: engine.id === "telnyx" && (await canUseOwnNumbers(ctx)), requests: await requestsForClient(client.id) };
 }
 
@@ -547,18 +573,28 @@ async function clientAccessFor(ctx: Ctx, orgId: string, id: string): Promise<{ c
 
 // Everyone signs in. A person only ever sees the receptionists of the
 // organisation they're working in.
+const telegramDeps = (): TelegramDeps => ({ ...liveTelegramDeps, publicUrl });
+
 async function route(req: Request, server?: { requestIP(r: Request): { address: string } | null }): Promise<Response> {
   const url = new URL(req.url);
   const path = url.pathname;
   const method = req.method;
 
-  const hookMatch = path.match(/^\/hooks\/([a-f0-9-]{36})\/(availability|book|callback)$/);
+  const hookMatch = path.match(/^\/hooks\/([a-f0-9-]{36})\/(availability|book|callback|find|reschedule|cancel)$/);
   if (hookMatch && method === "POST") return hook(req, hookMatch[1], hookMatch[2]);
   // Vapi: its tool calls (the same hook behind an envelope) and its end-of-call reports.
-  const vapiTool = path.match(/^\/hooks\/([a-f0-9-]{36})\/vapi\/(availability|book|callback)$/);
+  const vapiTool = path.match(/^\/hooks\/([a-f0-9-]{36})\/vapi\/(availability|book|callback|find|reschedule|cancel)$/);
   if (vapiTool && method === "POST") return vapiToolHook(req, vapiTool[1], vapiTool[2], hook);
+  const vapiCaller = path.match(/^\/hooks\/vapi\/([a-f0-9-]{36})\/caller$/);
+  if (vapiCaller && method === "POST") return vapiCallerHook(req, vapiCaller[1]);
   const vapiEvent = path.match(/^\/hooks\/vapi\/([a-f0-9-]{36})$/);
   if (vapiEvent && method === "POST") return vapiEvents(req, vapiEvent[1]);
+  // Incoming texts (Telnyx's messaging webhook, Twilio's SmsUrl): answered by the text chatbot (server/smsBot.ts).
+  const smsHook = path.match(/^\/hooks\/sms\/(telnyx|twilio)\/([a-f0-9-]{36})\/([A-Za-z0-9_-]{20,64})$/);
+  if (smsHook && method === "POST") return smsHook[1] === "telnyx" ? telnyxTextHook(req, smsHook[2], smsHook[3]) : twilioTextHook(req, smsHook[2], smsHook[3]);
+  // Telegram: a business's own bot posts its updates here (checked by the secret header, server/telegram.ts).
+  const tgHook = path.match(/^\/hooks\/telegram\/([a-f0-9-]{36})$/);
+  if (tgHook && method === "POST") return telegramHook(req, tgHook[1], telegramDeps());
   if (path.startsWith("/hooks/automations/")) return (await automationHooks(req, path)) ?? json({ error: "Not found" }, 404);
   // The website chat widget's public API (CORS-limited to the business's own websites).
   if (path.startsWith("/api/webchat/")) return (await webchatPublic(req, path, undefined, server)) ?? json({ error: "Not found" }, 404);
@@ -666,6 +702,8 @@ async function route(req: Request, server?: { requestIP(r: Request): { address: 
   if (path === "/api/tickets" || path.startsWith("/api/tickets/")) return (await ticketRoutes({ req, url, path, method, ctx, orgId: ctx.org?.id ?? "", appUrl: appUrl(req) })) ?? json({ error: "Not found" }, 404);
   // Settings, "Updates": the owner's automatic-updates switch (server/autoUpdate.ts).
   if (path === "/api/updates/settings" || path === "/api/updates/check") return updatesRoute(req, method, path, ctx);
+  // Settings, "Backups": the daily backup, the off-site copy and how long transcripts are kept (server/backup.ts).
+  if (path === "/api/backups" || path.startsWith("/api/backups/")) return backupsRoute(req, method, path, ctx);
 
   // The Answered workspace: the businesses this person works with, in Answered's shapes.
   if (path === "/api/session/businesses" && method === "GET") return json(await workspaceBusinesses(ctx));
@@ -728,15 +766,7 @@ async function route(req: Request, server?: { requestIP(r: Request): { address: 
         // Bought on our account; each agency's receptionist still lives under its own team.
         const order = await voiceFor(client).numbers.buy(client, input);
         await markDone(r.id, order.phoneNumbers[0] ?? String(input.phoneNumber));
-        if (order.status === "success" && voiceFor(client).id === "telnyx") {
-          const fresh = (await getClient(client.id)) ?? client;
-          // Australian mobiles only: US numbers need 10DLC registration in Telnyx before they can text.
-          for (const n of order.phoneNumbers.filter((p) => p.startsWith("+614"))) {
-            await connectNumberForTexts(fresh, { phoneNumber: n }).catch((err) =>
-              console.error(`[texting ${client.id}] ${n}`, err.message),
-            );
-          }
-        }
+        await textsAfterBuy((await getClient(client.id)) ?? client, order).catch((err) => console.error(`[texting ${client.id}]`, err.message));
       }
       return json({ requests: await listRequests(ctx), pending: await pendingCount() });
     }
@@ -820,25 +850,51 @@ async function route(req: Request, server?: { requestIP(r: Request): { address: 
     return json({ error: "Not found" }, 404);
   }
 
+  // The agency's OpenRouter key (Connections): the text AI for the website chat, texts, email and summaries.
+  if (path === "/api/openrouter-key") {
+    if (ctx.role === "customer" && !ctx.user.platformAdmin) return json({ error: "Not allowed." }, 403);
+    if (method === "GET") return json(await llmKeyState(orgId));
+    if (method === "PUT") {
+      requireRole(ctx, "admin");
+      let key: string;
+      try {
+        key = parseOpenRouterKey(await body(req));
+        await checkOpenRouterKey(key);
+      } catch (err) {
+        if (err instanceof LlmError) throw new ValidationError(err.message);
+        throw err;
+      }
+      await saveLlmKey(orgId, key);
+      await audit(ctx, "openrouter.connect", { last4: key.slice(-4) });
+      return json(await llmKeyState(orgId));
+    }
+    if (method === "DELETE") {
+      requireRole(ctx, "owner");
+      await clearLlmKey(orgId);
+      await audit(ctx, "openrouter.disconnect", {});
+      return json(await llmKeyState(orgId));
+    }
+    return json({ error: "Not found" }, 404);
+  }
+
+  // Which services are running low (balances), for the owner (server/providerStatus.ts).
+  if (path === "/api/provider-status" && method === "GET") {
+    requireRole(ctx, "admin");
+    const items = await providerStatus(orgId);
+    return json({ items });
+  }
+
   // The agency's own phone account (Setup and Connections): its Telnyx key, checked
   // against Telnyx before it's saved. Not for business users.
   if (path === "/api/phone-account" || path === "/api/phone-account/test") {
     if (ctx.role === "customer" && !ctx.user.platformAdmin) return json({ error: "Not allowed." }, 403);
     if (path.endsWith("/test")) {
       if (method !== "POST") return json({ error: "Not found" }, 404);
-      requireRole(ctx, "admin");
-      countCheck(orgId);
-      const input = await body(req);
-      if (input?.provider === "vapi") {
-        await checkVapiKeys(input.key, input.publicKey);
-        return json({ ok: true, balance: null });
-      }
-      const checked = await checkNewKey(input.key);
-      return json({ ok: true, balance: checked.balance });
+      return json(await testPhoneKeys(ctx, await body(req)));
     }
     if (method === "GET") return json(await phoneAccount(ctx));
     if (method === "PUT") return json(await connectPhoneAccount(ctx, await body(req)));
-    if (method === "DELETE") return json(await disconnectPhoneAccount(ctx));
+    if (method === "DELETE") return json(await disconnectPhoneAccount(ctx, url.searchParams.get("provider")));
     return json({ error: "Not found" }, 404);
   }
 
@@ -855,6 +911,7 @@ async function route(req: Request, server?: { requestIP(r: Request): { address: 
 
   // ---- The Answered UI's route modules (server/routes/*), wired once here ----
   if (path.startsWith("/api/automations/")) return (await automationRoutes({ req, url, path, method, ctx, orgId, appUrl: appUrl(req) }, { clientAccessFor, syncAssistant })) ?? json({ error: "Not found" }, 404);
+  if (path.startsWith("/api/telegram/")) return (await telegramAdmin({ req, url, path, method, ctx, orgId, appUrl: appUrl(req) }, { clientAccessFor, telegram: telegramDeps() })) ?? json({ error: "Not found" }, 404);
   if (path.startsWith("/api/website-chat/")) return (await webchatAdmin({ req, url, path, method, ctx, orgId, appUrl: appUrl(req) }, { clientAccessFor, publicUrl })) ?? json({ error: "Not found" }, 404);
   const area = path.match(/^\/api\/(workspace|manage|console)(\/.*)?$/);
   if (area) {
@@ -862,7 +919,7 @@ async function route(req: Request, server?: { requestIP(r: Request): { address: 
     if (area[1] === "console") {
       // Agency staff and the platform team only.
       if (ctx.role === "customer" && !ctx.user.platformAdmin) return json({ error: "Not allowed." }, 403);
-      return (await consoleRoutes(base, { createClient })) ?? json({ error: "Not found" }, 404);
+      return (await pipedreamConsoleRoutes(base)) ?? (await consoleRoutes(base, { createClient })) ?? json({ error: "Not found" }, 404);
     }
     let rest = area[2] ?? "";
     let client: Business | null = null;
@@ -883,7 +940,7 @@ async function route(req: Request, server?: { requestIP(r: Request): { address: 
       if (clientOrgId !== orgId) enterOrg(clientOrgId);
       rest = one[2] ?? "";
     }
-    const handler = area[1] === "workspace" ? workspaceRoutes : manageRoutes;
+    const handler = area[1] === "workspace" ? async (a: Parameters<typeof workspaceRoutes>[0]) => (await workspaceRoutes(a)) ?? (await workspaceMoreRoutes(a)) : manageRoutes;
     return (await handler({ ...base, client, clientOrgId, access, rest })) ?? json({ error: "Not found" }, 404);
   }
 
@@ -1044,7 +1101,7 @@ async function route(req: Request, server?: { requestIP(r: Request): { address: 
   }
 
   if (path === "/api/clients") {
-    if (method === "GET") return json({ clients: await listClients(orgId) });
+    if (method === "GET") return json({ clients: (await listClients(orgId)).map(noMcpSecret) });
     if (method === "POST") {
       const input = await req.json();
       const created = await createClient(orgId, input, { quick: input?.defaultVoice === true });
@@ -1082,8 +1139,8 @@ async function route(req: Request, server?: { requestIP(r: Request): { address: 
     if (!client) return json({ error: "That receptionist no longer exists." }, 404);
 
     if (!match[2]) {
-      if (method === "GET") return json({ client });
-      if (method === "PUT") return json({ client: await updateClient(client, await req.json()) });
+      if (method === "GET") return json({ client: noMcpSecret(client) });
+      if (method === "PUT") return json({ client: noMcpSecret(await updateClient(client, await req.json())) });
       if (method === "DELETE") {
         requireRole(ctx, "admin");
         if (!isDemo(client.assistantId)) await voiceFor(client).deleteAssistant(client);
@@ -1094,6 +1151,7 @@ async function route(req: Request, server?: { requestIP(r: Request): { address: 
     } else if (match[2] === "/email") {
       if (method === "GET") return json(await emailStatus(client.id));
       if (method === "PUT") return json(await connectEmail(client.id, await req.json()));
+      if (method === "PATCH") return json(await setEmailMode(client.id, await req.json()));
       if (method === "DELETE") {
         await disconnectEmail(client.id);
         return json(await emailStatus(client.id));
@@ -1101,14 +1159,20 @@ async function route(req: Request, server?: { requestIP(r: Request): { address: 
     } else if (match[2] === "/email/check") {
       if (method === "POST") return json(await checkEmail(client));
     } else if (match[2] === "/texting") {
-      // Texting is a Telnyx feature: a Vapi receptionist has none.
-      if (providerOfClient(client) === "vapi") {
-        if (method === "GET") return json({ enabled: false, numbers: [], waiting: [] });
-        throw new ValidationError("Telnyx texting isn't used with Vapi. Follow-up texts go out from a Twilio number instead.");
+      // The Texts switch: its status, and on/off (switching on again is the retry). Telnyx and Vapi (Twilio numbers) both use it.
+      if (method === "GET") return json(await textsStatus(client, await engineNumbers(ctx, client)));
+      if (method === "PUT") {
+        const input = await body(req);
+        requireRole(ctx, "admin");
+        if (typeof input?.on !== "boolean") throw new ValidationError("Choose on or off.");
+        const nums = await engineNumbers(ctx, client);
+        const saved = await setTexts(client, input.on, nums);
+        await audit(ctx, input.on ? "texts.on" : "texts.off", {}, { clientId: client.id });
+        return json(await textsStatus(saved, nums));
       }
-      if (method === "GET") return json(await textingState(client));
       if (method === "POST") {
-        await enableTexting(client.assistantId);
+        if (providerOfClient(client) === "vapi") throw new ValidationError("Telnyx texting isn't used with Vapi. Follow-up texts go out from a Twilio number instead.");
+        await enableTexting(client);
         return json(await textingState(client));
       }
     } else if (match[2] === "/texting/numbers") {
@@ -1127,7 +1191,7 @@ async function route(req: Request, server?: { requestIP(r: Request): { address: 
       if (method === "DELETE") return json(await bookingState(await removeBooking(client)));
     } else if (match[2].startsWith("/booking/events/")) {
       if (method === "DELETE") {
-        await cancelEvent(client.id, match[2].slice("/booking/events/".length));
+        await cancelFromDashboard(client, match[2].slice("/booking/events/".length));
         return json(await bookingState(client));
       }
     } else if (match[2] === "/calendar") {
@@ -1231,17 +1295,9 @@ async function route(req: Request, server?: { requestIP(r: Request): { address: 
         const withSources = { ...client, numberSources: { ...client.numberSources, ...Object.fromEntries(order.phoneNumbers.map((n) => [n, source])) } };
         await saveClient(withSources);
         const state = await numberState(ctx, withSources);
-        // A mobile that's live straight away also takes texts. Others can be added from the texts card.
-        // (Texting is Telnyx's: a Vapi receptionist has none.)
-        if (order.status === "success" && voiceFor(client).id === "telnyx") {
-          const fresh = (await getClient(client.id)) ?? client;
-          // Australian mobiles only: US numbers need 10DLC registration in Telnyx before they can text.
-          for (const n of order.phoneNumbers.filter((p) => p.startsWith("+614"))) {
-            await connectNumberForTexts(fresh, { phoneNumber: n }).catch((err) =>
-              console.error(`[texting ${client.id}] ${n}`, err.message),
-            );
-          }
-        }
+        // An Australian mobile switches texts on (unless the owner turned them off): now when it's live,
+        // or by itself once approved. The Texts switch on the receptionist's card controls it after that.
+        await textsAfterBuy((await getClient(client.id)) ?? client, order).catch((err) => console.error(`[texting ${client.id}]`, err.message));
         return json({ order, ...state }, 201);
       }
     } else if (method === "GET") {
@@ -1302,13 +1358,24 @@ startCallSync();
 startAutomations();
 // Vapi receptionists: rewrite the greeting when the business opens or closes (server/voice/vapiHours.ts).
 startVapiHours();
+startProviderAlerts();
 // Health and usage counts to the setup provider, unless the owner turned it off (server/supportSync.ts).
 startSupportSync();
 startTicketSync();
 // The owner's automatic updates, with this agency's own Railway project token (server/autoUpdate.ts).
 startAutoUpdate();
+// A daily backup of this agency's own database (and the transcript clean-up), kept on its volume (server/backup.ts).
+startBackups();
 // Account emails that failed on every sender are tried again (server/mailer.ts).
 startOutbox();
+
+// Every ten minutes, receptionists with numbers waiting for approval are asked again, so a number that goes live
+// shows as live and starts texting even when nobody has the page open (server/numberSync.ts).
+startNumberSync(async (client, orgId) => {
+  const ctx = { tokenHash: "", user: { id: "", email: "", name: "", platformAdmin: false }, org: { id: orgId, name: "" }, role: "owner" } as Ctx;
+  const { numbers, pending } = await runAsOrg(orgId, () => voiceFor(client).numbers.state(ctx, client));
+  return { numbers, pending };
+});
 
 // Check every connected mailbox once a minute. One at a time, so a slow mail
 // server can't pile up connections.

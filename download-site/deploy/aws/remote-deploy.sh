@@ -20,7 +20,9 @@ umask 077
 names=(SETUP_SECRET_KEY ADMIN_EMAILS ADMIN_PASSWORD_HASH SUPPORT_EMAIL SELLER_NAME PRODUCT_NAME SITE_SMTP_URL SITE_MAIL_FROM
   HOSTING PROVISION_URL LOOKUPS_PER_MINUTE REQUESTS_PER_MINUTE CHECKS_PER_10_MIN TEST_EMAILS_PER_HOUR SECRETS_IDLE_DAYS DNS_SERVERS
   DEMO_APP_URL DEMO_ADMIN_EMAIL DEMO_ADMIN_PASSWORD OPENROUTER_API_KEY SETUP_CHAT_MODEL
-  ALERT_WEBHOOK_URL ALERT_EMAIL_TO)
+  ALERT_WEBHOOK_URL ALERT_EMAIL_TO
+  TELNYX_OAUTH TELNYX_OAUTH_CLIENT_ID TELNYX_OAUTH_CLIENT_SECRET RAILWAY_OAUTH RAILWAY_OAUTH_CLIENT_ID RAILWAY_OAUTH_CLIENT_SECRET
+  RAILWAY_OAUTH_SCOPES OPENROUTER_OAUTH)
 names=("${names[@]/#//setupsite/env/}")
 q="'"
 for ((i = 0; i < ${#names[@]}; i += 10)); do
@@ -61,10 +63,25 @@ bash src/deploy/aws/ensure-ondemand-tls.sh
 
 # Route the address through the main Caddy (https certificate is automatic).
 sed "s/__DOMAIN__/$DOMAIN/" src/deploy/aws/setupsite.caddy.tmpl > /opt/twin/sites/setupsite.caddy
-# The old address keeps working: its APIs (installed agencies' sync, tickets, releases) are served as before, and
-# every page forwards to the current address, so old links land on the new one.
+# setup.chloeeai.co keeps serving the APIs installed agencies call (sync, tickets, releases, broker) and the shared Google/Microsoft sign-in callback (/oauth/broker/*; BROKER_URL). It is also the owner's
+# master admin address (ADMIN_DOMAIN): /admin and its assets are served there directly. Every other page there goes to /admin;
+# on other hosts it forwards to the generic $DOMAIN, which is what buyer setup links use. To move admin later, change ADMIN_DOMAIN's default here.
+ADMIN_DOMAIN=${7:-setup.sageai.agency}
+ADMIN_PATHS="/admin /admin/* /styles.css /favicon.svg /admin-live.js /tickets.css /wizard.css /wizard.js /chat.css /chat.js /fonts/*"
+site_block() { # <host> <paths served here> [redirect target for everything else, default: the generic $DOMAIN]
+  local to=${3:-}
+  [ -n "$to" ] || to="https://$DOMAIN{uri} 308"
+  printf '\n%s {\n\t@own path %s\n\thandle @own {\n\t\treverse_proxy setup-site:4500\n\t}\n\thandle {\n\t\tredir %s\n\t}\n}\n' "$1" "$2" "$to"
+}
 if [ "$DOMAIN" != "setup.chloeeai.co" ]; then
-  printf '\nsetup.chloeeai.co {\n\t@api path /api/* /healthz\n\thandle @api {\n\t\treverse_proxy setup-site:4500\n\t}\n\thandle {\n\t\tredir https://%s{uri} 308\n\t}\n}\n' "$DOMAIN" >> /opt/twin/sites/setupsite.caddy
+  if [ "$ADMIN_DOMAIN" = "setup.chloeeai.co" ]; then
+    site_block setup.chloeeai.co "/api/* /oauth/broker/* /healthz $ADMIN_PATHS" >> /opt/twin/sites/setupsite.caddy
+  else
+    site_block setup.chloeeai.co "/api/* /oauth/broker/* /healthz" >> /opt/twin/sites/setupsite.caddy
+  fi
+fi
+if [ "$ADMIN_DOMAIN" != "$DOMAIN" ] && [ "$ADMIN_DOMAIN" != "setup.chloeeai.co" ]; then
+  site_block "$ADMIN_DOMAIN" "/oauth/broker/* $ADMIN_PATHS" "https://$ADMIN_DOMAIN/admin 302" >> /opt/twin/sites/setupsite.caddy
 fi
 docker exec twin-caddy-1 caddy reload --config /etc/caddy/Caddyfile --adapter caddyfile
 

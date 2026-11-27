@@ -3,6 +3,7 @@ import type { EmailMode } from "../src/lib/shared";
 import { sql } from "./db";
 import { ValidationError } from "./prompt";
 import { fresh, oauthClient } from "./platformSettings";
+import { BrokerDown, brokerOffers, brokerRedeem, brokerRefresh, brokerStart, brokerStatus, isBrokered } from "./broker";
 
 // "Sign in with Google / Microsoft" for a business's mailbox. The business is sent
 // to its provider, approves access, and comes back here with a code that becomes
@@ -17,6 +18,10 @@ import { fresh, oauthClient } from "./platformSettings";
 //   OAUTH_REDIRECT_BASE                          (optional; default PUBLIC_URL, else http://localhost:8791)
 // Each provider must list <OAUTH_REDIRECT_BASE>/api/oauth/<provider>/callback as a redirect URI.
 //
+// Or nothing to create at all: with OAUTH_BROKER=1 (server/broker.ts) a provider with no app saved here signs in
+// through the setup site's shared Google / Microsoft app. An app saved here always wins, and what is saved for a
+// shared connection is a sealed token ("brk1.…") that the setup site refreshes for us.
+//
 // Mailbox sign-in is a separate choice (MAILBOX_SIGNIN, below): Gmail's mail scope
 // is one Google calls "restricted", which means a long review and a paid yearly
 // security assessment. By default a Google app only ever asks for calendar access.
@@ -25,12 +30,13 @@ export type OAuthProvider = "google" | "microsoft";
 // What the sign-in is for: reading and sending a mailbox, or booking into a calendar.
 export type OAuthPurpose = "mail" | "calendar";
 
-const SCOPES: Record<OAuthProvider, Record<OAuthPurpose, string>> = {
+export const SCOPES: Record<OAuthProvider, Record<OAuthPurpose, string>> = {
   google: {
     // Full mail access is the only Google scope that IMAP and SMTP accept.
     mail: "openid email https://mail.google.com/",
-    // See free/busy times and add events. Google rates this "sensitive", not "restricted".
-    calendar: "openid email https://www.googleapis.com/auth/calendar.events",
+    // Add events (calendar.events) and read busy times (calendar.events.freebusy: the
+    // freeBusy call needs it; calendar.events alone is not listed as enough). Both "sensitive".
+    calendar: "openid email https://www.googleapis.com/auth/calendar.events https://www.googleapis.com/auth/calendar.events.freebusy",
   },
   microsoft: {
     mail: "openid email offline_access https://outlook.office.com/IMAP.AccessAsUser.All https://outlook.office.com/SMTP.Send",
@@ -69,8 +75,11 @@ export async function mailboxSignInAllowed(): Promise<Record<OAuthProvider, bool
 
 /** The "Sign in with…" buttons to show for a mailbox: allowed, and the app is set up. */
 export async function mailSignInAvailable(): Promise<Record<OAuthProvider, boolean>> {
-  const [allowed, has] = [await mailboxSignInAllowed(), oauthAvailable()];
-  return { google: allowed.google && has.google, microsoft: allowed.microsoft && has.microsoft };
+  await fresh();
+  await brokerStatus();
+  const allowed = await mailboxSignInAllowed();
+  const has = (p: OAuthProvider) => allowed[p] && (hasOwn(p) || brokerOffers(p, "mail"));
+  return { google: has("google"), microsoft: has("microsoft") };
 }
 
 /** Every scope a provider's app will be asked for on this server, for the settings page. */
@@ -104,9 +113,16 @@ function config(provider: OAuthProvider): ProviderConfig {
   };
 }
 
+const hasOwn = (p: OAuthProvider) => Boolean(config(p).clientId && config(p).clientSecret);
+
 export function oauthAvailable(): Record<OAuthProvider, boolean> {
-  const has = (p: OAuthProvider) => Boolean(config(p).clientId && config(p).clientSecret);
+  const has = (p: OAuthProvider) => hasOwn(p) || brokerOffers(p, "calendar");
   return { google: has("google"), microsoft: has("microsoft") };
+}
+
+/** True when this provider signs in through the setup site's shared app (none of our own is set up). */
+export function usesSharedApp(provider: OAuthProvider, purpose: OAuthPurpose): boolean {
+  return !hasOwn(provider) && brokerOffers(provider, purpose);
 }
 
 export function mailServers(provider: OAuthProvider) {
@@ -124,7 +140,8 @@ export const redirectUri = (provider: OAuthProvider) => `${redirectBase()}/api/o
 // signed-in team member from the dashboard (clientId + orgId).
 // returnTo: the dashboard page to come back to (a path on this server).
 export type SignInOrigin = { linkToken?: string; clientId?: string; orgId?: string; returnTo?: string };
-type Pending = SignInOrigin & { provider: OAuthProvider; purpose: OAuthPurpose; mode: EmailMode; verifier: string };
+// via "shared": the setup site's app is doing the sign-in, and verifier is the secret this copy redeems the ticket with.
+type Pending = SignInOrigin & { provider: OAuthProvider; purpose: OAuthPurpose; mode: EmailMode; verifier: string; via?: "shared" };
 
 const b64url = (buf: Buffer) => buf.toString("base64url");
 
@@ -135,8 +152,10 @@ export async function startSignIn(
   mode: EmailMode = "draft",
 ): Promise<string> {
   await fresh();
+  await brokerStatus();
   const c = config(provider);
-  if (!c.clientId || !c.clientSecret) {
+  const shared = usesSharedApp(provider, purpose);
+  if (!shared && (!c.clientId || !c.clientSecret)) {
     throw new ValidationError(`Sign in with ${provider === "google" ? "Google" : "Microsoft"} isn't set up yet.`);
   }
   if (purpose === "mail" && !(await mailboxSignInAllowed())[provider]) {
@@ -152,11 +171,22 @@ export async function startSignIn(
   // PKCE: proves the code is redeemed by whoever started the sign-in.
   const verifier = b64url(randomBytes(32));
   const challenge = b64url(createHash("sha256").update(verifier).digest());
-  const p: Pending = { ...origin, provider, purpose, mode, verifier };
+  const p: Pending = { ...origin, provider, purpose, mode, verifier, ...(shared ? { via: "shared" as const } : {}) };
   await sql`insert into oauth_states (state, data, expires_at) values (${state}, ${p as any}, ${new Date(Date.now() + 10 * 60_000)})`;
 
+  if (shared) {
+    // The setup site makes the provider address (with its own app and PKCE) and sends the browser back to our callback
+    // with a one-time ticket; our verifier is what lets only this copy redeem it.
+    try {
+      return await brokerStart(provider, purpose, redirectUri(provider), state, challenge);
+    } catch (err) {
+      await sql`delete from oauth_states where state = ${state}`;
+      throw new ValidationError(err instanceof BrokerDown ? "The sign-in service isn't reachable right now. Please try again in a few minutes." : (err as Error).message);
+    }
+  }
+
   const params = new URLSearchParams({
-    client_id: c.clientId,
+    client_id: c.clientId ?? "",
     redirect_uri: redirectUri(provider),
     response_type: "code",
     scope: SCOPES[provider][purpose],
@@ -219,6 +249,17 @@ export async function claimSignIn(provider: OAuthProvider, state: string): Promi
 
 // Swaps the provider's one-time code for a refresh token and the signed-in address.
 export async function finishSignIn(p: PendingSignIn, code: string): Promise<SignInResult> {
+  if (p.via === "shared") {
+    let got;
+    try {
+      got = await brokerRedeem(code, p.verifier);
+    } catch (err) {
+      throw new ValidationError(err instanceof BrokerDown ? "The sign-in service isn't reachable right now. Please try again in a few minutes." : (err as Error).message);
+    }
+    if (!got.address) throw new ValidationError("Couldn't tell which email address you signed in with.");
+    const { verifier: _v, via: _via, ...rest } = p;
+    return { ...rest, address: got.address, refreshToken: got.refreshToken };
+  }
   const tokens = await tokenRequest(p.provider, {
     grant_type: "authorization_code",
     code,
@@ -246,6 +287,7 @@ export async function accessToken(
   const key = createHash("sha256").update(`${provider}:${purpose}:${refreshToken}`).digest("hex");
   const cached = accessCache.get(key);
   if (cached && cached.until > Date.now()) return cached.token;
+  if (isBrokered(refreshToken)) return sharedAccessToken(key, provider, purpose, refreshToken, onRotate);
   let data: any;
   try {
     data = await tokenRequest(provider, { grant_type: "refresh_token", refresh_token: refreshToken, scope: SCOPES[provider][purpose] });
@@ -257,4 +299,19 @@ export async function accessToken(
   accessCache.set(key, { token: data.access_token, until: Date.now() + (Number(data.expires_in ?? 3600) - 120) * 1000 });
   if (data.refresh_token && data.refresh_token !== refreshToken) onRotate(data.refresh_token);
   return data.access_token;
+}
+
+// A shared connection: the setup site holds the app's secret, so it makes the refresh call for us.
+async function sharedAccessToken(key: string, provider: OAuthProvider, purpose: OAuthPurpose, refreshToken: string, onRotate: (next: string) => void): Promise<string> {
+  let got;
+  try {
+    got = await brokerRefresh(provider, purpose, refreshToken);
+  } catch (err) {
+    // Down: say so (and don't tell anyone to reconnect). Refused: access was taken away, so they do.
+    if (err instanceof BrokerDown) throw new Error(`The sign-in service is temporarily unreachable, so this ${purpose === "mail" ? "mailbox" : "calendar"} is paused. It will retry on its own.`);
+    throw new Error(`Access to this ${purpose === "mail" ? "mailbox" : "calendar"} has stopped working (${(err as Error).message}). Connect it again.`);
+  }
+  accessCache.set(key, { token: got.accessToken, until: Date.now() + (got.expiresIn - 120) * 1000 });
+  if (got.refreshToken && got.refreshToken !== refreshToken) onRotate(got.refreshToken);
+  return got.accessToken;
 }

@@ -12,7 +12,7 @@ export const DO_API = (process.env.DO_API_BASE || (CONFIG.mockDO ? M(1) : "https
 export const CF_API = (process.env.CF_API_BASE || (CONFIG.mockCF ? M(3) + "/client/v4" : "https://api.cloudflare.com/client/v4")).replace(/\/$/, "");
 export const RESEND_API = (process.env.RESEND_API_BASE || (CONFIG.mockResend ? M(4) : "https://api.resend.com")).replace(/\/$/, "");
 export const RAILWAY_API = (process.env.RAILWAY_API_BASE || (CONFIG.mockRailway ? M(6) : "https://backboard.railway.com")).replace(/\/$/, "");
-const TELNYX_API = "https://api.telnyx.com";
+const TELNYX_API = (process.env.TELNYX_API_BASE || "https://api.telnyx.com").replace(/\/$/, "");
 const VAPI_API = "https://api.vapi.ai";
 const UA = "receptionist-setup/1.0";
 
@@ -172,7 +172,7 @@ const cfBody = (r: DnsRecord) => ({
   ttl: r.ttl === "Auto" ? 1 : r.ttl,
   proxied: r.type === "A" || r.type === "CNAME" ? false : undefined, // DNS only, so the server can get its certificate
   priority: r.type === "MX" ? r.priority ?? 10 : undefined,
-  comment: `Added by the ${CONFIG.productName} setup`,
+  comment: "Added by the agency setup",
 });
 const unq = (s: string) => String(s || "").replace(/^"|"$/g, "").replace(/" "/g, "");
 
@@ -235,7 +235,15 @@ export async function railway<T = any>(token: string, query: string, variables: 
 }
 
 export interface RailwayWorkspace { id: string; name: string; plan?: string; hasCard?: boolean; trialing?: boolean }
-export async function checkRailway(token: string): Promise<Check<{ email: string; workspace: RailwayWorkspace }>> {
+/**
+ * What Railway's docs say (docs.railway.com/pricing/free-trial, /reference/pricing/plans, read 27 Nov 2026): a Trial account gets a one-time
+ * US$5 credit and "the trial ends after 30 days or when the $5 is spent, and your services stop"; its volumes are deleted 30 days after that.
+ * A Limited Trial (GitHub verification pending or failed) has restricted outbound network access and only a limited set of ports. The Free plan
+ * (US$1 a month, apps sleep) is not for an always-on receptionist. Hobby (US$5 a month, card) is what we ask for.
+ */
+export const RAILWAY_TRIAL_MSG = "Your Railway account is on its free trial. You can set up and try your agency, but Railway stops everything after 30 days or once the US$5 credit is used up, and later deletes the data. Upgrade to Hobby (US$5 a month, with a card) in Railway before you go live. Some trial accounts also have limited internet access, so email or phone features may not work until you upgrade.";
+export const RAILWAY_PLAN_UNKNOWN_MSG = "We couldn't read which Railway plan you're on. Your agency needs the Hobby plan (US$5 a month, with a card): check Plans in Railway before you install, or the install may stop.";
+export async function checkRailway(token: string): Promise<Check<{ email: string; workspace: RailwayWorkspace; trial: boolean; planKnown: boolean }>> {
   if (!token) return { ok: false, message: "Paste your Railway token." };
   if (hasSpace(token)) return { ok: false, message: "That token has spaces in it: copy just the token." };
   try {
@@ -252,12 +260,12 @@ export async function checkRailway(token: string): Promise<Check<{ email: string
     } catch (e) { if (e instanceof ProviderError && e.status === 401) throw e; }
     const paid = all.find((w) => (w.plan === "HOBBY" || w.plan === "PRO") && w.hasCard !== false);
     // Railway's free trial (US$5 of credit) is enough to set up and try the agency.
-    const trial = paid ? undefined : all.find((w) => w.trialing);
+    const trial = paid ? undefined : all.find((w) => w.trialing || /trial/i.test(w.plan || ""));
     const known = all.some((w) => w.plan);
     if (!paid && !trial && known) return { ok: false, message: RAILWAY_PLAN_MSG };
     const ws = paid || trial || all[0];
-    const note = trial ? " You're on Railway's free trial (US$5 of credit). Add a card in Railway before it runs out, or your agency stops." : "";
-    return { ok: true, message: `Connected to Railway${me.email ? ` (${me.email})` : ""}.${note}`, email: String(me.email || ""), workspace: ws };
+    const note = trial ? ` ${RAILWAY_TRIAL_MSG}` : !known ? ` ${RAILWAY_PLAN_UNKNOWN_MSG}` : "";
+    return { ok: true, message: `Connected to Railway${me.email ? ` (${me.email})` : ""}.${note}`, email: String(me.email || ""), workspace: ws, trial: !!trial, planKnown: known };
   } catch (e: any) {
     return { ok: false, message: e instanceof ProviderError ? e.message : "Something went wrong checking Railway. Try again." };
   }
@@ -321,6 +329,24 @@ export async function checkTelnyx(key: string): Promise<Check<{ balance: string 
   const balance = `${Number(d.available_credit ?? d.balance ?? 0).toFixed(2)} ${d.currency || "USD"}`;
   if (await telnyxPretrial(key)) return { ok: false, pretrial: true, message: TELNYX_PRETRIAL_MSG };
   return { ok: true, message: `Telnyx key works. Available credit: ${balance}.`, balance };
+}
+
+/**
+ * The phone numbers already on the buyer's Telnyx account, read-only (shown after they connect, so they know those
+ * numbers will be synced into the agency). Best effort: never blocks the step, empty when Telnyx doesn't say.
+ */
+export async function listTelnyxNumbers(key: string): Promise<string[]> {
+  if (CONFIG.mockTelnyx || CONFIG.mockOAuth) return key.startsWith("platform-fake-") ? ["+61 2 5550 0101", "+61 3 5550 0102"] : [];
+  const out: string[] = [];
+  try {
+    for (let page = 1; page <= 4; page++) {
+      const { status, json } = await call("Telnyx", `${TELNYX_API}/v2/phone_numbers?page[size]=100&page[number]=${page}`, { headers: { Authorization: `Bearer ${key}`, Accept: "application/json", "User-Agent": UA } }, 15000);
+      if (status !== 200) break;
+      for (const n of json?.data || []) if (typeof n?.phone_number === "string" && /^\+?[\d\s()-]{6,20}$/.test(n.phone_number)) out.push(n.phone_number);
+      if (!(Number(json?.meta?.total_pages) > page)) break;
+    }
+  } catch {}
+  return out;
 }
 
 // ======================= Vapi =======================
@@ -595,6 +621,8 @@ const OPENROUTER_API = () => (process.env.OPENROUTER_API_BASE || "https://openro
 export async function checkOpenRouter(key: string): Promise<Check> {
   if (!key) return { ok: false, message: "Paste the OpenRouter API key first." };
   if (hasSpace(key)) return { ok: false, message: "That key has spaces in it: copy just the key." };
+  // Test mode: never calls OpenRouter. Only pretend keys (sk-or-...) pass.
+  if ((CONFIG.mockOAuth || CONFIG.mockTelnyx) && !process.env.OPENROUTER_API_BASE && /^(sk-or-|platform-fake-)/.test(key)) return { ok: true, message: "OpenRouter key works (test mode)." };
   const { status } = await call("OpenRouter", `${OPENROUTER_API()}/auth/key`, { headers: { Authorization: `Bearer ${key}`, "User-Agent": UA } }).catch((e) => ({ status: -1, json: { e } as any }));
   if (status === -1) return { ok: false, message: "We couldn't reach OpenRouter just now. Try again in a minute." };
   if (status === 401 || status === 403) return { ok: false, message: "OpenRouter didn't accept that key: copy it again, or make a new one." };

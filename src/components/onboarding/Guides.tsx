@@ -37,7 +37,7 @@ export const GUIDES: Record<GuideKind, { title: string; blurb: string; steps: St
     steps: [
       { title: "Open Clients and add a client", hint: "Choose Add client, then Send the client an onboarding link.", cursor: [83, 20] },
       { title: "Enter their name and email", hint: "We email them a link. You can also copy it and send it yourself.", cursor: [40, 62] },
-      { title: "Send the link", hint: "They set up their business and receptionist in their own workspace.", cursor: [74, 86] },
+      { title: "Press Create and get link", hint: "They set up their business and receptionist in their own workspace.", cursor: [74, 86] },
     ],
   },
 };
@@ -251,7 +251,7 @@ function ReceptionistScene({ step }: { step: number }) {
         <Check className="h-6 w-6" strokeWidth={3} />
       </div>
       <div>
-        <div className="text-[13px] font-semibold text-ink">Chloe is ready</div>
+        <div className="text-[13px] font-semibold text-ink">Your receptionist is ready</div>
         <div className="text-[11px] text-ink-muted">Your new receptionist can take a test call now.</div>
       </div>
       <MockButton className="gs-press">Create receptionist</MockButton>
@@ -267,7 +267,7 @@ function TestCallScene({ step }: { step: number }) {
           <div className="mb-2 flex items-center gap-2">
             <span className="flex h-7 w-7 items-center justify-center rounded-full bg-[color-mix(in_srgb,var(--indigo)_14%,#fff)] text-[11px] font-semibold text-indigo">C</span>
             <div>
-              <div className="text-[11px] font-semibold text-ink">Chloe</div>
+              <div className="text-[11px] font-semibold text-ink">Receptionist</div>
               <Bar w="60px" className="mt-1" />
             </div>
           </div>
@@ -293,7 +293,7 @@ function TestCallScene({ step }: { step: number }) {
       </div>
     );
   const lines: [string, string][] = [
-    ["AI", `Thanks for calling. This is Chloe, how can I help?`],
+    ["AI", `Thanks for calling. How can I help?`],
     ["You", "I'd like to book a check-up."],
     ["AI", "Of course. What day suits you?"],
   ];
@@ -348,7 +348,7 @@ function InviteScene({ step }: { step: number }) {
       </div>
       <div className="text-[13px] font-semibold text-ink">Onboarding link sent</div>
       <div className="w-4/5 truncate rounded border border-hairline bg-white px-2 py-1 font-mono text-[10px] text-ink-muted">…/invite/k3x9a2c7e1</div>
-      <MockButton className="gs-press">Send onboarding link</MockButton>
+      <MockButton className="gs-press">Create and get link</MockButton>
     </div>
   );
 }

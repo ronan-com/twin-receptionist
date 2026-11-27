@@ -124,7 +124,7 @@ export interface Buyer {
   last_download_at: string | null;
   /** 1 = a demo buyer: pretend accounts, no provider is ever called for them. */
   demo: number;
-  /** "branded" (our name and wording, the default) or "neutral" (nothing of ours shows; for links shared under someone else's name). */
+  /** Always "neutral": the setup site is generic and shows nobody's name but the buyer's own. (Older rows may hold "branded"; they are rewritten at startup and render the same.) */
   style: Style;
   /** The generic onboarding link (genericlink.ts) this agency started from, or null for a private link made by our admin. */
   source_link: number | null;
@@ -133,7 +133,7 @@ export interface Buyer {
 }
 export const PLAIN_AGENCY_NAME = "Your agency";
 export type Style = "branded" | "neutral";
-export const asStyle = (v: unknown): Style => (v === "neutral" ? "neutral" : "branded");
+export const asStyle = (_v?: unknown): Style => "neutral";
 /** Takes our names out of text for a neutral agency (emails, prompts): PRODUCT_NAME and SELLER_NAME never show. */
 export function unbrand(text: string): string {
   let t = text;
@@ -153,13 +153,26 @@ export interface Pkg {
   notes: string | null;
 }
 
+/**
+ * Adds a column if it isn't there yet. Safe to run twice and from two processes: if another one added it between our look and our
+ * ALTER, SQLite says "duplicate column name" and that counts as done.
+ */
+export function addColumn(d: Database, table: string, column: string, ddl: string) {
+  if ((d.query(`PRAGMA table_info(${table})`).all() as { name: string }[]).some((c) => c.name === column)) return;
+  try { d.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${ddl}`); } catch (e) { if (!/duplicate column name/i.test(String((e as Error)?.message))) throw e; }
+}
+
 let _db: Database | null = null;
 export function db(): Database {
   if (_db) return _db;
   mkdirSync(PACKAGES_DIR, { recursive: true, mode: 0o700 });
   const d = new Database(join(CONFIG.dataDir, "site.db"), { create: true, strict: true });
   // secure_delete: deleted secrets are overwritten with zeros, not left in free pages.
-  d.exec("PRAGMA journal_mode = WAL; PRAGMA busy_timeout = 5000; PRAGMA foreign_keys = ON; PRAGMA secure_delete = ON;");
+  // busy_timeout first: the server and `admin.ts publish` can open a fresh site.db at the same moment.
+  d.exec("PRAGMA busy_timeout = 5000; PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON; PRAGMA secure_delete = ON;");
+  // The whole schema setup runs under one write lock, so a second process opening the same new file waits and then finds it all done.
+  d.exec("BEGIN IMMEDIATE");
+  try {
   d.exec(`
     CREATE TABLE IF NOT EXISTS buyers (
       id INTEGER PRIMARY KEY,
@@ -258,21 +271,21 @@ export function db(): Database {
     );
   `);
   // Older databases (the live one) have no demo column: add it, off for everyone already there.
-  if (!(d.query("PRAGMA table_info(buyers)").all() as { name: string }[]).some((c) => c.name === "demo")) d.exec("ALTER TABLE buyers ADD COLUMN demo INTEGER NOT NULL DEFAULT 0");
+  addColumn(d, "buyers", "demo", "INTEGER NOT NULL DEFAULT 0");
   // Same for release notes (the live database has no notes column on packages).
-  if (!(d.query("PRAGMA table_info(packages)").all() as { name: string }[]).some((c) => c.name === "notes")) d.exec("ALTER TABLE packages ADD COLUMN notes TEXT");
+  addColumn(d, "packages", "notes", "TEXT");
   // Onboarding links (genericlink.ts): which look a buyer gets, and which generic link they started from.
-  if (!(d.query("PRAGMA table_info(buyers)").all() as { name: string }[]).some((c) => c.name === "style")) d.exec("ALTER TABLE buyers ADD COLUMN style TEXT NOT NULL DEFAULT 'branded'");
-  if (!(d.query("PRAGMA table_info(buyers)").all() as { name: string }[]).some((c) => c.name === "source_link")) d.exec("ALTER TABLE buyers ADD COLUMN source_link INTEGER");
+  addColumn(d, "buyers", "style", "TEXT NOT NULL DEFAULT 'neutral'");
+  addColumn(d, "buyers", "source_link", "INTEGER");
   // "Invite them" on the agency page: when we emailed them. Existing agencies start as not invited.
-  if (!(d.query("PRAGMA table_info(buyers)").all() as { name: string }[]).some((c) => c.name === "invited_at")) d.exec("ALTER TABLE buyers ADD COLUMN invited_at TEXT");
+  addColumn(d, "buyers", "invited_at", "TEXT");
   d.exec(`
     CREATE TABLE IF NOT EXISTS generic_links (
       id INTEGER PRIMARY KEY,
       code TEXT NOT NULL UNIQUE,
       code_hash BLOB NOT NULL UNIQUE,
       label TEXT NOT NULL DEFAULT '',
-      style TEXT NOT NULL DEFAULT 'branded',
+      style TEXT NOT NULL DEFAULT 'neutral',
       enabled INTEGER NOT NULL DEFAULT 1,
       cap INTEGER,
       started INTEGER NOT NULL DEFAULT 0,
@@ -280,6 +293,15 @@ export function db(): Database {
       rotated_at TEXT
     );
   `);
+  // Generic is the only style now: anything stored as "branded" renders (and is kept) as generic.
+  d.exec("UPDATE buyers SET style = 'neutral' WHERE style <> 'neutral'");
+  d.exec("UPDATE generic_links SET style = 'neutral' WHERE style <> 'neutral'");
+  d.exec("COMMIT");
+  } catch (e) {
+    try { d.exec("ROLLBACK"); } catch { /* nothing open */ }
+    d.close();
+    throw e;
+  }
   _db = d;
   return d;
 }
@@ -298,10 +320,10 @@ export function findBuyer(code: string): Buyer | null {
   return row && same ? row : null;
 }
 
-/** New agencies are neutral (no name of ours anywhere) unless told otherwise; test runs keep our branded look. */
+/** Every agency is generic: no name of ours anywhere. */
 export function addBuyer(name: string, email: string, demo = false, opts: { style?: Style; sourceLink?: number } = {}): Buyer {
   const code = newCode();
-  const style: Style = opts.style ? asStyle(opts.style) : demo ? "branded" : "neutral";
+  const style: Style = asStyle(opts.style);
   db().query("INSERT INTO buyers (code, code_hash, name, email, created_at, demo, style, source_link) VALUES (?, ?, ?, ?, ?, ?, ?, ?)").run(code, hashCode(code), name, email, now(), demo ? 1 : 0, style, opts.sourceLink ?? null);
   return findBuyer(code)!;
 }

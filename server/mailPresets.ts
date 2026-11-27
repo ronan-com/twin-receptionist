@@ -10,7 +10,7 @@ export const MAIL_PROVIDERS: MailProvider[] = ["resend", "gmail", "microsoft", "
 export type Preset = { label: string; host: string; port: number; passwordName: string };
 
 export const PRESETS: Record<Exclude<MailProvider, "smtp">, Preset> = {
-  resend: { label: "Resend", host: "smtp.resend.com", port: 465, passwordName: "Resend API key" },
+  resend: { label: "Resend", host: "smtp.resend.com", port: 2587, passwordName: "Resend API key" },
   gmail: { label: "Gmail / Google Workspace", host: "smtp.gmail.com", port: 587, passwordName: "app password" },
   microsoft: { label: "Microsoft 365 / Outlook", host: "smtp.office365.com", port: 587, passwordName: "password" },
   zoho_au: { label: "Zoho Mail (Australia)", host: "smtp.zoho.com.au", port: 587, passwordName: "password" },

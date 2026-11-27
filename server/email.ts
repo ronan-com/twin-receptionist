@@ -10,7 +10,7 @@ import { isPublicHost } from "./net";
 import { seal, unseal } from "./secrets";
 import { accessToken, mailServers, type OAuthProvider, type SignInResult } from "./oauth";
 import { ValidationError } from "./prompt";
-import { telnyx } from "./telnyx";
+import { chatCompletion } from "./llm";
 
 // The receptionist works inside the business's own mailbox: it reads new mail over
 // IMAP and either saves a suggested reply to their Drafts folder ("draft", the
@@ -39,7 +39,8 @@ type Mailbox = {
   activity: EmailActivity[];
 };
 
-const MODEL = "zai-org/GLM-5.3-Flash";
+// The default model (server/llm.ts); EMAIL_MODEL swaps in another for email only.
+const MODEL = (process.env.EMAIL_MODEL ?? "").trim() || undefined;
 const MAX_PER_CHECK = 8;
 
 function passwordOf(box: Mailbox): string {
@@ -272,6 +273,36 @@ export async function connectEmail(clientId: string, input: unknown, publicOnly 
   return emailStatus(clientId);
 }
 
+/**
+ * Changes how a connected mailbox's replies go out, without disconnecting: "draft" saves them for the
+ * owner to send, "send" sends them. Sending is checked first (the outgoing server must accept the login),
+ * so a mailbox that can only read stays on drafts. `verify` is swappable for tests.
+ */
+export async function setEmailMode(
+  clientId: string,
+  input: unknown,
+  verify: (box: Mailbox, creds: Creds) => Promise<void> = async (box, creds) => {
+    await smtp(box, creds).verify();
+  },
+): Promise<EmailStatus> {
+  const mode: EmailMode | null = (input as { mode?: unknown } | null)?.mode === "send" ? "send" : (input as { mode?: unknown } | null)?.mode === "draft" ? "draft" : null;
+  if (!mode) throw new ValidationError("Choose drafts or send automatically.");
+  const box = await loadBox(clientId);
+  if (!box) throw new ValidationError("Connect an inbox first.");
+  if (box.mode !== mode) {
+    if (mode === "send") {
+      try {
+        await verify(box, await credentialsFor(clientId, box));
+      } catch (err) {
+        throw new ValidationError(`Sending from ${box.smtpHost} didn't work: ${(err as Error).message}. Keep replies as drafts, or check the outgoing server settings.`);
+      }
+    }
+    // Only the mode changes: the connect time stays, so mail already in the inbox is still never looked at.
+    await updateBox(clientId, { ...box, mode });
+  }
+  return emailStatus(clientId);
+}
+
 // Saves a mailbox connected through "Sign in with Google/Microsoft", after checking
 // the token really opens it.
 export async function connectOAuth(clientId: string, result: SignInResult): Promise<EmailStatus> {
@@ -376,16 +407,18 @@ Answer with JSON only, no other text: {"reply": true or false, "reason": "one sh
   const sender = mail.from?.value[0];
   const user = `From: ${sender?.name ?? ""} <${sender?.address ?? ""}>\nSubject: ${mail.subject ?? ""}\n\n<<<EMAIL\n${text}\nEMAIL>>>`;
 
-  const res = await telnyx<any>("POST", "/ai/chat/completions", {
+  const reply = await chatCompletion({
     model: MODEL,
+    title: "Email agent",
+    maxTokens: 1600,
+    temperature: 0.3,
+    timeoutMs: 60_000,
     messages: [
       { role: "system", content: system },
       { role: "user", content: user },
     ],
-    max_tokens: 1600,
-    temperature: 0.3,
   });
-  const raw = String(res?.choices?.[0]?.message?.content ?? "");
+  const raw = String(reply?.content ?? "");
   const start = raw.indexOf("{");
   const end = raw.lastIndexOf("}");
   if (start === -1 || end <= start) throw new Error("The AI didn't return a usable answer for this email.");

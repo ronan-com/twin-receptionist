@@ -1,9 +1,9 @@
 // Twilio as a phone-number source: connecting and checking an account, listing / searching / buying
 // numbers, importing one into Vapi for a receptionist, and sending a receptionist's texts through
-// Twilio. Nothing here calls Twilio, Vapi or a database: fetch is stubbed, and the credentials come
+// Twilio. Nothing here calls Twilio or Vapi: fetch is stubbed, and the credentials come
 // from the install's own TWILIO_* settings (the path with no org to look up).
-//   DATABASE_URL=postgres://unused@localhost/unused bun test server/twilio.test.ts
-import { afterAll, beforeEach, describe, expect, test } from "bun:test";
+//   DATABASE_URL=<scratch db> bun test server/twilio.test.ts   (sendSms reads sms_optouts, so it migrates)
+import { afterAll, beforeAll, beforeEach, describe, expect, test } from "bun:test";
 import { blankSettings, type Business } from "../src/lib/shared";
 
 const SID = "AC" + "a".repeat(32);
@@ -19,6 +19,12 @@ const { attachNumber } = await import("./voice/vapi");
 const { sendSms } = await import("./sms");
 const { smsNumberOf, statusFor, defaultAutomations } = await import("./automations");
 const { twilioAllowed } = await import("./phoneAccount");
+
+// sendSms checks the opt-out list first, so the scratch database needs its tables.
+beforeAll(async () => {
+  const { migrate } = await import("./db");
+  await migrate();
+}, 60000);
 
 const realFetch = globalThis.fetch;
 afterAll(() => {
@@ -237,12 +243,12 @@ describe("texts through Twilio", () => {
     expect(sent[0].form).toEqual({ From: "+61480011301", To: "+61412345678", Body: "Hi from Alpha" });
   });
 
-  test("a Telnyx receptionist's text still goes through its Telnyx assistant", async () => {
+  test("a Telnyx receptionist's text goes through Telnyx's messages API (our own texting, not its assistant)", async () => {
     process.env.TELNYX_API_KEY = "KEYTEST-sms-0000000000000000";
     reply(/api\.telnyx\.com/, { data: {} });
     await sendSms(telnyxClient, { from: "+61412000999", to: "+61412345678", text: "Hi", meta: { twin_text_back: "after_call" } });
-    expect(sent[0].url).toBe("https://api.telnyx.com/v2/ai/assistants/asst-t/chat/sms");
-    expect(sent[0].json).toMatchObject({ from: "+61412000999", to: "+61412345678", text: "Hi", conversation_metadata: { twin_text_back: "after_call" } });
+    expect(sent[0].url).toBe("https://api.telnyx.com/v2/messages");
+    expect(sent[0].json).toMatchObject({ from: "+61412000999", to: "+61412345678", text: "Hi" });
     expect(sent.some((s) => s.url.includes("twilio.com"))).toBe(false);
   });
 

@@ -1,26 +1,16 @@
 import type { LucideIcon } from "lucide-react";
 import {
-  Activity,
-  AudioLines,
   Bot,
-  Briefcase,
   Building2,
   CalendarDays,
-  ClipboardCheck,
-  CreditCard,
-  FlaskConical,
-  GraduationCap,
   Home,
-  LayoutDashboard,
+  Inbox,
   LifeBuoy,
   Palette,
   Phone,
-  PhoneCall,
-  PhoneIncoming,
   Plug,
-  ScrollText,
   Settings,
-  ShieldCheck,
+  Users,
 } from "lucide-react";
 import type {
   CallOutcome,
@@ -44,21 +34,20 @@ export interface NavItem {
   exact?: boolean;
   /** Extra path prefixes that should keep this top-level item highlighted. */
   match?: string[];
-  /** Console pages only the platform team sees (agency staff are sent back to /admin). */
-  platformOnly?: boolean;
-  /** Console pages for an agency only: hidden in the platform team's own console, shown while it views as an agency. */
-  agencyOnly?: boolean;
+  /** Paths that keep this item highlighted only when matched exactly. */
+  matchExact?: string[];
 }
 
 /**
- * Four top-level destinations for a business owner. Older URLs still work: the
+ * Five top-level destinations for a business owner. Older URLs still work: the
  * receptionist, knowledge, numbers, automations, reports, team and connected apps
- * are reached from Settings (and link back to it); follow-ups from Home.
+ * are sections of Settings (and link back to it); follow-ups are in Contacts.
  */
 export const CLIENT_NAV: NavItem[] = [
   { to: "/app", label: "Home", icon: Home, exact: true },
-  { to: "/app/calls", label: "Calls", icon: PhoneCall },
-  { to: "/app/bookings", label: "Bookings", icon: CalendarDays },
+  { to: "/app/inbox", label: "Inbox", icon: Inbox, match: ["/app/calls"] },
+  { to: "/app/calendar", label: "Calendar", icon: CalendarDays, match: ["/app/bookings"] },
+  { to: "/app/contacts", label: "Contacts", icon: Users, match: ["/app/leads"] },
   {
     to: "/app/settings",
     label: "Settings",
@@ -70,39 +59,73 @@ export const CLIENT_NAV: NavItem[] = [
 /** Pages without a tab of their own: where "Back" on them goes. */
 export const CLIENT_BACKLINKS: { to: string; label: string; from: string[] }[] = [
   { to: "/app/settings", label: "Settings", from: ["/app/how-it-works", "/app/receptionist", "/app/knowledge", "/app/phone-numbers", "/app/automations", "/app/analytics", "/app/team", "/app/integrations"] },
-  { to: "/app", label: "Home", from: ["/app/leads"] },
 ];
 
-// The console (/admin). The platform team sees every item; agency staff see the
-// ones without platformOnly, scoped to their own agency.
+// The console (/admin). Six places. Everything else is a tab inside one of them
+// (ADMIN_SECTIONS), and every older URL still opens.
 export const ADMIN_NAV: NavItem[] = [
-  { to: "/admin", label: "Overview", icon: LayoutDashboard, exact: true },
-  { to: "/admin/agencies", label: "Agencies", icon: Briefcase, platformOnly: true },
-  { to: "/admin/clients", label: "Clients", icon: Building2 },
-  { to: "/admin/calls", label: "Calls", icon: Activity },
-  { to: "/admin/receptionists", label: "AI Receptionists", icon: Bot },
-  { to: "/admin/voices", label: "Voices", icon: AudioLines },
-  { to: "/admin/phone-numbers", label: "Phone Numbers", icon: Phone },
-  { to: "/admin/number-requests", label: "Number Requests", icon: PhoneIncoming },
+  { to: "/admin/clients", label: "Clients", icon: Building2, match: ["/admin/calls", "/admin/agencies"], matchExact: ["/admin"] },
+  { to: "/admin/receptionists", label: "Receptionists", icon: Bot, match: ["/admin/voices", "/admin/test-lab"] },
+  { to: "/admin/phone-numbers", label: "Numbers", icon: Phone, match: ["/admin/number-requests"] },
   { to: "/admin/connections", label: "Connections", icon: Plug },
-  { to: "/admin/usage", label: "Usage", icon: CreditCard },
-  { to: "/admin/test-lab", label: "Test Lab", icon: FlaskConical, platformOnly: true },
-  { to: "/admin/system", label: "System / QA", icon: ClipboardCheck },
-  { to: "/admin/audit", label: "Audit Log", icon: ScrollText },
-  { to: "/admin/support-requests", label: "Support requests", icon: LifeBuoy, agencyOnly: true },
-  { to: "/admin/tutorials", label: "Tutorials", icon: GraduationCap, agencyOnly: true },
-  { to: "/admin/settings", label: "Settings", icon: ShieldCheck, match: ["/admin/branding"] },
+  { to: "/admin/branding", label: "Brand", icon: Palette },
+  {
+    to: "/admin/tutorials",
+    label: "Help",
+    icon: LifeBuoy,
+    match: ["/admin/support-requests", "/admin/settings", "/admin/usage", "/admin/system", "/admin/audit"],
+  },
 ];
-// (Integrations and Billing have no Twin backing yet: no console pages. Branding is a tab of Settings.)
+
+export interface AdminTab {
+  to: string;
+  label: string;
+  exact?: boolean;
+  /** Platform team only. */
+  platformOnly?: boolean;
+  /** Agency console only (hidden in the platform team's own console). */
+  agencyOnly?: boolean;
+  /** Hidden where numbers are bought from each client's page (own phone account / single agency). */
+  queueOnly?: boolean;
+}
+
+/** The tabs shown across the top of each console area. */
+export const ADMIN_SECTIONS: AdminTab[][] = [
+  [
+    { to: "/admin", label: "Overview", exact: true },
+    { to: "/admin/clients", label: "Clients" },
+    { to: "/admin/calls", label: "Calls" },
+    { to: "/admin/agencies", label: "Agencies", platformOnly: true },
+  ],
+  [
+    { to: "/admin/receptionists", label: "Receptionists" },
+    { to: "/admin/voices", label: "Voices" },
+    { to: "/admin/test-lab", label: "Test", platformOnly: true },
+  ],
+  [
+    { to: "/admin/phone-numbers", label: "Numbers" },
+    { to: "/admin/number-requests", label: "Requests", queueOnly: true },
+  ],
+  [
+    { to: "/admin/tutorials", label: "Guides", agencyOnly: true },
+    { to: "/admin/support-requests", label: "Support", agencyOnly: true },
+    { to: "/admin/settings", label: "Settings" },
+    { to: "/admin/usage", label: "Usage" },
+    { to: "/admin/system", label: "System" },
+    { to: "/admin/audit", label: "Activity" },
+  ],
+];
 
 /** Console paths agency staff may not open. */
-export const PLATFORM_ONLY_PATHS = ADMIN_NAV.filter((n) => n.platformOnly).map((n) => n.to);
+export const PLATFORM_ONLY_PATHS = ["/admin/agencies", "/admin/test-lab"];
 
 export function isPlatformOnlyPath(pathname: string): boolean {
   return PLATFORM_ONLY_PATHS.some((p) => pathname === p || pathname.startsWith(p + "/"));
 }
 
-export const adminNavFor = (variant: "platform" | "agency") => (variant === "platform" ? ADMIN_NAV.filter((n) => !n.agencyOnly) : ADMIN_NAV.filter((n) => !n.platformOnly));
+export const adminNavFor = (variant: "platform" | "agency"): NavItem[] =>
+  // The platform team's console has no guides or support inbox, so its Help opens on Settings.
+  ADMIN_NAV.map((n) => (n.label === "Help" && variant === "platform" ? { ...n, to: "/admin/settings" } : n));
 
 /* ------------------------------------------------------------------ */
 /* Labels                                                              */
@@ -178,10 +201,10 @@ export const APPOINTMENT_STATUSES: AppointmentStatus[] = ["pending", "confirmed"
 
 export const INTEGRATION_STATUS_LABELS: Record<IntegrationStatus, string> = {
   available: "Available",
+  coming_soon: "Not available",
   not_connected: "Not connected",
   connected: "Connected",
   error: "Needs attention",
-  coming_soon: "Coming soon",
 };
 
 export const ROUTING_MODE_LABELS: Record<PhoneRoutingMode, string> = {
@@ -229,7 +252,7 @@ export interface IntegrationDef {
   name: string;
   category: "Calendar" | "CRM" | "Field service" | "Accounting" | "Automation";
   description: string;
-  availability: "available" | "coming_soon";
+  availability: "available";
   oauth: boolean;
 }
 
@@ -241,8 +264,6 @@ export const INTEGRATION_CATALOG: IntegrationDef[] = [
   { provider: "servicem8", name: "ServiceM8", category: "Field service", description: "Turn booked call-outs into ServiceM8 jobs automatically.", availability: "available", oauth: true },
   { provider: "xero", name: "Xero", category: "Accounting", description: "Match callers to Xero contacts and surface invoice questions.", availability: "available", oauth: true },
   { provider: "webhook", name: "Webhook / custom CRM", category: "Automation", description: "Send call, booking and lead events to any HTTPS endpoint.", availability: "available", oauth: false },
-  { provider: "zapier", name: "Zapier", category: "Automation", description: `Connect ${PRODUCT} to thousands of apps without code.`, availability: "coming_soon", oauth: false },
-  { provider: "cliniko", name: "Cliniko", category: "Calendar", description: "Practice management booking for allied health.", availability: "coming_soon", oauth: true },
 ];
 
 export const CHART_COLORS = {
@@ -276,7 +297,7 @@ export const STORAGE_KEYS = {
 };
 
 export const LLM_MODELS = ["gpt-4o-mini", "gpt-4o", "gpt-4.1", "gpt-4.1-mini", "claude-3-5-sonnet", "gemini-2.0-flash"];
-export const TOOL_PERMISSIONS = ["book_appointment", "lookup_availability", "take_message", "transfer_call", "send_sms", "lookup_contact", "create_lead", "end_call"];
+export const TOOL_PERMISSIONS = ["book_appointment", "reschedule_appointment", "cancel_appointment", "lookup_availability", "take_message", "transfer_call", "send_sms", "lookup_contact", "create_lead", "end_call"];
 export const TIMEZONES = [
   "Australia/Sydney",
   "Australia/Melbourne",

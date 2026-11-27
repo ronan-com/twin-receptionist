@@ -2,7 +2,7 @@ import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { AuthError, hashToken, ownerResetLink, requireRole, sessionCookie, singleAgency, type Ctx } from "./accounts";
-import { assistantConfigured } from "./assistant";
+import { llmConfiguredAnywhere } from "./llm";
 import { audit } from "./audit";
 import { resolveBrand } from "./brand";
 import { sql } from "./db";
@@ -25,7 +25,7 @@ import { collectProblems, recentLogs } from "./problems";
 //    whether it is healthy, COUNTS only, the brand's name and logo address, and yes/no for the optional
 //    extras. The shape is fixed in SHAPE below: nothing else can be sent. Never caller names or numbers,
 //    transcripts, recordings, keys, or anything a caller or customer said.
-// 2. Support access. OFF by default. When the owner turns it on, the provider can ask for a one-time
+// 2. Support access. ON by default on fresh installs (SUPPORT_ACCESS_DEFAULT=on), until the owner changes it. While on, the provider can ask for a one-time
 //    sign-in link (valid 60 seconds, single use) that opens the dashboard as a read-only "support" person.
 //    Every link and every sign-in is written to the audit log and shown to the owner.
 //
@@ -240,7 +240,7 @@ export async function buildSnapshot(): Promise<Record<string, any>> {
     },
     lastCallAt: c.last_call ? new Date(c.last_call).toISOString() : null,
     brand: { name: brandName, logoUrl: logoUrl ? (logoUrl.startsWith("/") ? base + logoUrl : logoUrl) : "" },
-    extras: { email: Boolean(mailConfig().smtpUrl), domain: ownDomain(base), openRouter: assistantConfigured() },
+    extras: { email: Boolean(mailConfig().smtpUrl), domain: ownDomain(base), openRouter: await llmConfiguredAnywhere() },
     support: { sharing, access: accessOpen(access), accessUntil: accessOpen(access) ? access?.until ?? null : null, edit: editAllowed(edit) },
     updates: await updatesStatus().then(({ available, enabled, mode, latest, lastResult, lastError, lastAt }) => ({ available, enabled, mode, latest, lastResult, lastError, lastAt })).catch(() => ({ available: false, enabled: true, mode: "overnight", latest: "", lastResult: "", lastError: "", lastAt: null })),
     problems: await collectProblems(),

@@ -11,8 +11,7 @@ Default flow:
 6. Jesse adds the agency name in Settings > Team and uploads its logo and colours in Settings > Branding.
    The signed-in agency header follows that saved name and logo. Customer workspaces inherit its branding.
 
-The generic portal stays neutral even after an agency is branded. Existing explicitly branded
-setups and existing installed branding are preserved. Admins can still provide a brand during
+The generic portal stays neutral even after an agency is branded. Existing saved business names, logos and colours are preserved. Legacy setup styles render through the neutral portal. Admins can still provide a brand during
 an assisted install when requested.
 
 Plain installs receive NEUTRAL_DASHBOARD=1, with no initial BRAND_COLOUR or BRAND_LOGO_PNG.

@@ -31,7 +31,7 @@ export type ReceptionistSave = ReceptionistUpdate & {
   faq_style?: "brief" | "detailed";
   qualification_questions?: string[];
   collect_fields?: CollectKey[];
-  booking_rules?: ReceptionistUpdate["booking_rules"] & { lead_webhook?: string };
+  booking_rules?: ReceptionistUpdate["booking_rules"] & { lead_webhook?: string; require_approval?: boolean };
 };
 
 export type ReceptionistSaved = { agent: ReceptionistRow; applied: boolean; demo: boolean; changed?: string[]; warning?: string };

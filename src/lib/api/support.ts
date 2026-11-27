@@ -20,3 +20,24 @@ export const updatesApi = {
   save: (change: UpdatesChange) => api.put<UpdatesStatus>("/api/updates/settings", change),
   check: () => api.post<CheckResult>("/api/updates/check", {}),
 };
+
+// Settings, "Backups" (server/backup.ts).
+export type BackupsStatus = {
+  enabled: boolean;
+  volume: "mounted" | "missing" | "n/a";
+  keep: number;
+  backups: { name: string; size: number; at: string }[];
+  last: { name: string; size: number; at: string } | null;
+  lastError: string;
+  offsite: { configured: boolean; at: string | null; error: string };
+  settings: { retentionMonths: number; s3: { endpoint: string; bucket: string; region: string; accessKeyId: string; secretSet: boolean } | null };
+  cleanup: { at: string | null; removed: { transcripts: number; messages: number } | null };
+  databaseMb: number | null;
+  databaseLimitMb: number;
+};
+export type BackupsChange = { retentionMonths?: number; s3?: { endpoint: string; bucket: string; region?: string; accessKeyId: string; secret?: string } | null };
+export const backupsApi = {
+  get: () => api.get<BackupsStatus>("/api/backups"),
+  run: () => api.post<{ ok: boolean; error?: string; status: BackupsStatus }>("/api/backups/run", {}),
+  save: (change: BackupsChange) => api.put<BackupsStatus>("/api/backups/settings", change),
+};

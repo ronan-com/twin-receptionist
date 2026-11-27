@@ -1,6 +1,7 @@
 import { createHash, timingSafeEqual } from "node:crypto";
 import {
   DAYS,
+  countryForTimezone,
   sayTime,
   type BookingRequest,
   type BookingSetup,
@@ -8,8 +9,8 @@ import {
   type DayKey,
 } from "../src/lib/shared";
 import { sql } from "./db";
-import { CalendarError, busyTimes, createEvent } from "./calendars";
-import { confirmToCaller, notifyBusiness } from "./notify";
+import { CalendarError, busyTimes, createEvent, type Busy } from "./calendars";
+import { confirmToCaller, declineToCaller, notifyBusiness } from "./notify";
 import { mailerReady } from "./mailer";
 import { getSetting, putSetting } from "./store";
 
@@ -54,6 +55,21 @@ export async function requestsFor(clientId: string): Promise<BookingRequest[]> {
   return rows.map((r: any) => r.data);
 }
 
+// Bookings waiting for the business's approval hold their time, so nobody else is offered it.
+export async function pendingBusy(clientId: string, from: number, to: number, exceptId = ""): Promise<Busy[]> {
+  const rows = await sql`select data from booking_requests where client_id = ${clientId} and data->>'kind' = 'booking' and data->>'status' = 'pending'`;
+  const out: Busy[] = [];
+  for (const r of rows as any[]) {
+    const d = r.data as BookingRequest & { minutes?: number };
+    if (d.id === exceptId) continue;
+    const start = Date.parse(d.start);
+    if (!Number.isFinite(start)) continue;
+    const end = start + (d.minutes ?? 30) * 60000;
+    if (start < to && end > from) out.push({ start, end });
+  }
+  return out;
+}
+
 // ---- Time zones ----------------------------------------------------------------
 
 // Minutes the zone is ahead of UTC at that instant (Brisbane: 600).
@@ -77,7 +93,7 @@ function offsetMinutes(at: number, tz: string): number {
 }
 
 // "2026-11-21" + "09:30" in Australia/Sydney -> epoch ms
-function localToEpoch(date: string, hhmm: string, tz: string): number {
+export function localToEpoch(date: string, hhmm: string, tz: string): number {
   const [y, m, d] = date.split("-").map(Number);
   const [h, min] = hhmm.split(":").map(Number);
   const guess = Date.UTC(y, m - 1, d, h, min);
@@ -88,7 +104,7 @@ function localToEpoch(date: string, hhmm: string, tz: string): number {
 }
 
 // epoch ms -> "2026-11-21T09:30:00+10:00"
-function isoLocal(at: number, tz: string): string {
+export function isoLocal(at: number, tz: string): string {
   const off = offsetMinutes(at, tz);
   const local = new Date(at + off * 60000).toISOString().slice(0, 19);
   const sign = off >= 0 ? "+" : "-";
@@ -96,11 +112,11 @@ function isoLocal(at: number, tz: string): string {
   return `${local}${sign}${String(Math.floor(abs / 60)).padStart(2, "0")}:${String(abs % 60).padStart(2, "0")}`;
 }
 
-function localDate(at: number, tz: string): string {
+export function localDate(at: number, tz: string): string {
   return isoLocal(at, tz).slice(0, 10);
 }
 
-function sayDay(date: string): string {
+export function sayDay(date: string): string {
   const [y, m, d] = date.split("-").map(Number);
   return new Date(Date.UTC(y, m - 1, d)).toLocaleDateString("en-AU", {
     weekday: "long",
@@ -120,7 +136,10 @@ function dayKey(date: string): DayKey {
 
 type Slot = { start: string; time: string };
 
-const MAX_SLOTS = 10;
+// What the voice model is handed for a day: everything is summarised as ranges, and the slot list is
+// capped (spread across the whole day, not the first few) to keep the tool answer short.
+const MAX_SLOTS = 8;
+const NEAR_EACH_SIDE = 2;
 // Don't offer a time that starts sooner than this.
 const LEAD_MINUTES = 30;
 const NOTICE_MINUTES: Record<string, number> = { none: 0, "1h": 60, "2h": 120, same_day: 60, "24h": 1440, "48h": 2880 };
@@ -141,7 +160,13 @@ function lastBookableDate(client: Business): string {
   return windowDays ? localDate(Date.now() + windowDays * 86400000, client.settings.timezone) : "";
 }
 
-async function freeSlots(client: Business, date: string): Promise<{ open: boolean; slots: Slot[]; starts: number[] }> {
+// `opts.ignore` is an appointment that is being moved: its own time doesn't block the new one.
+// `opts.busy` is the calendar lookup (tests stand in for it).
+export async function freeSlots(
+  client: Business,
+  date: string,
+  opts: { ignore?: Busy; busy?: typeof busyTimes; pending?: typeof pendingBusy } = {},
+): Promise<{ open: boolean; slots: Slot[]; starts: number[] }> {
   const s = client.settings;
   const setup = client.booking!;
   const hours = s.hours[dayKey(date)];
@@ -155,7 +180,10 @@ async function freeSlots(client: Business, date: string): Promise<{ open: boolea
   if (last && date > last) return { open: true, slots: [], starts: [] };
   const gap = rules.buffer * 60000;
 
-  const taken = (await busyTimes(client, opens - gap, closes + gap)).map((b) => [b.start, b.end] as const);
+  const ignore = opts.ignore;
+  const taken = [...(await (opts.busy ?? busyTimes)(client, opens - gap, closes + gap)), ...(await (opts.pending ?? pendingBusy)(client.id, opens - gap, closes + gap))]
+    .filter((b) => !(ignore && b.start === ignore.start && b.end === ignore.end))
+    .map((b) => [b.start, b.end] as const);
 
   const earliest = Date.now() + rules.notice * 60000;
   const starts: number[] = [];
@@ -164,19 +192,42 @@ async function freeSlots(client: Business, date: string): Promise<{ open: boolea
     if (taken.some(([a, b]) => t < b + gap && t + length + gap > a)) continue;
     starts.push(t);
   }
-  return {
-    open: true,
-    starts,
-    slots: starts.slice(0, MAX_SLOTS).map((t) => ({
-      start: isoLocal(t, s.timezone),
-      time: sayTime(isoLocal(t, s.timezone).slice(11, 16)),
-    })),
-  };
+  return { open: true, starts, slots: starts.slice(0, MAX_SLOTS).map((t) => toSlot(t, s.timezone)) };
+}
+
+const toSlot = (t: number, tz: string): Slot => ({ start: isoLocal(t, tz), time: sayTime(isoLocal(t, tz).slice(11, 16)) });
+
+/** At most `n` items spread evenly across the list, always including the first and the last. */
+export function spread<T>(items: T[], n: number): T[] {
+  if (items.length <= n) return items;
+  const out: T[] = [];
+  for (let i = 0; i < n; i++) out.push(items[Math.round((i * (items.length - 1)) / (n - 1))]);
+  return out.filter((v, i) => out.indexOf(v) === i);
+}
+
+/** Free stretches of the day in words: "8am to 12pm, 1pm to 5pm" (each ends when its last appointment ends). */
+export function sayRanges(starts: number[], lengthMs: number, tz: string): string[] {
+  const runs: number[][] = [];
+  for (const t of starts) {
+    const run = runs[runs.length - 1];
+    if (run && t - run[run.length - 1] === lengthMs) run.push(t);
+    else runs.push([t]);
+  }
+  const hm = (t: number) => sayTime(isoLocal(t, tz).slice(11, 16));
+  return runs.map((r) => `${hm(r[0])} to ${hm(r[r.length - 1] + lengthMs)}`);
+}
+
+const PARTS: Record<string, [string, string]> = { morning: ["00:00", "12:00"], afternoon: ["12:00", "17:00"], evening: ["17:00", "24:00"] };
+
+function hhmmOf(v: unknown): string {
+  const m = /^(\d{1,2}):(\d{2})/.exec(String(v ?? "").trim());
+  if (!m || Number(m[1]) > 23 || Number(m[2]) > 59) return "";
+  return `${m[1].padStart(2, "0")}:${m[2]}`;
 }
 
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
 
-export async function availability(client: Business, input: any): Promise<unknown> {
+export async function availability(client: Business, input: any, opts: Parameters<typeof freeSlots>[2] = {}): Promise<unknown> {
   const date = String(input?.date ?? "").trim();
   if (!DATE.test(date) || Number.isNaN(Date.parse(date))) {
     return { error: "Send the date as YYYY-MM-DD." };
@@ -187,37 +238,182 @@ export async function availability(client: Business, input: any): Promise<unknow
   const last = lastBookableDate(client);
   if (last && date > last) return { date, day: sayDay(date), open: true, slots: [], message: `That is further ahead than bookings go (up to ${rulesOf(client).windowDays} days). Offer an earlier day, or take a message.` };
 
-  const { open, slots } = await freeSlots(client, date);
+  const tz = client.settings.timezone;
+  const { open, starts: all } = await freeSlots(client, date, opts);
   if (!open) return { date, day: sayDay(date), open: false, message: `The business is closed on ${sayDay(date)}. Offer another day.` };
-  if (slots.length === 0) return { date, day: sayDay(date), open: true, slots: [], message: "No free times left that day. Offer another day." };
+  if (all.length === 0) return { date, day: sayDay(date), open: true, slots: [], message: "No free times left that day. Offer another day." };
+
+  const length = client.booking!.minutes * 60000;
+  const hmOf = (t: number) => isoLocal(t, tz).slice(11, 16);
+  const part = PARTS[String(input?.part_of_day ?? "").trim().toLowerCase()];
+  const starts = part ? all.filter((t) => hmOf(t) >= part[0] && hmOf(t) < part[1]) : all;
+  const base = { date, day: sayDay(date), open: true, appointment_minutes: client.booking!.minutes };
+  const pass = "Pass the chosen slot's start value, unchanged, to book_appointment.";
+
+  if (part && starts.length === 0) {
+    return { ...base, slots: spread(all, 4).map((t) => toSlot(t, tz)), free_ranges: sayRanges(all, length, tz), message: `Nothing is free in the ${String(input.part_of_day).trim().toLowerCase()}. Say so, and offer a time from free_ranges. ${pass}` };
+  }
+
+  // A specific time: check that time itself, and give the nearest free times either side.
+  const asked = hhmmOf(input?.time);
+  if (asked) {
+    const want = localToEpoch(date, asked, tz);
+    const exact = starts.includes(want);
+    const before = starts.filter((t) => t < want).slice(-NEAR_EACH_SIDE);
+    const after = starts.filter((t) => t > want).slice(0, NEAR_EACH_SIDE);
+    const near = [...before, ...(exact ? [want] : []), ...after];
+    return {
+      ...base,
+      requested_time: sayTime(asked),
+      requested_time_free: exact,
+      slots: near.map((t) => toSlot(t, tz)),
+      free_ranges: sayRanges(starts, length, tz),
+      message: exact
+        ? `${sayTime(asked)} is free. Confirm it with them, or offer a nearby time. ${pass}`
+        : `${sayTime(asked)} is NOT free (it is taken, or not one of the booking times). Say so and offer one of the nearest times in slots. ${pass}`,
+    };
+  }
+
   return {
-    date,
-    day: sayDay(date),
-    open: true,
-    appointment_minutes: client.booking!.minutes,
-    slots,
-    message: "Offer two or three of these times. Pass the chosen slot's start value, unchanged, to book_appointment.",
+    ...base,
+    free_ranges: sayRanges(starts, length, tz),
+    slots: spread(starts, MAX_SLOTS).map((t) => toSlot(t, tz)),
+    message: `free_ranges is everything free that day. Offer two or three times from slots, spread across the day unless they asked for a time. If they ask for a time, call check_availability again with time (HH:MM). ${pass}`,
   };
 }
 
-const clip = (v: unknown, max: number) => String(v ?? "").replace(/[\u0000-\u001f]/g, " ").trim().slice(0, max);
+/**
+ * A number as +<country code><number> for storing: "0491570006" -> "+61491570006" (or +1 in the US).
+ * Anything that can't be read as a whole number is returned as given, cleaned of stray punctuation.
+ */
+export function normalizePhone(raw: unknown, tz: string): string {
+  const text = String(raw ?? "").trim();
+  const digits = text.replace(/\D/g, "");
+  if (!digits) return text;
+  if (text.startsWith("+")) return digits.length >= 8 && digits.length <= 15 ? `+${digits}` : text;
+  if (digits.startsWith("00") && digits.length >= 10 && digits.length <= 17) return `+${digits.slice(2)}`;
+  if (countryForTimezone(tz) === "US") {
+    if (digits.length === 10 && /^[2-9]/.test(digits)) return `+1${digits}`;
+    if (digits.length === 11 && digits.startsWith("1")) return `+${digits}`;
+    return text;
+  }
+  if (digits.length === 10 && digits.startsWith("0")) return `+61${digits.slice(1)}`;
+  if (digits.length === 11 && digits.startsWith("61")) return `+${digits}`;
+  if (digits.length === 9 && /^[2-478]/.test(digits)) return `+61${digits}`;
+  return text;
+}
+
+export const clip = (v: unknown, max: number) => String(v ?? "").replace(/[\u0000-\u001f]/g, " ").trim().slice(0, max);
 
 // Bookings for one client run one at a time, so two people can't both be given
 // the same slot between the "is it free" check and the write.
 const bookingLocks = new Map<string, Promise<unknown>>();
 
-export function book(client: Business, input: any): Promise<unknown> {
-  const previous = bookingLocks.get(client.id) ?? Promise.resolve();
-  const next = previous.catch(() => {}).then(() => bookNow(client, input));
-  bookingLocks.set(client.id, next);
-  next.finally(() => bookingLocks.get(client.id) === next && bookingLocks.delete(client.id)).catch(() => {});
+export function withBookingLock<T>(clientId: string, job: () => Promise<T>): Promise<T> {
+  const previous = bookingLocks.get(clientId) ?? Promise.resolve();
+  const next = previous.catch(() => {}).then(job);
+  bookingLocks.set(clientId, next);
+  next.finally(() => bookingLocks.get(clientId) === next && bookingLocks.delete(clientId)).catch(() => {});
   return next;
+}
+
+function bookingEvent(client: Business, r: { name: string; phone: string; email?: string; service: string; note?: string }, start: number, end: number, channel: string) {
+  const { name, phone, email, service } = r;
+  const notes = r.note ?? "";
+  return {
+    start,
+    end,
+    title: `${service || "Appointment"} · ${name}`,
+    description: `Name: ${name}\nPhone: ${phone}\n${email ? `Email: ${email}\n` : ""}Service: ${service || "not given"}\n${notes ? `Notes: ${notes}\n` : ""}Booked by the AI receptionist ${channel === "sms" ? "by text" : channel === "web" ? "in the website chat" : channel === "telegram" ? "in the Telegram chat" : "by phone"}.`,
+  };
+}
+
+// ---- Pending bookings: the business's decision -------------------------------------
+
+type PendingRow = BookingRequest & { minutes?: number; apptStatus?: string };
+export type Decision = { ok: true; request: PendingRow } | { ok: false; reason: string };
+export type DecisionDeps = {
+  createEvent: typeof createEvent;
+  confirm: (c: Business, r: BookingRequest) => Promise<unknown>;
+  decline: (c: Business, r: BookingRequest) => Promise<unknown>;
+  text: (c: Business, to: string, text: string) => Promise<unknown>;
+};
+
+// Texts the caller from the receptionist's mobile number, when it has one. Never throws.
+async function textCaller(client: Business, to: string, text: string): Promise<void> {
+  try {
+    const { smsNumberOf } = await import("./automations");
+    const { sendSms } = await import("./sms");
+    const from = await smsNumberOf(client);
+    if (from && to) await sendSms(client, { from, to, text, meta: { twin_booking: "decision" } });
+  } catch (err) {
+    console.error(`[booking ${client.id}] text to caller`, (err as Error).message);
+  }
+}
+
+const decisionDeps: DecisionDeps = { createEvent, confirm: confirmToCaller, decline: declineToCaller, text: textCaller };
+
+async function pendingRequest(clientId: string, id: string): Promise<PendingRow | null> {
+  const [row] = await sql`select data from booking_requests where client_id = ${clientId} and data->>'id' = ${id} and data->>'kind' = 'booking'`;
+  return (row?.data as PendingRow) ?? null;
+}
+
+async function saveRequestData(clientId: string, id: string, patch: Record<string, unknown>): Promise<PendingRow> {
+  const [row] = await sql`
+    update booking_requests set data = data || ${{ ...patch, changedAt: new Date().toISOString() } as any}::jsonb
+    where client_id = ${clientId} and data->>'id' = ${id} returning data`;
+  return row.data as PendingRow;
+}
+
+/** The business approves a pending booking: it goes in the calendar and the caller is told. */
+export function approveBooking(client: Business, id: string, deps: DecisionDeps = decisionDeps): Promise<Decision> {
+  return withBookingLock(client.id, async (): Promise<Decision> => {
+    const r = await pendingRequest(client.id, id);
+    if (!r) return { ok: false, reason: "Unknown booking." };
+    if (r.status !== "pending") return { ok: false, reason: r.status === "booked" ? "That booking is already confirmed." : "That booking isn't waiting for approval." };
+    const start = Date.parse(r.start);
+    if (!Number.isFinite(start)) return { ok: false, reason: "That booking has no valid time." };
+    const end = start + (r.minutes ?? client.booking?.minutes ?? 30) * 60000;
+    let eventId = "";
+    try {
+      eventId = await deps.createEvent(client, bookingEvent(client, r, start, end, r.channel));
+    } catch (err) {
+      return { ok: false, reason: err instanceof CalendarError ? err.message : "The calendar couldn't be reached. Try again in a moment." };
+    }
+    const saved = await saveRequestData(client.id, id, { status: "booked", ...(eventId ? { eventId } : {}), apptStatus: "confirmed" });
+    if (saved.email) deps.confirm(client, saved).catch((err) => console.error(`[booking ${client.id}] confirmation email`, err.message));
+    if (saved.channel === "sms" || !saved.email) {
+      const tz = client.settings.timezone;
+      const when = `${sayDay(localDate(start, tz))} at ${sayTime(isoLocal(start, tz).slice(11, 16))}`;
+      deps.text(client, saved.phone, `${client.settings.businessName}: you're booked for ${when}.`).catch(() => {});
+    }
+    return { ok: true, request: saved };
+  });
+}
+
+/** The business declines a pending booking: the time is free again and the caller is told. */
+export function declineBooking(client: Business, id: string, deps: DecisionDeps = decisionDeps): Promise<Decision> {
+  return withBookingLock(client.id, async (): Promise<Decision> => {
+    const r = await pendingRequest(client.id, id);
+    if (!r) return { ok: false, reason: "Unknown booking." };
+    if (r.status !== "pending") return { ok: false, reason: "That booking isn't waiting for approval." };
+    const saved = await saveRequestData(client.id, id, { status: "declined", declinedAt: new Date().toISOString(), apptStatus: "declined" });
+    if (saved.email) deps.decline(client, saved).catch((err) => console.error(`[booking ${client.id}] decline email`, err.message));
+    if (saved.channel === "sms" || !saved.email) {
+      deps.text(client, saved.phone, `${client.settings.businessName}: sorry, we can't do the time you asked for. Please call us to find another time.`).catch(() => {});
+    }
+    return { ok: true, request: saved };
+  });
+}
+
+export function book(client: Business, input: any): Promise<unknown> {
+  return withBookingLock(client.id, () => bookNow(client, input));
 }
 
 async function bookNow(client: Business, input: any): Promise<unknown> {
   const s = client.settings;
   const name = clip(input?.name, 80);
-  const phone = clip(input?.phone, 30);
+  const phone = normalizePhone(clip(input?.phone, 30), s.timezone);
   const service = clip(input?.service, 80);
   const notes = clip(input?.notes, 500);
   const channel = clip(input?.channel, 20) || "call";
@@ -251,14 +447,21 @@ async function bookNow(client: Business, input: any): Promise<unknown> {
       return { booked: false, reason: "That time is no longer free. Check availability again and offer other times." };
     }
     const end = start + client.booking!.minutes * 60000;
-    await createEvent(client, {
-      start,
-      end,
-      title: `${service || "Appointment"} · ${name}`,
-      description: `Name: ${name}\nPhone: ${phone}\n${email ? `Email: ${email}\n` : ""}Service: ${service || "not given"}\n${notes ? `Notes: ${notes}\n` : ""}Booked by the AI receptionist ${channel === "sms" ? "by text" : channel === "web" ? "in the website chat" : "by phone"}.`,
-    });
     const when = `${sayDay(date)} at ${sayTime(isoLocal(start, s.timezone).slice(11, 16))}`;
-    const booked: BookingRequest = { ...entry, status: "booked", note: notes };
+    if (client.booking!.requireApproval) {
+      // Held, not booked: the business approves or declines it in its calendar.
+      const pending: BookingRequest & { minutes: number } = { ...entry, status: "pending", note: notes, minutes: client.booking!.minutes };
+      await record(client.id, pending);
+      notifyBusiness(client, pending).catch(() => {});
+      return {
+        booked: false,
+        pending: true,
+        when,
+        message: `That time is held for them, but it is NOT confirmed yet. Tell them this is a request for ${when}, that the team will confirm it shortly${email || channel === "sms" ? " by message" : ""}, and do not say it is booked.`,
+      };
+    }
+    const eventId = await createEvent(client, bookingEvent(client, { ...entry, note: notes }, start, end, channel));
+    const booked: BookingRequest = { ...entry, status: "booked", note: notes, ...(eventId ? { eventId } : {}) };
     await record(client.id, booked).catch((err) => console.error(`[booking ${client.id}] couldn't log`, err.message));
     // Email the business and send it to their CRM. Never let that undo a booking that worked.
     notifyBusiness(client, booked).catch(() => {});
@@ -285,7 +488,7 @@ export async function callback(client: Business, input: any): Promise<unknown> {
     at: new Date().toISOString(),
     channel: clip(input?.channel, 20) || "call",
     name: clip(input?.name, 80),
-    phone: clip(input?.phone, 30),
+    phone: normalizePhone(clip(input?.phone, 30), client.settings.timezone),
     service: clip(input?.reason, 200),
     start: clip(input?.preferred_time, 80),
     status: "saved",
@@ -312,13 +515,13 @@ export function tokenMatches(setup: BookingSetup | undefined, given: string | nu
 
 // ---- Telnyx tool definitions ------------------------------------------------------
 
-// The three tools in provider-neutral form: what each is for and what it takes. Each
+// The tools in provider-neutral form: what each is for and what it takes. Each
 // voice engine (server/voice/) turns these into its own tool format. `action` is the
 // last part of the tool's address, /hooks/<clientId>/<action>.
 export type BookingToolDef = {
-  name: "check_availability" | "book_appointment" | "request_callback";
+  name: "check_availability" | "book_appointment" | "request_callback" | "find_booking" | "reschedule_appointment" | "cancel_appointment";
   description: string;
-  action: "availability" | "book" | "callback";
+  action: "availability" | "book" | "callback" | "find" | "reschedule" | "cancel";
   properties: Record<string, { type: "string"; description: string }>;
   required: string[];
 };
@@ -328,12 +531,23 @@ const channel = {
   description: 'How they are talking to you: "call" for a phone call, "sms" for text messages.',
 };
 
+// Only needed when the caller's number didn't match a booking: who the booking is under and when it is for.
+const bookingWho = {
+  name: { type: "string" as const, description: "Their full name, only if the number they are calling from didn't find the booking." },
+  booked_date: { type: "string" as const, description: "The day of the booking they mean as YYYY-MM-DD, only if the number didn't find it." },
+  booked_time: { type: "string" as const, description: "The time of the booking they mean as HH:MM (24 hour), only if the number didn't find it." },
+};
+
 export const BOOKING_TOOL_DEFS: BookingToolDef[] = [
   {
     name: "check_availability",
     description: "Get the free appointment times on one day. Call it before offering any times.",
     action: "availability",
-    properties: { date: { type: "string", description: "The day to check, as YYYY-MM-DD in the business's time zone." } },
+    properties: {
+      date: { type: "string", description: "The day to check, as YYYY-MM-DD in the business's time zone." },
+      time: { type: "string", description: "A specific time they asked for, as HH:MM (24 hour). Optional: checks that exact time and gives the nearest free times either side." },
+      part_of_day: { type: "string", description: 'Optional: "morning", "afternoon" or "evening", when they only want that part of the day.' },
+    },
     required: ["date"],
   },
   {
@@ -365,10 +579,46 @@ export const BOOKING_TOOL_DEFS: BookingToolDef[] = [
     },
     required: ["name", "phone", "reason", "channel"],
   },
+  {
+    name: "find_booking",
+    description:
+      "Find the caller's upcoming booking so it can be moved or cancelled. It looks under the number they are calling from. If it finds nothing, ask for their full name and the day and time of the booking and call it again with those.",
+    action: "find",
+    properties: bookingWho,
+    required: [],
+  },
+  {
+    name: "reschedule_appointment",
+    description: "Move the caller's existing booking to a new time from check_availability, once they have agreed to the new time. Never use book_appointment for a change.",
+    action: "reschedule",
+    properties: {
+      booking_id: { type: "string", description: "The booking_id from find_booking." },
+      new_start: { type: "string", description: "The start value of the new slot, exactly as check_availability returned it." },
+      ...bookingWho,
+    },
+    required: ["booking_id", "new_start"],
+  },
+  {
+    name: "cancel_appointment",
+    description: "Cancel the caller's existing booking. Only after you have read the booking back and they have clearly said yes to cancelling it.",
+    action: "cancel",
+    properties: {
+      booking_id: { type: "string", description: "The booking_id from find_booking." },
+      confirmed: { type: "string", description: 'Pass "yes" only once the caller has clearly confirmed they want this booking cancelled.' },
+      ...bookingWho,
+    },
+    required: ["booking_id", "confirmed"],
+  },
 ];
+
+// Tools that act on a caller's existing booking. They get the caller's number from the phone line
+// (never from the model), see server/bookingChange.ts.
+export const CHANGE_TOOLS = ["find_booking", "reschedule_appointment", "cancel_appointment"];
 
 export function bookingTools(client: Business, base: string) {
   const headers = [{ name: "X-Twin-Key", value: client.booking!.token }];
+  // The line's own caller ID, filled in by the phone service (not something the model can set).
+  const callerHeaders = [...headers, { name: "X-Twin-Caller", value: "{{telnyx_end_user_target}}" }];
   const url = (action: string) => `${base}/hooks/${client.id}/${action}`;
   return BOOKING_TOOL_DEFS.map((d) => ({
     type: "webhook",
@@ -378,7 +628,7 @@ export function bookingTools(client: Business, base: string) {
       description: d.description,
       url: url(d.action),
       method: "POST",
-      headers,
+      headers: CHANGE_TOOLS.includes(d.name) ? callerHeaders : headers,
       body_parameters: { type: "object", properties: d.properties, required: d.required },
     },
   }));

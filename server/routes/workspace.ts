@@ -1,5 +1,6 @@
 import type { BookingRequest, Business, DayKey } from "../../src/lib/shared";
 import { calendarLink } from "../calendars";
+import { approveBooking, declineBooking } from "../booking";
 import { callDetail } from "../calls";
 import { iso, sql } from "../db";
 import { ValidationError } from "../prompt";
@@ -29,14 +30,14 @@ const MAX_REQUESTS = 1000;
 /* Shared pieces                                                        */
 /* ------------------------------------------------------------------ */
 
-type Biz = { id: string; name: string; is_demo: boolean; timezone: string };
+export type Biz = { id: string; name: string; is_demo: boolean; timezone: string };
 
-async function bizOf(client: Business, orgId: string): Promise<Biz> {
+export async function bizOf(client: Business, orgId: string): Promise<Biz> {
   const [o] = await sql`select sandbox from orgs where id = ${orgId}`;
   return { id: client.id, name: client.settings.businessName, is_demo: Boolean(o?.sandbox), timezone: client.settings.timezone };
 }
 
-type StoredRequest = BookingRequest & {
+export type StoredRequest = BookingRequest & {
   // Our own keys, written by the PATCH endpoints below.
   apptStatus?: string;
   bizNotes?: string;
@@ -57,7 +58,7 @@ export function isRefusedBooking(r: { kind?: string; status?: string }): boolean
   return r.kind === "booking" && r.status === "failed";
 }
 
-async function requestsOf(clientId: string): Promise<StoredRequest[]> {
+export async function requestsOf(clientId: string): Promise<StoredRequest[]> {
   const rows = await sql`select data from booking_requests where client_id = ${clientId} order by id desc limit ${MAX_REQUESTS}`;
   return rows.map((r: any) => r.data as StoredRequest);
 }
@@ -68,7 +69,7 @@ export function phoneKey(p: string | null | undefined): string {
   return d.startsWith("61") && d.length >= 11 ? `0${d.slice(2)}` : d;
 }
 
-type CallRow = {
+export type CallRow = {
   id: string;
   client_id: string;
   provider_call_id: string;
@@ -126,7 +127,13 @@ export function isAfterHours(client: Business, startedAt: Date | string): boolea
   return p.hm < h.from || p.hm >= h.to;
 }
 
-function outcomeOf(call: CallRow, matched: StoredRequest[]): string | null {
+/** A booking that was made and later cancelled by the caller or the business. */
+export const isCancelled = (r: { status?: string; apptStatus?: string }) => r.status === "cancelled" || r.apptStatus === "cancelled";
+
+export function outcomeOf(call: CallRow, matched: StoredRequest[]): string | null {
+  const bookings = matched.filter((r) => r.kind === "booking" && r.status !== "failed");
+  // The call booked something that has since been cancelled: it is no longer a booked call.
+  if (bookings.length > 0 && bookings.every(isCancelled) && (!call.outcome || call.outcome === "booked")) return "resolved";
   if (call.outcome) return call.outcome;
   const r = matched[0];
   if (!r) return null;
@@ -190,13 +197,13 @@ export function answeredCall(call: CallRow, client: Business, biz: Biz, requests
 /* Bookings and follow-ups (contract A7 / A8)                           */
 /* ------------------------------------------------------------------ */
 
-const APPT_STATUSES = ["pending", "confirmed", "completed", "cancelled", "no_show"];
+const APPT_STATUSES = ["pending", "confirmed", "completed", "cancelled", "no_show", "declined"];
 export const LEAD_STAGES = ["new", "contacted", "qualified", "proposal", "won", "lost"];
 const FOLLOW_UP_STATUSES = ["pending", "scheduled", "done", "not_required"];
 
-type CalendarInfo = { integration: { id: string; provider: string; display_name: string; status: string } | null; minutes: number };
+export type CalendarInfo = { integration: { id: string; provider: string; display_name: string; status: string } | null; minutes: number };
 
-async function calendarInfo(client: Business): Promise<CalendarInfo> {
+export async function calendarInfo(client: Business): Promise<CalendarInfo> {
   const minutes = client.booking?.minutes ?? 30;
   const p = client.booking?.provider;
   if (p !== "google" && p !== "microsoft") return { integration: null, minutes };
@@ -213,7 +220,7 @@ async function calendarInfo(client: Business): Promise<CalendarInfo> {
   };
 }
 
-function callIdFor(r: StoredRequest, calls: CallRow[]): string | null {
+export function callIdFor(r: StoredRequest, calls: CallRow[]): string | null {
   return calls.find((c) => matchesCall(c, r))?.id ?? null;
 }
 
@@ -235,7 +242,7 @@ export function answeredAppointment(r: StoredRequest, clientId: string, cal: Cal
     reason: null,
     notes: r.bizNotes ?? (r.note || null),
     source: r.channel === "web" ? "website_chat" : r.channel === "sms" ? "ai_receptionist" : "ai_call",
-    status: r.apptStatus ?? (r.status === "booked" ? "confirmed" : "pending"),
+    status: r.apptStatus ?? (r.status === "booked" ? "confirmed" : r.status === "declined" ? "declined" : r.status === "cancelled" ? "cancelled" : "pending"),
     staff_name: null,
     location: null,
     contact_id: null,
@@ -307,7 +314,7 @@ export function answeredLead(r: StoredRequest, clientId: string, callId: string 
 }
 
 /** Calls of this client around the requests' times, for linking requests back to their call. */
-async function callsNear(clientId: string, requests: StoredRequest[]): Promise<CallRow[]> {
+export async function callsNear(clientId: string, requests: StoredRequest[]): Promise<CallRow[]> {
   if (requests.length === 0) return [];
   const times = requests.map((r) => Date.parse(r.at)).filter(Number.isFinite);
   if (times.length === 0) return [];
@@ -318,7 +325,7 @@ async function callsNear(clientId: string, requests: StoredRequest[]): Promise<C
       and started_at between ${from} and ${to} order by started_at desc limit ${MAX_CALLS}`) as CallRow[];
 }
 
-async function appointmentsFor(client: Business): Promise<any[]> {
+export async function appointmentsFor(client: Business): Promise<any[]> {
   const requests = (await requestsOf(client.id)).filter((r) => r.kind === "booking" && !isRefusedBooking(r));
   const [cal, calls, events] = await Promise.all([
     calendarInfo(client),
@@ -361,10 +368,24 @@ const clipText = (v: unknown, max: number) => String(v ?? "").trim().slice(0, ma
 async function patchBooking(args: ClientRouteArgs, id: string) {
   const client = args.client!;
   if (id.startsWith("cal-")) throw new ValidationError("This appointment is in your calendar. Change it there.");
-  await findRequest(client.id, id, "booking");
+  const existing = await findRequest(client.id, id, "booking");
   const body = await readBody(args.req);
   if (body.starts_at !== undefined) throw new ValidationError("Change the time in your calendar.");
   const patch: Record<string, unknown> = {};
+  // A booking waiting for approval: confirming books it, declining frees the time; either tells the caller.
+  if (existing.status === "pending" && (body.status === "confirmed" || body.status === "declined")) {
+    const out = body.status === "confirmed" ? await approveBooking(client, id) : await declineBooking(client, id);
+    if (!out.ok) throw new ValidationError(out.reason);
+    await audit(args.ctx, "booking.updated", { id, fields: ["status"], summary: body.status === "confirmed" ? "Booking approved" : "Booking declined" }, { orgId: args.clientOrgId, clientId: client.id });
+    const [cal, calls] = await Promise.all([calendarInfo(client), callsNear(client.id, [out.request])]);
+    return json({ appointment: answeredAppointment(out.request, client.id, cal, callIdFor(out.request, calls)) });
+  }
+  if (existing.status === "pending" && body.status === "cancelled") {
+    const out = await declineBooking(client, id);
+    if (!out.ok) throw new ValidationError(out.reason);
+    const [cal, calls] = await Promise.all([calendarInfo(client), callsNear(client.id, [out.request])]);
+    return json({ appointment: answeredAppointment(out.request, client.id, cal, callIdFor(out.request, calls)) });
+  }
   if (body.status !== undefined) {
     if (!APPT_STATUSES.includes(body.status)) throw new ValidationError("Choose a booking status from the list.");
     patch.apptStatus = body.status;
@@ -439,7 +460,7 @@ async function patchLead(args: ClientRouteArgs, id: string) {
 /* Calls                                                                */
 /* ------------------------------------------------------------------ */
 
-function rangeOf(url: URL): { from: Date; to: Date } {
+export function rangeOf(url: URL): { from: Date; to: Date } {
   const to = Date.parse(url.searchParams.get("to") ?? "");
   const from = Date.parse(url.searchParams.get("from") ?? "");
   const end = Number.isFinite(to) ? to : Date.now();
@@ -529,6 +550,7 @@ export async function answeredCallDetail(client: Business, orgId: string, callId
   for (const r of matched) {
     if (r.kind === "callback") events.push(event(r.id, "crm.callback_requested", r.at, "info", r.service || null));
     else if (r.status === "booked") events.push(event(r.id, "calendar.booking_created", r.at, "info", r.service || null));
+    else if (r.status === "cancelled") events.push(event(r.id, "calendar.booking_cancelled", r.at, "info", r.service || null));
     else events.push(event(r.id, "calendar.booking_failed", r.at, "error", r.note || null));
   }
   if (transcriptError) events.push(event("transcript", "transcript.unavailable", new Date().toISOString(), "warning", "The transcript couldn't be loaded from the phone provider."));

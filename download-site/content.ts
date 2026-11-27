@@ -9,7 +9,7 @@ import { CONFIG } from "./lib";
 
 export const PROVIDER_IDS = [
   "cloudflare-domain", "cloudflare-token", "registrar-nameservers", "registrar-dns-records", "digitalocean-token", "railway-token",
-  "telnyx-account", "telnyx-api-key", "vapi-account", "twilio-account", "resend", "google-oauth", "microsoft-oauth", "stripe",
+  "telnyx-account", "telnyx-api-key", "vapi-account", "twilio-account", "openrouter-key", "resend", "google-oauth", "microsoft-oauth", "stripe",
 ] as const;
 export type ProviderId = (typeof PROVIDER_IDS)[number];
 
@@ -98,9 +98,10 @@ const PLACEHOLDER: Record<string, [string, string]> = {
   "telnyx-api-key": ["Create a Telnyx API key", "In Telnyx open **Account Settings > API Keys > Create API Key** and copy it straight away (it starts with `KEY`)."],
   "vapi-account": ["Vapi: sign up and copy your two keys", "Sign up at [dashboard.vapi.ai](https://dashboard.vapi.ai/), add credit under **Billing**, then open [API Keys](https://dashboard.vapi.ai/org/api-keys) and copy the key under **Private API Keys** and the one under **Public API Keys**."],
   "twilio-account": ["Twilio: numbers and texts", "Sign up at [twilio.com](https://www.twilio.com/try-twilio), click **Upgrade**, then copy the **Account SID** and **Auth Token** from **Account Info** on the [Console](https://console.twilio.com/) home page."],
+  "openrouter-key": ["Get an OpenRouter key", "Sign up at [openrouter.ai](https://openrouter.ai/), add credit, then open **Keys > Create Key** and copy it (it starts with `sk-or-`)."],
   "resend": ["Create a Resend API key", "Sign up at [resend.com](https://resend.com/signup), open **API Keys > Create API Key**, choose **Full access** and copy it (it starts with `re_`). The setup adds and verifies your sending domain for you."],
-  "google-oauth": ["Google calendar keys (optional)", "In [Google Cloud](https://console.cloud.google.com/apis/credentials) enable the Google Calendar API, then create an **OAuth client ID** of type **Web application** with the redirect address shown on this page. Copy the Client ID and secret."],
-  "microsoft-oauth": ["Microsoft calendar keys (optional)", "In [Microsoft Entra](https://entra.microsoft.com/) open **App registrations > New registration**, allow any organisation and personal accounts, add the **Web** redirect address shown on this page, then create a client secret and copy its **Value**."],
+  "google-oauth": ["Google calendar keys (optional)", "Not needed if your setup provider offers the shared connection: Google Calendar then connects with one click from your dashboard. To use your own app instead, in [Google Cloud](https://console.cloud.google.com/apis/credentials) enable the Google Calendar API, then create an **OAuth client ID** of type **Web application** with the redirect address shown on this page. Copy the Client ID and secret."],
+  "microsoft-oauth": ["Microsoft calendar keys (optional)", "Not needed if your setup provider offers the shared connection: Outlook then connects with one click from your dashboard. To use your own app instead, in [Microsoft Entra](https://entra.microsoft.com/) open **App registrations > New registration**, allow any organisation and personal accounts, add the **Web** redirect address shown on this page, then create a client secret and copy its **Value**."],
   "stripe": ["Stripe (optional)", "Only needed if you bill your clients through Stripe. You can set it up later from your dashboard."],
 };
 

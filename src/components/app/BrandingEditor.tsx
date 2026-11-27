@@ -145,8 +145,9 @@ export function BrandingEditor() {
   const ws = useWorkspace();
   const qc = useQueryClient();
   const id = ws.businessId;
-  const canEdit = ws.access.canManage;
   const q = useWorkspaceBrand();
+  // The agency can lock a business's look; its own staff can still change it.
+  const canEdit = ws.access.canManage && !(q.data?.locked && ws.access.kind !== "staff_view");
   const own = q.data?.own;
   const agency = q.data?.agency;
   const initial = useMemo(() => coloursOf(own), [own]);
@@ -192,6 +193,8 @@ export function BrandingEditor() {
   const set = (k: keyof Colours) => (v: string) => setColours((c) => ({ ...c, [k]: v }));
 
   return (
+    <>
+    {q.data?.locked && !canEdit ? <Notice tone="info" className="mb-4">Your agency manages your logo and colours.</Notice> : null}
     <div className="grid items-start gap-4 lg:grid-cols-[minmax(0,1fr)_340px]" data-branding>
       <div className="min-w-0 space-y-4">
         <FormSection title="Logo and background" description="Shown to everyone who uses this workspace. PNG, JPEG or WebP; logos under 400 KB, backgrounds under 1.5 MB.">
@@ -227,5 +230,6 @@ export function BrandingEditor() {
         <Preview look={previewLook} name={ws.business?.name ?? "Your business"} />
       </Panel>
     </div>
+    </>
   );
 }

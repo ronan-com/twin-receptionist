@@ -97,6 +97,8 @@ export type BookingSetup = {
   notifyEmail?: string;
   // ...and POSTed here as JSON, for a CRM.
   leadWebhook?: string;
+  // The AI takes a booking as a pending request; the business approves or declines it.
+  requireApproval?: boolean;
   createdAt: string;
 };
 
@@ -116,10 +118,20 @@ export type BookingRequest = {
   service: string;
   // The booked time, or the preferred callback time.
   start: string;
-  status: "booked" | "failed" | "saved";
+  status: "booked" | "failed" | "saved" | "pending" | "declined" | "cancelled";
   note: string;
   // The caller's email, when they gave one (their booking confirmation goes there).
   email?: string;
+  // The calendar event this booking made (Google/Outlook event id, or the built-in event's id), so it can be moved or cancelled.
+  eventId?: string;
+  // Set when the caller moved the booking by phone: the time it was moved from.
+  rescheduledFrom?: string;
+  // When it was moved. A moved booking stays "booked", with its start set to the new time.
+  rescheduledAt?: string;
+  // Set when the caller cancelled the booking (its status and apptStatus are then "cancelled").
+  cancelledAt?: string;
+  // The business's decision on a pending booking ("declined"), set when it is declined.
+  declinedAt?: string;
   // Where a callback stands, set by the business.
   stage?: "new" | "contacted" | "won" | "lost";
 };
@@ -156,12 +168,21 @@ export type Business = {
   connect?: { tokenHash: string; expiresAt: string; createdAt: string };
   // Numbers Telnyx reports as connected, refreshed whenever the phone number card loads.
   phoneNumbers?: string[];
+  // Of those (and open orders), the ones still waiting for approval the last time they were looked at. A number
+  // that was here and is now live has just been approved (server/textsControl.ts numbersBecameLive).
+  pendingNumbers?: string[];
   // Where each attached number came from (recorded when it's attached; older numbers have none).
   numberSources?: Record<string, NumberSource>;
+  // The Telnyx messaging profile our own texting bot is on (server/texting.ts). Missing: not set up yet.
+  textingProfileId?: string;
+  // The owner's Texts switch. Missing: on for what's already set up; "on" once texting was set up with a number (or switched on); "off" stops texts both ways.
+  textsPref?: "on" | "off";
   // The voice engine this receptionist's assistant lives on. Missing means Telnyx (every
   // receptionist made before Vapi was added). Set when it is made (the agency's choice, or the
   // wizard's Voice engine pick), and changed by "Move to Telnyx/Vapi".
   voiceProvider?: VoiceProviderId;
+  // An MCP server the voice assistant can use as a tool (the business's own apps). Never sent to the browser with its header value.
+  mcp?: { url: string; headerName?: string; headerValue?: string };
   // Made from the console's "send the client an onboarding link": "pending" until the
   // client finishes setting it up in their workspace, then "done".
   onboarding?: "pending" | "done";
@@ -305,8 +326,12 @@ export type NumberOrder = {
   createdAt: string;
 };
 
-// numbers: take texts. waiting: answer calls but don't take texts yet.
-export type TextingState = { enabled: boolean; numbers: string[]; waiting: string[] };
+// numbers: take texts. waiting: Australian mobiles that will take texts (not connected or approved yet).
+// cantText: answer calls but can't take texts (landlines and other non-mobile numbers).
+export type TextingState = { enabled: boolean; numbers: string[]; waiting: string[]; cantText?: string[] };
+
+/** The Texts switch: on (answering), off, waiting (number still being approved), cant (no number that can text), failed (switched on but not connected: try again). */
+export type TextsStatus = TextingState & { on: boolean; status: "on" | "off" | "waiting" | "cant" | "failed"; detail: string };
 
 // What the voice engine can do about phone numbers, so the screens say it honestly.
 // Telnyx: search, buy and attach. Vapi: it only sells free US numbers, so for an
@@ -834,6 +859,8 @@ export type Brand = {
   primaryColor?: string;
   accentColor?: string;
   sidebarColor?: string;
+  /** Set by the agency: the business can't change its own branding. */
+  lockClient?: boolean;
 };
 
 // `support` is set for a sign-in by the setup provider's support person (Settings, "Support"); `by` is who.
@@ -929,6 +956,9 @@ export type PhoneAccount = {
   installProvider: VoiceProviderId;
   // own: the agency's own Telnyx key. platform: runs on the platform's account. none: not connected yet.
   mode: "own" | "platform" | "none";
+  // Each engine side by side (Telnyx is the main one, Vapi the backup). own: the agency's saved key. platform: the
+  // server's own (env) key. none: not connected.
+  engines: Record<VoiceProviderId, { mode: "own" | "platform" | "none"; last4: string; connectedAt: string; publicKey?: string }>;
   last4: string;
   connectedAt: string;
   // The agency's own credit. Null when it isn't theirs to see or the check failed.
@@ -967,6 +997,8 @@ export type PlatformSettings = {
   // it is also offered for mailboxes (MAILBOX_SIGNIN), not just calendars.
   google: PlatformServiceState & { clientId: string; redirectUri: string; scopes: string[]; mailboxSignIn: boolean };
   microsoft: PlatformServiceState & { clientId: string; redirectUri: string; scopes: string[]; mailboxSignIn: boolean };
+  // The setup site's shared Google / Microsoft sign-in (OAUTH_BROKER): configured here, and in use for a provider with no app of its own.
+  shared: { configured: boolean; google: boolean; microsoft: boolean };
   // The public address the redirect URIs are built from, and a warning when it
   // won't work with the providers (not https, or a local address).
   publicBase: string;

@@ -235,6 +235,12 @@ details.log pre { margin: 10px 0 0; background: #0b1727; color: #b9c7d8; border-
 .checks div { display: flex; gap: 10px; align-items: flex-start; padding: 11px 0; border-bottom: 1px solid var(--line); font-size: 14px; }
 .checks div svg { color: var(--indigo); margin-top: 3px; }
 .checks a { font-weight: 600; text-decoration: none; }
+/* A to-do starts empty; the tick only shows once the buyer presses it. */
+.checks .todo .tick { flex: none; width: 18px; height: 18px; margin-top: 2px; padding: 0; border-radius: 50%; border: 1.5px solid var(--line); background: #fff; cursor: pointer; position: relative; }
+.checks .todo .tick:focus-visible { outline: 2px solid var(--indigo); outline-offset: 2px; }
+.checks .todo.done .tick { background: var(--indigo); border-color: var(--indigo); }
+.checks .todo.done .tick::after { content: ""; position: absolute; left: 5px; top: 2px; width: 4px; height: 8px; border: solid #fff; border-width: 0 2px 2px 0; transform: rotate(45deg); }
+.checks .todo.done > span { color: var(--muted); }
 
 .foot { margin-top: 14px; display: flex; gap: 6px; align-items: center; font-size: 12.5px; color: var(--muted); padding: 0 4px; }
 .cal { border: 1.5px solid var(--line); border-radius: 12px; padding: 14px; }
@@ -368,6 +374,28 @@ input[type=color] { display: block; width: 64px; height: 40px; padding: 2px; bor
 .person-msg .who span { color: var(--muted); font-size: 12px; }
 .person-msg.us .who b { color: var(--indigo, #635bff); }
 .person-msg .text { white-space: pre-wrap; overflow-wrap: anywhere; margin-top: 2px; }
+
+/* the short new pieces */
+.needs { list-style: none; margin: 28px 0 8px; padding: 0; border-top: 1px solid var(--line); }
+.needs li { display: flex; justify-content: space-between; padding: 14px 0; border-bottom: 1px solid var(--line); }
+.needs span { color: var(--muted); }
+.okrow { display: flex; gap: 10px; align-items: center; margin: 0 0 18px; color: var(--ink); }
+.okrow svg { color: #12a150; width: 20px; height: 20px; }
+.okrow form { display: inline; margin-left: 8px; }
+.nums h3 { font-size: 14px; font-weight: 500; color: var(--muted); margin: 22px 0 8px; }
+.nums ul { list-style: none; margin: 0; padding: 0; border-top: 1px solid var(--line); }
+.nums li { padding: 11px 0; border-bottom: 1px solid var(--line); font-variant-numeric: tabular-nums; }
+details.alt { margin-top: 26px; }
+details.alt > summary { cursor: pointer; color: var(--accent); font-weight: 500; font-size: 14.5px; list-style: none; }
+details.alt > summary::-webkit-details-marker { display: none; }
+details.alt > summary::after { content: " \203A"; }
+details.alt[open] > summary { margin-bottom: 14px; }
+.skip-phones { margin-top: 24px; }
+.linkbtn { color: var(--muted); }
+
+.xscroll { overflow-x: auto; }
+form.inl { display: inline; }
+header nav .linkbtn { white-space: nowrap; }
 
 /* Chloe refresh: the same visual rhythm across setup, help and admin. */
 :root {

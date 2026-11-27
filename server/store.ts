@@ -53,6 +53,7 @@ export async function saveClient(client: Business): Promise<void> {
 }
 
 export async function removeClient(id: string): Promise<void> {
+  await sql`delete from app_settings where key = ${`apps:${id}`}`.catch(() => {});
   await sql`delete from clients where id = ${id}`;
 }
 

@@ -193,7 +193,7 @@ export const updateAccount = (body: { name?: string; currentPassword?: string; n
 
 export type BrandLook = { logo: string; bgColor: string; bgImage: string; primaryColor: string; accentColor: string; /** Set per company in the console. */ sidebarColor?: string };
 /** own: set on this business; agency: the agency's defaults; effective: what the workspace shows. */
-export type BrandState = { own: BrandLook; agency: BrandLook; effective: BrandLook };
+export type BrandState = { own: BrandLook; agency: BrandLook; effective: BrandLook; /** The agency has locked this business's branding. */ locked?: boolean };
 export type BrandChange = { bgColor?: string; primaryColor?: string; accentColor?: string; removeLogo?: boolean; removeBackground?: boolean };
 
 export const getBrand = (businessId: string) => api.get<BrandState>(`${base(businessId)}/brand`);

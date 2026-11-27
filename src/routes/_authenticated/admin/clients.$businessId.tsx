@@ -373,6 +373,7 @@ function ClientDetailPage() {
 
       <Panel title="Branding" description={`${co.name}'s logo, background and colours on its customer workspace. Blank fields use the agency's branding.`}>
         <BrandEditor
+          lockable
           brand={d.brand}
           fallback={agencyBrand.data}
           canManage={canManage}

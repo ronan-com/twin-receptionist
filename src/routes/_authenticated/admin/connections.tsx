@@ -17,6 +17,7 @@ import { cn } from "@/lib/utils";
 import { READ_ONLY_HINT, useConsole } from "./-shared";
 import { TwilioCard } from "./-twilio-card";
 import { PRODUCT } from "@/lib/app/product";
+import { BalancesCard, PipedreamCard } from "./-pipedream";
 
 // Connections: what the agency has plugged in. The phone account is the one that
 // matters (nothing answers without it); the rest are counts with a way in.
@@ -90,6 +91,9 @@ function ConnectionsPage() {
         />
         <CountCard icon={CalendarCheck} hue="magenta" label="Calendars" count={a.counts.calendars} hint="Google and Outlook calendars are connected per client." to="/admin/clients" cta="Connect from a client" />
       </div>
+
+      <BalancesCard />
+      <PipedreamCard canManage={canManage && !readOnly} />
 
       <Health account={a} />
     </div>

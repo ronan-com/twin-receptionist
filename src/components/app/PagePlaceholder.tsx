@@ -10,7 +10,7 @@ export function PagePlaceholder({ title, description, children }: { title: strin
       <PageHeader title={title} description={description} />
       {children}
       <Panel>
-        <EmptyState icon={Construction} title="Coming soon" description="This screen is being connected to your receptionist. Check back shortly." />
+        <EmptyState icon={Construction} title="Not set up yet" description="Nothing here yet." />
       </Panel>
     </div>
   );

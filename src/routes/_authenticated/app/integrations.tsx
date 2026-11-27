@@ -28,6 +28,7 @@ import { useWorkspace } from "@/lib/app/workspace";
 import { cn } from "@/lib/utils";
 import type { Hue } from "@/components/app/hues";
 import { PRODUCT } from "@/lib/app/product";
+import { ConnectApps } from "@/components/app/client/ConnectApps";
 
 export const Route = createFileRoute("/_authenticated/app/integrations")({
   head: () => ({ meta: [{ title: `Integrations — ${PRODUCT}` }] }),
@@ -44,7 +45,7 @@ interface Def {
   name: string;
   category: Category;
   description: string;
-  availability: "available" | "coming_soon";
+  availability: "available";
 }
 
 const CATALOG: Def[] = [
@@ -53,12 +54,6 @@ const CATALOG: Def[] = [
   { provider: "microsoft_calendar", name: "Microsoft Outlook Calendar", category: "Calendar", description: "Book straight into Outlook and Microsoft 365 calendars.", availability: "available" },
   { provider: "email_mailbox", name: "Email inbox", category: "Email", description: "Your receptionist reads new enquiries in your inbox and drafts (or sends) replies.", availability: "available" },
   { provider: "webhook", name: "Webhook / custom CRM", category: "Automation", description: "Each booking and callback is sent as JSON to any HTTPS address, for your CRM or Zapier.", availability: "available" },
-  { provider: "hubspot", name: "HubSpot", category: "CRM", description: "Create contacts and deals from captured leads.", availability: "coming_soon" },
-  { provider: "salesforce", name: "Salesforce", category: "CRM", description: "Push qualified leads into Salesforce.", availability: "coming_soon" },
-  { provider: "servicem8", name: "ServiceM8", category: "Field service", description: "Turn booked call-outs into ServiceM8 jobs.", availability: "coming_soon" },
-  { provider: "xero", name: "Xero", category: "Accounting", description: "Match callers to Xero contacts.", availability: "coming_soon" },
-  { provider: "zapier", name: "Zapier", category: "Automation", description: "Connect to thousands of apps without code. Use the webhook for now.", availability: "coming_soon" },
-  { provider: "cliniko", name: "Cliniko", category: "Calendar", description: "Practice management booking for allied health.", availability: "coming_soon" },
 ];
 
 const CATEGORY_ICON: Record<Category, typeof Calendar> = {
@@ -110,7 +105,7 @@ function IntegrationsPage() {
 
   return (
     <div className="space-y-5">
-      <PageHeader eyebrow={ws.business?.name} title="Integrations" description="Connect the tools you already run on so bookings, leads and enquiries land where your team works." />
+      <PageHeader title="Apps" description="Connect the tools you already use." />
 
       {intQ.error ? <ErrorState message={intQ.error.message} onRetry={() => void intQ.refetch()} /> : null}
       {!canEdit ? <Notice tone="neutral">{ws.access.readOnlyReason ?? "Your access to this business is view only."}</Notice> : null}
@@ -129,6 +124,8 @@ function IntegrationsPage() {
         </span>
       </div>
 
+      <ConnectApps />
+
       {categories.map((cat) => (
         <section key={cat} className="space-y-2">
           <h2 className="text-[12px] font-semibold uppercase tracking-wide text-ink-muted">{cat}</h2>
@@ -136,11 +133,10 @@ function IntegrationsPage() {
             {CATALOG.filter((d) => d.category === cat).map((def) => {
               const existing = byProvider.get(def.provider);
               const Icon = CATEGORY_ICON[def.category] ?? Plug;
-              const soon = def.availability === "coming_soon";
-              const status = existing?.status ?? (soon ? "coming_soon" : "available");
+              const status = existing?.status ?? "available";
               const otherCalendar = CALENDARS.includes(def.provider) && calendar && calendar.provider !== def.provider;
               return (
-                <div key={def.provider} data-provider={def.provider} className={cn("card-surface flex flex-col gap-3 p-4 transition-shadow hover:shadow-[0_8px_22px_-16px_rgba(6,27,49,0.45)]", existing?.status === "connected" && "border-[#c3ecd9] shadow-[inset_0_2px_0_#1ea672]", existing?.status === "error" && "border-[#f2c9c9]", soon && "opacity-70")}>
+                <div key={def.provider} data-provider={def.provider} className={cn("card-surface flex flex-col gap-3 p-4 transition-shadow hover:shadow-[0_8px_22px_-16px_rgba(6,27,49,0.45)]", existing?.status === "connected" && "border-[#c3ecd9] shadow-[inset_0_2px_0_#1ea672]", existing?.status === "error" && "border-[#f2c9c9]")}>
                   <div className="flex items-start justify-between gap-3">
                     <div className="flex min-w-0 items-center gap-2.5">
                       <span data-hue={CATEGORY_HUE[def.category] ?? "slate"} className="hue-icon grid h-9 w-9 shrink-0 place-items-center rounded-[8px]" aria-hidden>
@@ -181,8 +177,8 @@ function IntegrationsPage() {
                         {canEdit ? "Manage" : "View"}
                       </Button>
                     ) : (
-                      <Button size="sm" className="h-8" onClick={() => setDialog(def)} disabled={soon || !canEdit || !!otherCalendar}>
-                        {soon ? "Coming soon" : "Connect"}
+                      <Button size="sm" className="h-8" onClick={() => setDialog(def)} disabled={!canEdit || !!otherCalendar}>
+                        Connect
                       </Button>
                     )}
                   </div>

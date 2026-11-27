@@ -197,9 +197,9 @@ function HomePage() {
         <div className="grid grid-cols-3 gap-2.5 sm:gap-3" data-home-numbers>
           {(
             [
-              { label: "Calls answered", value: counts.answered, icon: PhoneIncoming, to: "/app/calls" },
-              { label: "Bookings made", value: counts.bookings, icon: CalendarCheck, to: "/app/bookings" },
-              { label: "Messages for you", value: counts.messages, icon: MessageSquare, to: "/app/leads" },
+              { label: "Calls answered", value: counts.answered, icon: PhoneIncoming, to: "/app/inbox" },
+              { label: "Bookings made", value: counts.bookings, icon: CalendarCheck, to: "/app/calendar" },
+              { label: "Messages for you", value: counts.messages, icon: MessageSquare, to: "/app/contacts" },
             ] as const
           ).map((t) => (
             <Link key={t.label} to={t.to} className="panel flex flex-col items-start gap-1 p-3 outline-none hover:bg-white focus-visible:ring-2 focus-visible:ring-indigo sm:p-4">
@@ -303,7 +303,7 @@ function HomePage() {
       <section className="panel overview-calls overflow-hidden">
         <header className="flex items-center justify-between gap-3 border-b border-hairline px-4 py-3.5">
           <h2 className="text-[16px] font-semibold text-ink">Recent calls</h2>
-          <Link to="/app/calls" className="inline-flex min-h-10 items-center gap-1 text-[14px] font-semibold text-[var(--primary-ink)]">
+          <Link to="/app/inbox" className="inline-flex min-h-10 items-center gap-1 text-[14px] font-semibold text-[var(--primary-ink)]">
             See all <ArrowRight className="h-4 w-4" />
           </Link>
         </header>

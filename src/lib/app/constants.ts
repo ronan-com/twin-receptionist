@@ -204,7 +204,6 @@ export const INTEGRATION_STATUS_LABELS: Record<IntegrationStatus, string> = {
   not_connected: "Not connected",
   connected: "Connected",
   error: "Needs attention",
-  coming_soon: "Coming soon",
 };
 
 export const ROUTING_MODE_LABELS: Record<PhoneRoutingMode, string> = {
@@ -252,7 +251,7 @@ export interface IntegrationDef {
   name: string;
   category: "Calendar" | "CRM" | "Field service" | "Accounting" | "Automation";
   description: string;
-  availability: "available" | "coming_soon";
+  availability: "available";
   oauth: boolean;
 }
 
@@ -264,8 +263,6 @@ export const INTEGRATION_CATALOG: IntegrationDef[] = [
   { provider: "servicem8", name: "ServiceM8", category: "Field service", description: "Turn booked call-outs into ServiceM8 jobs automatically.", availability: "available", oauth: true },
   { provider: "xero", name: "Xero", category: "Accounting", description: "Match callers to Xero contacts and surface invoice questions.", availability: "available", oauth: true },
   { provider: "webhook", name: "Webhook / custom CRM", category: "Automation", description: "Send call, booking and lead events to any HTTPS endpoint.", availability: "available", oauth: false },
-  { provider: "zapier", name: "Zapier", category: "Automation", description: `Connect ${PRODUCT} to thousands of apps without code.`, availability: "coming_soon", oauth: false },
-  { provider: "cliniko", name: "Cliniko", category: "Calendar", description: "Practice management booking for allied health.", availability: "coming_soon", oauth: true },
 ];
 
 export const CHART_COLORS = {

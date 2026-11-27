@@ -12,7 +12,7 @@ A packaged AI receptionist **agency**. A buyer (the agency) goes through our hos
 | chloeeai.com | — | DNS still points to Network Solutions (208.91.197.27), not our server. Jesse to change it |
 | Setup site + admin | https://setup.13-211-218-61.sslip.io (admin at `/admin`) | 200, container `setup-site` healthy. `SITE_URL` is the sslip address **by design** (commit b950af6: "generic address, no chloe in links") |
 | Old setup address | https://setup.chloeeai.co | 308 forward for pages to the sslip address. Still serves `/api/*` and `/healthz` so installed agencies keep syncing |
-| First real agency | https://app-production-f1179659.up.railway.app | **DOWN: Railway "Application not found"** (`x-railway-fallback`). Trial probably expired or the service was removed. It was on 1.0.2 |
+| First real agency | https://app-production-f1179659.up.railway.app | Gone: Ronan deleted it on purpose. It was our own **test agency** on his Railway (1.0.2), not a buyer. Railway now answers "Application not found" |
 | Team test copy | test.chloeeai.co | No DNS record. Container `chloe-test` is healthy on AWS and waits on a GoDaddy `test` A record |
 
 AWS server `twinrecep-app` (i-0a2c31a32dea60a59, ap-southeast-2, managed via SSM, no SSH). Containers: `setup-site` (up about 4h), `chloe-test`, `answered-app`, `twin-app-1`, `twin-caddy-1`, all healthy. Disk is 22% used. Memory: 1.8 GB total, about 0.9 GB available. Nightly setup-site backup timer `chloe-setup-backup.timer` is active; last run 13h ago, to `s3://twinrecep-deploy-323149985112/backups/setup-site/`.
@@ -29,7 +29,7 @@ Stale files: `/opt/twin/sites/chloedemo.caddy` and `chloe-landing.old/`.
 
 ## Not proven yet (audit focus)
 1. **No real phone call or booking** has been proven on an installed buyer copy.
-2. The only real install is down (above). Re-run the wizard to prove an install on current code.
+2. The test install was deleted (above). Re-run the wizard on a test account to prove an install on current code.
 3. Auto-update with the Railway project token has only been tested with fakes, never against real Railway.
 4. `real-run/run.mjs --dry-run` has not been run to the end. It needs `deploy/selfhost/make-bundle.sh` first.
 5. Railway Hobby backups: the docs don't say whether volume backups are included, so the Done screen may need Pro.
@@ -40,6 +40,21 @@ Stale files: `/opt/twin/sites/chloedemo.caddy` and `chloe-landing.old/`.
 - Setup admin password, Telnyx key and OpenRouter key were pasted in chat during an earlier handover. **Rotate them.**
 - Secrets live in SSM `/setupsite/env/*` and `~/aibiz/.secrets/`, never in git.
 - Check that the sslip setup address and `/admin` sign-in are rate-limited, and that the open `/api/*` on setup.chloeeai.co only accepts calls from installed agencies.
+
+## How to push safely (read before changing anything)
+- **Work on a branch off `own-phone-account`**, merge back when green, and push. Never commit Chloe work to `main` (Twin production).
+- **Pushing to GitHub changes nothing live.** CI (`.github/workflows`) runs typecheck, build and all tests on every push.
+- **Release only with `bash scripts/release-chloe.sh <version> "<notes>"`.** It clones `own-phone-account` from GitHub, requires a green CI run for that exact commit, deploys the setup site with the new app bundle, and tags `chloe-v<version>`. Never deploy from a laptop working tree.
+- **Setup-site redeploys must keep the same `DOMAIN`** (currently the sslip address). `remote-deploy.sh` keeps `setup.chloeeai.co` answering `/api/*`. Do not remove that block, because installed agencies call it.
+- **Never touch** `answered-app`, `twin-app-1`, the Twin Caddy, or Jesse's Lovable/Supabase project. They share the same AWS server.
+
+## Deployed partner dashboards still sync to us
+Each buyer's dashboard runs on the buyer's own Railway but stays connected to our setup site through `SUPPORT_SYNC_URL` + `SUPPORT_SYNC_TOKEN`, which are set at install (`server/supportSync.ts` in the app, `download-site/sync.ts` on our side):
+- `POST /api/sync` every 15 minutes: a fixed whitelist snapshot (version, health, counts, brand, support and update state). Anything else is dropped. The buyer can switch sharing off.
+- `POST /api/tickets` and `GET /api/tickets/updates`: help tickets and our replies.
+- `GET /api/releases/latest` and `/api/releases/bundle/<v>`: **how buyer apps update themselves.** A release you publish reaches every installed partner. A bad release therefore ships to every partner, which is why releases go through the script and CI.
+- "View as": a one-time, 60-second sign-in link, only while the buyer's Support access is on (on by default). It is logged in their audit log.
+So **breaking `/api/*` on the setup site, changing the sync shape on only one side (keep `SHAPE` in `sync.ts` and `supportSync.ts` in step), or losing `site.db` (it holds the sync token hashes) cuts every partner off.** `site.db` is backed up nightly to S3.
 
 ## Suggested audit order
 Security items, then a real install plus a real call on current code, then cut a release for the 19 untagged commits (`scripts/release-chloe.sh`), then the HANDOVER to-do list.

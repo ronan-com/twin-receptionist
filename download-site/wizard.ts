@@ -169,8 +169,9 @@ function brand(c: Ctx) {
   <input id="ownerName" name="ownerName" maxlength="80" required autocomplete="name" value="${val(c, "ownerName", br?.ownerName || c.s.prefill?.ownerName || "")}" placeholder="Dana Smith">
   <label class="f" for="ownerEmail">Your email</label>
   <input id="ownerEmail" name="ownerEmail" type="email" maxlength="200" required autocomplete="email" value="${val(c, "ownerEmail", br?.ownerEmail || c.s.prefill?.ownerEmail || c.b.email)}">
-  <label class="f" for="productName">Agency name</label>
-  <input id="productName" name="productName" maxlength="60" required value="${val(c, "productName", br?.productName || c.s.prefill?.agencyName || "")}" placeholder="Acme AI">
+  <label class="f" for="productName">Agency name <span class="tag">Optional</span></label>
+  <input id="productName" name="productName" maxlength="60" value="${val(c, "productName", br?.productName || c.s.prefill?.agencyName || "")}" placeholder="Acme AI">
+  <p class="hint">Leave it blank to start with a plain dashboard; your name, logo and colours can be added later in Settings.</p>
   <label class="f" for="logoFile">Logo <span class="tag">Optional</span></label>
   <input id="logoFile" type="file" accept="image/png,image/jpeg,image/webp">
   <input type="hidden" id="logo" name="logo" value="${esc(br?.logo || "")}">
@@ -791,6 +792,7 @@ function helperCard(c: Ctx): string {
 }
 
 /** The steps shown in the rail: optional ones only while you're on them (they hang off the extras step). */
+const stepMeta = (_b: Buyer, id: StepId) => META[id];
 const railSteps = (view: StepId) => STEPS.filter((id) => !isOptional(id) || id === view);
 function rail(c: Ctx) {
   return `<aside class="rail"><h2>Set up ${esc(c.s.brand?.productName || "your agency")}</h2><ol>${railSteps(c.view).map((id) => {
@@ -860,7 +862,7 @@ function wizardHtml(b: Buyer, s: SetupData, code: string, sid: string, view: Ste
   // A one-time link (owner password reset): a big button, shown once and never stored.
   const flLink = flash?.link && /^https?:\/\/[^\s"'<>]+$/.test(flash.link)
     ? `<p class="resetlink"><a class="btn p big" href="${esc(flash.link)}" target="_blank" rel="noopener noreferrer" data-owner-reset-link>Set a new password ${icon("ext")}</a></p>` : "";
-  const title = `${META[view].title} · Set up ${s.brand?.productName || NEUTRAL}`;
+  const title = `${stepMeta(b, view).title} · Set up ${s.brand?.productName || NEUTRAL}`;
   return `<!doctype html>
 <html lang="en-AU">
 <head>
@@ -875,15 +877,16 @@ function wizardHtml(b: Buyer, s: SetupData, code: string, sid: string, view: Ste
 ${chatHead()}
 ${live ? `<noscript><meta http-equiv="refresh" content="8"></noscript>` : ""}
 </head>
-<body>
+<body${b.style === "neutral" ? ' data-neutral-onboarding' : ""}>
 <div class="ribbon" aria-hidden="true"></div>
 <header class="top"><a class="mark" href="/setup/${esc(code)}">${markLogo(s.brand?.logo)}<span>${esc(s.brand?.productName || "Your agency")}</span></a>
 <nav><a href="/guide" target="_blank" rel="noopener">Full guide</a></nav></header>
 <div class="shell wiz acc-${acc}" data-status="/setup/${esc(code)}/status" data-rev="${statusRev(c)}"${live ? ' data-live="1"' : ""}>
 ${rail(c)}
 <main>
-  <div class="phonebar"><div class="lab"><span>Step ${i + 1} of ${mainSteps.length}</span><b>${META[view].title}</b></div><progress class="bar" max="${mainSteps.length}" value="${i + 1}">${i + 1} of ${mainSteps.length}</progress></div>
+  <div class="phonebar"><div class="lab"><span>Step ${i + 1} of ${mainSteps.length}</span><b>${stepMeta(b, view).title}</b></div><progress class="bar" max="${mainSteps.length}" value="${i + 1}">${i + 1} of ${mainSteps.length}</progress></div>
   <section class="card step-${view}">${b.demo === 1 ? notice("info", "<b>Test run.</b> Every account here is pretend: press Continue on each step. Nothing real is connected.") : ""}${assistNote(c)}${lockNote}${(flLink ? fl + flLink + screenOf(c) : withFlash(screenOf(c), fl))}</section>
+  ${view !== "done" ? `<div class="skip-preview"><a class="btn o" href="/setup/${esc(code)}?preview=dashboard">Preview your dashboard</a></div>` : ""}
   <p class="foot">${icon("shield")} Your keys are stored encrypted.</p>
 </main>
 ${helperCard(c)}
@@ -910,7 +913,7 @@ export function startShell(_style: Style, title: string, inner: string): string 
 <link rel="stylesheet" href="/wizard.css">
 <script src="/wizard.js" defer></script>
 </head>
-<body>
+<body data-neutral-onboarding>
 <div class="ribbon" aria-hidden="true"></div>
 <header class="top"><span class="mark">${markLogo()}<span>Your AI receptionist agency</span></span>
 </header>

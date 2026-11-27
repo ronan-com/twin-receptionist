@@ -132,7 +132,7 @@ export interface SetupData {
   moved?: StepId;
   /** What our admin typed when making the agency (person's name, email, agency name): pre-fills the Brand step. The buyer can change all three. */
   prefill?: { ownerName: string; ownerEmail: string; agencyName: string };
-  brand?: { productName: string; ownerEmail: string; /** The owner's real name, when known (else the app derives one from the email). */ ownerName?: string; ownPhoneAccount: boolean ; logo?: string; /** The main brand colour (the first one). */ colour?: string; /** 1 to 3 brand colours, the first is the main one. */ colours?: string[]; /** The look of the dashboard to start with; the owner can switch it later in the dashboard. */ theme?: "light" | "dark" };
+  brand?: { productName: string; ownerEmail: string; /** No agency name given: a plain "Your agency" install with the neutral dashboard (the owner or provider names it in Settings later). */ deferred?: boolean; /** The owner's real name, when known (else the app derives one from the email). */ ownerName?: string; ownPhoneAccount: boolean ; logo?: string; /** The main brand colour (the first one). */ colour?: string; /** 1 to 3 brand colours, the first is the main one. */ colours?: string[]; /** The look of the dashboard to start with; the owner can switch it later in the dashboard. */ theme?: "light" | "dark" };
   domain?: {
     mode: "cloudflare" | "godaddy" | "manual";
     zone?: string; // example.com

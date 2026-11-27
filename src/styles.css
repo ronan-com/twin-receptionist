@@ -640,3 +640,19 @@
 
 .dark .bg-ink { color: var(--page); }
 .dark .bg-ink * { color: inherit; }
+/* From the shared refresh (kept): the shadow token the client overview uses, the auth page's heading and phone rules.
+   The rest of that refresh (neutral surfaces, flat tiles, light-only bars) is not taken: this app keeps its colour, depth and dark mode. */
+:root { --chloe-surface-shadow: 0 1px 2px #191a2208, 0 10px 30px -22px #191a2233; }
+:root:not(.dark) [data-auth-shell] h1,
+:root:not(.dark) [data-app-shell] main :is(h1, .display-strong) { letter-spacing: -.035em; text-wrap: balance; }
+[data-app-shell] main { min-width: 0; scroll-margin-top: 72px; }
+[data-auth-shell] .auth-mobile-rule { height: 3px; background: var(--indigo); }
+@media (max-width: 639px) { [data-auth-shell] input { font-size: 16px; } }
+
+/* Plain buyer installs start neutral. Saved workspace brand variables override these defaults. */
+html[data-neutral-dashboard] {
+  --indigo: #32343c; --indigo-deep: #1d1f25; --primary-ink: #32343c;
+  --ribbon-2: var(--indigo); --ribbon-3: var(--indigo);
+}
+html[data-neutral-dashboard] .auth-ribbon { display: none; }
+html[data-neutral-dashboard] .dashboard-journey { background: var(--card); }

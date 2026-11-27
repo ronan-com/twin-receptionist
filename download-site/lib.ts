@@ -126,10 +126,10 @@ export interface Buyer {
   /** When we last emailed them their invite (setup link or dashboard login) from the agency page, or null. */
   invited_at: string | null;
 }
-/** Generic is the only style. The column stays so stored buyers keep working; any stored value renders generic. */
-export type Style = "neutral";
+export const PLAIN_AGENCY_NAME = "Your agency";
+export type Style = "branded" | "neutral";
 export const asStyle = (_v?: unknown): Style => "neutral";
-/** Takes any product or seller name out of text (emails, prompts): PRODUCT_NAME and SELLER_NAME never show to a buyer. */
+/** Takes our names out of text for a neutral agency (emails, prompts): PRODUCT_NAME and SELLER_NAME never show. */
 export function unbrand(text: string): string {
   let t = text;
   for (const [name, instead] of [[CONFIG.sellerName, "your provider"], [CONFIG.productName, "your AI receptionist agency"]] as const) {

@@ -10,6 +10,7 @@ function fromPage(): string {
 
 export const DEFAULT_PRODUCT = "AI Receptionist";
 export const PRODUCT = fromPage() || DEFAULT_PRODUCT;
+export const NEUTRAL_DASHBOARD = typeof document !== "undefined" && document.documentElement.hasAttribute("data-neutral-dashboard");
 
 /** True on a copy sold under another name (its own public site lives elsewhere). */
 export const OTHER_BRAND = PRODUCT !== "Answered";

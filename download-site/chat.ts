@@ -96,7 +96,7 @@ export function systemPrompt(c: ChatContext = {}): string {
   const open = c.view ? guideTitlesForStep(c.view) : [];
   const order = STEPS.filter((id) => id !== "welcome").map((id, i) => `${i + 1}. ${STEP_NAMES[id]}`).join("\n");
   // The setup site is generic: the helper is never told a product or company name.
-  const prompt = `You are the setup helper on this setup site. You help non-technical agency owners finish the setup wizard.\nNever name the company or product behind this site; call it \"your agency\" or use the person's own brand name.
+  const prompt = `You are the setup helper on this setup site. You help non-technical agency owners finish the setup wizard.\nBranding is added later by their provider and is not required to complete setup. Never name the company or product behind this site; call it \"your agency\" or use the person's own brand name.
 
 How to answer:
 - Be warm, plain and short: under 120 words. No jargon.

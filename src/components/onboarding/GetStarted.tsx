@@ -6,7 +6,7 @@ import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/compone
 import { Button } from "@/components/ui/button";
 import { InitialsAvatar } from "@/components/app/primitives";
 import { brandApi } from "@/lib/api/console";
-import { PRODUCT } from "@/lib/app/product";
+import { NEUTRAL_DASHBOARD, PRODUCT } from "@/lib/app/product";
 import { cn } from "@/lib/utils";
 import { GUIDES, GuideAnimation, type GuideKind } from "./Guides";
 import { Tour, type TourStep } from "./Tour";
@@ -242,7 +242,7 @@ function Welcome({
           )}
           <div className="min-w-0 text-[12.5px] font-medium text-ink-muted">
             <div className="truncate text-ink">{orgName || "Your agency"}</div>
-            {orgName && orgName.trim().toLowerCase() !== PRODUCT.toLowerCase() ? <div>Powered by {PRODUCT}</div> : null}
+            {!NEUTRAL_DASHBOARD && orgName && orgName.trim().toLowerCase() !== PRODUCT.toLowerCase() ? <div>Powered by {PRODUCT}</div> : null}
           </div>
         </div>
         <DialogTitle className="mt-4 text-[24px] font-semibold leading-tight tracking-[-0.03em] text-ink sm:text-[28px]">

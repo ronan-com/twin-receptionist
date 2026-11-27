@@ -24,6 +24,7 @@ import { actions, allow, appUrlOf, canView, firstOpen, startTicker } from "./set
 import { STEPS, csrfOk, getSetup, logRead, newSessionId, redact, secretValues, siteKey, updateSetup, type SetupData, type StepId, isOptional } from "./store";
 import { noteStepError } from "./wizhelp";
 import { statusRev, wizardPage } from "./wizard";
+import { dashboardPreview } from "./dashboard-preview";
 import { adminRoute } from "./admin-web";
 import { inactivePage, startRoute } from "./genericlink";
 import { ticketsApi } from "./tickets";
@@ -428,6 +429,7 @@ async function handle(req: Request, srv: Bun.Server<unknown>): Promise<Response>
     const b = r.buyer!;
     const sess = session(req);
     let s = getSetup(b.id);
+    if (url.searchParams.get("preview") === "dashboard" && s.phase !== "done") return html(dashboardPreview(`/setup/${m[1]}`, url.searchParams.get("section")));
     const flash = s.flash;
     if (flash) s = updateSetup(b.id, (x) => { delete x.flash; });
     const want = url.searchParams.get("step") as StepId | null;

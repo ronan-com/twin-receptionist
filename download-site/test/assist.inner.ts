@@ -131,7 +131,7 @@ describe("admin fills steps, the buyer's wizard sees them", () => {
 
   test("validation errors surface in admin, and nothing is marked or stored", async () => {
     expect((await A.fillStep(b, ADMIN, "phones", { key: "platform-fake-1234567890" })).message).toMatch(/Brand first/);
-    expect(await A.fillStep(b, ADMIN, "brand", { productName: "", ownerEmail: "o@acme.test" })).toMatchObject({ ok: false, message: "Give your brand a name." });
+    expect(await A.fillStep(b, ADMIN, "brand", { productName: "", ownerEmail: "not an email" })).toMatchObject({ ok: false, message: "Enter a real email address." });
     expect((await A.fillStep(b, ADMIN, "brand", { productName: "Acme", ownerEmail: "not an email" })).ok).toBe(false);
     expect(getSetup(b.id).brand).toBeUndefined();
     await A.fillStep(b, ADMIN, "brand", { productName: "Acme AI", ownerEmail: "o@acme.test", logo: PNG, colour: "#AA2244" });
@@ -183,13 +183,15 @@ describe("admin fills steps, the buyer's wizard sees them", () => {
     expect(await actions.start(b, {})).toBeNull();
     expect(getSetup(b.id).step).toBe("phones");
     expect(await actions["assist-release"](b, { step: "brand" })).toBeNull();
-    expect(page(b, "brand")).toContain('name="productName"');
+    expect(page(b, "brand")).toContain('name="ownerEmail"');
+    expect(page(b, "brand")).not.toContain('name="productName"');
     expect(getSetup(b.id).assist?.steps?.brand).toBeDefined(); // still ours until they save
-    expect(await actions.brand(b, { productName: "Acme AI Pty", ownerEmail: "o@acme.test" })).toBeNull();
+    expect(await actions.brand(b, { ownerEmail: "owner@acme.test" })).toBeNull();
     const s = getSetup(b.id);
     expect(s.assist?.steps?.brand).toBeUndefined();
     expect(A.stepRows(b, s).find((r) => r.id === "brand")).toMatchObject({ done: true, by: "buyer" });
-    expect(s.brand?.productName).toBe("Acme AI Pty");
+    expect(s.brand?.productName).toBe("Acme AI");
+    expect(s.brand?.ownerEmail).toBe("owner@acme.test");
     expect(s.brand?.logo).toBe(PNG); // kept
     // their own Telnyx: theirs from the start
     expect(await actions.phones(b, { key: "platform-fake-buyer-own-key" })).toBeNull();

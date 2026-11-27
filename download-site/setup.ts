@@ -219,7 +219,8 @@ export const actions: Record<string, Action> = {
     const g = guard(b, "brand"); if (g) return g;
     const productName = str(f.productName, 60).replace(/[\r\n]/g, " ");
     const ownerEmail = str(f.ownerEmail, 200).toLowerCase();
-    const keep = { productName: f.productName || "", ownerEmail: f.ownerEmail || "" };
+    const ownerName = str(f.ownerName, 80).replace(/[\r\n]/g, " ");
+    const keep = { productName: f.productName || "", ownerEmail: f.ownerEmail || "", ownerName: f.ownerName || "" };
     if (!productName) return err("Give your brand a name.", keep);
     if (!isEmail(ownerEmail)) return err("Enter a real email address.", keep);
     // The logo arrives already shrunk by the page (wizard.js) as a PNG data URL. It travels to the
@@ -238,7 +239,7 @@ export const actions: Record<string, Action> = {
       const colours = picked.length ? [...new Set(picked)] : s.brand?.colours || (s.brand?.colour ? [s.brand.colour] : undefined);
       const colour = colours?.[0];
       const theme = f.theme === "dark" ? "dark" : f.theme === "light" ? "light" : s.brand?.theme;
-      s.brand = { productName, ownerEmail, ownPhoneAccount: false, logo, colour, colours, theme }; nextStep(b, s, "brand");
+      s.brand = { productName, ownerEmail, ...(ownerName ? { ownerName } : {}), ownPhoneAccount: false, logo, colour, colours, theme }; nextStep(b, s, "brand");
     });
     return null;
   },
@@ -954,7 +955,7 @@ export function firstRunSettings(id: number, s: SetupData): Record<string, strin
     const t = token;
     updateSetup(id, (x) => { x.firstLogin = { token: t, at: now() }; });
   }
-  return { OWNER_NAME: ownerNameOf(s.brand!.ownerEmail), AGENCY_NAME: s.brand!.productName, FIRST_LOGIN_TOKEN: token };
+  return { OWNER_NAME: s.brand!.ownerName || ownerNameOf(s.brand!.ownerEmail), AGENCY_NAME: s.brand!.productName, FIRST_LOGIN_TOKEN: token };
 }
 /** The done screen's "Open your dashboard" target: the one-time sign-in link while it is fresh, else the plain address. */
 export function dashboardLink(s: SetupData, base: string): string {
@@ -1252,7 +1253,7 @@ export function finish(id: number, url: string) {
   const demo = isDemoBuyer(id); // a demo keeps its logo and colour: the demo dashboard is built from them
   const kept: SetupData = {
     step: "done", phase: "done",
-    brand: s.brand ? { productName: s.brand.productName, ownerEmail: s.brand.ownerEmail, ownPhoneAccount: s.brand.ownPhoneAccount, ...(demo ? { logo: s.brand.logo, colour: s.brand.colour } : {}) } : undefined,
+    brand: s.brand ? { productName: s.brand.productName, ownerEmail: s.brand.ownerEmail, ...(s.brand.ownerName ? { ownerName: s.brand.ownerName } : {}), ownPhoneAccount: s.brand.ownPhoneAccount, ...(demo ? { logo: s.brand.logo, colour: s.brand.colour } : {}) } : undefined,
     domain: s.domain ? { mode: s.domain.mode, zone: s.domain.zone, sub: s.domain.sub, host: s.domain.host, confirmed: true } : undefined,
     server: s.server ? { region: s.server.region, size: s.server.size, price: s.server.price, chosen: true, sshPublicKey: s.server.sshPublicKey ? "yes" : undefined } : undefined,
     phones: phoneSkipped(s) ? { deferred: true, provider: "telnyx" } : { confirmed: true, provider: hasTelnyx(id, s) || !useVapi(s) ? "telnyx" : "vapi" }, email: s.email ? { mode: s.email.mode, address: s.email.address, from: s.email.from, confirmed: true, resend: s.email.resend ? { status: s.email.resend.status } : undefined } : undefined,

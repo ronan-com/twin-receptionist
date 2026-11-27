@@ -85,7 +85,7 @@ test("sign in (one-time link)", async () => {
   const r = await call("POST", new URL(link).pathname);
   cookie = (r.res.headers.get("set-cookie") || "").split(";")[0];
   expect(cookie).toMatch(/^as=/);
-  expect(await adminPage()).toContain("Add an agency");
+  expect(await adminPage()).toContain("New agency");
 });
 
 describe("generic setup site: no product name anywhere", () => {
@@ -95,8 +95,11 @@ describe("generic setup site: no product name anywhere", () => {
     expect(html).not.toMatch(/branded/i);
     expect(html).toContain("AI Agency Admin");
     expect(html).not.toMatch(/Zorbo/i);
-    expect(html).toMatch(/<input type="checkbox" name="welcome" value="1"> <b>Email them now<\/b>/);
-    expect(html).not.toMatch(/name="welcome" value="1" checked/);
+    // New agency: just three fields (person's name, email, agency name); emailing is a choice made afterwards, with a preview.
+    expect(html).toContain('name="owner"');
+    expect(html).toContain('name="email"');
+    expect(html).toContain('name="name"');
+    expect(html).not.toContain('name="welcome"');
     // No onboarding links panel on the dashboard: agencies are invited one by one with Add an agency.
     expect(html).not.toContain(`id="onboarding-link"`);
   });
@@ -105,7 +108,7 @@ describe("generic setup site: no product name anywhere", () => {
     const before = mails.length;
     const r = await call("POST", "/admin/buyers", { t: tok(await adminPage()), name: "Ann Agency", email: "ann@example.com" });
     expect(r.res.status).toBe(200);
-    expect(r.body).toContain("Nobody was emailed");
+    expect(r.body).toContain("Nobody has been emailed yet");
     const b = buyerByEmail("ann@example.com");
     expect(b.style).toBe("neutral");
     expect(b.invited_at).toBeNull();
@@ -142,14 +145,35 @@ describe("generic setup site: no product name anywhere", () => {
     expect(inactivePage("neutral")).not.toMatch(/Zorbo/i);
   });
 
-  test("'Email them now' on a neutral agency: the welcome email has no product name, and counts as invited", async () => {
+  test("New agency: the three details pre-fill their Brand step; 'Email them the link' previews first, then sends one short email with no contact lines", async () => {
     const before = mails.length;
-    const r = await call("POST", "/admin/buyers", { t: tok(await adminPage()), name: "Wendy Welcome", email: "wendy@example.com", welcome: "1" });
-    expect(r.body).toContain("Welcome email sent to wendy@example.com");
+    const r = await call("POST", "/admin/buyers", { t: tok(await adminPage()), owner: "Wendy Welcome", name: "Welcome Voice", email: "wendy@example.com" });
+    expect(r.body).toContain("Email them the link");
+    expect(r.body).toContain("Copy");
+    expect(mails.length).toBe(before); // making the agency emails nobody
+    const w = buyerByEmail("wendy@example.com");
+    expect(w.name).toBe("Welcome Voice");
+    expect(getSetup(w.id).prefill).toEqual({ ownerName: "Wendy Welcome", ownerEmail: "wendy@example.com", agencyName: "Welcome Voice" });
+    // The Brand step starts filled in, and the buyer may change all three.
+    const brandHtml = wizardPage(w, getSetup(w.id), w.code, "sid-w", "brand");
+    expect(brandHtml).toContain('name="ownerName" maxlength="80" required autocomplete="name" value="Wendy Welcome"');
+    expect(brandHtml).toContain('value="wendy@example.com"');
+    expect(brandHtml).toContain('name="productName" maxlength="60" required value="Welcome Voice"');
+    // The preview shows the exact email; nothing is sent by looking.
+    const pv = (await call("GET", `/admin/b/${w.id}/email`)).body;
+    expect(pv).toContain("Hi Wendy,");
+    expect(pv).toContain("Welcome Voice is ready to set up");
+    expect(pv).toContain(`/setup/${w.code}`);
+    for (const need of ["Railway", "OpenRouter", "Telnyx", "Vapi"]) expect(pv).toContain(need);
+    expect(pv).not.toMatch(/Questions|talk to a person|contact us|support@/i);
+    expect(mails.length).toBe(before);
+    const sent = await call("POST", `/admin/b/${w.id}/assist/invite`, { t: tok(pv) });
+    expect(sent.res.status).toBe(303);
     expect(mails.length).toBe(before + 1);
     const m = mails[mails.length - 1];
     expect(m.to).toBe("wendy@example.com");
-    expect(m.data).not.toMatch(/Zorbo/i);
+    expect(m.data).toContain("Hi Wendy,");
+    expect(m.data).not.toMatch(/Zorbo|Questions|talk to a person/i);
     expect(buyerByEmail("wendy@example.com").invited_at).toBeTruthy();
   });
 });

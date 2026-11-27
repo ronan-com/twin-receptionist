@@ -249,7 +249,7 @@ describe("the admin", () => {
     const r = await call("POST", new URL(newAdminLink(ADMIN)).pathname);
     cookie = (r.res.headers.get("set-cookie") || "").split(";")[0];
     const html = (await call("GET", "/admin")).body;
-    expect(html).toContain("Add an agency");
+    expect(html).toContain("New agency");
     expect(html).not.toContain("Test run (pretend accounts)");
     expect(html).not.toContain('name="demo"');
     // A posted demo flag is ignored: the agency is real.

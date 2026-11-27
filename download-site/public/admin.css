@@ -83,3 +83,8 @@ tr.newrow td:first-child { box-shadow: inset 3px 0 0 #e11d48; }
 .setupfor.stuck .sf-ic { background: #d97706; }
 .counts div { border-top: 3px solid var(--indigo-line); }
 .dz b { display: flex; align-items: center; gap: 6px; }
+
+/* New agency form: three fields. The emailed-link preview. */
+.three { display: grid; gap: 0 12px; }
+@media (min-width: 760px) { .three { grid-template-columns: 1fr 1fr 1fr; } }
+pre.emailprev { white-space: pre-wrap; overflow-wrap: anywhere; font: 14px/1.6 Inter, system-ui, sans-serif; background: #f9fafb; border: 1px solid var(--line); border-radius: 12px; padding: 18px 20px; margin: 16px 0; }

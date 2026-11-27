@@ -43,7 +43,8 @@ export function assistPanel(h: Helpers, sid: string, b: Buyer, s: SetupData): st
   const table = `<table class="records steps"><thead><tr><th>Step</th><th>Status</th><th>What's set</th><th>When</th></tr></thead><tbody>${rows.map((r) => `<tr><td data-l="Step"><b>${esc(r.title)}</b>${r.optional ? ` <span class="hint">optional</span>` : ""}</td><td data-l="Status">${by(r)}</td><td data-l="What's set">${esc(r.detail)}</td><td data-l="When">${r.at ? `${esc(h.when(r.at))} · ${esc(r.who || "")}` : ""}</td></tr>`).join("")}${s.assist?.steps?.openrouter ? `<tr><td data-l="Step"><b>AI help (OpenRouter)</b> <span class="hint">optional</span></td><td data-l="Status"><span class="pill live">Done by you</span></td><td data-l="What's set">${esc(secretHint(b.id, "openrouter_key") || "key saved")}</td><td data-l="When">${esc(h.when(s.assist.steps.openrouter.at))} · ${esc(s.assist.steps.openrouter.by)}</td></tr>` : ""}</tbody></table>`;
 
   const brand = s.brand;
-  const brandForm = form("brand", `<div class="two"><div>${text("productName", "Brand name", brand?.productName, "e.g. Acme AI", "required")}</div><div>${text("ownerEmail", "Owner email", brand?.ownerEmail || b.email, "", 'type="email" required')}</div></div>
+  const brandForm = form("brand", `<div class="two"><div>${text("ownerName", "Owner name", brand?.ownerName || s.prefill?.ownerName || "", "e.g. Dana Smith")}</div><div>${text("ownerEmail", "Owner email", brand?.ownerEmail || s.prefill?.ownerEmail || b.email, "", 'type="email" required')}</div></div>
+  <div class="two"><div>${text("productName", "Agency name", brand?.productName || s.prefill?.agencyName || "", "e.g. Acme AI", "required")}</div></div>
   <label class="f" for="logoFile">Logo (optional)</label><input id="logoFile" type="file" accept="image/png,image/jpeg,image/webp">
   <input type="hidden" id="logo" name="logo" value="${esc(brand?.logo || "")}"><input type="hidden" id="removeLogo" name="removeLogo" value="">
   <p class="hint" id="logoNote">${brand?.logo ? "Logo added. Choose another file to replace it." : "A PNG or JPG works best. It's shrunk in your browser, like the buyer's."}</p>
@@ -151,12 +152,13 @@ ${st.link ? `<label class="f">Their dashboard</label><div class="linkrow"><code 
     : `<p class="lead"><b>Send their setup link.</b> Their install isn't finished, so they get their private setup link and carry on from there.</p>
 <div class="summary"><div><span>Done by us</span><b>${esc(st.done.join(", ") || "Nothing yet")}</b></div><div><span>Left for them</span><b>${esc(st.left.join(", ") || "Nothing: the install is running")}</b></div></div>
 <label class="f">Their setup link</label><div class="linkrow"><code id="invite-link">${esc(st.link)}</code>${h.copyBtn(st.link)}</div>`;
+  const preview = st.kind === "setup" ? `<p><a class="btn o" href="/admin/b/${b.id}/email">Preview the email</a></p>` : "";
   const mark = `<form method="post" action="/admin/b/${b.id}/assist/mark-invited" class="sf">${h.hiddenT(sid)}<button class="btn o" type="submit">I've sent it myself: mark as invited</button></form>`;
   const send = mailConfigured()
     ? `<form method="post" action="/admin/b/${b.id}/assist/invite" class="sf">${h.hiddenT(sid)}<div class="nav"><span></span><div class="right"><button class="btn p" type="submit" data-confirm="${esc(`Email ${st.to} now?`)}">Send invite email to ${esc(st.to)}</button></div></div></form>`
     : `${h.notice("info", "Email isn't set up on the setup site — copy and send it yourself.")}
 ${st.kind === "dashboard" ? `<form method="post" action="/admin/b/${b.id}/assist/owner-login" class="sf">${h.hiddenT(sid)}<button class="btn p" type="submit" name="email" value="">Get their one-time login link to send</button></form>` : ""}${mark}`;
-  return `${head}${what}${send}</section>`;
+  return `${head}${what}${preview}${send}</section>`;
 }
 
 /** What /admin/b/<id>/status returns while an install runs: the same shape the wizard's live script reads. */
@@ -175,7 +177,7 @@ export async function assistRoute(what: string, b: Buyer, f: Record<string, stri
   const wait = allow(`assist:${c.email}`, 240, 60 * 60_000);
   if (wait) return back({ ok: false, message: `Too many changes just now. Wait ${Math.ceil(wait / 60)} minutes.`, kind: "err" });
   switch (what) {
-    case "brand": return back(await fillStep(b, c.email, "brand", { productName: f.productName || "", ownerEmail: f.ownerEmail || "", logo: f.logo || "", removeLogo: f.removeLogo || "", colour: f.colour || "" }));
+    case "brand": return back(await fillStep(b, c.email, "brand", { productName: f.productName || "", ownerEmail: f.ownerEmail || "", ownerName: f.ownerName || "", logo: f.logo || "", removeLogo: f.removeLogo || "", colour: f.colour || "" }));
     case "railway": return back(await fillStep(b, c.email, "railway", { token: f.token || "" }));
     case "server": return back(await fillStep(b, c.email, "server", { token: f.token || "" }));
     case "phones": return back(await fillStep(b, c.email, "phones", { key: f.key || "" }));

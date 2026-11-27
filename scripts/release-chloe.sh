@@ -2,7 +2,7 @@
 # Release Chloe from GitHub, never from a laptop's working tree.
 #   bash scripts/release-chloe.sh 1.0.6 "- what's new line 1\n- line 2"
 # 1. Fresh clone of origin/own-phone-account (the Chloe release branch) into ~/.chloe-release/<version>.
-# 2. Install, typecheck, build, run the app and setup-site tests. Stops on any failure.
+# 2. Needs a green GitHub CI run (chloe-ci) for that exact commit; builds the app. LOCAL_TESTS=1 runs the tests here instead.
 # 3. Builds the app bundle from that clean clone, deploys the setup site with it, saves release notes.
 # 4. Tags the exact commit as chloe-v<version> on GitHub, so every live version maps to one commit.
 # `main` is Twin production and is not touched.
@@ -22,11 +22,28 @@ COMMIT=$(git rev-parse --short HEAD)
 if git ls-remote --tags origin "chloe-v$VERSION" | grep -q .; then echo "[release] tag chloe-v$VERSION already exists"; exit 1; fi
 echo "[release] commit $COMMIT"
 
+# Tests run on GitHub's servers (workflow chloe-ci), not on this machine. A release needs a GREEN run
+# for this exact commit. Set LOCAL_TESTS=1 to run everything here instead (slow, and flaky when the laptop is busy).
 bun install --silent >/dev/null
-bunx tsc --noEmit
-bun run build >/dev/null
-bun test --env-file="$ENVFILE" server/ 2>&1 | tail -3
-(cd download-site && bun test 2>&1 | tail -3)
+FULL=$(git rev-parse HEAD)
+if [ "${LOCAL_TESTS:-0}" = "1" ]; then
+  echo "[release] running tests locally"
+  bunx tsc --noEmit
+  bun run build >/dev/null
+  bun test --env-file="$ENVFILE" server/ 2>&1 | tail -3
+  (cd download-site && bun test 2>&1 | tail -3)
+else
+  echo "[release] waiting for GitHub CI on $COMMIT"
+  RUN=""
+  for i in $(seq 1 30); do
+    RUN=$(gh run list --workflow chloe-ci --commit "$FULL" --json databaseId -q '.[0].databaseId' 2>/dev/null || true)
+    [ -n "$RUN" ] && break; sleep 10
+  done
+  [ -n "$RUN" ] || { echo "[release] no CI run for $COMMIT. Push it first (or LOCAL_TESTS=1)."; exit 1; }
+  gh run watch "$RUN" --exit-status >/dev/null || { echo "[release] CI FAILED for $COMMIT: $(gh run view "$RUN" --json url -q .url)"; exit 1; }
+  echo "[release] CI green: $(gh run view "$RUN" --json url -q .url)"
+  bun run build >/dev/null   # the bundle needs dist/
+fi
 
 bash deploy/selfhost/make-bundle.sh | tail -1
 DOMAIN=setup.chloeeai.co BUNDLE=deploy/selfhost/out/selfhost-bundle.tgz VERSION="$VERSION" bash download-site/deploy/aws/deploy.sh

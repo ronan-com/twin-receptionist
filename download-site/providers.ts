@@ -12,7 +12,7 @@ export const DO_API = (process.env.DO_API_BASE || (CONFIG.mockDO ? M(1) : "https
 export const CF_API = (process.env.CF_API_BASE || (CONFIG.mockCF ? M(3) + "/client/v4" : "https://api.cloudflare.com/client/v4")).replace(/\/$/, "");
 export const RESEND_API = (process.env.RESEND_API_BASE || (CONFIG.mockResend ? M(4) : "https://api.resend.com")).replace(/\/$/, "");
 export const RAILWAY_API = (process.env.RAILWAY_API_BASE || (CONFIG.mockRailway ? M(6) : "https://backboard.railway.com")).replace(/\/$/, "");
-const TELNYX_API = "https://api.telnyx.com";
+const TELNYX_API = (process.env.TELNYX_API_BASE || "https://api.telnyx.com").replace(/\/$/, "");
 const VAPI_API = "https://api.vapi.ai";
 const UA = "receptionist-setup/1.0";
 
@@ -323,6 +323,24 @@ export async function checkTelnyx(key: string): Promise<Check<{ balance: string 
   return { ok: true, message: `Telnyx key works. Available credit: ${balance}.`, balance };
 }
 
+/**
+ * The phone numbers already on the buyer's Telnyx account, read-only (shown after they connect, so they know those
+ * numbers will be synced into the agency). Best effort: never blocks the step, empty when Telnyx doesn't say.
+ */
+export async function listTelnyxNumbers(key: string): Promise<string[]> {
+  if (CONFIG.mockTelnyx || CONFIG.mockOAuth) return key.startsWith("platform-fake-") ? ["+61 2 5550 0101", "+61 3 5550 0102"] : [];
+  const out: string[] = [];
+  try {
+    for (let page = 1; page <= 4; page++) {
+      const { status, json } = await call("Telnyx", `${TELNYX_API}/v2/phone_numbers?page[size]=100&page[number]=${page}`, { headers: { Authorization: `Bearer ${key}`, Accept: "application/json", "User-Agent": UA } }, 15000);
+      if (status !== 200) break;
+      for (const n of json?.data || []) if (typeof n?.phone_number === "string" && /^\+?[\d\s()-]{6,20}$/.test(n.phone_number)) out.push(n.phone_number);
+      if (!(Number(json?.meta?.total_pages) > page)) break;
+    }
+  } catch {}
+  return out;
+}
+
 // ======================= Vapi =======================
 // Phones can run on Vapi instead of Telnyx. The private key is checked with one cheap read;
 // the public key (the browser test call uses it) can only be checked for its shape.
@@ -595,6 +613,8 @@ const OPENROUTER_API = () => (process.env.OPENROUTER_API_BASE || "https://openro
 export async function checkOpenRouter(key: string): Promise<Check> {
   if (!key) return { ok: false, message: "Paste the OpenRouter API key first." };
   if (hasSpace(key)) return { ok: false, message: "That key has spaces in it: copy just the key." };
+  // Test mode: never calls OpenRouter. Only pretend keys (sk-or-...) pass.
+  if ((CONFIG.mockOAuth || CONFIG.mockTelnyx) && !process.env.OPENROUTER_API_BASE && /^(sk-or-|platform-fake-)/.test(key)) return { ok: true, message: "OpenRouter key works (test mode)." };
   const { status } = await call("OpenRouter", `${OPENROUTER_API()}/auth/key`, { headers: { Authorization: `Bearer ${key}`, "User-Agent": UA } }).catch((e) => ({ status: -1, json: { e } as any }));
   if (status === -1) return { ok: false, message: "We couldn't reach OpenRouter just now. Try again in a minute." };
   if (status === 401 || status === 403) return { ok: false, message: "OpenRouter didn't accept that key: copy it again, or make a new one." };

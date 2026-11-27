@@ -1,5 +1,5 @@
 // bun test download-site/test/guides.test.ts
-// Every "Show me how" guide stays dead simple: five numbered steps at most, one short sentence each,
+// Every "Show me how" guide stays dead simple: four numbered one-line steps at most,
 // and a "Stuck?" line at the end. Code spans (things to paste) get a Copy button.
 import { expect, test } from "bun:test";
 import { readdirSync, readFileSync } from "node:fs";
@@ -10,13 +10,13 @@ const dir = resolve(import.meta.dir, "../../handoff-content/providers");
 
 test("each guide: 5 steps or fewer, short steps, a Stuck? line", () => {
   const files = readdirSync(dir).filter((f) => f.endsWith(".md"));
-  expect(files.length).toBe(14);
+  expect(files.length).toBe(15);
   for (const f of files) {
     const body = readFileSync(join(dir, f), "utf8").replace(/^---\n[\s\S]*?\n---\n/, "");
     const steps = body.split("\n").filter((l) => /^\d+\.\s/.test(l));
     expect(steps.length, f).toBeGreaterThanOrEqual(3);
-    expect(steps.length, f).toBeLessThanOrEqual(5);
-    for (const s of steps) expect(s.length, `${f}: ${s}`).toBeLessThan(400);
+    expect(steps.length, f).toBeLessThanOrEqual(4);
+    for (const s of steps) expect(s.length, `${f}: ${s}`).toBeLessThan(260);
     expect(body, f).toMatch(/^> \*\*Stuck\?\*\*/m);
   }
 });

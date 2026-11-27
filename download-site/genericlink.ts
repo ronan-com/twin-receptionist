@@ -7,7 +7,7 @@
 // Safety: per-IP sign-up limit, a hidden honeypot field, a minimum time to fill the form, the same same-origin + per-browser
 // CSRF checks as the wizard, an email format check and length limits. A visitor never learns about other agencies: an email
 // that already started here is only ever sent back to its own private link by the cookie that browser holds, or by email.
-import nodemailer from "nodemailer";
+import { mailDeps, siteMailConfigured, htmlMail, mailFrom } from "./mailer";
 import { CONFIG, addBuyer, asStyle, db, findBuyer, hashCode, newCode, now, CODE_RE, type Buyer, type Style } from "./lib";
 import { allow } from "./setup";
 import { esc } from "./pages";
@@ -157,22 +157,18 @@ const messagePage = (style: Style, title: string, text: string) => startShell(st
 const gsCookie = (code: string, secure: boolean) => `gs=${code}; Path=/start; HttpOnly; SameSite=Lax${secure ? "; Secure" : ""}; Max-Age=${30 * 86400}`;
 
 /** Emails a person their own private link, when this site can send email (SITE_SMTP_URL). Returns false if it can't. */
-export const resumeEmailConfigured = () => !!(process.env.SITE_SMTP_URL || "").trim() && !!(process.env.SITE_MAIL_FROM || "").trim();
+export const resumeEmailConfigured = siteMailConfigured;
 async function sendResume(b: Buyer): Promise<boolean> {
   if (!resumeEmailConfigured()) return false;
   const link = `${CONFIG.siteUrl}/setup/${b.code}`;
-  const t = nodemailer.createTransport(process.env.SITE_SMTP_URL!.trim(), { connectionTimeout: 15000, greetingTimeout: 15000, socketTimeout: 20000 } as any);
+  const text = `Hi ${b.name.split(/\s+/)[0] || b.name},\n\nHere is your private setup link:\n\n${link}\n\nIt's just for you, so please don't share it.`;
   try {
-    await t.sendMail({
-      from: process.env.SITE_MAIL_FROM!.trim(), to: b.email,
-      subject: "Your private setup link",
-      text: `Hi ${b.name.split(/\s+/)[0] || b.name},\n\nHere is your private setup link, to pick up where you left off:\n\n${link}\n\nIt's just for you, so please don't share it.\n\nYour provider\n`,
-    });
+    await mailDeps.deliver((process.env.SITE_SMTP_URL || "").trim(), { from: mailFrom(), to: b.email, subject: "Your private setup link", text, html: htmlMail(text, { label: "Continue setup", url: link }) });
     return true;
   } catch (e: any) {
     console.error(`[start] resume email failed: ${e?.code || e?.name || "error"}`);
     return false;
-  } finally { t.close(); }
+  }
 }
 
 export async function startRoute(req: Request, code: string, c: StartCtx): Promise<Response> {

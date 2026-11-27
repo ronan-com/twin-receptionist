@@ -42,10 +42,11 @@ export const chatBubble = (m: ChatMount) => !chatEnabled() ? "" : `<div id="chat
 const STEP_NAMES: Record<StepId, string> = {
   welcome: "Welcome",
   brand: "Brand (your brand name and owner email)",
-  railway: "Hosting (paste your Railway token)",
+  railway: "Hosting (Login with Railway, or paste a Railway token)",
   server: "Server (paste your DigitalOcean token)",
   domain: RAILWAY ? "Domain (optional: your own address)" : "Domain",
-  phones: "Phones (paste your Telnyx key)",
+  phones: "Voice (Sign in with Telnyx, or paste a Telnyx key; Vapi + Twilio if Telnyx isn't used)",
+  ai: "AI (Sign in with OpenRouter, or paste an OpenRouter key)",
   email: RAILWAY ? "Email (optional)" : "Email",
   calendars: "Calendars (optional)",
   extras: "Extras (optional: email, your own domain, calendars)",

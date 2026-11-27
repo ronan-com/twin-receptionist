@@ -6,7 +6,7 @@
 // Channels, each used only if set: email (SITE_SMTP_URL + SITE_MAIL_FROM, to ALERT_EMAIL_TO or else ADMIN_EMAILS) and
 // ALERT_WEBHOOK_URL (POST JSON with "text" and "content", so Slack and Discord incoming webhooks work as they are).
 // One alert per agency per kind per hour; every alert is kept for the admin's alert history, sent or not.
-import nodemailer from "nodemailer";
+import { hasResend, htmlMail, mailDeps, sendSiteMail, siteMailConfigured } from "./mailer";
 import { CONFIG, db, now } from "./lib";
 import { appUrlOf } from "./setup";
 import { getSetup } from "./store";
@@ -29,10 +29,7 @@ export function alertConfig(env: Record<string, string | undefined> = process.en
 /** The two ways out, swappable in tests. */
 export const alertDeps = {
   fetch: ((u: any, i: any) => fetch(u, i)) as typeof fetch,
-  sendMail: async (smtp: string, mail: { from: string; to: string; subject: string; text: string }) => {
-    const t = nodemailer.createTransport(smtp, { connectionTimeout: 15000, greetingTimeout: 15000, socketTimeout: 20000 } as any);
-    try { await t.sendMail(mail); } finally { t.close(); }
-  },
+  sendMail: (smtp: string, mail: { from: string; to: string; subject: string; text: string; html?: string }) => mailDeps.deliver(smtp, { ...mail, html: mail.html ?? htmlMail(mail.text) }),
 };
 
 /** True when this agency already has an alert of this kind in the last hour. */
@@ -55,7 +52,7 @@ export async function raise(buyerId: number, kind: AlertKind, message: string, a
   const id = Number(db().query("INSERT INTO alerts (buyer_id, kind, message, at, sent) VALUES (?, ?, ?, ?, '')").run(buyerId, kind, message.slice(0, 400), new Date(at).toISOString()).lastInsertRowid);
   const c = alertConfig();
   const sent: string[] = [];
-  if (c.smtp && c.from && c.to.length) {
+  if ((c.smtp || hasResend()) && c.from && c.to.length) {
     try { await alertDeps.sendMail(c.smtp, { from: c.from, to: c.to.join(", "), subject: `AI Agency Admin alert: ${label}`, text }); sent.push("email"); } catch (e) { console.error(`[alerts] email failed: ${(e as any)?.code || (e as Error)?.name}`); }
   }
   if (c.webhook) {
@@ -93,6 +90,27 @@ heartbeatHooks.push((id, prev, next) => {
   for (const a of heartbeatAlerts(prev, next)) void raise(id, a.kind, a.message).catch(() => {});
 });
 
+/**
+ * "Your agency looks offline": one email to the agency's owner per outage. An outage ends when the agency reports again,
+ * so a second email can only follow a heartbeat. Returns true when an email went out.
+ */
+export async function notifyOwnerOffline(buyerId: number, lastHeartbeatAt: string): Promise<boolean> {
+  db().exec("CREATE TABLE IF NOT EXISTS offline_notices (buyer_id INTEGER PRIMARY KEY, at TEXT NOT NULL)");
+  const prev = db().query("SELECT at FROM offline_notices WHERE buyer_id = ?").get(buyerId) as { at: string } | null;
+  if (prev && Date.parse(prev.at) > Date.parse(lastHeartbeatAt)) return false; // already told them about this outage
+  const b = db().query("SELECT * FROM buyers WHERE id = ?").get(buyerId) as { email: string; name: string } | null;
+  if (!b || !siteMailConfigured()) return false;
+  const s = getSetup(buyerId);
+  const to = s.brand?.ownerEmail || b.email;
+  const url = appUrlOf(s);
+  // Written first, so two checks running together can't both send.
+  db().query("INSERT OR REPLACE INTO offline_notices (buyer_id, at) VALUES (?, ?)").run(buyerId, now());
+  const err = await sendSiteMail(to, `${s.brand?.productName || "Your agency"} looks offline`,
+    `Hi,\n\n${s.brand?.productName || "Your agency"} hasn't checked in for a while, so it may be down.\n\nWe've been told and we're looking. You don't need to do anything.${url ? `\n\n${url}` : ""}`);
+  if (err) { db().query("DELETE FROM offline_notices WHERE buyer_id = ?").run(buyerId); return false; }
+  return true;
+}
+
 /** Agencies that were reporting and have gone quiet for 30 minutes. One alert per agency per hour. */
 export async function checkSilence(at = Date.now(), probe: typeof probeApp = probeApp): Promise<{ buyerId: number; result: string }[]> {
   const out: { buyerId: number; result: string }[] = [];
@@ -109,6 +127,7 @@ export async function checkSilence(at = Date.now(), probe: typeof probeApp = pro
     if (result === "no-app") continue;
     if (result === "sharing-off") { db().query("INSERT OR REPLACE INTO sync_off (buyer_id, at) VALUES (?, ?)").run(id, now()); continue; }
     const mins = Math.round(quiet);
+    await notifyOwnerOffline(id, st.receivedAt);
     await raise(id, "no_heartbeat", result === "alive"
       ? `no heartbeat for ${mins} minutes, but the app answers: its health check may be stuck`
       : `no heartbeat for ${mins} minutes and the app doesn't answer: it may be down`, at);
@@ -119,7 +138,7 @@ export async function checkSilence(at = Date.now(), probe: typeof probeApp = pro
 let timer: ReturnType<typeof setInterval> | null = null;
 export function startAlerts(): void {
   const c = alertConfig();
-  console.log(`alerts: ${c.smtp && c.from && c.to.length ? "email" : "no email"}, ${c.webhook ? "webhook" : "no webhook"} (history is kept in /admin either way)`);
+  console.log(`alerts: ${(c.smtp || hasResend()) && c.from && c.to.length ? "email" : "no email"}, ${c.webhook ? "webhook" : "no webhook"} (history is kept in /admin either way)`);
   timer ??= setInterval(() => void checkSilence().catch((e) => console.error(`[alerts] ${(e as Error)?.name}`)), 5 * 60_000);
   timer.unref?.();
 }

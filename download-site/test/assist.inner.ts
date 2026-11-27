@@ -173,7 +173,7 @@ describe("admin fills steps, the buyer's wizard sees them", () => {
     const welcome = page(b, "welcome");
     expect(welcome).toContain("Your provider helped set this up.");
     expect(welcome).toContain("Done for you: Brand, Hosting (Railway).");
-    expect(welcome).toContain("Left for you: Phones (Telnyx, or Vapi + Twilio).");
+    expect(welcome).toContain("Left for you: Phones (Telnyx, or Vapi + Twilio), AI (OpenRouter).");
     expect(welcome).toContain("Done by your provider"); // the rail
     expect(page(b, "phones")).toContain('name="key"'); // theirs: the normal form
     expect(page(b, "phones")).not.toContain("set up by your provider");
@@ -340,6 +340,7 @@ describe("install for them", () => {
     await A.fillStep(b, ADMIN, "brand", { productName: `${name} AI`, ownerEmail: "owner@acme.test", logo: PNG });
     await A.fillStep(b, ADMIN, "railway", { token: RW_TOKEN });
     await A.fillStep(b, ADMIN, "phones", { key: "platform-fake-12345678" });
+    await A.fillStep(b, ADMIN, "ai", { key: "platform-fake-or-12345678" });
     if (domain?.provider === "godaddy") await A.setDomain(b, ADMIN, { provider: "godaddy", domain: "example.com.au", gdKey: "gd-key-0001", gdSecret: "gd-secret-0001", keep: domain.keep });
     if (domain?.provider === "cloudflare") await A.setDomain(b, ADMIN, { provider: "cloudflare", domain: "example.com", token: "cf-good-token-0001", keep: domain.keep });
     return b;
@@ -347,9 +348,9 @@ describe("install for them", () => {
 
   test("refused until the required steps are filled, and says which", async () => {
     const b = addBuyer("Early Buyer", "early@example.com");
-    expect((await A.installFor(b, ADMIN)).message).toMatch(/Still to fill in: Brand, Hosting \(Railway\), Phones \(Telnyx, or Vapi \+ Twilio\)/);
+    expect((await A.installFor(b, ADMIN)).message).toMatch(/Still to fill in: Brand, Hosting \(Railway\), Phones \(Telnyx, or Vapi \+ Twilio\), AI \(OpenRouter\)/);
     await A.fillStep(b, ADMIN, "brand", { productName: "Early", ownerEmail: "e@e.test" });
-    expect((await A.installFor(b, ADMIN)).message).toMatch(/Still to fill in: Hosting \(Railway\), Phones \(Telnyx, or Vapi \+ Twilio\)/);
+    expect((await A.installFor(b, ADMIN)).message).toMatch(/Still to fill in: Hosting \(Railway\), Phones \(Telnyx, or Vapi \+ Twilio\), AI \(OpenRouter\)/);
     expect(getSetup(b.id).phase).toBe("idle");
   });
 
@@ -365,7 +366,6 @@ describe("install for them", () => {
     expect(s.error).toBeUndefined();
     expect(s.phase).toBe("done");
     expect(s.resultUrl).toBe("https://app.example.com.au");
-    expect(s.extrasDone).toBe(true);
     expect(s.assist?.installBy?.by).toBe(ADMIN);
     expect(s.assist?.steps?.brand?.by).toBe(ADMIN); // survives the install
     // the app's own records went to GoDaddy: CNAME for the address, relative names
@@ -381,7 +381,7 @@ describe("install for them", () => {
     // audit: who did what, when, never a key
     const entries = log(b);
     const actionsSeen = entries.map((e) => e.action);
-    for (const a of ["filled: brand", "filled: railway", "filled: phones", "filled: domain", "finished extras", "install started"]) expect(actionsSeen).toContain(a);
+    for (const a of ["filled: brand", "filled: railway", "filled: phones", "filled: ai", "filled: domain", "install started"]) expect(actionsSeen).toContain(a);
     expect(entries.every((e) => e.admin_email === ADMIN && !!e.at)).toBe(true);
     expect(JSON.stringify(entries)).not.toMatch(/gd-secret-0001|platform-fake|railway-test-token/);
   }, 90_000);
@@ -440,8 +440,8 @@ describe("install for them", () => {
   }, 40_000);
 });
 
-describe("OpenRouter and the extras button", () => {
-  test("the key is checked, sealed and goes in as OPENROUTER_API_KEY; extras can be finished", async () => {
+describe("OpenRouter is the AI step", () => {
+  test("the key is checked, sealed and goes in as OPENROUTER_API_KEY and finishes the AI step", async () => {
     const seen: string[] = [];
     const real = globalThis.fetch;
     globalThis.fetch = (async (u: any, init: any) => {
@@ -461,8 +461,9 @@ describe("OpenRouter and the extras button", () => {
       await A.fillStep(b, ADMIN, "brand", { productName: "Or", ownerEmail: "o@o.test" });
       await A.fillStep(b, ADMIN, "railway", { token: RW_TOKEN });
       await A.fillStep(b, ADMIN, "phones", { key: "platform-fake-12345678" });
-      expect((await A.finishExtras(b, ADMIN)).ok).toBe(true);
-      expect(getSetup(b.id).extrasDone).toBe(true);
+      // The OpenRouter key counts as the AI step being done.
+      expect(getSetup(b.id).ai?.confirmed).toBe(true);
+      expect(A.stepRows(b, getSetup(b.id)).find((r) => r.id === "ai")?.done).toBe(true);
     } finally { globalThis.fetch = real; }
   });
 });

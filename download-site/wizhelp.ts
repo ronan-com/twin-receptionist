@@ -17,7 +17,7 @@ export const HELP_SENT = "We've got it — we'll get back to you shortly. You ca
 
 /** The step's name, as our admin reads it. */
 const STEP_LABEL: Record<StepId, string> = {
-  welcome: "Welcome", brand: "Brand", domain: "Domain", server: "DigitalOcean server", railway: "Railway", phones: "Phones",
+  welcome: "Welcome", brand: "Brand", domain: "Domain", server: "DigitalOcean server", railway: "Railway", phones: "Voice", ai: "AI",
   email: "Email", calendars: "Calendars", extras: "Extras", vapi: "Vapi", twilio: "Twilio", install: "Install", done: "Live",
 };
 export const stepLabel = (id: string) => STEP_LABEL[id as StepId] || "setup";

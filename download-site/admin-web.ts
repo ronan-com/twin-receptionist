@@ -22,7 +22,7 @@
 // access is on in their own app (on by default, with "Support can make changes"; the owner can switch either off); their app
 // writes each sign-in and each change to its audit log.
 import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
-import nodemailer from "nodemailer";
+import { sendSiteMail, siteMailConfigured } from "./mailer";
 import { CONFIG, RAILWAY, addBuyer, currentPackage, db, markInvited, now, setupLink, sha256, unbrand, type Buyer } from "./lib";
 import { esc } from "./pages";
 import { welcomeEmail } from "./content";
@@ -40,8 +40,7 @@ import { createLink, rotateLink, toggleLink, listLinks } from "./genericlink";
 // ---------------- settings ----------------
 const ADMIN_EMAILS = (process.env.ADMIN_EMAILS || "").split(",").map((s) => s.trim().toLowerCase()).filter(Boolean);
 const ADMIN_HASH = (process.env.ADMIN_PASSWORD_HASH || "").trim();
-const SITE_SMTP = (process.env.SITE_SMTP_URL || "").trim(); // our own mail sender, for welcome emails
-const SITE_FROM = (process.env.SITE_MAIL_FROM || "").trim();
+const SITE_FROM = () => (process.env.SITE_MAIL_FROM || "").trim();
 export const adminEnabled = () => ADMIN_EMAILS.length > 0;
 export const isAdminEmail = (e: string) => ADMIN_EMAILS.includes(e.trim().toLowerCase());
 const SESSION_HOURS = 12;
@@ -128,24 +127,19 @@ function deleteBuyer(id: number) {
 }
 
 // ---------------- welcome email ----------------
-export const welcomeConfigured = () => !!SITE_SMTP && !!SITE_FROM;
+export const welcomeConfigured = siteMailConfigured;
 async function sendWelcome(b: Buyer): Promise<string | null> {
   const w = welcomeEmail();
   if (!w) return "There's no welcome email text (handoff-content/welcome-email.md).";
-  const vars: Record<string, string> = { buyer_first_name: b.name.split(/\s+/)[0] || b.name, setup_link: setupLink(b.code), seller_name: "", support_email: CONFIG.supportEmail || SITE_FROM };
+  const vars: Record<string, string> = { buyer_first_name: b.name.split(/\s+/)[0] || b.name, setup_link: setupLink(b.code), seller_name: "", support_email: CONFIG.supportEmail || SITE_FROM() };
   // Emails are generic: no product or company name, whatever the template says.
   const fill = (t: string) => unbrand(t.replace(/\{\{(\w+)\}\}/g, (_m, k) => vars[k] ?? ""));
   let body = fill(w.body);
   if (RAILWAY) body = body.replace(/A DigitalOcean account with a payment method/g, "A Railway account on the Hobby plan (it needs a card)");
-  const t = nodemailer.createTransport(SITE_SMTP, { connectionTimeout: 15000, greetingTimeout: 15000, socketTimeout: 20000 } as any);
-  try {
-    await t.sendMail({ from: SITE_FROM, to: b.email, subject: fill(w.subject), text: body });
-    markInvited(b.id);
-    return null;
-  } catch (e: any) {
-    console.error(`[admin] welcome email to buyer ${b.id} failed: ${e?.code || e?.name || "error"}`);
-    return "The welcome email didn't send. Copy the link and send it yourself.";
-  } finally { t.close(); }
+  const err = await sendSiteMail(b.email, fill(w.subject), body, { label: "Open your setup", url: setupLink(b.code) });
+  if (err) return "The welcome email didn't send. Copy the link and send it yourself.";
+  markInvited(b.id);
+  return null;
 }
 
 // ---------------- HTML ----------------
@@ -184,6 +178,32 @@ ${opts.sid ? `<div class="livebar" id="livebar" role="alert" hidden><span class=
 const hiddenT = (sid: string) => `<input type="hidden" name="t" value="${esc(csrf(sid))}">`;
 const notice = (kind: "ok" | "err" | "info", html: string) => `<div class="notice ${kind}"><div>${html}</div></div>`;
 
+/**
+ * Emails an admin a one-time sign-in link. Only for an address in ADMIN_EMAILS, at most 3 an hour per address (older unused
+ * links for it are cancelled first). Returns what happened for tests and logs; the page never says which.
+ */
+export async function sendForgotLink(email: string): Promise<"sent" | "unknown" | "limited" | "no-mail" | "failed"> {
+  tables();
+  if (!isAdminEmail(email)) return "unknown";
+  if (allow(`adminforgot-mail:${email}`, 3, 60 * 60_000)) return "limited";
+  if (!siteMailConfigured()) { console.log("[admin] forgot password asked, but this site can't send email"); return "no-mail"; }
+  db().query("DELETE FROM admin_links WHERE email = ? AND used_at IS NULL").run(email);
+  const link = newAdminLink(email);
+  const err = await sendSiteMail(email, "Sign in to AI Agency Admin", `Hi,\n\nUse this link to sign in. It works once and runs out in ${LINK_MINUTES} minutes.\n\n${link}\n\nIf you didn't ask for it, ignore this email.`, { label: "Sign in", url: link });
+  return err ? "failed" : "sent";
+}
+function forgotPage(msg = "", sent = false) {
+  return page("Forgot password", `<section class="card narrow">
+<h1>Forgot your password?</h1>
+${sent ? notice("ok", "If that address is an admin, a sign-in link is on its way. It works once and runs out in 15 minutes.") : `<p class="lead">We'll email you a one-time sign-in link.</p>`}
+${msg ? notice("err", esc(msg)) : ""}
+${sent ? "" : `<form method="post" action="/admin/forgot" class="body">
+  <label class="f" for="email">Email</label><input id="email" name="email" type="email" required autocomplete="username">
+  <div class="nav"><span></span><div class="right"><button class="btn p" type="submit">Email me a link</button></div></div>
+</form>`}
+<p><a href="/admin">Back to sign in</a></p>
+</section>`);
+}
 function loginPage(msg = "", email = "") {
   return page("Sign in", `<section class="card narrow">
 <h1>AI Agency Admin</h1><p class="lead">Sign in to manage your agencies.</p>
@@ -192,7 +212,8 @@ ${ADMIN_HASH ? `<form method="post" action="/admin/login" class="body">
   <label class="f" for="email">Email</label><input id="email" name="email" type="email" required autocomplete="username" value="${esc(email)}">
   <label class="f" for="password">Password</label><input id="password" name="password" type="password" required autocomplete="current-password">
   <div class="nav"><span></span><div class="right"><button class="btn p" type="submit">Sign in</button></div></div>
-</form>` : `<p class="hint">Sign in with a one-time link: run <code>bun admin.ts admin-link you@yourcompany.com</code> on the server.</p>`}
+</form>
+<p class="hint"><a href="/admin/forgot">Forgot your password?</a></p>` : `<p class="hint">Sign in with a one-time link: run <code>bun admin.ts admin-link you@yourcompany.com</code> on the server.</p>`}
 </section>`);
 }
 
@@ -244,7 +265,7 @@ function listPage(sid: string, email: string, q: string, filter: string, flash =
 <td data-l="Status">${pill(r.status)}</td>
 <td data-l=""><form method="post" action="/admin/b/${r.b.id}/delete">${hiddenT(sid)}<button class="linkbtn" type="submit" data-confirm="${esc(`Delete the test run ${r.b.name}?`)}">Delete</button></form></td></tr>`).join("");
   const testsSection = tests.length || DEMO_READY ? `<section class="card tests">
-<div class="titlerow"><details><summary>Test runs (${tests.length})</summary>${tests.length ? `<div style="overflow-x:auto"><table class="records"><thead><tr><th>Name</th><th>Created</th><th>Status</th><th></th></tr></thead><tbody>${testRows}</tbody></table></div>` : `<p class="hint">No test runs.</p>`}</details>
+<div class="titlerow"><details><summary>Test runs (${tests.length})</summary>${tests.length ? `<form method="post" action="/admin/demo/delete-all">${hiddenT(sid)}<button class="btn danger" type="submit" data-confirm="${esc(`Delete all ${tests.length} test runs?`)}">Delete all test runs</button></form>` : ""}${tests.length ? `<div style="overflow-x:auto"><table class="records"><thead><tr><th>Name</th><th>Created</th><th>Status</th><th></th></tr></thead><tbody>${testRows}</tbody></table></div>` : `<p class="hint">No test runs.</p>`}</details>
 ${DEMO_READY ? `<form method="post" action="/admin/demo" target="_blank">${hiddenT(sid)}<button class="btn o" type="submit" title="Makes a test agency with pretend accounts and opens their setup in a new tab">Start a test run</button></form>` : ""}</div>
 </section>` : "";
   return page("Agencies", `${flash}
@@ -263,7 +284,6 @@ ${shown.length ? `<div style="overflow-x:auto"><table class="records buyers"><th
 <form method="post" action="/admin/buyers" class="body">${hiddenT(sid)}
   <div class="two"><div><label class="f" for="name">Name</label><input id="name" name="name" required maxlength="120"></div>
   <div><label class="f" for="bemail">Email</label><input id="bemail" name="email" type="email" required maxlength="200"></div></div>
-  ${DEMO_READY ? `<label class="opt inline"><input type="checkbox" name="demo" value="1"> <b>Test run (pretend accounts)</b> <span class="hint">No email is sent; their setup accepts anything and ends on a test dashboard.</span></label>` : ""}
   ${welcomeConfigured() ? `<label class="opt inline"><input type="checkbox" name="welcome" value="1"> <b>Email them now</b> <span class="hint">Off: nobody is emailed. Set things up for them first, then send the invite from their agency page.</span></label>` : `<p class="hint">Nobody is emailed. Set things up for them, then invite them from their agency page. (Set SITE_SMTP_URL and SITE_MAIL_FROM to email from here.)</p>`}
   <div class="nav"><span></span><div class="right"><button class="btn p" type="submit">Add agency</button></div></div>
 </form>
@@ -404,7 +424,7 @@ const flashOf = (url: URL) => {
   const m = url.searchParams.get("m");
   const msgs: Record<string, [string, string]> = {
     revoked: ["ok", "Link turned off."], restored: ["ok", "Link turned back on."], reset: ["ok", "Setup wiped. Their link starts from the beginning."],
-    deleted: ["ok", "Agency deleted."],
+    deleted: ["ok", "Agency deleted."], "tests-deleted": ["ok", "All test runs deleted."], "tests-none": ["info", "There are no test runs."],
     "link-on": ["ok", "The generic onboarding link is on."], "link-off": ["ok", "The generic onboarding link is off."], "link-rotated": ["ok", "Made a new link. The old one no longer works."],
     "sync-ok": ["ok", "Synced: their app answered with its latest numbers."],
     "sync-off": ["info", "They've turned sharing off, so their app sends us nothing."],
@@ -475,6 +495,18 @@ export async function adminRoute(req: Request, url: URL, c: AdminCtx): Promise<R
     return c.redirect("/admin", { "Set-Cookie": startSession(email) });
   }
 
+  // ---- forgot password: a one-time sign-in link by email (15 minutes, same as `admin-link`). Same answer for every address. ----
+  if (path === "/admin/forgot") {
+    if (method === "GET") return c.html(forgotPage());
+    if (method !== "POST" || !c.sameOrigin(req)) return c.html(forgotPage("Please try again."), 403);
+    const f2 = (await c.readForm(req)) || {};
+    const email = String(f2.email || "").trim().toLowerCase().slice(0, 200);
+    const wait = allow(`adminforgot:${c.ip}`, 5, 60 * 60_000);
+    if (wait) return c.html(forgotPage(`Too many tries. Wait ${Math.ceil(wait / 60)} minutes.`), 429);
+    await sendForgotLink(email);
+    return c.html(forgotPage("", true));
+  }
+
   const sess = sessionOf(req);
   // The live alert every admin page polls (admin-live.js): help requests waiting on us, and what came in since.
   if (path === "/admin/alerts/live") {
@@ -516,6 +548,14 @@ export async function adminRoute(req: Request, url: URL, c: AdminCtx): Promise<R
     return c.redirect(`/setup/${b.code}`);
   }
 
+  // "Delete all test runs": every demo buyer and what we hold for them. Real agencies are never touched.
+  if (path === "/admin/demo/delete-all" && method === "POST") {
+    const ids = (db().query("SELECT id FROM buyers WHERE demo = 1").all() as { id: number }[]).map((r) => r.id);
+    for (const id of ids) deleteBuyer(id);
+    console.log(`[admin] ${sess.email} deleted ${ids.length} test runs`);
+    return c.redirect(`/admin?m=${ids.length ? "tests-deleted" : "tests-none"}`);
+  }
+
   // The generic onboarding link (genericlink.ts): turn it on/off, make a new address.
   if (path === "/admin/links/add" && method === "POST") {
     const l = createLink(sess.email, f.label, "neutral", "");
@@ -538,11 +578,10 @@ export async function adminRoute(req: Request, url: URL, c: AdminCtx): Promise<R
     const name = String(f.name || "").trim().replace(/[\r\n]/g, " ").slice(0, 120);
     const email = String(f.email || "").trim().toLowerCase().slice(0, 200);
     if (!name || !/^[^\s@<>"]+@[^\s@<>"]+\.[^\s@<>"]+$/.test(email)) return c.html(listPage(sess.sid, sess.email, "", "", notice("err", "Give a name and a real email address.").replace('class="notice ', 'class="notice flash ')), 400);
-    const demo = f.demo === "1" && DEMO_READY;
-    const b = addBuyer(name, email, demo);
-    console.log(`[admin] ${sess.email} added ${demo ? "demo " : ""}buyer ${b.id}`);
+    const b = addBuyer(name, email, false);
+    console.log(`[admin] ${sess.email} added buyer ${b.id}`);
     let mail = "";
-    if (!demo && f.welcome === "1" && welcomeConfigured()) {
+    if (f.welcome === "1" && welcomeConfigured()) {
       const wait = allow(`welcome:${sess.email}`, 30, 60 * 60_000);
       const errMail = wait ? "Too many welcome emails just now; send this one yourself." : await sendWelcome(b);
       mail = errMail ? notice("err", esc(errMail)) : notice("ok", `Welcome email sent to ${esc(b.email)}.`);

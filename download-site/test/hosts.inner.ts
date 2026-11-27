@@ -101,7 +101,7 @@ describe("serving a buyer's wizard on their own domain", () => {
     const r = await onHost(OWN, "/");
     expect(r.status).toBe(200);
     const html = await r.text();
-    expect(html).toContain("Let's set up your AI receptionist agency");
+    expect(html).toContain("Set up your agency");
     expect(html).not.toContain(`/setup/${b.code}`);
     expect(html).toContain('action="/a/start"');
     expect(html).toContain('data-status="/status"');
@@ -144,7 +144,7 @@ describe("serving a buyer's wizard on their own domain", () => {
     expect(html).not.toContain(CONFIG.productName);
     expect(html).toContain("Your provider helped set this up.");
     expect(html).toContain("Done for you: Brand, Hosting (Railway).");
-    expect(html).toContain("Left for you: Phones (Telnyx, or Vapi + Twilio).");
+    expect(html).toContain("Left for you: Phones (Telnyx, or Vapi + Twilio), AI (OpenRouter).");
     const t = html.match(/name="t" value="([^"]+)"/)![1];
     const post = (path: string, fields: Record<string, string>, origin = `http://${OWN}`) =>
       onHost(OWN, path, { method: "POST", headers: { cookie, origin, "content-type": "application/x-www-form-urlencoded" }, body: new URLSearchParams({ t, ...fields }).toString() });
@@ -166,7 +166,7 @@ describe("serving a buyer's wizard on their own domain", () => {
     expect(s.assist?.steps?.brand?.by).toBe(ADMIN);
     const after = await (await onHost(OWN, "/?step=extras", { headers: { cookie } })).text();
     expect(after).toContain("Done for you: Brand, Hosting (Railway).");
-    expect(after).toContain("Nothing is left for you");
+    expect(after).toContain("Left for you: AI (OpenRouter).");
     expect(await (await onHost(OWN, "/?step=brand", { headers: { cookie } })).text()).toContain("Brand: set up by your provider");
     // their own change link works on their domain
     const rel = await post("/a/assist-release", { v: "brand", step: "brand" });
@@ -191,7 +191,7 @@ describe("admin: the Set up for them panel", () => {
     for (const w of ["Brand", "Hosting (Railway)", "Phones (Telnyx, or Vapi + Twilio)", "Own domain and DNS", "Install for them", "Audit log", "Use their domain for the setup link"]) expect(html).toContain(w);
     expect(html).toContain("developer.godaddy.com");
     expect(html).toContain("permissionGroupKeys"); // the Cloudflare template link
-    expect(html).toContain("Still to fill in: Brand, Hosting (Railway), Phones (Telnyx, or Vapi + Twilio).");
+    expect(html).toContain("Still to fill in: Brand, Hosting (Railway), Phones (Telnyx, or Vapi + Twilio), AI (OpenRouter).");
   });
 
   test("filling a step from the form: errors show in the panel, success marks it Done by you, the audit log has who and when", async () => {
@@ -211,7 +211,7 @@ describe("admin: the Set up for them panel", () => {
     expect(html).toContain("filled: railway");
     expect(html).toContain(ADMIN);
     expect(html).not.toContain(RW_TOKEN);
-    expect(html).toContain("Still to fill in: Phones (Telnyx, or Vapi + Twilio).");
+    expect(html).toContain("Still to fill in: Phones (Telnyx, or Vapi + Twilio), AI (OpenRouter).");
     // a request without the token is refused
     const bad = await adm(`${url}/assist/phones`, { method: "POST", headers: { origin: SITE, "content-type": "application/x-www-form-urlencoded" }, body: "key=platform-fake-1234567890" });
     expect(bad.status).toBe(403);
@@ -242,7 +242,7 @@ describe("admin: the Set up for them panel", () => {
 
   test("install-for-them is refused with the reason while steps are missing; the status feed is the wizard's own shape", async () => {
     await act(`${url}/assist/install`, {});
-    expect(await (await adm(url)).text()).toContain("Still to fill in: Phones (Telnyx, or Vapi + Twilio).");
+    expect(await (await adm(url)).text()).toContain("Still to fill in: Phones (Telnyx, or Vapi + Twilio), AI (OpenRouter).");
     const st = await (await adm(`${url}/status`)).json() as any;
     expect(st).toMatchObject({ phase: "idle" });
     expect(typeof st.rev).toBe("string");

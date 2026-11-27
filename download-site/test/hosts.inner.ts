@@ -171,7 +171,7 @@ describe("serving a buyer's wizard on their own domain", () => {
     // their own change link works on their domain
     const rel = await post("/a/assist-release", { v: "brand", step: "brand" });
     expect(rel.status).toBe(303);
-    expect(await (await onHost(OWN, "/?step=brand", { headers: { cookie } })).text()).toContain('name="productName"');
+    expect(await (await onHost(OWN, "/?step=brand", { headers: { cookie } })).text()).toContain('name="ownerEmail"');
   });
 });
 
@@ -195,9 +195,9 @@ describe("admin: the Set up for them panel", () => {
   });
 
   test("filling a step from the form: errors show in the panel, success marks it Done by you, the audit log has who and when", async () => {
-    let r = await act(`${url}/assist/brand`, { productName: "", ownerEmail: "p@p.test" });
+    let r = await act(`${url}/assist/brand`, { productName: "", ownerEmail: "invalid" });
     expect(r.status).toBe(303);
-    expect(await (await adm(url)).text()).toContain("Give your brand a name.");
+    expect(await (await adm(url)).text()).toContain("Enter a real email address.");
     expect(await (await adm(url)).text()).not.toContain('notice flash'); // shown once
     r = await act(`${url}/assist/brand`, { productName: "Panel AI", ownerEmail: "p@p.test", colour: "#112233" });
     let html = await (await adm(url)).text();

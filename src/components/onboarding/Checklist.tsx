@@ -6,7 +6,7 @@ import { brandApi, companyApi, getConsoleCalls } from "@/lib/api/console";
 import { adminOverviewCountsQuery } from "@/lib/app/queries";
 import { resolveRange } from "@/lib/app/date-range";
 import { cn } from "@/lib/utils";
-import { PRODUCT } from "@/lib/app/product";
+import { NEUTRAL_DASHBOARD, PRODUCT } from "@/lib/app/product";
 import { useGetStarted } from "./GetStarted";
 import type { GuideKind } from "./Guides";
 import { PHONE_NEEDED, usePhoneKeyNeeded } from "@/components/app/PhoneGate";
@@ -104,7 +104,7 @@ export function useGetStartedItems(enabled: boolean) {
         cta: "Phone numbers",
       },
     ];
-    return out;
+    return NEUTRAL_DASHBOARD ? out.filter((item) => item.key !== "brand") : out;
   }, [brand.data, counts.data, companies.data, calls.data, phoneItem, phoneNeeded]);
 
   const target = (companies.data ?? []).find((c) => c.receptionists.length > 0)?.id;

@@ -304,3 +304,20 @@ legend { font-weight: 600; font-size: 15px; margin-bottom: 8px; padding: 0; }
 .cp code { white-space: normal; word-break: break-all; }
 .cp .copy { flex: none; font: inherit; font-size: 12px; font-weight: 600; padding: 5px 8px; border-radius: 7px; border: 1px solid var(--line); background: var(--card); color: var(--brand); cursor: pointer; }
 h2.gopt { margin-top: 1.4em; }
+
+/* Match the hosted setup wizard without overriding the dark theme. */
+:root {
+  --radius: 18px;
+  --shadow: 0 1px 3px #191a2208, 0 16px 38px -28px #191a2244;
+}
+@media (prefers-color-scheme: light) {
+  :root { --bg: #f5f5f8; --ink: #191a22; --line: #e4e4eb; --brand: #5148d7; }
+}
+body { font-family: -apple-system, BlinkMacSystemFont, Inter, "Segoe UI", ui-sans-serif, system-ui, sans-serif; }
+.top-in { min-height: 66px; }
+.hero { padding-top: clamp(30px, 6vw, 60px); }
+h1 { font-size: clamp(2rem, 4vw, 3.25rem); letter-spacing: -.042em; line-height: 1.08; text-wrap: balance; }
+h2 { letter-spacing: -.025em; text-wrap: balance; }
+.lead { line-height: 1.65; }
+.btn { border-radius: 12px; }
+@media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }

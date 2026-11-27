@@ -131,7 +131,7 @@ export interface SetupData {
   /** 2 once moved to the short wizard (see migrate). Old rows have none. */
   schema?: number;
   step: StepId;
-  brand?: { productName: string; ownerEmail: string; ownPhoneAccount: boolean ; logo?: string; colour?: string };
+  brand?: { productName: string; ownerEmail: string; ownPhoneAccount: boolean ; deferred?: boolean; logo?: string; colour?: string };
   domain?: {
     mode: "cloudflare" | "godaddy" | "manual";
     zone?: string; // example.com

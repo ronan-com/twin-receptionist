@@ -25,7 +25,7 @@ import { collectProblems, recentLogs } from "./problems";
 //    whether it is healthy, COUNTS only, the brand's name and logo address, and yes/no for the optional
 //    extras. The shape is fixed in SHAPE below: nothing else can be sent. Never caller names or numbers,
 //    transcripts, recordings, keys, or anything a caller or customer said.
-// 2. Support access. OFF by default. When the owner turns it on, the provider can ask for a one-time
+// 2. Support access. ON by default on fresh installs (SUPPORT_ACCESS_DEFAULT=on), until the owner changes it. While on, the provider can ask for a one-time
 //    sign-in link (valid 60 seconds, single use) that opens the dashboard as a read-only "support" person.
 //    Every link and every sign-in is written to the audit log and shown to the owner.
 //

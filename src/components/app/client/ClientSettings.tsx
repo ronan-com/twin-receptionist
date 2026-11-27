@@ -1,3 +1,4 @@
+import { NEUTRAL_DASHBOARD } from "@/lib/app/product";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { Link } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -365,7 +366,7 @@ export function ClientSettings() {
         <LinkRow to="/app/how-it-works" title="How it works" summary="Quick help: calls, bookings, messages, hours and getting in touch" />
         <LinkRow to="/app/analytics" title="Reports" summary="How your calls and bookings are trending" />
         <LinkRow to="/app/settings" search={{ tab: "business" }} title="Business details" summary="Name, address, time zone" />
-        <LinkRow to="/app/settings" search={{ tab: "branding" }} title="Logo and colours" summary="How your dashboard looks" />
+        {!NEUTRAL_DASHBOARD && <LinkRow to="/app/settings" search={{ tab: "branding" }} title="Logo and colours" summary="How your dashboard looks" />}
         <LinkRow to="/app/settings" search={{ tab: "account" }} title="Your login" summary="Your name and password" />
       </div>
 

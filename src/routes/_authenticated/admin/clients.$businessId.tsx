@@ -1,3 +1,4 @@
+import { NEUTRAL_DASHBOARD } from "@/lib/app/product";
 import { NeedsPhone } from "@/components/app/PhoneGate";
 import { useState } from "react";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
@@ -388,7 +389,7 @@ function ClientDetailPage() {
       </Panel>
 
       {!ws.viewing && !platform && ws.session?.role === "owner" ? <CustomerBilling key={co.id} companyId={co.id} editable /> : null}
-      <details className="panel px-4 py-3" data-section="client-branding">
+      {!NEUTRAL_DASHBOARD && <details className="panel px-4 py-3" data-section="client-branding">
         <summary className="cursor-pointer text-[14px] font-semibold text-ink">Branding <span className="ml-1 text-[12px] font-normal text-ink-muted">logo and colours</span></summary>
         <div className="mt-4">
         <BrandEditor
@@ -405,7 +406,7 @@ function ClientDetailPage() {
           }}
         />
         </div>
-      </details>
+      </details>}
 
       <div className="grid gap-4 xl:grid-cols-3">
         <Panel title="Recent calls" className="xl:col-span-2" padded={false}>

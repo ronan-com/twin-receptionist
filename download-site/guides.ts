@@ -17,7 +17,7 @@ export const STEP_GUIDES: Partial<Record<StepId, ProviderId[]>> = {
   calendars: ["google-oauth", "microsoft-oauth"],
   install: ["install"],
 };
-/** Steps with nothing to do at another company (a name and colours, a "Connect more" menu, the finish line). */
+/** Steps with nothing to do at another company (account details, a "Connect more" menu, the finish line). */
 export const STEPS_WITHOUT_GUIDE: StepId[] = ["welcome", "brand", "extras", "done"];
 
 const stripLinks = (md: string) => md.replace(/\[([^\]]+)\]\((https?:[^)\s]+)\)/g, "$1 ($2)");

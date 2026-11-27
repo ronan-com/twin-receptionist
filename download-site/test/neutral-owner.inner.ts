@@ -19,13 +19,12 @@ async function owner(name: string) {
   await actions.start(b, {});
   return b;
 }
-test("the Brand step takes owner email, an OPTIONAL agency name, logo, 1 to 3 colours and light/dark; leaving the name blank starts a plain dashboard", async () => {
+test("the buyer details step only exposes account fields and starts a plain dashboard", async () => {
   const b = await owner("Alice");
   const html = wizardPage(b, getSetup(b.id), b.code, "sid", "brand");
   expect(html).toContain("data-neutral-onboarding");
-  for (const field of ["ownerEmail", "ownerName", "productName", "logo", "colour", "colour2", "colour3", "theme"]) expect(html).toContain('name="' + field + '"');
-  expect(html).toMatch(/<input id="productName" name="productName" maxlength="60" value=/); // not required
-  expect(html).toContain("Leave it blank to start with a plain dashboard");
+  for (const field of ["ownerEmail", "ownerName"]) expect(html).toContain('name="' + field + '"');
+  for (const field of ["productName", "logo", "colour", "colour2", "colour3", "theme"]) expect(html).not.toContain('name="' + field + '"');
   expect(html).not.toMatch(/Chloe|Twin Technologies/);
   expect((await actions.brand(b, { ownerEmail: "invalid" }))?.kind).toBe("err");
   expect(await actions.brand(b, { ownerEmail: "alice@example.com", colour: "#4f46e5", theme: "dark" })).toBeNull();
@@ -84,7 +83,7 @@ test("legacy buyer styles use the neutral portal and preserve supplied business 
   expect(getSetup(b.id).brand?.deferred).not.toBe(true);
   expect(await actions.brand(b, { ownerEmail: "changed@example.com" })).toBeNull();
   expect(getSetup(b.id).brand).toMatchObject({ productName: "Existing Brand", ownerEmail: "changed@example.com" });
-  expect(wizardPage(b, getSetup(b.id), b.code, "sid", "brand")).toContain('value="Existing Brand"');
+  expect(wizardPage(b, getSetup(b.id), b.code, "sid", "brand")).toContain('Existing Brand');
 });
 
 test("skip buttons open a read-only preview without submitting forms or advancing setup", async () => {
@@ -98,6 +97,8 @@ test("skip buttons open a read-only preview without submitting forms or advancin
     expect(html).toContain('href="/setup/' + b.code + '?preview=dashboard">Preview your dashboard');
   }
   const page = dashboardPreview("/setup/" + b.code);
+  expect(page).not.toContain("section=brand");
+  expect(dashboardPreview("/setup/" + b.code, "brand")).not.toContain('type="color"');
   expect(page).toContain('href="/setup/' + b.code + '">Continue onboarding');
   expect(page).toContain("Preview mode");
   expect(page).toContain("Switch to customer view");

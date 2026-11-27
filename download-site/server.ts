@@ -478,7 +478,7 @@ async function handle(req: Request, srv: Bun.Server<unknown>): Promise<Response>
     updateSetup(b.id, (s) => { delete s.moved; }); // nextStep() sets it again when this form moves the buyer on
     let flash = null;
     try {
-      flash = await act(b, f);
+      flash = await act(b, m[2] === "brand" ? { ownerEmail: f.ownerEmail || "", ownerName: f.ownerName || "" } : f);
     } catch (e) {
       console.error(`[action] ${m[2]} for buyer ${b.id}: ${(e as Error)?.name || "error"}`);
       flash = { kind: "err" as const, text: "Something went wrong on our side. Please try again." };

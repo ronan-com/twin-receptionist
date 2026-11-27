@@ -1,10 +1,11 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, redirect } from "@tanstack/react-router";
 import { PageHeader } from "@/components/app/primitives";
-import { PRODUCT } from "@/lib/app/product";
+import { NEUTRAL_DASHBOARD, PRODUCT } from "@/lib/app/product";
 import { BrandingSection } from "./-branding-section";
 
 export const Route = createFileRoute("/_authenticated/admin/branding")({
   head: () => ({ meta: [{ title: `Brand — ${PRODUCT} admin` }] }),
+  beforeLoad: () => { if (NEUTRAL_DASHBOARD) throw redirect({ to: "/admin", replace: true }); },
   component: BrandPage,
 });
 

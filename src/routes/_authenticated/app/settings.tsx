@@ -20,7 +20,7 @@ import { asBusinessHours, asRecord, asStringArray, DAY_KEYS, DAY_LABELS, DEFAULT
 import { useWorkspace } from "@/lib/app/workspace";
 import { mergeFormOnRefresh } from "@/lib/app/business-logic";
 import { ALWAYS_FROM, ALWAYS_TO, TIMEZONES } from "@/lib/shared";
-import { PRODUCT } from "@/lib/app/product";
+import { NEUTRAL_DASHBOARD, PRODUCT } from "@/lib/app/product";
 import { ClientSettings } from "@/components/app/client/ClientSettings";
 import { ProfileEditor } from "@/components/app/profile/ProfileEditor";
 import { cleanProfile, profileOf, settingsToneFor, totalProgress } from "@/components/app/profile/helpers";
@@ -35,7 +35,7 @@ export const Route = createFileRoute("/_authenticated/app/settings")({
   head: () => ({ meta: [{ title: `Settings | ${PRODUCT}` }] }),
   validateSearch: (search: Record<string, unknown>): { tab?: SettingsTab } => {
     const t = String(search["tab"] ?? "");
-    return SETTINGS_TABS.includes(t as SettingsTab) ? { tab: t as SettingsTab } : {};
+    return !(NEUTRAL_DASHBOARD && t === "branding") && SETTINGS_TABS.includes(t as SettingsTab) ? { tab: t as SettingsTab } : {};
   },
   component: SettingsRoute,
 });
@@ -202,7 +202,7 @@ function SettingsPage() {
           <TabsTrigger value="business" className="text-[12.5px]">Business</TabsTrigger>
           <TabsTrigger value="hours" className="text-[12.5px]">Hours</TabsTrigger>
           {staff ? <TabsTrigger value="handling" className="text-[12.5px]" data-settings-tab="handling">Call handling details</TabsTrigger> : null}
-          <TabsTrigger value="branding" className="text-[12.5px]">Branding</TabsTrigger>
+          {!NEUTRAL_DASHBOARD && <TabsTrigger value="branding" className="text-[12.5px]">Branding</TabsTrigger>}
           <TabsTrigger value="account" className="text-[12.5px]">Your account</TabsTrigger>
           {staff ? <TabsTrigger value="billing" className="text-[12.5px]">Plan & usage</TabsTrigger> : null}
           {canManage ? <TabsTrigger value="activity" className="text-[12.5px]">Activity</TabsTrigger> : null}
@@ -356,9 +356,7 @@ function SettingsPage() {
           <CallHandlingDetails />
         </TabsContent>
 
-        <TabsContent value="branding" className="mt-3">
-          <BrandingEditor />
-        </TabsContent>
+        {!NEUTRAL_DASHBOARD && <TabsContent value="branding" className="mt-3"><BrandingEditor /></TabsContent>}
 
         <TabsContent value="account" className="mt-3 space-y-4">
           <AccountSettings />

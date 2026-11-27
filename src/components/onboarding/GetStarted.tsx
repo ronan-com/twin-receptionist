@@ -65,7 +65,7 @@ const NAV_COPY: Record<string, { title: string; body: string }> = {
   "/admin/connections": { title: "Connections", body: "Link your phone account, calendars and email so receptionists can book and follow up." },
   "/admin/usage": { title: "Usage", body: "Minutes and activity for each client, so you always know what is being used." },
   "/admin/tutorials": { title: "Tutorials", body: "Short how-tos for everything here, each with a button that takes you to the right page. You can take this tour again from there." },
-  "/admin/settings": { title: "Settings", body: "Your team, your logo and brand colour, and your account. Branding here sets how clients see their dashboard." },
+  "/admin/settings": { title: "Settings", body: NEUTRAL_DASHBOARD ? "Manage your team and account." : "Your team, your logo and brand colour, and your account. Branding here sets how clients see their dashboard." },
 };
 
 export function buildTourSteps(navPaths: string[], withChecklist: boolean): TourStep[] {

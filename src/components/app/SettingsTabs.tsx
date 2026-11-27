@@ -1,3 +1,4 @@
+import { NEUTRAL_DASHBOARD } from "@/lib/app/product";
 import { Link, useRouterState } from "@tanstack/react-router";
 import { cn } from "@/lib/utils";
 
@@ -19,7 +20,7 @@ const PATHS = ["/app/settings", "/app/receptionist", "/app/knowledge", "/app/aut
 export function SettingsTabs() {
   const { pathname, search } = useRouterState({ select: (s) => ({ pathname: s.location.pathname, search: s.location.search as { tab?: string } }) });
   if (!PATHS.some((p) => pathname === p || pathname.startsWith(p + "/"))) return null;
-  const tabs = TABS;
+  const tabs = TABS.filter((t) => !NEUTRAL_DASHBOARD || t.tab !== "branding");
   const on = (t: Tab) => (t.to === "/app/settings" ? pathname === "/app/settings" && (t.tab ? search.tab === t.tab : !search.tab) : pathname === t.to);
   return (
     <nav aria-label="Settings" data-settings-tabs className="-mx-1 mb-6 flex gap-1 overflow-x-auto border-b border-hairline px-1">

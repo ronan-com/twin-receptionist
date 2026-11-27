@@ -67,7 +67,7 @@ const markLogo = (logo?: string) => (logo && /^data:image\/png;base64,[A-Za-z0-9
 
 const META: Record<StepId, { title: string; short: string; icon: string; hue: string }> = {
   welcome: { title: "Welcome", short: "", icon: "sparkles", hue: "indigo" },
-  brand: { title: "Brand", short: "Name, logo, colour", icon: "tag", hue: "indigo" },
+  brand: { title: "Your details", short: "Name and email", icon: "tag", hue: "indigo" },
   domain: { title: "Domain", short: "Optional", icon: "globe", hue: "cyan" },
   railway: { title: "Hosting", short: "Railway", icon: "server", hue: "indigo" },
   phones: { title: "Voice", short: "Telnyx", icon: "phone", hue: "indigo" },
@@ -161,32 +161,13 @@ ${nav(c, primary("Start"), { back: false })}`;
 
 function brand(c: Ctx) {
   const br = c.s.brand;
-  const cols = br?.colours?.length ? br.colours : br?.colour ? [br.colour] : [];
-  const theme = br?.theme || "light";
-  return `${head(c, "Your brand", "")}
+  return `${head(c, "Your details", "Enter your name and email to create your owner account.")}
 <div class="body">${mainForm(c, "brand", `
   <label class="f" for="ownerName">Your name</label>
   <input id="ownerName" name="ownerName" maxlength="80" required autocomplete="name" value="${val(c, "ownerName", br?.ownerName || c.s.prefill?.ownerName || "")}" placeholder="Dana Smith">
   <label class="f" for="ownerEmail">Your email</label>
   <input id="ownerEmail" name="ownerEmail" type="email" maxlength="200" required autocomplete="email" value="${val(c, "ownerEmail", br?.ownerEmail || c.s.prefill?.ownerEmail || c.b.email)}">
-  <label class="f" for="productName">Agency name <span class="tag">Optional</span></label>
-  <input id="productName" name="productName" maxlength="60" value="${val(c, "productName", br?.productName || c.s.prefill?.agencyName || "")}" placeholder="Acme AI">
-  <p class="hint">Leave it blank to start with a plain dashboard; your name, logo and colours can be added later in Settings.</p>
-  <label class="f" for="logoFile">Logo <span class="tag">Optional</span></label>
-  <input id="logoFile" type="file" accept="image/png,image/jpeg,image/webp">
-  <input type="hidden" id="logo" name="logo" value="${esc(br?.logo || "")}">
-  <input type="hidden" id="removeLogo" name="removeLogo" value="">
-  <p class="hint" id="logoNote">${br?.logo ? "Logo added. Pick another to replace it." : ""}</p>
-  <p class="logoRow"><img id="logoPreview" alt="Your logo" width="96"${br?.logo ? ` src="${esc(br.logo)}"` : " hidden"}> <button type="button" class="linkbtn" id="logoRemove"${br?.logo ? "" : " hidden"}>Remove logo</button></p>
-  <label class="f" for="colour">Brand colours <span class="tag">1 to 3</span></label>
-  <div class="colours">
-    <label class="cpick" for="colour"><input id="colour" name="colour" type="color" value="${esc(cols[0] || "#4f46e5")}" aria-label="Main colour"><span>Main</span></label>
-    <label class="cpick" for="colour2"><input id="colour2" name="colour2" type="color" value="${esc(cols[1] || "#0ea5e9")}" aria-label="Second colour"><span class="ctick"><input type="checkbox" name="colour2on" value="1"${cols[1] ? " checked" : ""}> Second</span></label>
-    <label class="cpick" for="colour3"><input id="colour3" name="colour3" type="color" value="${esc(cols[2] || "#f59e0b")}" aria-label="Third colour"><span class="ctick"><input type="checkbox" name="colour3on" value="1"${cols[2] ? " checked" : ""}> Third</span></label>
-  </div>
-  <label class="f">Look</label>
-  <div class="choice looks"><label class="opt"><input type="radio" name="theme" value="light"${theme === "light" ? " checked" : ""}><b>Light</b></label><label class="opt"><input type="radio" name="theme" value="dark"${theme === "dark" ? " checked" : ""}><b>Dark</b></label></div>
-  <p class="hint">You can change the colours and the look later in your dashboard.</p>`)}</div>
+  <p class="hint">Your dashboard comes ready to use. Your setup provider will add your branding separately.</p>`)}</div>
 ${nav(c, primary("Continue"))}`;
 }
 
@@ -720,7 +701,7 @@ function doneRailway(c: Ctx) {
   if (c.s.domainAdd) return domainAddScreen(c);
   if (isDemo(c.b)) {
     return `${head(c, "Your agency is live", `${P(c)} is ready. This test uses a temporary address instead of your own domain.`)}
-<div class="live"><div class="dot">● Live</div><p class="hint">Next: create your password and your branded dashboard opens.</p></div>
+<div class="live"><div class="dot">● Live</div><p class="hint">Next: create your password and your dashboard opens.</p></div>
 ${updateBanner(c)}
 ${nav(c, `<a class="btn p" href="${base(c)}/open">Open your dashboard ${icon("ext")}</a>`, { back: false })}`;
   }
@@ -765,7 +746,7 @@ const isLive = (c: Ctx) =>
 /** What the helper says on each step (one or two short lines) and the questions it offers. The ask box uses the same help chat as the "Need help?" button. */
 const HELP: Record<string, { say: string; chips: string[] }> = {
   welcome: { say: "Hi! I'll guide you through. It takes about 10 minutes. Press Start.", chips: ["What do I need?", "What will it cost?"] },
-  brand: { say: "Pick your name, colours and look. You can change them later.", chips: ["Can I change this later?", "What logo works best?"] },
+  brand: { say: "Enter your name and email to set up your account.", chips: ["Which email should I use?"] },
   vapi: { say: "Optional: a backup voice provider. Copy both keys from Vapi and paste them here.", chips: ["Which two Vapi keys?", "Do I need a backup?"] },
   railway: { say: "Open Railway, make a token, paste it here.", chips: ["Where do I find my Railway token?", "What is No workspace?", "What is the Hobby plan?"] },
   phones: { say: "Telnyx is the easy pick. Vapi works too. Stuck on Telnyx's ID check? Pick Vapi now, add Telnyx later in your dashboard.", chips: ["Telnyx or Vapi?", "Telnyx wants an ID check"] },

@@ -326,7 +326,7 @@ describe("Brand colours and look, and the Done screen", () => {
     const b = addBuyer("Colour Buyer", "colour@example.com");
     await actions.start(b, {});
     const page = wizardPage(b, store.getSetup(b.id), b.code, "sid", "brand");
-    for (const f of ['name="colour"', 'name="colour2"', 'name="colour3"', 'name="theme" value="light"', 'name="theme" value="dark"']) expect(page).toContain(f);
+    for (const f of ['name="colour"', 'name="colour2"', 'name="colour3"', 'name="theme" value="light"', 'name="theme" value="dark"']) expect(page).not.toContain(f);
     // Just the main colour, light (the default): one colour
     expect(await actions.brand(b, { productName: "C Co", ownerEmail: "o@c.test", colour: "#aa2244" })).toBeNull();
     expect(store.getSetup(b.id).brand).toMatchObject({ colour: "#aa2244", colours: ["#aa2244"] });
@@ -340,10 +340,10 @@ describe("Brand colours and look, and the Done screen", () => {
     expect(await actions.brand(b, { productName: "C Co", ownerEmail: "o@c.test", colour: "#111111", colour2: "#222222", colour3: "#333333", colour3on: "1", theme: "light" })).toBeNull();
     vars = await railwayVars(b.id, store.getSetup(b.id), "rail-token-0123456789");
     expect(vars).toMatchObject({ BRAND_COLOURS: "#111111,#333333", BRAND_COLOUR: "#111111", THEME: "light" });
-    // The saved choice shows again when they come back
+    // The provider-supplied brand is retained without exposing editors to buyers
     const again = wizardPage(b, store.getSetup(b.id), b.code, "sid", "brand");
-    expect(again).toMatch(/name="colour2" type="color" value="#333333"/); // the picked colours fill the boxes in order
-    expect(again).toMatch(/name="theme" value="light" checked/);
+    expect(again).not.toContain('name="colour2"');
+    expect(again).not.toContain('name="theme"');
   });
 
   test("Done screen: few words, the main button opens the dashboard, nothing about deleting tokens, backups or deleted keys", async () => {

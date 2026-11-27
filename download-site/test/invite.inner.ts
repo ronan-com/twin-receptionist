@@ -145,7 +145,7 @@ describe("generic setup site: no product name anywhere", () => {
     expect(inactivePage("neutral")).not.toMatch(/Zorbo/i);
   });
 
-  test("New agency: the three details pre-fill their Brand step; 'Email them the link' previews first, then sends one short email with no contact lines", async () => {
+  test("New agency: owner details pre-fill their account step; 'Email them the link' previews first, then sends one short email with no contact lines", async () => {
     const before = mails.length;
     const r = await call("POST", "/admin/buyers", { t: tok(await adminPage()), owner: "Wendy Welcome", name: "Welcome Voice", email: "wendy@example.com" });
     expect(r.body).toContain("Email them the link");
@@ -154,11 +154,11 @@ describe("generic setup site: no product name anywhere", () => {
     const w = buyerByEmail("wendy@example.com");
     expect(w.name).toBe("Welcome Voice");
     expect(getSetup(w.id).prefill).toEqual({ ownerName: "Wendy Welcome", ownerEmail: "wendy@example.com", agencyName: "Welcome Voice" });
-    // The Brand step starts filled in, and the buyer may change all three.
+    // Only the owner account details are editable by the buyer.
     const brandHtml = wizardPage(w, getSetup(w.id), w.code, "sid-w", "brand");
     expect(brandHtml).toContain('name="ownerName" maxlength="80" required autocomplete="name" value="Wendy Welcome"');
     expect(brandHtml).toContain('value="wendy@example.com"');
-    expect(brandHtml).toContain('name="productName" maxlength="60" value="Welcome Voice"');
+    expect(brandHtml).not.toContain('name="productName"');
     // The preview shows the exact email; nothing is sent by looking.
     const pv = (await call("GET", `/admin/b/${w.id}/email`)).body;
     expect(pv).toContain("Hi Wendy,");

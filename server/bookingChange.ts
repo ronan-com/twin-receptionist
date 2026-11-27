@@ -192,3 +192,36 @@ async function cancelNow(client: Business, input: any, caller: string, deps: Cha
     return { cancelled: false, reason: `The calendar couldn't be reached. ${TEAM}` };
   }
 }
+
+// ---- cancelling from the dashboard ------------------------------------------------------
+
+/**
+ * The owner cancels an appointment from the Calendar page. Same as the phone: the calendar event goes, the
+ * booking_requests log says cancelled (so Contacts and Inbox show it, and reminders skip it), and the caller
+ * gets the usual change email if there is one. An event with no booking behind it (added by hand) is just removed.
+ */
+export function cancelFromDashboard(client: Business, eventId: string, deps: ChangeDeps = realDeps): Promise<{ logged: boolean }> {
+  return withBookingLock(client.id, () => cancelFromDashboardNow(client, eventId, deps));
+}
+
+async function cancelFromDashboardNow(client: Business, eventId: string, deps: ChangeDeps): Promise<{ logged: boolean }> {
+  const all = (await deps.bookings(client.id)).filter((r) => r.kind === "booking" && r.status === "booked" && r.apptStatus !== "cancelled");
+  let b = all.find((r) => r.eventId === eventId);
+  if (!b) {
+    // Booked before bookings kept their event id: matched by the event found from its time and title.
+    const now = deps.now();
+    for (const r of all.filter((x) => !x.eventId && Date.parse(x.start) > now - 86400000)) {
+      if ((await deps.eventIdFor(client, r).catch(() => null)) === eventId) {
+        b = r;
+        break;
+      }
+    }
+  }
+  await deps.remove(client, eventId);
+  if (!b) return { logged: false };
+  await deps.patch(client.id, b.id, { status: "cancelled", apptStatus: "cancelled", cancelledAt: new Date(deps.now()).toISOString() }).catch((err) =>
+    console.error(`[booking ${client.id}] cancelled in the calendar but couldn't update the log`, err.message),
+  );
+  if (b.email) Promise.resolve(deps.confirm(client, b, { kind: "cancelled", was: b.start })).catch((err) => console.error(`[booking ${client.id}] change email`, err.message));
+  return { logged: true };
+}

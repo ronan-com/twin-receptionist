@@ -4,7 +4,7 @@
 import { beforeEach, describe, expect, test } from "bun:test";
 import { blankSettings, type Business } from "../src/lib/shared";
 import { localDate, localToEpoch, isoLocal, BOOKING_TOOL_DEFS, bookingTools } from "./booking";
-import { cancel, findBooking, phoneKey, reschedule, type ChangeDeps } from "./bookingChange";
+import { cancel, cancelFromDashboard, findBooking, phoneKey, reschedule, type ChangeDeps } from "./bookingChange";
 import { toolAllowed } from "./voice/tools";
 import { buildInstructions } from "./prompt";
 
@@ -209,5 +209,41 @@ describe("wiring", () => {
     expect(ins).toContain("find_booking");
     expect(ins).toContain("Only after a clear yes, call cancel_appointment");
     expect(buildInstructions({ ...blankSettings(), businessName: "Alpha", services: ["Consult"] }, null)).not.toContain("cancel_appointment");
+  });
+});
+
+describe("cancelling from the dashboard", () => {
+  test("removes the event, marks the log cancelled, emails the caller", async () => {
+    const r = await cancelFromDashboard(client, "ev-b1", deps());
+    expect(r.logged).toBe(true);
+    expect(removed).toEqual(["ev-b1"]);
+    expect(rows[0].status).toBe("cancelled");
+    expect(rows[0].apptStatus).toBe("cancelled");
+    expect(rows[0].cancelledAt).toBeTruthy();
+    await Promise.resolve();
+    expect(emailed).toEqual(["cancelled"]);
+    // gone from what the phone can find or change
+    expect(((await findBooking(client, {}, CALLER, deps())) as any).found).toBe(false);
+  });
+  test("an older booking with no event id is matched through its event", async () => {
+    rows = [booking("old", { eventId: undefined })];
+    const r = await cancelFromDashboard(client, "ev-found", deps({ eventIdFor: async () => "ev-found" }));
+    expect(r.logged).toBe(true);
+    expect(removed).toEqual(["ev-found"]);
+    expect(rows[0].status).toBe("cancelled");
+  });
+  test("an event with no booking behind it is just removed; no email when the caller left none", async () => {
+    expect((await cancelFromDashboard(client, "ev-hand", deps())).logged).toBe(false);
+    expect(removed).toEqual(["ev-hand"]);
+    expect(rows[0].status).toBe("booked");
+    rows = [booking("b2", { email: "" })];
+    await cancelFromDashboard(client, "ev-b2", deps());
+    await Promise.resolve();
+    expect(emailed).toEqual([]);
+    expect(rows[0].status).toBe("cancelled");
+  });
+  test("a calendar failure leaves the log alone", async () => {
+    await expect(cancelFromDashboard(client, "ev-b1", deps({ remove: async () => { throw new Error("calendar down"); } }))).rejects.toThrow();
+    expect(rows[0].status).toBe("booked");
   });
 });

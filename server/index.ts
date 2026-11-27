@@ -93,7 +93,7 @@ import {
   savePublicUrl,
   tokenMatches,
 } from "./booking";
-import { CalendarError, calendarLink, cancelEvent, disconnectCalendar, providerOf, upcomingEvents } from "./calendars";
+import { CalendarError, calendarLink, disconnectCalendar, providerOf, upcomingEvents } from "./calendars";
 import { mailerReady, startOutbox } from "./mailer";
 import { checkEmailAddress, checkWebhookUrl, webhookSecret } from "./notify";
 import { oauthAvailable } from "./oauth";
@@ -116,7 +116,7 @@ import { vapiCallerHook, vapiEvents, vapiToolHook } from "./voice/vapiWebhook";
 import { telnyxTextHook, twilioTextHook } from "./smsBot";
 import { checkOpenRouterKey, clearLlmKey, LlmError, llmKeyState, parseOpenRouterKey, saveLlmKey } from "./llm";
 import { providerStatus, startProviderAlerts } from "./providerStatus";
-import { cancel as cancelBooking, findBooking, reschedule as rescheduleBooking } from "./bookingChange";
+import { cancel as cancelBooking, cancelFromDashboard, findBooking, reschedule as rescheduleBooking } from "./bookingChange";
 
 // The last 200 log lines (scrubbed) and a problem list for the support heartbeat (server/problems.ts).
 installLogCapture();
@@ -1159,12 +1159,7 @@ async function route(req: Request, server?: { requestIP(r: Request): { address: 
     } else if (match[2] === "/email/check") {
       if (method === "POST") return json(await checkEmail(client));
     } else if (match[2] === "/texting") {
-      // Texting is a Telnyx feature: a Vapi receptionist has none.
-      if (providerOfClient(client) === "vapi") {
-        if (method === "GET") return json({ enabled: false, numbers: [], waiting: [] });
-        throw new ValidationError("Telnyx texting isn't used with Vapi. Follow-up texts go out from a Twilio number instead.");
-      }
-      // The Texts switch: its status, and on/off (switching on again is the retry).
+      // The Texts switch: its status, and on/off (switching on again is the retry). Telnyx and Vapi (Twilio numbers) both use it.
       if (method === "GET") return json(await textsStatus(client, await engineNumbers(ctx, client)));
       if (method === "PUT") {
         const input = await body(req);
@@ -1176,6 +1171,7 @@ async function route(req: Request, server?: { requestIP(r: Request): { address: 
         return json(await textsStatus(saved, nums));
       }
       if (method === "POST") {
+        if (providerOfClient(client) === "vapi") throw new ValidationError("Telnyx texting isn't used with Vapi. Follow-up texts go out from a Twilio number instead.");
         await enableTexting(client);
         return json(await textingState(client));
       }
@@ -1195,7 +1191,7 @@ async function route(req: Request, server?: { requestIP(r: Request): { address: 
       if (method === "DELETE") return json(await bookingState(await removeBooking(client)));
     } else if (match[2].startsWith("/booking/events/")) {
       if (method === "DELETE") {
-        await cancelEvent(client.id, match[2].slice("/booking/events/".length));
+        await cancelFromDashboard(client, match[2].slice("/booking/events/".length));
         return json(await bookingState(client));
       }
     } else if (match[2] === "/calendar") {

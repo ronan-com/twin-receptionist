@@ -110,6 +110,8 @@ describe("reschedule_appointment", () => {
     expect(moved).toEqual([{ id: "ev-b1", start: next, end: next + 30 * 60000 }]);
     expect(rows[0].start).toBe(isoLocal(next, TZ));
     expect(rows[0].rescheduledFrom).toBeTruthy();
+    expect(rows[0].rescheduledAt).toBeTruthy();
+    expect(rows[0].status).toBe("booked"); // still an active booking, at its new time
     await Promise.resolve();
     expect(notified).toEqual(["rescheduled"]);
     expect(emailed).toEqual(["rescheduled"]);
@@ -155,6 +157,8 @@ describe("cancel_appointment", () => {
     expect(r.cancelled).toBe(true);
     expect(removed).toEqual(["ev-b1"]);
     expect(rows[0].apptStatus).toBe("cancelled");
+    // the request log says cancelled too, not "booked"
+    expect(rows[0].status).toBe("cancelled");
     await Promise.resolve();
     expect(notified).toEqual(["cancelled"]);
     expect(emailed).toEqual(["cancelled"]);

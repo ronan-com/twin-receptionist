@@ -365,7 +365,7 @@ export default function BookingCard({ clientId, onChanged }: { clientId: string;
               {state.requests.slice(0, 15).map((r) => (
                 <li key={r.id}>
                   <span className={`pill ${r.status === "failed" ? "pill-bad" : "pill-on"}`}>
-                    {r.kind === "callback" ? "Call back" : r.status === "booked" ? "Booked" : "Not booked"}
+                    {r.kind === "callback" ? "Call back" : r.status === "booked" ? "Booked" : r.status === "cancelled" ? "Cancelled" : "Not booked"}
                   </span>
                   <span className="request-main">
                     <strong>{r.name || "No name"}</strong> · {formatNumber(r.phone)}

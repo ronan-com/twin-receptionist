@@ -872,6 +872,7 @@ ${rail(c)}
 <main>
   <div class="phonebar"><div class="lab"><span>Step ${i + 1} of ${mainSteps.length}</span><b>${stepMeta(b, view).title}</b></div><progress class="bar" max="${mainSteps.length}" value="${i + 1}">${i + 1} of ${mainSteps.length}</progress></div>
   <section class="card step-${view}">${b.demo === 1 ? notice("info", "<b>Test run.</b> Every account here is pretend: press Continue on each step. Nothing real is connected.") : ""}${assistNote(c)}${lockNote}${(flLink ? fl + flLink + screenOf(c) : withFlash(screenOf(c), fl))}</section>
+  ${view !== "done" ? `<div class="skip-preview"><a class="btn o" href="/setup/${esc(code)}?preview=dashboard">Skip for now</a></div>` : ""}
   ${personHelpHtml(b, s, code, hidden(c))}
   <p class="foot">${icon("shield")} Your keys are stored encrypted and deleted once your install is done.</p>
 </main>

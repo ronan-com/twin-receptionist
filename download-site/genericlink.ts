@@ -14,6 +14,7 @@ import { esc } from "./pages";
 import { logSupport } from "./sync";
 import { csrfOk, csrfToken, newSessionId } from "./store";
 import { startShell } from "./wizard";
+import { dashboardPreview } from "./dashboard-preview";
 
 export interface GenericLink {
   id: number;
@@ -146,7 +147,7 @@ ${c.error ? note("err", c.error) : ""}
   <label class="f" for="semail">Your email</label>
   <input id="semail" name="email" type="email" required maxlength="200" autocomplete="email" value="${esc(c.email || "")}">
   <p class="hint">We use it to send your owner login later, and so you can pick up where you left off.</p>
-  <div class="nav"><span></span><div class="right"><button class="btn p" type="submit">Continue</button></div></div>
+  <div class="nav"><span></span><div class="right"><a class="btn o" href="/start/${esc(l.code)}?preview=dashboard">Skip for now</a><button class="btn p" type="submit">Continue</button></div></div>
 </form>`);
 }
 export function inactivePage(style: Style = "neutral") {
@@ -186,8 +187,11 @@ export async function startRoute(req: Request, code: string, c: StartCtx): Promi
   const resume = mine && !mine.revoked_at && mine.demo !== 1 ? mine : null;
 
   if (!post) {
-    if (resume) return c.redirect(`/setup/${resume.code}`);
+    const url = new URL(req.url);
+    const preview = url.searchParams.get("preview") === "dashboard";
+    if (resume) return c.redirect(`/setup/${resume.code}${preview ? "?preview=dashboard" : ""}`);
     if (!isActive(link)) return c.html(inactivePage(style), 410);
+    if (preview) return c.html(dashboardPreview(`/start/${link.code}`, url.searchParams.get("section")));
     const have = ck(req, "gf");
     const gf = have || newSessionId();
     return c.html(formPage(link, gf), 200, have ? {} : { "Set-Cookie": `gf=${gf}; Path=/start; HttpOnly; SameSite=Lax${c.secure ? "; Secure" : ""}; Max-Age=7200` });

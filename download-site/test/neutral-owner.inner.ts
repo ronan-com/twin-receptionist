@@ -74,3 +74,44 @@ test("legacy buyer styles use the neutral portal and preserve supplied business 
   expect(getSetup(b.id).brand).toMatchObject({ productName: "Existing Brand", ownerEmail: "changed@example.com" });
   expect(wizardPage(b, getSetup(b.id), b.code, "sid", "brand")).not.toContain('name="productName"');
 });
+
+test("skip buttons open a read-only preview without submitting forms or advancing setup", async () => {
+  const b = addBuyer("Preview", "preview@example.com");
+  await actions.start(b, {});
+  const before = JSON.stringify(getSetup(b.id));
+  const { STEPS } = await import("../store");
+  const { dashboardPreview } = await import("../dashboard-preview");
+  for (const step of STEPS.filter(step => step !== "done")) {
+    const html = wizardPage(b, getSetup(b.id), b.code, "sid", step);
+    expect(html).toContain('href="/setup/' + b.code + '?preview=dashboard">Skip for now');
+  }
+  const page = dashboardPreview("/setup/" + b.code);
+  expect(page).toContain('href="/setup/' + b.code + '">Continue onboarding');
+  expect(page).toContain("Preview mode");
+  expect(page).not.toContain("preview@example.com");
+  expect(JSON.stringify(getSetup(b.id))).toBe(before);
+});
+test("shared link preview does not create a buyer, consume a place, or require an email", async () => {
+  const { createLink, startRoute, linkById } = await import("../genericlink");
+  const l = createLink("boss@example.com", "Preview links", "neutral", "1")!;
+  const count = () => (db().query("SELECT count(*) AS n FROM buyers").get() as {n:number}).n;
+  const before = count();
+  const ctx = {
+    ip: "203.0.113.10", secure: false,
+    sameOrigin: () => true, readForm: async () => null,
+    html: (body: string, status = 200, headers = {}) => new Response(body, {status,headers}),
+    redirect: (url: string, headers = {}) => new Response(null,{status:303,headers:{Location:url,...headers}})
+  };
+  const base = "/start/" + l.code;
+  const form = await startRoute(new Request("http://localhost:4500"+base),l.code,ctx);
+  expect(await form.text()).toContain("Skip for now");
+  const preview = await startRoute(new Request("http://localhost:4500"+base+"?preview=dashboard&section=clients"),l.code,ctx);
+  expect(preview.status).toBe(200);
+  const text = await preview.text();
+  expect(text).toContain('href="'+base+'">Continue onboarding');
+  expect(text).toContain("<h1>Clients</h1>");
+  expect(count()).toBe(before);
+  expect(linkById(l.id)?.started).toBe(0);
+  db().query("UPDATE generic_links SET enabled=0 WHERE id=?").run(l.id);
+  expect((await startRoute(new Request("http://localhost:4500"+base+"?preview=dashboard"),l.code,ctx)).status).toBe(410);
+});

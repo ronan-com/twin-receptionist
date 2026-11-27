@@ -81,7 +81,7 @@ describe("Cliniko", () => {
     expect(calls.find((x) => x.method === "POST" && x.url.endsWith("/patients"))!.body).toMatchObject({ first_name: "Sam", last_name: "Taylor", email: "sam@example.com", patient_phone_numbers: [{ number: person.phone }] });
     expect(await c.createBooking("77", booking)).toBe("5");
     const a = calls.find((x) => x.url.endsWith("individual_appointments"))!.body;
-    expect(a).toMatchObject({ patient_id: "77", practitioner_id: "p1", appointment_type_id: "t1", business_id: "b1", starts_at: "2026-12-01T23:00:00Z", ends_at: "2026-12-01T23:30:00Z" });
+    expect(a).toMatchObject({ patient_id: "77", practitioner_id: "p1", appointment_type_id: "t1", business_id: "b1", starts_at: "2026-11-30T23:00:00Z", ends_at: "2026-11-30T23:30:00Z" });
     expect(a.notes).toContain("Sore knee");
   });
   test("a callback makes no appointment; missing choices and a bad key say so", async () => {

@@ -44,5 +44,17 @@ export async function automationRoutes(args: RouteArgs, deps: AutomationRouteDep
 export async function automationHooks(req: Request, path: string): Promise<Response | null> {
   const m = path.match(/^\/hooks\/automations\/([a-f0-9-]{36})\/([A-Za-z0-9_-]{16,64})$/);
   if (!m || (req.method !== "POST" && req.method !== "GET")) return null;
-  return dynamicVariables(m[1], m[2], req);
+  return dynamicVariables(m[1], m[2], await callerOf(req));
+}
+
+/** Who is calling, from the webhook's body (Telnyx's assistant.initialization event). Anything unreadable gives no caller. */
+export async function callerOf(req: Request): Promise<{ caller?: unknown; channel?: unknown }> {
+  if (req.method !== "POST") return {};
+  try {
+    const body: any = JSON.parse((await req.text()).slice(0, 20_000));
+    const p = body?.data?.payload ?? body?.payload ?? body ?? {};
+    return { caller: p.telnyx_end_user_target ?? "", channel: p.telnyx_conversation_channel };
+  } catch {
+    return {};
+  }
 }

@@ -35,6 +35,14 @@ export type AutomationSettings = {
   language: { code: LanguageCode };
   callLimits: { maxMinutes: number; idleSeconds: number };
   hoursMode: { enabled: boolean; greeting: string; mode: AfterHoursMode };
+  spam: {
+    /** Callers who are hung up on, as +E.164 numbers. */
+    blockList: string[];
+    /** Calls with no caller ID: let them through, hang up, or only take a message. */
+    anonymous: "allow" | "reject" | "message";
+    /** Hang up quickly on obvious robocalls, telemarketers and silent calls. */
+    endRobocalls: boolean;
+  };
 } & FollowupSettings;
 
 export type AutomationKey = keyof AutomationSettings;

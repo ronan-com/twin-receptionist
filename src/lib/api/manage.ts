@@ -91,6 +91,16 @@ export const updateKnowledge = (businessId: string, id: string, body: KnowledgeI
   api.patch<KnowledgeSaved>(`${base(businessId)}/knowledge/${encodeURIComponent(id)}`, body);
 export const deleteKnowledge = (businessId: string, id: string) => api.del<KnowledgeSaved>(`${base(businessId)}/knowledge/${encodeURIComponent(id)}`);
 
+export type ImportDraft = { type: "faq" | "service" | "pricing" | "policy" | "location" | "fact"; question: string; answer: string; exists?: boolean };
+/** Reads the business's website and drafts knowledge items. Saves nothing. */
+export const draftKnowledgeFromWebsite = (businessId: string, url: string) =>
+  api.post<{ pages: string[]; drafts: ImportDraft[] }>(`${base(businessId)}/knowledge/import/draft`, { url });
+/** Saves the drafts the owner kept, as new items. Existing items are never replaced. */
+export const acceptImportedKnowledge = (businessId: string, items: ImportDraft[]) =>
+  api.post<{ added: number; skipped: number; synced: boolean; warning?: string }>(`${base(businessId)}/knowledge/import/accept`, {
+    items: items.map(({ type, question, answer }) => ({ type, question, answer })),
+  });
+
 /* ---------------- Integrations ---------------- */
 
 export async function getIntegrations(businessId: string): Promise<Integration[]> {

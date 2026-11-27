@@ -17,6 +17,7 @@ import type { FollowupSettings } from "../src/lib/followups";
 import { defaultFollowups, followupStatuses, normaliseFollowups } from "./followups";
 import { textingState } from "./texting";
 import { callerContext } from "./callerMemory";
+import { BLOCKED_GREETING, defaultSpam, normaliseSpam, spamLines, spamStatus, spamUsesHook, spamVariables, type SpamSettings } from "./spam";
 
 // Per-receptionist automations (area T): transfer to a person, text-back after a
 // call, call recording with a notice, language, call limits and after-hours mode.
@@ -64,10 +65,10 @@ export type AutomationSettings = {
   language: { code: LanguageCode };
   callLimits: { maxMinutes: number; idleSeconds: number };
   hoursMode: { enabled: boolean; greeting: string; mode: "message_only" | "message_and_booking" };
-} & FollowupSettings; // reminders, missedFollowup, reviews: server/followups.ts
+} & FollowupSettings & SpamSettings; // reminders, missedFollowup, reviews: server/followups.ts; spam: server/spam.ts
 
 export type AutomationKey = keyof AutomationSettings;
-const KEYS: AutomationKey[] = ["transfer", "textBack", "recording", "language", "callLimits", "hoursMode", "reminders", "missedFollowup", "reviews"];
+const KEYS: AutomationKey[] = ["transfer", "textBack", "recording", "language", "callLimits", "hoursMode", "reminders", "missedFollowup", "reviews", "spam"];
 
 export const LANGUAGES: { code: LanguageCode; label: string; note?: string }[] = [
   { code: "en-AU", label: "English (Australian)" },
@@ -100,6 +101,7 @@ export function defaultAutomations(): AutomationSettings {
       mode: "message_only",
     },
     ...defaultFollowups(),
+    ...defaultSpam(),
   };
 }
 
@@ -187,7 +189,7 @@ export function normaliseAutomations(input: unknown, current: AutomationSettings
     mode: pick(h.mode, ["message_only", "message_and_booking"] as const, "message_only"),
   };
 
-  return { transfer, textBack, recording, language, callLimits, hoursMode, ...normaliseFollowups(src, current) };
+  return { transfer, textBack, recording, language, callLimits, hoursMode, ...normaliseFollowups(src, current), ...normaliseSpam(src, current) };
 }
 
 // Fills {business}, {name}, {time}, {service}; anything else in braces is dropped.
@@ -302,6 +304,7 @@ export function automationInstructions(client: Business, a: AutomationSettings, 
     lines.push(`- If the caller speaks another language, reply in that language for the rest of the conversation. Otherwise use Australian English.`);
   }
   if (a.textBack.enabled) lines.push(`- After a phone call, the caller gets a short text from this number. You can tell them to expect it.`);
+  lines.push(...spamLines(a, engine));
   return lines.length ? `\n\nAutomations (these take priority over anything above)\n${lines.join("\n")}` : "";
 }
 
@@ -342,11 +345,11 @@ export function overlayPayload<P extends { instructions?: string; tools?: unknow
   }
   if (typeof payload.greeting === "string") {
     const greeting = greetingFor(payload.greeting, a);
-    if (a.hoursMode.enabled) {
+    if (a.hoursMode.enabled || spamUsesHook(a)) {
       // The greeting is picked per call by the dynamic-variables webhook; the default
       // (no answer from us in time) is the normal greeting.
       out.greeting = "{{twin_greeting}}";
-      out.dynamic_variables = { twin_greeting: greeting, twin_open_now: "unknown" };
+      out.dynamic_variables = { twin_greeting: greeting, twin_open_now: "unknown", ...(spamUsesHook(a) ? { twin_blocked: "no", twin_anonymous: "no" } : {}) };
     } else {
       out.greeting = greeting;
       out.dynamic_variables = { twin_open_now: "unknown" };
@@ -354,7 +357,7 @@ export function overlayPayload<P extends { instructions?: string; tools?: unknow
     if (memory) out.dynamic_variables = { ...(out.dynamic_variables as object), twin_caller_context: "" };
     // Only ever set, never cleared: once set, our webhook keeps answering correctly
     // even when no automation needs it (clearing it isn't documented).
-    if ((usesOpenNow(a) || memory) && opts.publicUrl && opts.token) out.dynamic_variables_webhook_url = hookUrl(opts.publicUrl, client.id, opts.token);
+    if ((usesOpenNow(a) || memory || spamUsesHook(a)) && opts.publicUrl && opts.token) out.dynamic_variables_webhook_url = hookUrl(opts.publicUrl, client.id, opts.token);
   }
   return out as P & Record<string, unknown>;
 }
@@ -578,7 +581,7 @@ export function statusFor(client: Business, a: AutomationSettings, i: StatusInpu
     return { state: "on", label: openNow(client.settings) ? "On · open now" : "On · closed now", detail: `${what} ${how}` };
   })();
 
-  return { transfer, textBack, recording, language, callLimits, hoursMode, ...followupStatuses(client, a, { demo: i.demo, smsNumber: i.smsNumber, emailReady: Boolean(i.emailReady), engine: i.engine }) };
+  return { transfer, textBack, recording, language, callLimits, hoursMode, ...followupStatuses(client, a, { demo: i.demo, smsNumber: i.smsNumber, emailReady: Boolean(i.emailReady), engine: i.engine }), spam: spamStatus(a, { engine: i.engine, publicUrl: i.publicUrl }) };
 }
 
 export async function smsNumberOf(client: Business): Promise<string | null | undefined> {
@@ -620,7 +623,7 @@ export async function automationsState(client: Business, canEdit: boolean) {
 // Telnyx calls it at the start of each conversation. The token in the path is the key;
 // the answer only says whether the business is open and which greeting to use.
 
-export async function dynamicVariables(clientId: string, token: string, req?: Request): Promise<Response> {
+export async function dynamicVariables(clientId: string, token: string, call: { caller?: unknown; channel?: unknown } = {}): Promise<Response> {
   const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
   const client = await getClient(clientId);
   const row = client ? await loadAutomations(clientId) : null;
@@ -630,30 +633,21 @@ export async function dynamicVariables(clientId: string, token: string, req?: Re
   const a = row.settings;
   const open = openNow(client.settings);
   const normal = client.settings.paused ? greetingOf(client.settings) : greetingFor(client.settings.greeting, a);
+  const spam = spamVariables(a, call.caller, call.channel);
+  const phone = typeof call.caller === "string" ? call.caller : "";
   // Telnyx gives up after about 1.5 seconds: never let the history lookup hold the answer up.
   const context = await Promise.race([
-    callerOf(req).then((phone) => (client.settings.paused || !phone ? "" : callerContext(client, phone))),
+    client.settings.paused || !phone || spam.reject ? Promise.resolve("") : callerContext(client, phone),
     new Promise<string>((r) => setTimeout(() => r(""), 1000)),
   ]).catch(() => "");
   return json({
     dynamic_variables: {
       twin_open_now: open ? "yes" : "no",
-      twin_greeting: a.hoursMode.enabled && !open && !client.settings.paused ? afterHoursGreeting(client, a) : normal,
+      twin_greeting: spam.reject ? BLOCKED_GREETING : a.hoursMode.enabled && !open && !client.settings.paused ? afterHoursGreeting(client, a) : normal,
       twin_caller_context: context,
+      ...(spamUsesHook(a) ? { twin_blocked: spam.twin_blocked, twin_anonymous: spam.twin_anonymous } : {}),
     },
   });
-}
-
-/** The caller's number from Telnyx's assistant.initialization event (data.payload.telnyx_end_user_target). */
-async function callerOf(req?: Request): Promise<string> {
-  if (!req || req.method !== "POST") return "";
-  try {
-    const body = JSON.parse((await req.text()).slice(0, 20_000));
-    const p = body?.data?.payload ?? body?.payload ?? {};
-    return typeof p.telnyx_end_user_target === "string" ? p.telnyx_end_user_target : "";
-  } catch {
-    return "";
-  }
 }
 
 /**

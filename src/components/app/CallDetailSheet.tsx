@@ -16,6 +16,7 @@ import { useWorkspace } from "@/lib/app/workspace";
 import { cn } from "@/lib/utils";
 import { CallStatusBadge, OutcomeBadge, SentimentBadge, StatusBadge, AppointmentBadge, LeadStageBadge } from "./StatusBadge";
 import { EmptyState, KeyValue, SectionLabel } from "./primitives";
+import { BlockNumberButton } from "./BlockNumberButton";
 
 // Answered's call drawer, on our data: the call_log row, the transcript and summary
 // from the phone provider (or the test lab's sample call), the bookings and call-backs
@@ -145,6 +146,9 @@ export function CallDetailSheet({
                     <Phone className="mr-2 h-4 w-4" /> Call {call.contact?.full_name?.split(" ")[0] || "them"} back
                   </a>
                 </Button>
+              ) : null}
+              {!admin && ws.access.canEdit && forBusiness && call.direction === "inbound" && /^\+\d{7,15}$/.test(call.from_number ?? "") ? (
+                <BlockNumberButton businessId={forBusiness} number={call.from_number!} />
               ) : null}
 
               <KeyValue

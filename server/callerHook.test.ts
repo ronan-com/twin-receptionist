@@ -1,3 +1,4 @@
+import { callerOf } from "./routes/automations";
 // The dynamic-variables webhook with a caller: answers fast with the caller's context, and with an
 // empty default when anything is missing or wrong.
 //   bun test --env-file=../.env server/callerHook.test.ts
@@ -36,23 +37,23 @@ describe("dynamic variables webhook", () => {
     expect((await ensureAutomationRow(a.id)).token).toBe(token);
   });
   test("returns the caller's context for the right receptionist", async () => {
-    const v = await vars(await dynamicVariables(a.id, token, initEvent("+61412345678")));
+    const v = await vars(await dynamicVariables(a.id, token, await callerOf(initEvent("+61412345678"))));
     expect(v.twin_caller_context).toContain("leaking tap");
     expect(v.twin_open_now).toBeDefined();
   });
   test("a stranger, a missing body or a GET gets an empty context", async () => {
-    expect((await vars(await dynamicVariables(a.id, token, initEvent("+61499999999")))).twin_caller_context).toBe("");
-    expect((await vars(await dynamicVariables(a.id, token, new Request("https://x.test/hook", { method: "POST", body: "not json" })))).twin_caller_context).toBe("");
-    expect((await vars(await dynamicVariables(a.id, token, new Request("https://x.test/hook")))).twin_caller_context).toBe("");
+    expect((await vars(await dynamicVariables(a.id, token, await callerOf(initEvent("+61499999999"))))).twin_caller_context).toBe("");
+    expect((await vars(await dynamicVariables(a.id, token, await callerOf(new Request("https://x.test/hook", { method: "POST", body: "not json" }))))).twin_caller_context).toBe("");
+    expect((await vars(await dynamicVariables(a.id, token, await callerOf(new Request("https://x.test/hook"))))).twin_caller_context).toBe("");
     expect((await vars(await dynamicVariables(a.id, token))).twin_caller_context).toBe("");
   });
   test("the same caller on another business's hook sees nothing of the first", async () => {
     const tb = (await ensureAutomationRow(b.id)).token;
-    expect((await vars(await dynamicVariables(b.id, tb, initEvent("+61412345678")))).twin_caller_context).toBe("");
+    expect((await vars(await dynamicVariables(b.id, tb, await callerOf(initEvent("+61412345678"))))).twin_caller_context).toBe("");
   });
   test("a wrong key, or another business's key, is refused", async () => {
-    expect((await dynamicVariables(a.id, "wrongwrongwrongwrong", initEvent("+61412345678"))).status).toBeGreaterThanOrEqual(400);
+    expect((await dynamicVariables(a.id, "wrongwrongwrongwrong", await callerOf(initEvent("+61412345678")))).status).toBeGreaterThanOrEqual(400);
     const tb = (await ensureAutomationRow(b.id)).token;
-    expect((await dynamicVariables(a.id, tb, initEvent("+61412345678"))).status).toBeGreaterThanOrEqual(400);
+    expect((await dynamicVariables(a.id, tb, await callerOf(initEvent("+61412345678")))).status).toBeGreaterThanOrEqual(400);
   });
 });

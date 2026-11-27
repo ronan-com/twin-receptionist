@@ -57,7 +57,7 @@ export function assistPanel(h: Helpers, sid: string, b: Buyer, s: SetupData): st
   const email = form("email", `<p class="hint">Resend (the wizard adds the sending domain, and the records go in with their domain's DNS below).</p>${pass("key", "Resend API key", secretHint(b.id, "resend_key"), "re_...")}${text("address", "Send from", s.email?.address || "", "hello@mail.theirbusiness.com")}`, "Check and save")
     + form("email-smtp", `<p class="hint">Or their own SMTP.</p><div class="two"><div>${text("host", "SMTP server", s.email?.smtp?.host, "smtp.example.com")}</div><div>${text("port", "Port", String(s.email?.smtp?.port || 587))}</div></div><div class="two"><div>${text("user", "Username", s.email?.smtp?.user)}</div><div>${pass("pass", "Password", secretHint(b.id, "smtp_password"))}</div></div>${text("address", "Send from", s.email?.address || "", "hello@theirbusiness.com")}`, "Check and save", "btn o");
   const cal = form("calendars", `<p class="hint">Needs their own domain below. Redirect: <code>https://${esc(hostOf(s) || "app.theirdomain")}/api/oauth/google/callback</code> (and /microsoft/).</p><div class="two"><div>${text("googleId", "Google client ID", s.calendars?.google?.clientId)}</div><div>${pass("googleSecret", "Google client secret", secretHint(b.id, "google_secret"))}</div></div><div class="two"><div>${text("microsoftId", "Microsoft client ID", s.calendars?.microsoft?.clientId)}</div><div>${pass("microsoftSecret", "Microsoft client secret", secretHint(b.id, "microsoft_secret"))}</div></div>`, "Check and save");
-  const backups = form("openrouter", `<p class="hint">Switches on "Ask for help" in their dashboard.</p>${pass("key", "OpenRouter API key", secretHint(b.id, "openrouter_key"))}`, "Check and save", "btn o");
+  const backups = form("openrouter", `<p class="hint">Powers their receptionists and the "Ask for help" button.</p>${pass("key", "OpenRouter API key", secretHint(b.id, "openrouter_key"))}`, "Check and save");
 
   // ---- domain + DNS ----
   const d = s.domain;
@@ -104,7 +104,6 @@ export function assistPanel(h: Helpers, sid: string, b: Buyer, s: SetupData): st
     if (s.phase === "failed" || s.phase === "create_failed") return `${h.notice("err", esc(s.error || "The install stopped."))}<form method="post" action="/admin/b/${b.id}/assist/install" class="sf">${h.hiddenT(sid)}<button class="btn p" type="submit">Try the install again</button></form>`;
     return `<form method="post" action="/admin/b/${b.id}/assist/install" class="sf">${h.hiddenT(sid)}${can.ok ? `<p class="hint">Everything required is filled in. Optional extras left empty are simply not added. This runs the same install as the buyer's Install button, in their ${RAILWAY ? "Railway" : "DigitalOcean"} account.</p><button class="btn p" type="submit" data-confirm="Install ${esc(b.name)} now?">Install for them</button>` : `<p class="hint">${esc(can.why)}</p><button class="btn p" type="button" disabled>Install for them</button>`}</form>`;
   })();
-  const extrasBtn = idle && !s.extrasDone ? `<form method="post" action="/admin/b/${b.id}/assist/extras" class="sf">${h.hiddenT(sid)}<button class="btn o" type="submit">Mark optional extras finished (so the buyer skips that screen)</button></form>` : "";
 
   const audit = supportLog(b.id, 40);
   const auditHtml = audit.length ? `<ul class="audit">${audit.map((l) => `<li><span class="hint">${esc(h.when(l.at))}</span> · <b>${esc(l.admin_email)}</b> · ${esc(l.action)}${l.note ? ` · <span class="hint">${esc(l.note)}</span>` : ""}</li>`).join("")}</ul>` : `<p class="hint">Nothing yet.</p>`;
@@ -119,8 +118,7 @@ ${box(RAILWAY ? "Hosting: Railway token" : "Server: DigitalOcean token", hosting
 ${box("Phones: Telnyx key, or Vapi + Twilio", phones)}
 ${box("Optional: email (Resend or SMTP)", email)}
 ${box("Optional: calendars (Google, Microsoft)", cal)}
-${box("Optional: AI help (OpenRouter)", backups)}
-${extrasBtn}
+${box("AI: OpenRouter key", backups)}
 <h3>Domain and DNS</h3>
 ${dnsState}
 ${box("Their own domain: Cloudflare, GoDaddy or by hand", dnsForms, !!d && !d.confirmed)}
@@ -201,7 +199,6 @@ export async function assistRoute(what: string, b: Buyer, f: Record<string, stri
       return back(await setupHost(b, c.email, { host: f.host || "", provider, token: f.token, gdKey: f.gdKey, gdSecret: f.gdSecret, replace: bool(f.replace), keep: bool(f.keep) }));
     }
     case "host-drop": return back(dropHost(b, c.email));
-    case "extras": return back(await finishExtras(b, c.email));
     case "install": return back(await installFor(b, c.email));
     case "check-dns-now": {
       if (allow(`assist-dns:${b.id}`, 30, 5 * 60_000)) return back({ ok: false, message: "Checked a lot just now. Wait a minute.", kind: "err" });

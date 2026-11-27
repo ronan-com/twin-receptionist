@@ -7,6 +7,7 @@ import { DEMO, demoSample, isDemo } from "./demo";
 import { esc } from "./pages";
 import { howTo } from "./content";
 import { chatBubble, chatHead } from "./chat";
+import { oauthEnabled, type OAuthProvider } from "./oauth";
 import { PHONE_LATER, agencyUrl, canView, firstOpen, hostOf, locked, oauthRedirect, phoneSkipped, stepDone, updateInfo, webUrl, zoneOf } from "./setup";
 import { detailOf, hasAssist, helpedStep, stepRows, type AssistId } from "./assist";
 import { personHelpHtml } from "./wizhelp";
@@ -40,19 +41,20 @@ const icon = (n: string, cls = "i") => `<svg class="${cls}" viewBox="0 0 24 24" 
 const bars = `<svg viewBox="0 0 26 18" aria-hidden="true"><g fill="none" stroke-width="2.2" stroke-linecap="round"><path stroke="#635bff" d="M2 13v3"/><path stroke="#7c6bff" d="M6 10v6"/><path stroke="#a78bfa" d="M10 5v11"/><path stroke="#ff5caa" d="M14 2v14"/><path stroke="#ff7a59" d="M18 8v8"/><path stroke="#ffb03d" d="M22 12v4"/></g></svg>`;
 
 const META: Record<StepId, { title: string; short: string; icon: string; hue: string }> = {
-  welcome: { title: "Welcome", short: "What you'll need", icon: "sparkles", hue: "indigo" },
-  brand: { title: "Brand", short: "Name and owner", icon: "tag", hue: "violet" },
+  welcome: { title: "Welcome", short: "", icon: "sparkles", hue: "indigo" },
+  brand: { title: "Brand", short: "Name, logo, colour", icon: "tag", hue: "indigo" },
   domain: { title: "Domain", short: RAILWAY ? "Optional" : "Your web address", icon: "globe", hue: "cyan" },
   server: { title: "Server", short: "DigitalOcean", icon: "server", hue: "indigo" },
   railway: { title: "Hosting", short: "Railway", icon: "server", hue: "indigo" },
-  phones: { title: "Phones", short: "Telnyx", icon: "phone", hue: "coral" },
+  phones: { title: "Voice", short: "Telnyx", icon: "phone", hue: "indigo" },
+  ai: { title: "AI", short: "OpenRouter", icon: "sparkles", hue: "indigo" },
   email: { title: "Email", short: "Optional", icon: "mail", hue: "green" },
   calendars: { title: "Calendars", short: "Optional", icon: "calendar", hue: "magenta" },
   extras: { title: "Extras", short: "Optional, skip any", icon: "sparkles", hue: "cyan" },
   vapi: { title: "Vapi", short: "Backup option", icon: "phone", hue: "coral" },
   twilio: { title: "Twilio", short: "Backup option", icon: "phone", hue: "coral" },
-  install: { title: "Install", short: RAILWAY ? "About 10 minutes" : "About 15 minutes", icon: "rocket", hue: "violet" },
-  done: { title: "Live", short: "Your agency is live", icon: "party", hue: "green" },
+  install: { title: "Install", short: RAILWAY ? "About 10 min" : "About 15 min", icon: "rocket", hue: "violet" },
+  done: { title: "Live", short: "", icon: "party", hue: "green" },
 };
 
 interface Ctx { b: Buyer; s: SetupData; code: string; sid: string; view: StepId; flash?: SetupData["flash"] }
@@ -109,33 +111,28 @@ const P = (c: Ctx) => esc(c.s.brand?.productName || NEUTRAL);
 
 // ======================= screens =======================
 function welcome(c: Ctx) {
-  return `${head(c, "Let's set up your AI receptionist agency", RAILWAY ? "By the end your agency is live under your brand, on your own Railway account. You only need two accounts: Railway and Telnyx." : "By the end your agency runs at app.your-domain, under your brand, on a server you own.")}
-<div class="tiles">
-  <div class="tile indigo"><div class="ti">${icon("home")}</div><b>Yours to keep</b><span>Your brand, ${RAILWAY ? "hosting" : "server"}, accounts and clients. We have no login to them.</span></div>
-  <div class="tile magenta"><div class="ti">${icon("clock")}</div><b>About ${RAILWAY ? "15" : "20"} minutes</b><span>Close the page any time; this link picks up where you left off.</span></div>
-  <div class="tile coral"><div class="ti">${icon("key")}</div><b>Have these ready</b><span>${RAILWAY ? "Railway (hosting) and Telnyx (phones). Email and your own domain are optional extras you can add now or later." : "Your domain, DigitalOcean, Telnyx and Resend accounts."}</span></div>
-</div>
+  return `${head(c, "Set up your agency", RAILWAY ? "Four short steps. About 10 minutes." : "A few short steps. About 20 minutes.")}
+<ul class="needs"><li><b>${RAILWAY ? "Hosting" : "Server"}</b><span>${RAILWAY ? "Railway" : "DigitalOcean"}</span></li><li><b>Voice</b><span>Telnyx</span></li><li><b>AI</b><span>OpenRouter</span></li></ul>
+<p class="hint">Everything stays yours. Close the page any time: this link picks up where you left off.</p>
 ${mainForm(c, "start", "")}
 ${nav(c, primary("Start"), { back: false })}`;
 }
 
 function brand(c: Ctx) {
   const br = c.s.brand;
-  return `${head(c, "Name your brand", "Your brand appears on every screen and email your clients see.")}
+  return `${head(c, "Your brand", "")}
 <div class="body">${mainForm(c, "brand", `
-  <label class="f" for="productName">Brand name</label>
-  <input id="productName" name="productName" maxlength="60" required value="${val(c, "productName", br?.productName || "")}" placeholder="e.g. Acme AI">
-  <label class="f" for="ownerEmail">Owner email</label>
+  <label class="f" for="productName">Name</label>
+  <input id="productName" name="productName" maxlength="60" required value="${val(c, "productName", br?.productName || "")}" placeholder="Acme AI">
+  <label class="f" for="ownerEmail">Your email</label>
   <input id="ownerEmail" name="ownerEmail" type="email" maxlength="200" required autocomplete="email" value="${val(c, "ownerEmail", br?.ownerEmail || c.b.email)}">
-  <p class="hint">You'll sign in with this as the owner of your agency.</p>
-  <label class="f" for="logoFile">Your logo (optional)</label>
+  <label class="f" for="logoFile">Logo <span class="tag">Optional</span></label>
   <input id="logoFile" type="file" accept="image/png,image/jpeg,image/webp">
   <input type="hidden" id="logo" name="logo" value="${esc(br?.logo || "")}">
   <input type="hidden" id="removeLogo" name="removeLogo" value="">
-  <p class="hint" id="logoNote">${br?.logo ? "Logo added. Choose another file to replace it." : "A PNG or JPG works best. We shrink it for you."}</p>
+  <p class="hint" id="logoNote">${br?.logo ? "Logo added. Pick another to replace it." : ""}</p>
   <p class="logoRow"><img id="logoPreview" alt="Your logo" width="96"${br?.logo ? ` src="${esc(br.logo)}"` : " hidden"}> <button type="button" class="linkbtn" id="logoRemove"${br?.logo ? "" : " hidden"}>Remove logo</button></p>
-  <label class="f" for="colour">Brand colour</label><input id="colour" name="colour" type="color" value="${esc(br?.colour || "#635bff")}">
-  <p class="hint">Used for buttons and highlights in your dashboard. You can change the logo and colour later in Settings.</p>`)}</div>
+  <label class="f" for="colour">Colour</label><input id="colour" name="colour" type="color" value="${esc(br?.colour || "#4f46e5")}">`)}</div>
 ${nav(c, primary("Continue"))}`;
 }
 
@@ -176,15 +173,28 @@ ${nav(c, `${mini(c, "domain-edit", "Change domain", "btn o")}${mini(c, "cf-reche
 ${nav(c, `${RAILWAY ? mini(c, "domain-skip", "Skip for now", "btn o") : c.b.demo === 1 ? mini(c, "domain", "Skip this step", "btn o", "", `<input type="hidden" name="domain" value="">`) : ""}${primary("Continue")}`)}`;
 }
 
+/** "Login with ..." button. Only drawn when that login is set up on this site. */
+const oauthBtn = (c: Ctx, p: OAuthProvider, label: string) => (oauthEnabled(p) ? `<p><a class="btn p big oauth" data-oauth="${p}" href="${base(c)}/oauth/${p}">${label}</a></p>` : "");
+/** The paste-a-key form: open on its own when there's no login button, otherwise tucked under "or paste". */
+const pasteBox = (c: Ctx, p: OAuthProvider, form: string, open = false) =>
+  oauthEnabled(p) ? `<details class="alt"${open || c.flash?.kind === "err" ? " open" : ""}><summary>Paste a key instead</summary>${form}</details>` : form;
+const okRow = (text: string) => `<div class="okrow">${icon("check")}<b>${text}</b></div>`;
+
 function railwayStep(c: Ctx) {
   const saved = secretHint(c.b.id, "railway_token");
-  return `${head(c, "Connect Railway", "Your agency runs in your own Railway account. You pay Railway directly, from US$5 a month.")}
-<div class="body">${mainForm(c, "railway", `
-  ${secretIn("token", "Paste your Railway token", saved, "Railway account token")}
-  <p class="hint">Railway's free trial (US$5 of credit) is enough to start. Add a card in Railway (Hobby plan, US$5 a month) before the credit runs out. Make the token with <b>No workspace</b>.</p>
-  ${showMeHow(["railway-token"])}`)}</div>
-${nav(c, primary("Check and continue"))}`;
+  const on = !!c.s.railway?.confirmed && hasS(c, "railway_token");
+  const form = `<form id="main" method="post" action="${base(c)}/a/railway">${hidden(c)}
+  ${secretIn("token", "Railway token", saved, "Railway token")}
+  <p class="hint">Create it with <b>No workspace</b>. Hobby plan, US$5 a month.</p>
+  ${showMeHow(["railway-token"])}
+  <p><button class="btn o" type="submit">Check token</button></p></form>`;
+  return `${head(c, "Hosting", "Your agency runs on your own Railway account.")}
+<div class="body">${on ? okRow(`Railway connected${c.s.railway?.workspaceName ? ` · ${esc(c.s.railway.workspaceName)}` : ""}`) : ""}
+${oauthBtn(c, "railway", on ? "Login with Railway again" : "Login with Railway")}
+${pasteBox(c, "railway", form, !oauthEnabled("railway"))}</div>
+${nav(c, on ? mini(c, "railway-continue", `Continue ${icon("right")}`, "btn p") : "")}`;
 }
+const hasS = (c: Ctx, n: Parameters<typeof secretHint>[1]) => !!secretHint(c.b.id, n) || c.b.demo === 1 || c.s.phase !== "idle";
 
 /** Railway order, "I'll add the records myself": the email records to add now. */
 function domainManualRecords(c: Ctx) {
@@ -226,9 +236,9 @@ ${nav(c, primary("Check and continue"))}`;
 }
 
 /** Railway: the buyer can install with no phone provider and connect it later in their dashboard. */
-const skipPhones = (c: Ctx) => (RAILWAY && !c.s.phones?.confirmed && !c.s.vapi?.confirmed ? `<div class="skip-phones">${mini(c, "phones-skip", "Skip for now — connect it later in your dashboard", "linkbtn", " data-skip-phones")}</div>` : "");
+const skipPhones = (c: Ctx) => (RAILWAY && !c.s.phones?.confirmed && !c.s.vapi?.confirmed ? `<div class="skip-phones">${mini(c, "phones-skip", "Skip for now", "linkbtn", " data-skip-phones")}</div>` : "");
 /** After a skip: a gentle nudge to connect now (before the install), and the same reminder on the Done screen. */
-const phoneLaterNote = (c: Ctx) => notice("warn", `<b>Recommended: connect Telnyx or Vapi now so your voice receptionist can start.</b><br><b>Phone provider:</b> ${esc(PHONE_LATER.charAt(0).toLowerCase() + PHONE_LATER.slice(1))}. Until then your dashboard works, but receptionists can't be made.${c.s.phase === "idle" && c.view !== "phones" ? ` <a class="btn o" href="${base(c)}?step=phones" data-action="connect-phones">Go back and connect</a>` : ""}`);
+const phoneLaterNote = (c: Ctx) => notice("warn", `<b>No voice provider yet.</b> ${esc(PHONE_LATER)}.${c.s.phase === "idle" && c.view !== "phones" ? ` <a class="btn o" href="${base(c)}?step=phones" data-action="connect-phones">Connect now</a>` : ""}`);
 
 const phonesSummary = (c: Ctx) => {
   if (phoneSkipped(c.s)) return esc(PHONE_LATER);
@@ -241,36 +251,40 @@ const phonesSummary = (c: Ctx) => {
   return bits.filter(Boolean).join(" + ") || "Telnyx";
 };
 
-/** The second option on the Phones step: Vapi for voice, Twilio for numbers and texts. Its own form, checked like the backup steps. */
+/** Vapi (voice) with optional Twilio (numbers and texts): the way in when Telnyx isn't used, or a backup engine next to it. */
 function vapiTwilio(c: Ctx): string {
-  const on = !!c.s.vapi?.confirmed && !!c.s.twilio?.confirmed;
+  const tel = !!c.s.phones?.confirmed;
+  const on = !!c.s.vapi?.confirmed;
   const fl = c.flash?.form || {};
-  return `<section class="phone-alt" data-option="vapi-twilio">
-  <h3 class="extras-head">Option B: Vapi <span class="tag">Twilio optional</span></h3>
-  <p class="hint">Vapi runs the receptionists' voice. That's all you need. <b>Twilio is optional</b>: add it (Option C, Vapi + Twilio) for Australian phone numbers and texts, now or later. Leave the two Twilio boxes empty to use Vapi on its own.</p>
-  ${on ? notice("ok", `Vapi connected (${esc(secretHint(c.b.id, "vapi_key") || "Vapi")})${c.s.twilio?.confirmed ? `, Twilio ${esc(c.s.twilio.sid || "")}` : ", no Twilio yet"}. Your receptionists run on Vapi. ${mini(c, "phones-vapi-remove", "Use Telnyx instead", "linkbtn")}`) : ""}
-  <form id="vapitwilio" method="post" action="${base(c)}/a/phones-vapi">${hidden(c)}
-  <div class="two"><div>${secretIn("vapiKey", "Private key", secretHint(c.b.id, "vapi_key"), "Vapi private API key")}</div>
-  <div><label class="f" for="vapiPublic">Vapi public key</label><input id="vapiPublic" name="vapiPublic" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" maxlength="300" placeholder="Public key (used by the browser test call)" value="${esc(fl.vapiPublic ?? "")}"></div></div>
+  const form = `<form id="vapitwilio" method="post" action="${base(c)}/a/phones-vapi">${hidden(c)}
+  <div class="two"><div>${secretIn("vapiKey", "Private key", secretHint(c.b.id, "vapi_key"), "Vapi private key")}</div>
+  <div><label class="f" for="vapiPublic">Vapi public key</label><input id="vapiPublic" name="vapiPublic" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" maxlength="300" placeholder="Public key" value="${esc(fl.vapiPublic ?? "")}"></div></div>
   <div class="two"><div><label class="f" for="twilioSid">Twilio Account SID <span class="tag">Optional</span></label><input id="twilioSid" name="twilioSid" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" maxlength="60" placeholder="AC..." value="${esc(fl.twilioSid ?? c.s.twilio?.sid ?? "")}"></div>
-  <div>${secretIn("twilioToken", "Auth Token", secretHint(c.b.id, "twilio_token"), "Twilio Auth Token (optional)")}</div></div>
+  <div>${secretIn("twilioToken", "Auth Token", secretHint(c.b.id, "twilio_token"), "Twilio Auth Token")}</div></div>
   ${showMeHow(["vapi-account", "twilio-account"])}
-  <p><button class="btn o" type="submit" form="vapitwilio" data-action="phones-vapi">Check and use Vapi ${icon("right")}</button></p>
-  </form></section>`;
+  <p><button class="btn o" type="submit" data-action="phones-vapi">Check and save</button></p></form>`;
+  const status = on ? okRow(`Vapi connected${c.s.twilio?.confirmed ? " + Twilio" : ""}${tel ? " (backup)" : ""} ${mini(c, "phones-vapi-remove", "Remove", "linkbtn")}`) : "";
+  return `<section class="phone-alt" data-option="vapi-twilio"><details class="alt"${on || c.flash?.form?.vapiPublic !== undefined || (c.flash?.kind === "err" && c.flash?.form?.twilioSid !== undefined) ? " open" : ""}><summary>${tel ? "Add Vapi as a backup" : "Can't use Telnyx? Use Vapi + Twilio"}</summary>${status}${form}</details></section>`;
 }
 
 function phones(c: Ctx) {
+  const s = c.s;
+  const tel = !!s.phones?.confirmed;
   const saved = secretHint(c.b.id, "telnyx_key");
-  return `${head(c, "Connect your voice provider", "Pick one so your receptionists can start talking. Option A (Telnyx) is recommended; Option B (Vapi) also works, with Twilio optional for numbers and texts. You can also skip and connect it later.")}
-<div class="body">${mainForm(c, "phones", `
-  <h3>Option A: Telnyx <span class="tag">Recommended</span></h3>
+  const nums = s.phones?.numbers || [];
+  const connected = tel ? `${okRow(`Telnyx connected${s.phones?.balance ? ` · ${esc(s.phones.balance)}` : ""}`)}
+  <div class="nums"><h3>Your numbers</h3>${nums.length ? `<ul>${nums.map((n) => `<li>${esc(n)}</li>`).join("")}</ul>` : `<p class="hint">No numbers on this account yet. Add them later.</p>`}</div>` : "";
+  const form = `<form id="main" method="post" action="${base(c)}/a/phones">${hidden(c)}
   ${secretIn("key", "KEY...", saved, "Telnyx API key")}
-  ${notice("warn", "A new Telnyx account is a trial: callers can't get through until it's upgraded and has credit.")}
-  ${RAILWAY ? `<p class="hint">Still waiting for Telnyx to approve your account? That can take a few hours to two days. Skip this for now: your agency installs and opens as normal, and you paste the key later in your dashboard under <b>Connections</b>.</p>` : ""}
-  ${showMeHow(["telnyx-account", "telnyx-api-key"])}`)}
-  ${vapiTwilio(c)}
-  ${phoneSkipped(c.s) ? phoneLaterNote(c) : skipPhones(c)}</div>
-${nav(c, c.s.vapi?.confirmed && c.s.twilio?.confirmed && !c.s.phones?.confirmed ? `<a class="btn p" href="${base(c)}?step=${firstOpen(c.b, c.s)}">Continue ${icon("right")}</a>` : primary("Check and continue"))}`;
+  ${showMeHow(["telnyx-account", "telnyx-api-key"])}
+  <p><button class="btn o" type="submit">Check key</button></p></form>`;
+  const ready = tel || !!s.vapi?.confirmed || phoneSkipped(s);
+  return `${head(c, "Voice", "Telnyx carries your calls.")}
+<div class="body">${connected}
+${tel ? "" : `${oauthBtn(c, "telnyx", "Sign in with Telnyx")}${pasteBox(c, "telnyx", form, !oauthEnabled("telnyx"))}`}
+${vapiTwilio(c)}
+${phoneSkipped(s) ? phoneLaterNote(c) : skipPhones(c)}</div>
+${nav(c, ready ? mini(c, "phones-continue", `Continue ${icon("right")}`, "btn p") : "")}`;
 }
 
 function vapi(c: Ctx) {
@@ -380,6 +394,21 @@ ${nav(c, `<a class="btn o" href="${base(c)}?step=domain">Add my domain</a>${prim
 <div class="body">${mainForm(c, "calendars", `<div class="choice">${card("google", "Google", "Client ID")}${card("microsoft", "Microsoft", "Application (client) ID")}</div>
   ${showMeHow(["google-oauth", "microsoft-oauth"])}`)}</div>
 ${nav(c, `${mini(c, "cal-skip", "Skip for now")}${primary("Check and continue")}`)}`;
+}
+
+// ---------------- AI (OpenRouter) ----------------
+function aiStep(c: Ctx) {
+  const on = !!c.s.ai?.confirmed;
+  const form = `<form id="main" method="post" action="${base(c)}/a/ai">${hidden(c)}
+  ${secretIn("key", "sk-or-...", secretHint(c.b.id, "openrouter_key"), "OpenRouter key")}
+  ${showMeHow(["openrouter-key"])}
+  <p><button class="btn o" type="submit">Check key</button></p></form>`;
+  return `${head(c, "AI", "OpenRouter powers your receptionists' thinking.")}
+<div class="body">${on ? okRow("OpenRouter connected") : ""}
+${oauthBtn(c, "openrouter", on ? "Sign in with OpenRouter again" : "Sign in with OpenRouter")}
+${pasteBox(c, "openrouter", form, !oauthEnabled("openrouter"))}
+<p class="hint tip">Tip: turn on auto top-up at Railway, Telnyx and OpenRouter, so calls never stop.</p></div>
+${nav(c, on ? mini(c, "ai-continue", `Continue ${icon("right")}`, "btn p") : "")}`;
 }
 
 // ---------------- optional extras (Railway) ----------------
@@ -568,45 +597,33 @@ function lockedOut(c: Ctx): string {
 ${mini(c, "owner-reset", `Reset your owner password ${icon("right")}`, "btn o", " data-owner-reset")}</details>`;
 }
 
-/** Done screen: what's still optional, with how to add each one later (their same setup link keeps showing this). */
+/** Done screen: what's still optional, each as three short steps (their same setup link keeps showing this). */
 function laterCards(c: Ctx, url: string): string {
   const s = c.s, have = extrasState(s);
   const where = esc(url.replace(/^https?:\/\//, ""));
   const cards: string[] = [];
-  const late = (ico: string, title: string, text: string, steps: string[]) =>
-    `<div class="xcard late"><div class="xh">${icon(ico)}<b>${title}</b><span class="tag">Optional</span></div><p>${text}</p><details><summary>How to add it later</summary><ol>${steps.map((x) => `<li>${x}</li>`).join("")}</ol></details></div>`;
-  if (!have.email) cards.push(late("mail", "Your own email", "Until then, invite links show on screen for you to copy and send yourself. Forgot your own password? Use <b>Locked out? Reset your owner password</b> on this page.", [
-    "Make a Resend account and a domain you own (Resend sends from your domain).",
-    `Open your dashboard, then <b>Settings</b>, then <b>Email and calendars</b>.`,
-    "Paste your mail server address, like <code>smtps://resend:YOUR_RESEND_KEY@smtp.resend.com:465</code>, and the address emails come from. Press <b>Send a test</b>.",
-    "Add the DNS records Resend shows for your domain, where your DNS is managed. Resend tells you when they're verified.",
+  const late = (ico: string, title: string, steps: string[], card = "") =>
+    `<div class="xcard late"${card ? ` data-card="${card}"` : ""}><div class="xh">${icon(ico)}<b>${title}</b></div><details><summary>How</summary><ol>${steps.map((x) => `<li>${x}</li>`).join("")}</ol></details></div>`;
+  if (phoneSkipped(s)) cards.push(late("phone", "Voice provider", [
+    "Open your dashboard, then <b>Connections</b>.",
+    "Press <b>Connect your key</b> and paste your Telnyx key.",
+  ], "phone-later"));
+  if (!have.domain) cards.push(late("globe", "Your own domain", [
+    `In Railway open the <b>app</b> service, then <b>Settings</b>, then <b>Networking</b>.`,
+    "Add <code>app.yourbusiness.com</code> and the records Railway shows.",
+    "Set <code>PUBLIC_URL</code> in <b>Variables</b> to the new address.",
   ]));
-  if (!have.domain) cards.push(late("globe", "Your own web address", `Right now your agency is at <b>${where}</b>. You can put it on app.yourbusiness.com whenever you like.`, [
-    "Open your project in <b>Railway</b>, click the <b>app</b> service, then <b>Settings</b>, then <b>Networking</b>, then <b>Custom Domain</b>. Type <code>app.yourbusiness.com</code>.",
-    "Railway shows you a CNAME and a TXT record. Add both where your domain's DNS is managed (your registrar, or Cloudflare with the proxy off).",
-    "When Railway shows the domain as active, open the app service's <b>Variables</b> and change <code>PUBLIC_URL</code> to <code>https://app.yourbusiness.com</code>. Railway restarts the app.",
+  if (!have.email) cards.push(late("mail", "Email sender", [
+    "Open your dashboard, then <b>Settings</b>, then <b>Email and calendars</b>.",
+    "Paste your mail server address and the From address.",
+    "Press <b>Send a test</b>.",
   ]));
-  if (!have.calendars) cards.push(late("calendar", "Calendar booking", "Let receptionists book into Google or Outlook calendars.", [
-    `In Google Cloud (or Microsoft Entra) make an OAuth app. Its redirect address is <code>${esc(url)}/api/oauth/google/callback</code> (Microsoft: <code>.../microsoft/callback</code>).`,
-    "Open your dashboard, then <b>Settings</b>, then <b>Email and calendars</b>, and paste the client ID and secret.",
-    `The setup guide's <a href="/guide#accounts" target="_blank" rel="noopener">calendar how-tos</a> walk through each one.`,
+  if (!have.calendars) cards.push(late("calendar", "Calendars", [
+    `Make a Google or Microsoft app. Redirect: <code>${esc(url)}/api/oauth/google/callback</code>.`,
+    "Open your dashboard, then <b>Settings</b>, then <b>Email and calendars</b>.",
+    "Paste the client ID and secret.",
   ]));
-  if (phoneSkipped(s)) cards.unshift(`<div class="xcard late" data-card="phone-later"><div class="xh">${icon("phone")}<b>Phone provider</b><span class="tag">Not connected yet</span></div><p>${esc(PHONE_LATER)}. Receptionists can be made as soon as it's connected.</p><details open><summary>How to connect it</summary><ol>${[
-    "Wait for Telnyx to approve your account, then add some credit.",
-    "In Telnyx open <b>API Keys</b> and create a key.",
-    "Open your dashboard, then <b>Connections</b>, press <b>Connect your key</b> and paste it. It's checked and used straight away: no restart.",
-  ].map((x) => `<li>${x}</li>`).join("")}</ol></details></div>`);
-  if (!phoneSkipped(s) && !have.vapi) cards.push(late("phone", "Other phone options", `Telnyx is your phone service. Vapi (for voice) with Twilio (numbers and texts) is the other option.`, [
-    "Open your dashboard, then <b>Connections</b>, then <b>Other options (backup)</b>.",
-    "Press <b>Use Vapi</b> to switch voice to your Vapi account, or <b>Connect Twilio</b>, and paste the keys. Each is checked before it's saved.",
-  ]));
-  // Not a wizard step and nothing to tick: it is only a Railway variable, so it is always listed.
-  cards.push(late("sparkles", "AI help for your team", "A built-in assistant that answers your team's questions about the dashboard. It switches on when you paste an OpenRouter key into Railway variables.", [
-    "Make an account at <b>openrouter.ai</b> and create an API key (add a few dollars of credit; each answer costs a fraction of a cent or two).",
-    "In Railway, open your project, click the <b>app</b> service, then <b>Variables</b>, and add <code>OPENROUTER_API_KEY</code> with the key as its value.",
-    "Railway restarts the app. Open your dashboard and look for the <b>Ask for help</b> button at the bottom right.",
-  ]));
-  return cards.length ? `<h3 class="extras-head">Optional extras: add them whenever you like</h3><div class="xcards">${cards.join("")}</div>` : "";
+  return cards.length ? `<h3 class="extras-head">Later</h3><p class="hint">Your agency works now at ${where}. Add these when you like.</p><div class="xcards">${cards.join("")}</div>` : "";
 }
 
 // ---------------- Update your agency (after Done) ----------------
@@ -687,27 +704,27 @@ ${nav(c, `<a class="btn p" href="${base(c)}/open">Open your dashboard ${icon("ex
   const shown = pending && temp ? temp : url;
   const have = extrasState(s);
   const { text, next } = logRead(c.b.id);
-  return `${head(c, "Your agency is live", `${P(c)} is running in your own Railway account. Everything here is yours.`)}
+  return `${head(c, "Your agency is live", "")}
 <div class="live"><div class="dot">● Live</div><a class="url" href="${esc(shown)}" target="_blank" rel="noopener noreferrer">${esc(shown)}</a>
 ${pending ? `<p class="hint">Your temporary address. <b>${esc(hostOf(s))}</b> starts working by itself once the records below are in.</p>` : !own ? `<p class="hint">This is your agency's address from Railway. Bookmark it. You can add your own domain later.</p>` : temp ? `<p class="hint">Also at your Railway address: <a href="${esc(temp)}" target="_blank" rel="noopener noreferrer">${esc(temp.replace(/^https?:\/\//, ""))}</a></p>` : ""}
-<p class="hint"><b>First time in:</b> you'll see <b>Set up your agency</b>. Use <b>${esc(s.brand?.ownerEmail || "your owner email")}</b> and pick a password. Only that address can create the first account.</p></div>
+<p class="hint">Open it and sign up as <b>${esc(s.brand?.ownerEmail || "your owner email")}</b>. Only that address can.</p></div>
 ${updateBanner(c)}
 ${phoneSkipped(s) ? phoneLaterNote(c) : ""}
 ${pending && s.finishRecords?.length ? `<div class="recbox"><b>Records for ${esc(hostOf(s))}</b>${recordTable(s.finishRecords, true)}</div>` : ""}
 <div class="checks"><b>Before you go</b>
-  <div>${icon("check")}<span>Delete your Railway token. <a href="https://railway.com/account/tokens" target="_blank" rel="noopener noreferrer">Open Railway</a></span></div>
+  <div>${icon("check")}<span>${s.railway?.via === "oauth" ? "Revoke our access in Railway." : "Delete your Railway token."} <a href="https://railway.com/account/tokens" target="_blank" rel="noopener noreferrer">Open Railway</a></span></div>
   ${dnsCheck(s)}
-  ${have.email ? `<div>${icon("check")}<span>${s.email?.mode === "resend" ? "Keep your Resend account: your agency sends email through it with its own send-only key." : "Keep your email login: your agency sends email with it."}</span></div>` : ""}
-  <div>${icon("check")}<span>Turn on backups for the Postgres volume in Railway (its Backups tab).</span></div>
+  <div>${icon("check")}<span>Turn on backups for the database in Railway.</span></div>
 </div>
 ${lockedOut(c)}
 ${laterCards(c, shown)}
-${notice("info", `We've deleted every key you gave us${s.assist?.keepDns ? " except the DNS access noted above" : ""}. We have no login to your Railway project or accounts. Your agency shares health and usage counts and a short, masked list of recent problems with us (never calls or customer details), and updates itself overnight. Sharing, Support access (which lets us sign in and, unless you say no, fix things for you, but never see your keys, billing or owner account) and automatic updates are all on by default so we can help you fast. You can switch each one off in your dashboard, under Settings: Support and Updates.`)}
+<p class="hint tip">Tip: turn on auto top-up at Railway, Telnyx and OpenRouter.</p>
+${notice("info", `We deleted the keys you gave us${s.assist?.keepDns ? " except the DNS access noted above" : ""} and have no login to your accounts. Your agency shares health counts with us (never calls or customer details). Switch it off in Settings, Support.`)}
 <details class="log"><summary>Show details</summary><pre id="log" data-next="${next}">${esc(text.slice(-60000))}</pre></details>
 ${nav(c, `<a class="btn p" href="${esc(shown)}" target="_blank" rel="noopener noreferrer">Open your dashboard ${icon("ext")}</a>`, { back: false })}`;
 }
 
-const SCREENS: Record<StepId, (c: Ctx) => string> = { welcome, brand, railway: railwayStep, domain: domainStep, server, phones, email, calendars, extras, vapi, twilio, install, done };
+const SCREENS: Record<StepId, (c: Ctx) => string> = { welcome, brand, railway: railwayStep, domain: domainStep, server, phones, ai: aiStep, email, calendars, extras, vapi, twilio, install, done };
 
 export function statusRev(c: { b: Buyer; s: SetupData }): string {
   const s = c.s;

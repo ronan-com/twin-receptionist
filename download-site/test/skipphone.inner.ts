@@ -35,7 +35,7 @@ async function buyer(n: string) {
   await run(b, "start");
   await run(b, "brand", { productName: "Acme Calls", ownerEmail: "boss@acme.test" });
   putSecret(b.id, "railway_token", "rail-token-0123456789");
-  updateSetup(b.id, (s) => { s.railway = { confirmed: true }; s.step = "phones"; });
+  updateSetup(b.id, (s) => { s.railway = { confirmed: true }; s.ai = { confirmed: true }; s.step = "phones"; });
   return b;
 }
 const html = (b: any, view: string) => wizardPage(b, getSetup(b.id), b.code, "sid", view as any);
@@ -44,31 +44,30 @@ const TKEY = "KEY0123456789ABCDEF0123456789_abcdefghijkl";
 describe("skip the phone step", () => {
   test("the Phones and Vapi steps offer Skip for now", async () => {
     const b = await buyer("a");
-    expect(html(b, "phones")).toContain("Skip for now — connect it later in your dashboard");
+    expect(html(b, "phones")).toContain("Skip for now");
     expect(html(b, "phones")).toContain('action="/setup/' + b.code + '/a/phones-skip"');
     // Secondary: a small text link under the options, not a button in the bar.
     expect(html(b, "phones")).toMatch(/<div class="skip-phones"><form[^>]*phones-skip"><input[\s\S]*?<button class="linkbtn"/);
-    expect(html(b, "phones").indexOf("Option B: Vapi")).toBeLessThan(html(b, "phones").indexOf("data-skip-phones"));
-    expect(html(b, "vapi")).toContain("Skip for now — connect it later in your dashboard");
+    expect(html(b, "phones").indexOf("Use Vapi + Twilio")).toBeLessThan(html(b, "phones").indexOf("data-skip-phones"));
+    expect(html(b, "vapi")).toContain("Skip for now");
   });
 
   test("skip: no network, no key kept, the wizard moves on and the install is allowed", async () => {
     const b = await buyer("b");
     // Before skipping, the install is held up by the phone step.
     await run(b, "phones-backup");
-    expect((await run(b, "extras-continue"))?.text).toMatch(/Telnyx/);
+    expect((await run(b, "install-start"))?.text).toMatch(/Telnyx/);
     putSecret(b.id, "telnyx_key", "KEY-half-typed-000000000000");
     stub(500, {});
     expect(await run(b, "phones-skip")).toBeNull();
     expect(calls).toHaveLength(0);
     const s = getSetup(b.id);
     expect(s.skipped?.phones).toBe(true);
-    expect(s.step).toBe("extras");
+    expect(s.step).toBe("install");
     expect(hasSecret(b.id, "telnyx_key")).toBe(false);
     // A gentle nudge to go back and connect now.
-    expect(html(b, "extras")).toContain("Recommended: connect Telnyx or Vapi now so your voice receptionist can start.");
-    expect(html(b, "extras")).toContain('href="/setup/' + b.code + '?step=phones" data-action="connect-phones">Go back and connect</a>');
-    expect(await run(b, "extras-continue")).toBeNull();
+    expect(html(b, "install")).toContain("No voice provider yet.");
+    expect(html(b, "install")).toContain('href="/setup/' + b.code + '?step=phones" data-action="connect-phones">Connect now</a>');
     expect(firstOpen(b, getSetup(b.id))).toBe("install");
     expect(installBlockers(b, getSetup(b.id))).toEqual([]);
     expect(detailOf(b, getSetup(b.id), "phones")).toMatch(/later in their dashboard/);
@@ -89,12 +88,11 @@ describe("skip the phone step", () => {
   test("the step list, install summary and Done screen say: not connected yet, connect it in your dashboard", async () => {
     const b = await buyer("d");
     await run(b, "phones-skip");
-    await run(b, "extras-continue");
     expect(html(b, "install")).toContain(PHONE_LATER);
     expect(html(b, "install")).toMatch(/<span class="s">Not connected yet — connect it in your dashboard \(Connections\)<\/span>/);
     updateSetup(b.id, (s) => { s.phase = "done"; s.step = "done"; s.resultUrl = "https://acme.up.railway.app"; s.tempUrl = "https://acme.up.railway.app"; });
     const done = html(b, "done");
-    expect(done).toContain("<b>Phone provider:</b> not connected yet — connect it in your dashboard (Connections)");
+    expect(done).toContain("<b>No voice provider yet.</b> Not connected yet — connect it in your dashboard (Connections)");
     expect(done).toContain('data-card="phone-later"');
   });
 
@@ -105,21 +103,22 @@ describe("skip the phone step", () => {
     expect(await run(b, "phones", { key: TKEY })).toBeNull();
     const s = getSetup(b.id);
     expect(s.skipped?.phones).toBeUndefined();
-    expect(phoneSettings(b.id, s)).toEqual({ TELNYX_API_KEY: TKEY });
-    expect(html(b, "phones")).not.toContain("Skip for now — connect it later");
+    expect(phoneSettings(b.id, s)).toEqual({ TELNYX_API_KEY: TKEY, VOICE_PROVIDER: "telnyx" });
+    expect(html(b, "phones")).not.toContain("data-skip-phones");
   });
 
   test("Telnyx path: one key on the Phones step, done, the app gets TELNYX_API_KEY", async () => {
     const b = await buyer("t");
     stub(200, { data: { available_credit: "12.50", currency: "USD" } });
     expect(await run(b, "phones", { key: TKEY })).toBeNull();
-    expect(calls).toEqual(["https://api.telnyx.com/v2/balance", "https://api.telnyx.com/v2/ai/assistants?page[size]=1", "https://api.telnyx.com/v2/call_control_applications?page[size]=1"]); // the balance, then the pretrial probes
-    expect(getSetup(b.id).step).toBe("extras");
-    expect(await run(b, "extras-continue")).toBeNull();
+    expect(calls).toEqual(["https://api.telnyx.com/v2/balance", "https://api.telnyx.com/v2/ai/assistants?page[size]=1", "https://api.telnyx.com/v2/call_control_applications?page[size]=1", "https://api.telnyx.com/v2/phone_numbers?page[size]=100&page[number]=1"]); // the balance, the pretrial probes, then the numbers already on the account
+    // It stays on Voice so the buyer sees what Telnyx found; Continue moves on.
+    expect(getSetup(b.id).step).toBe("phones");
+    expect(await run(b, "phones-continue")).toBeNull();
     expect(firstOpen(b, getSetup(b.id))).toBe("install");
     const vars = await railwayVars(b.id, getSetup(b.id), "rail-token-0123456789");
     expect(vars.TELNYX_API_KEY).toBe(TKEY);
-    expect("VOICE_PROVIDER" in vars).toBe(false);
+    expect(vars.VOICE_PROVIDER).toBe("telnyx");
   });
 
   test("Vapi + Twilio path: both checked on the Phones step itself, the step is done, the app gets Vapi and Twilio", async () => {
@@ -146,10 +145,9 @@ describe("skip the phone step", () => {
     const s = getSetup(b.id);
     expect(s.vapi?.confirmed).toBe(true);
     expect(s.twilio).toMatchObject({ sid: SID, confirmed: true });
-    expect(s.step).toBe("extras");
+    expect(s.step).toBe("install");
     expect(stepRows(b, s).find((r) => r.id === "phones")?.done).toBe(true);
     expect(phoneSettings(b.id, s)).toEqual({ VOICE_PROVIDER: "vapi", VAPI_API_KEY: "priv-0123456789abcdef", VAPI_PUBLIC_KEY: "pub-0123456789abcdef", TWILIO_ACCOUNT_SID: SID, TWILIO_AUTH_TOKEN: "t".repeat(32) });
-    expect(await run(b, "extras-continue")).toBeNull();
     expect(firstOpen(b, getSetup(b.id))).toBe("install");
     expect(html(b, "phones")).toContain("Vapi connected");
     expect(html(b, "install")).toContain("Vapi");

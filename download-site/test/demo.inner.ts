@@ -53,9 +53,9 @@ describe("demo buyer", () => {
     // Anything (even nothing, even rubbish) is accepted on every account step.
     expect(await run(b, "railway", { token: "not a real token" })).toBeNull();
     expect(await run(b, "phones", {})).toBeNull();
-    // The slim path: Brand, Railway, Telnyx, then the optional extras screen, then Install.
-    expect(getSetup(b.id).step).toBe("extras");
-    expect(await run(b, "extras-continue")).toBeNull();
+    // The short path: Brand, Hosting, Voice, AI, then Install.
+    expect(getSetup(b.id).step).toBe("ai");
+    expect(await run(b, "ai", {})).toBeNull();
     const s = getSetup(b.id);
     expect(s.step).toBe("install");
     expect(s.email).toBeUndefined();
@@ -75,17 +75,15 @@ describe("demo buyer", () => {
     spy();
     const b = addBuyer("Demo 10:02", "demo-3@example.com", true);
     await run(b, "start"); await run(b, "brand", { productName: "Y", ownerEmail: "y@y.test" });
-    await run(b, "railway"); await run(b, "phones");
+    await run(b, "railway"); await run(b, "phones"); await run(b, "ai");
+    expect(getSetup(b.id).step).toBe("install");
     expect(await run(b, "email", { key: "garbage", address: "also garbage" })).toBeNull();
-    expect(getSetup(b.id).step).toBe("extras");
     expect(await run(b, "domain", { domain: "", mode: "cloudflare", token: "x" })).toBeNull();
     expect(await run(b, "calendars", { googleId: "x", googleSecret: "y", microsoftId: "z", microsoftSecret: "w" })).toBeNull();
     // The backup options (Vapi, Twilio) are pretend too, and Telnyx stays the default until Vapi is added.
     expect(await run(b, "vapi", { vapiKey: "x", vapiPublic: "y" })).toBeNull();
     expect(getSetup(b.id).vapi?.confirmed).toBe(true);
     expect(await run(b, "twilio", { twilioSid: "x", twilioToken: "y" })).toBeNull();
-    expect(getSetup(b.id).step).toBe("extras");
-    expect(await run(b, "extras-continue")).toBeNull();
     expect(getSetup(b.id).step).toBe("install");
     expect(getSetup(b.id).domain?.host).toMatch(/^app\.demo-.+\.test$/);
     expect(calls).toEqual([]);
@@ -104,25 +102,20 @@ describe("demo buyer", () => {
   });
 });
 
-describe("real buyer, optional extras", () => {
-  test("can reach Install with only Railway and Telnyx, and extras can be skipped", async () => {
+describe("real buyer, the short path", () => {
+  test("reaches Install with Railway, Telnyx and OpenRouter only; the old extras are no longer steps", async () => {
     const b = addBuyer("Slim Buyer", "slim@example.com");
     await run(b, "start");
     await run(b, "brand", { productName: "Slim Co", ownerEmail: "slim@slim.test" });
     // Stand-in for a passed Railway and Telnyx check (those are covered by the key tests).
-    const { updateSetup } = await import("../store");
-    updateSetup(b.id, (s) => { s.railway = { confirmed: true }; s.phones = { confirmed: true }; s.step = "extras"; });
-    const { putSecret } = await import("../store");
+    const { updateSetup, putSecret } = await import("../store");
+    updateSetup(b.id, (s) => { s.railway = { confirmed: true }; s.phones = { confirmed: true }; s.step = "ai"; });
     putSecret(b.id, "railway_token", "railway-test-token-0000");
-    expect((await run(b, "email-skip"))).toBeNull();
-    expect((await run(b, "domain-skip"))).toBeNull();
-    expect((await run(b, "cal-skip"))).toBeNull();
-    expect(getSetup(b.id).step).toBe("extras");
-    expect((await run(b, "install-start"))?.kind).toBe("err"); // extras screen not continued yet
-    expect(await run(b, "extras-continue")).toBeNull();
+    expect((await run(b, "install-start"))?.kind).toBe("err"); // OpenRouter is required
+    updateSetup(b.id, (s) => { s.ai = { confirmed: true, via: "paste" }; });
+    expect(await run(b, "ai-continue")).toBeNull();
     expect(getSetup(b.id).step).toBe("install");
-    expect(getSetup(b.id).skipped).toEqual({ email: true, domain: true, calendars: true });
-    // Email through Resend with no domain is refused with a plain message.
+    // Email through Resend with no domain is still refused with a plain message.
     updateSetup(b.id, (s) => { s.email = { mode: "resend", confirmed: true, from: "X <a@mail.slim.test>" }; });
     expect((await run(b, "install-start"))?.text).toMatch(/domain/i);
   });

@@ -33,7 +33,7 @@ async function buyer(n: string) {
   await run(b, "brand", { productName: "Acme Calls", ownerEmail: "boss@acme.test" });
   // Phones comes after hosting; this puts the buyer where the phones step is allowed.
   putSecret(b.id, "railway_token", "rail-token-0123456789");
-  updateSetup(b.id, (s) => { s.railway = { confirmed: true }; s.step = "phones"; });
+  updateSetup(b.id, (s) => { s.railway = { confirmed: true }; s.ai = { confirmed: true }; s.step = "phones"; });
   return b;
 }
 
@@ -46,18 +46,18 @@ describe("Telnyx first, Vapi and Twilio as backup options", () => {
     const b = await buyer("a");
     telnyxOk();
     expect(await run(b, "phones", { provider: "vapi", key: TKEY, ...VOK })).toBeNull();
-    // The balance, then the two pretrial probes (a paid account can list both).
-    expect(calls.map((c) => c.url)).toEqual(["https://api.telnyx.com/v2/balance", "https://api.telnyx.com/v2/ai/assistants?page[size]=1", "https://api.telnyx.com/v2/call_control_applications?page[size]=1"]);
+    // The balance, the two pretrial probes (a paid account can list both), then the numbers already on the account.
+    expect(calls.map((c) => c.url)).toEqual(["https://api.telnyx.com/v2/balance", "https://api.telnyx.com/v2/ai/assistants?page[size]=1", "https://api.telnyx.com/v2/call_control_applications?page[size]=1", "https://api.telnyx.com/v2/phone_numbers?page[size]=100&page[number]=1"]);
     expect(getSetup(b.id).phones).toMatchObject({ provider: "telnyx", confirmed: true });
     expect(getSetup(b.id).vapi).toBeUndefined();
     expect(hasSecret(b.id, "vapi_key")).toBe(false);
-    expect(phoneSettings(b.id, getSetup(b.id))).toEqual({ TELNYX_API_KEY: TKEY });
+    expect(phoneSettings(b.id, getSetup(b.id))).toEqual({ TELNYX_API_KEY: TKEY, VOICE_PROVIDER: "telnyx" });
     // No key, no way on.
     const c = await buyer("a2");
     expect((await run(c, "phones", {}))?.kind).toBe("err");
   });
 
-  test("Vapi added from the extras screen: both keys checked with one cheap GET, then the install gets VOICE_PROVIDER=vapi", async () => {
+  test("Vapi added next to Telnyx: both keys checked with one cheap GET, Telnyx stays the main engine (VOICE_PROVIDER=telnyx) and Vapi rides along as the backup", async () => {
     const b = await buyer("b");
     telnyxOk();
     await run(b, "phones", { key: TKEY });
@@ -68,12 +68,12 @@ describe("Telnyx first, Vapi and Twilio as backup options", () => {
     expect(getSecret(b.id, "vapi_public")).toBe("pub-0123456789abcdef");
     const s = getSetup(b.id);
     expect(s.vapi?.confirmed).toBe(true);
-    expect(s.step).toBe("extras");
-    // The Vapi path hands the app no Telnyx key; re-checking Telnyx afterwards does not undo the Vapi choice.
-    expect(phoneSettings(b.id, s)).toEqual({ VOICE_PROVIDER: "vapi", VAPI_API_KEY: "priv-0123456789abcdef", VAPI_PUBLIC_KEY: "pub-0123456789abcdef" });
+    // Telnyx AND Vapi: the app gets both keys and Telnyx is the main engine (a real install once lost the Telnyx key here).
+    const both = { TELNYX_API_KEY: TKEY, VOICE_PROVIDER: "telnyx", VAPI_API_KEY: "priv-0123456789abcdef", VAPI_PUBLIC_KEY: "pub-0123456789abcdef" };
+    expect(phoneSettings(b.id, s)).toEqual(both);
     telnyxOk();
     await run(b, "phones", { key: TKEY });
-    expect(phoneSettings(b.id, getSetup(b.id)).VOICE_PROVIDER).toBe("vapi");
+    expect(phoneSettings(b.id, getSetup(b.id))).toEqual(both);
   });
 
   test("skipping or removing Vapi puts Telnyx back as the default", async () => {
@@ -85,21 +85,19 @@ describe("Telnyx first, Vapi and Twilio as backup options", () => {
     expect(await run(b, "vapi-skip")).toBeNull();
     expect(hasSecret(b.id, "vapi_key")).toBe(false);
     expect(getSetup(b.id).skipped?.vapi).toBe(true);
-    expect(phoneSettings(b.id, getSetup(b.id))).toEqual({ TELNYX_API_KEY: TKEY });
+    expect(phoneSettings(b.id, getSetup(b.id))).toEqual({ TELNYX_API_KEY: TKEY, VOICE_PROVIDER: "telnyx" });
   });
 
   test("no Telnyx account: go on to the backup options; install needs Telnyx or Vapi", async () => {
     const b = await buyer("d");
     expect(await run(b, "phones-backup")).toBeNull();
-    expect(getSetup(b.id).step).toBe("extras");
-    expect(firstOpen(b, getSetup(b.id))).toBe("extras");
-    // Neither added yet: Continue is refused.
-    expect((await run(b, "extras-continue"))?.kind).toBe("err");
+    // Neither added yet: Install is refused.
+    expect((await run(b, "install-start"))?.kind).toBe("err");
     stub(200);
     expect(await run(b, "vapi", VOK)).toBeNull();
+    // Vapi on its own (Telnyx not connected): Vapi is the main engine and there is no Telnyx key.
     expect(phoneSettings(b.id, getSetup(b.id))).toEqual({ VOICE_PROVIDER: "vapi", VAPI_API_KEY: "priv-0123456789abcdef", VAPI_PUBLIC_KEY: "pub-0123456789abcdef" });
-    expect(await run(b, "extras-continue")).toBeNull();
-    expect(getSetup(b.id).step).toBe("install");
+    expect(firstOpen(b, getSetup(b.id))).toBe("install");
   });
 
   test("a Vapi key Vapi refuses is an error, and nothing is saved", async () => {
@@ -148,10 +146,10 @@ describe("Telnyx first, Vapi and Twilio as backup options", () => {
     expect(getSecret(b.id, "twilio_token")).toBe("t".repeat(32));
     expect(getSetup(b.id).twilio).toMatchObject({ sid: SID, confirmed: true });
     // Telnyx stays the voice engine; the Twilio keys ride along.
-    expect(phoneSettings(b.id, getSetup(b.id))).toEqual({ TELNYX_API_KEY: TKEY, TWILIO_ACCOUNT_SID: SID, TWILIO_AUTH_TOKEN: "t".repeat(32) });
+    expect(phoneSettings(b.id, getSetup(b.id))).toEqual({ TELNYX_API_KEY: TKEY, VOICE_PROVIDER: "telnyx", TWILIO_ACCOUNT_SID: SID, TWILIO_AUTH_TOKEN: "t".repeat(32) });
     expect(await run(b, "twilio-skip")).toBeNull();
     expect(hasSecret(b.id, "twilio_token")).toBe(false);
-    expect(phoneSettings(b.id, getSetup(b.id))).toEqual({ TELNYX_API_KEY: TKEY });
+    expect(phoneSettings(b.id, getSetup(b.id))).toEqual({ TELNYX_API_KEY: TKEY, VOICE_PROVIDER: "telnyx" });
   });
 
   test("Twilio credentials Twilio refuses, or that aren't shaped like Twilio's, are an error and nothing is saved", async () => {
@@ -164,20 +162,19 @@ describe("Telnyx first, Vapi and Twilio as backup options", () => {
     expect((await run(b, "twilio", { twilioSid: "nope", twilioToken: "x" }))?.kind).toBe("err");
   });
 
-  test("the screens: Phones has Telnyx (recommended) first and Vapi + Twilio under it; the extras screen no longer repeats them", async () => {
+  test("the screens: Voice has Telnyx first, Vapi + Twilio tucked under it, and no old extras screen", async () => {
     const { wizardPage } = await import("../wizard");
     const b = await buyer("j");
     const html = (view: string) => wizardPage(b, getSetup(b.id), b.code, "sid", view as any);
     const phones = html("phones");
-    expect(phones).toContain("Option A: Telnyx <span class=\"tag\">Recommended</span>");
-    expect(phones).toContain("Option B: Vapi");
-    expect(phones.indexOf("Telnyx API key")).toBeLessThan(phones.indexOf("Option B: Vapi"));
+    expect(phones).toContain("Telnyx API key");
+    expect(phones).toContain("Can't use Telnyx? Use Vapi + Twilio");
+    expect(phones.indexOf("Telnyx API key")).toBeLessThan(phones.indexOf("Use Vapi + Twilio"));
     expect(phones).not.toContain('name="provider"');
-    updateSetup(b.id, (s) => { s.phones = { confirmed: true, provider: "telnyx" }; s.step = "extras"; });
-    const extras = html("extras");
-    expect(extras).not.toContain("Other options (backup)");
-    expect(extras).not.toContain("Use Vapi instead of Telnyx for voice");
-    expect(extras.match(/Add now/g)!.length).toBe(3);
+    expect(phones).not.toContain("Sign in with Telnyx"); // no Telnyx login registered on this site: paste only
+    updateSetup(b.id, (s) => { s.phones = { confirmed: true, provider: "telnyx", numbers: ["+61 2 5550 0101"] }; });
+    expect(html("phones")).toContain("+61 2 5550 0101");
+    expect(html("phones")).toContain("Add Vapi as a backup");
     expect(html("vapi")).toContain("Vapi for voice");
   });
 

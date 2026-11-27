@@ -232,8 +232,11 @@ Sessions: random 256-bit id, `HttpOnly`, `SameSite=Strict`, `Path=/admin`, 12 ho
 | `CONTENT_DIR` | | Folder with `providers/*.md` and `welcome-email.md`; else `download-site/content`, else `../handoff-content` |
 | `PORT` / `HOST` / `TRUST_PROXY` | `4500` / `127.0.0.1` / `0` | `TRUST_PROXY=1` behind Caddy |
 | `ADMIN_EMAILS`, `ADMIN_PASSWORD_HASH` | | /admin sign-in (escape each `$` as `$$` in a compose `.env`) |
-| `DEMO_APP_URL`, `DEMO_ADMIN_EMAIL`, `DEMO_ADMIN_PASSWORD` | | Turns on /admin's **Start a test run**: a test buyer whose wizard accepts pretend accounts (no provider is called) and ends on a real branded agency on our team demo app (public `DEMO_APP_URL`, its platform admin sign-in). Unset = no button |
-| `SITE_SMTP_URL`, `SITE_MAIL_FROM` | | Our own mail sender, for welcome emails and alert emails |
+| `DEMO_APP_URL`, `DEMO_ADMIN_EMAIL`, `DEMO_ADMIN_PASSWORD` | | Turns on /admin's **Start a test run** (not on Add agency any more; **Delete all test runs** clears them): a test buyer whose wizard accepts pretend accounts (no provider is called) and ends on a real branded agency on our team demo app (public `DEMO_APP_URL`, its platform admin sign-in). Unset = no button |
+| `SITE_SMTP_URL` or `RESEND_API_KEY`, and `SITE_MAIL_FROM` | | Our own mail sender (SMTP, or Resend's API): invites, the admin's forgot-password link, "agency offline" emails, alert emails |
+| `OPENROUTER_OAUTH` | on (https sites) | `0` hides **Sign in with OpenRouter** (paste a key still works). Nothing to register |
+| `RAILWAY_OAUTH_CLIENT_ID` (+ `RAILWAY_OAUTH_CLIENT_SECRET`) or `RAILWAY_OAUTH=1` | (button off) | **Login with Railway**. Register an OAuth app (Railway workspace, Developer settings) with redirect `<SITE_URL>/oauth/railway/callback`, or `RAILWAY_OAUTH=1` to register a public client by itself. `RAILWAY_OAUTH_SCOPES` overrides the scopes |
+| `TELNYX_OAUTH_CLIENT_ID` (+ `TELNYX_OAUTH_CLIENT_SECRET`) or `TELNYX_OAUTH=1` | (button off) | **Sign in with Telnyx** (OAuth 2.0 code + PKCE; dynamic client registration with `TELNYX_OAUTH=1`; redirect `<SITE_URL>/oauth/telnyx/callback`). Asks Telnyx for a long-lived API key with the login; if Telnyx refuses, the buyer is asked to paste one |
 | `ALERT_WEBHOOK_URL` | | https address that gets a JSON POST (`text`, `content`) for each alert: a Slack or Discord incoming webhook works as is |
 | `ALERT_EMAIL_TO` | `ADMIN_EMAILS` | Who gets alert emails (comma separated; needs `SITE_SMTP_URL` and `SITE_MAIL_FROM`) |
 | `OPENROUTER_API_KEY`, `SETUP_CHAT_MODEL` | (off), `anthropic/claude-sonnet-5.5` | Turns on the **Need help?** chat bubble on every wizard page and /guide (not /admin). Without the key the bubble is hidden and `/chat` answers 404. See "Help chat" |

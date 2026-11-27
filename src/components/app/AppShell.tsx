@@ -305,7 +305,7 @@ export function AppShell({ nav, variant, brandTo, sidebarHeader, topbarRight, ba
           >
             <Menu className="h-5 w-5" />
           </button>
-          <div className="flex min-w-0 items-center gap-2 text-[13px]">
+          <div className="hidden min-w-0 items-center gap-2 text-[13px] sm:flex">
             <span className="truncate font-medium text-ink">{current?.label ?? "Home"}</span>
           </div>
           <div className="ml-auto flex items-center gap-1.5">

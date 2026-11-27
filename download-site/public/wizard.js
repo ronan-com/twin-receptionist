@@ -65,9 +65,20 @@
   // The browser's Back button can bring back a saved copy of an old step: a button stuck on "Working...", or "connected" when it no longer is.
   // Load the real page instead, so every step shows its true state and its buttons work.
   window.addEventListener("pageshow", function (e) { if (e.persisted) location.reload(); });
-  // The header's "Talk to a person" (#person) opens the form.
-  const openPerson = function () { if (location.hash === "#person") { const d = document.querySelector("#person details.person-ask"); if (d) d.open = true; } };
-  openPerson(); window.addEventListener("hashchange", openPerson);
+  // The header's "Talk to a person": opens the help panel on its "Talk to a person" tab when the panel is there; else the form at the bottom (#person, shown by CSS).
+  document.addEventListener("click", function (e) {
+    const a = e.target.closest('a[href="#person"]');
+    if (!a) return;
+    const tab = document.querySelector("#chat .chat-person-btn");
+    if (!tab) return;
+    e.preventDefault();
+    const fab = document.querySelector("#chat .chat-fab");
+    if (fab && !document.getElementById("chat").classList.contains("open")) fab.click();
+    tab.click();
+  });
+  // The step helper card is open on a computer and folded away on a phone (tap its head to open it).
+  const hd = document.querySelector("#helper details");
+  if (hd && window.matchMedia && window.matchMedia("(max-width: 959px)").matches) hd.open = false;
 
   // Brand step: shrink the chosen logo to a small PNG (it travels to the agency's server as one
   // setting, so it must stay under about 30 KB) and put it in the form.

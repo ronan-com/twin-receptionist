@@ -126,7 +126,8 @@ export function personHelpHtml(b: Buyer, s: SetupData, code: string, hidden: str
   const thread = t ? `<div class="person-req" id="person-request"><div class="person-head"><b>Your help request</b> <span class="pill ${t.status === "closed" ? "live" : t.status === "waiting" ? "installing" : "in-setup"}">${t.status === "closed" ? "Closed" : t.status === "waiting" ? "We replied" : "We've got it"}</span></div>
 ${msgs.map((m) => `<div class="person-msg ${m.author === "support" ? "us" : "me"}"><div class="who"><b>${m.author === "support" ? esc(us) : "You"}</b> <span>${esc(when(m.at))}</span></div><div class="text">${esc(m.body)}</div></div>`).join("")}
 ${t.status === "open" ? `<p class="hint">We'll get back to you shortly. Our reply shows here when you reload the page.</p>` : ""}</div>` : "";
-  return `<div class="person" id="person">${thread}<details class="person-ask"><summary>Talk to a person</summary>${personFormHtml(b, s, code, hidden, "person")}</details></div>`;
+  // No button of its own: the header's "Talk to a person" (#person) and the help panel's tab open it. :target shows the form without script.
+  return `<div class="person" id="person">${thread}<div class="person-ask">${personFormHtml(b, s, code, hidden, "person")}</div></div>`;
 }
 
 /** For tests and the admin: the buyer-visible thread of a ticket. */

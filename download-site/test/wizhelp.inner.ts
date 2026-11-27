@@ -226,7 +226,7 @@ describe("neutral style", () => {
     T.replyToTicket(t.id, "boss@example.com", "On it.");
     const html = await b.page("server");
     const block = personBlock(html);
-    expect(block).toContain("Talk to a person");
+    expect(block).toContain("Your help request");
     expect(block).toContain("On it.");
     expect(block).toContain("<b>Support</b>");
     expect(html).toContain(escd(HELP_SENT).slice(0, 20));

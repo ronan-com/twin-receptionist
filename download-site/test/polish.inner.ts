@@ -312,8 +312,9 @@ describe("Talk to a person", () => {
     expect(panel).toContain(`action="/setup/${b.code}/a/help-request"`);
     expect(panel).toContain('id="chat-problem"');
     // and the box at the bottom of every step, and the header link, are there without the chat
-    expect(html).toContain('<summary>Talk to a person</summary>');
-    expect(html).toContain('href="#person"');
+    expect(html).not.toContain('<summary>Talk to a person</summary>'); // one entry point: no extra button at the bottom
+    expect(html).toContain('href="#person"'); // the header link
+    expect(html).toContain('<div class="person-ask">'); // its form is there (shown when you get to #person)
     // Sending it (as the panel's form would): a ticket with the step they were on
     const br = await browser(b.code);
     const r = await br.post("help-request", { v: "ai", problem: "My OpenRouter sign-in keeps failing", contact: "o@polish.test", phone: "" });
@@ -361,5 +362,39 @@ describe("Brand colours and look, and the Done screen", () => {
     for (const bad of [/Before you go/i, /Delete your Railway/i, /Revoke/i, /backups/i, /deleted/i, /Later<\/h3>/, /Tip: turn on auto top-up/]) expect(h).not.toMatch(bad);
     // and no step shows "deleted" about keys
     for (const view of ["welcome", "brand", "railway", "phones", "ai", "extras", "install"]) expect(wizardPage(b, store.getSetup(b.id), b.code, "sid", view as any)).not.toMatch(/deleted/i);
+  });
+});
+
+describe("the step helper card", () => {
+  test("every step has a helper with one or two lines for that step; the ask box and quick questions appear when the help chat is on", async () => {
+    const b = await doneBuyer({ extrasDone: false, step: "extras" });
+    const page = (view: string, opt = "") => wizardPage(b, store.getSetup(b.id), b.code, "sid", view as any, undefined, opt);
+    for (const view of ["welcome", "brand", "railway", "phones", "ai", "extras", "email", "domain", "calendars", "twilio", "install"]) {
+      const h = page(view);
+      expect(h).toContain('id="helper"');
+      expect(h).toContain("Setup helper");
+      expect(h).toMatch(/<p class="hsay">[^<]{10,}<\/p>/);
+    }
+    expect(page("railway")).toContain("Open Railway, make a token");
+    expect(page("ai")).toContain("OpenRouter");
+    expect(page("welcome")).not.toContain('class="hform"'); // chat off: just the line
+    process.env.OPENROUTER_API_KEY = "sk-or-chat-test-0123456789";
+    const on = page("railway");
+    delete process.env.OPENROUTER_API_KEY;
+    expect(on).toContain('class="hform"');
+    expect(on).toContain('data-q="Where do I find my Railway token?"');
+    expect(on).toContain(`data-url="/setup/${b.code}/chat"`);
+    expect(on).toContain('data-view="railway"');
+  });
+
+  test("each step has its own colour class, the step list has a logo or tile for every step, and the progress bar is on every screen", async () => {
+    const b = await doneBuyer({ extrasDone: false, step: "extras" });
+    const h = wizardPage(b, store.getSetup(b.id), b.code, "sid", "railway");
+    expect(h).toContain('class="shell wiz acc-railway"');
+    expect(h).toMatch(/<li class="acc-openrouter /);
+    expect((h.match(/class="ri"/g) || []).length).toBe(8); // one mark per step in the list
+    expect(h).toContain('<div class="band">');
+    expect(h).toContain('<progress class="bar"');
+    expect(wizardPage(b, store.getSetup(b.id), b.code, "sid", "install")).toContain("acc-orange");
   });
 });

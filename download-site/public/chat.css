@@ -33,7 +33,7 @@
 .chat-send:disabled { opacity: .55; cursor: default; }
 .chat-sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 @media (max-width: 639px) { .chat { right: 12px; bottom: 12px; } .chat-panel { width: calc(100vw - 24px); height: min(78vh, 560px); } }
-@media (prefers-reduced-motion: no-preference) { .chat-panel { animation: chatin .16s ease-out; } @keyframes chatin { from { transform: translateY(10px); opacity: 0; } } }
+@media (prefers-reduced-motion: no-preference) { .chat-panel { animation: chatin .16s ease-out; } @keyframes chatin { from { transform: translateY(10px); } } }
 @media print { .chat { display: none; } }
 /* "Talk to a person" tab: the help-request form inside the panel. */
 .chat-ai { flex: 1; min-height: 0; display: flex; flex-direction: column; }

@@ -649,10 +649,10 @@
 [data-auth-shell] .auth-mobile-rule { height: 3px; background: var(--indigo); }
 @media (max-width: 639px) { [data-auth-shell] input { font-size: 16px; } }
 
-/* Plain buyer installs start neutral. Saved workspace brand variables override these defaults. */
+/* Unbranded buyer installs use the onboarding palette. Saved workspace colours still override these defaults. */
 html[data-neutral-dashboard] {
-  --indigo: #32343c; --indigo-deep: #1d1f25; --primary-ink: #32343c;
-  --ribbon-2: var(--indigo); --ribbon-3: var(--indigo);
+  --indigo: #7c3aed; --indigo-deep: #6d28d9; --primary-ink: #6d28d9;
+  --brand-2: #0284c7; --brand-3: #db2777;
+  --ribbon-2: #00c08b; --ribbon-3: #db2777;
 }
-html[data-neutral-dashboard] .auth-ribbon { display: none; }
-html[data-neutral-dashboard] .dashboard-journey { background: var(--card); }
+html[data-neutral-dashboard]:not(.dark) [data-app-shell] .nav-active { background: color-mix(in srgb,var(--indigo) 9%,var(--card)); }

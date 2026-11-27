@@ -148,7 +148,7 @@ describe("update your agency", () => {
     syncToken = appVars.SUPPORT_SYNC_TOKEN;
     expect(appVars.PUBLIC_URL).toBe("https://real-agency.up.railway.app");
     const upsert = railCalls.find((c) => c.op === "upsert")!.body;
-    expect(Object.keys(upsert.variables).sort()).toEqual(["APP_VERSION", "NEW_THING", "SUPPORT_CALL_TOKEN", "SUPPORT_SELLER_NAME", "SUPPORT_SYNC_TOKEN", "SUPPORT_SYNC_URL"]);
+    expect(Object.keys(upsert.variables).sort()).toEqual(["APP_VERSION", "NEW_THING", "RAILWAY_RUN_UID", "SUPPORT_CALL_TOKEN", "SUPPORT_SELLER_NAME", "SUPPORT_SYNC_TOKEN", "SUPPORT_SYNC_URL"]);
     expect(upsert.skipDeploys).toBe(true);
     // Recorded, and the token is gone again.
     expect(s.attemptVersion).toBe("1.0.3");

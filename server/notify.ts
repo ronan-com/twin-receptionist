@@ -46,18 +46,44 @@ function aBooking(client: Business): string {
   return `${/^[aeiou]/i.test(what) ? "an" : "a"} ${what}`;
 }
 
-const whenText = (client: Business, r: BookingRequest) =>
+/** A booking the caller moved or cancelled by phone. `was` is the time it used to be at. */
+export type BookingChange = { kind: "rescheduled" | "cancelled"; was: string };
+
+const whenText = (client: Business, r: { start: string }) =>
   new Date(r.start).toLocaleString("en-AU", { timeZone: client.settings.timezone, weekday: "long", day: "numeric", month: "long", hour: "numeric", minute: "2-digit" });
 
 /**
  * The caller's own confirmation of a booking, sent to the email they gave on the
  * call. Plain facts only: when, where, and who to ring to change it.
  */
-export async function confirmToCaller(client: Business, r: BookingRequest): Promise<boolean> {
+export async function confirmToCaller(client: Business, r: BookingRequest, change?: BookingChange): Promise<boolean> {
   if (r.kind !== "booking" || r.status !== "booked" || !r.email) return false;
   const s = client.settings;
   const what = industry(s.industry).booking;
   const number = client.phoneNumbers?.[0];
+  if (change) {
+    const first = r.name.split(" ")[0] || "there";
+    const was = whenText(client, { start: change.was });
+    const body =
+      change.kind === "cancelled"
+        ? [`Hi ${first},`, "", `Your ${what} at ${s.businessName} on ${was} has been cancelled.`, "", number ? `To book again, call us on ${formatNumber(number)}.` : "To book again, please call us.", "", s.businessName]
+        : [
+            `Hi ${first},`,
+            "",
+            `Your ${what} at ${s.businessName} has been moved.`,
+            "",
+            `Now:    ${whenText(client, r)}`,
+            `Was:    ${was}`,
+            ...(s.address ? [`Where:  ${s.address}`] : []),
+            ...(r.service ? [`For:    ${r.service}`] : []),
+            "",
+            number ? `To change or cancel, call us on ${formatNumber(number)}.` : "To change or cancel, please call us.",
+            "",
+            s.businessName,
+          ];
+    const subject = change.kind === "cancelled" ? `Your ${what} at ${s.businessName} is cancelled` : `Your ${what} at ${s.businessName} has moved: ${whenText(client, r)}`;
+    return sendAccountEmail(r.email, subject, body.join("\n"));
+  }
   const lines = [
     `Hi ${r.name.split(" ")[0] || "there"},`,
     "",
@@ -74,9 +100,22 @@ export async function confirmToCaller(client: Business, r: BookingRequest): Prom
   return sendAccountEmail(r.email, `Your ${what} at ${s.businessName}: ${whenText(client, r)}`, lines.join("\n"));
 }
 
-function emailText(client: Business, r: BookingRequest): { subject: string; text: string } {
+function emailText(client: Business, r: BookingRequest, change?: BookingChange): { subject: string; text: string } {
   const who = r.name || "Someone";
   const how = r.channel === "sms" ? "by text" : r.channel === "email" ? "by email" : r.channel === "web" ? "in the website chat" : "on a call";
+  if (change) {
+    const moved = change.kind === "rescheduled";
+    const lines = [
+      `${client.settings.receptionistName || "Your AI receptionist"} ${moved ? "moved" : "cancelled"} ${aBooking(client)} on a call, at the caller's request.`,
+      "",
+      ...(moved ? [`Now:      ${whenText(client, r)}`, `Was:      ${whenText(client, { start: change.was })}`] : [`Was:      ${whenText(client, { start: change.was })}`]),
+      `Name:     ${who}`,
+      `Phone:    ${formatNumber(r.phone)}`,
+      ...(r.email ? [`Email:    ${r.email}`] : []),
+      `Service:  ${r.service || "not given"}`,
+    ];
+    return { subject: `${moved ? "Booking moved" : "Booking cancelled"}: ${who}, ${r.service || "appointment"}`, text: lines.join("\n") };
+  }
   const lines =
     r.kind === "booking"
       ? [
@@ -101,12 +140,12 @@ function emailText(client: Business, r: BookingRequest): { subject: string; text
   return { subject, text: lines.join("\n") };
 }
 
-export async function notifyBusiness(client: Business, r: BookingRequest): Promise<void> {
+export async function notifyBusiness(client: Business, r: BookingRequest, change?: BookingChange): Promise<void> {
   const setup = client.booking;
   if (!setup) return;
   const jobs: Promise<unknown>[] = [];
   if (setup.notifyEmail) {
-    const { subject, text } = emailText(client, r);
+    const { subject, text } = emailText(client, r, change);
     jobs.push(sendAccountEmail(setup.notifyEmail, subject, text));
   }
   if (setup.leadWebhook) {
@@ -115,7 +154,8 @@ export async function notifyBusiness(client: Business, r: BookingRequest): Promi
         // Checked again at send time: a name can be repointed after it was saved.
         if (!(await isPublicHost(new URL(setup.leadWebhook!).hostname))) throw new Error("webhook host is not public");
         const body = JSON.stringify({
-          event: r.kind,
+          event: change ? `booking_${change.kind}` : r.kind,
+          ...(change ? { previousStart: change.was } : {}),
           business: client.settings.businessName,
           receptionistId: client.id,
           ...r,

@@ -19,6 +19,7 @@ import { getClient, orgOfClient, saveClient } from "../store";
 import { json, readBody, type ClientAccess, type ClientRouteArgs } from "./http";
 import { UI_PRODUCT } from "../product";
 import { providerOfClient } from "../voice/config";
+import { toolAllowed } from "../voice/tools";
 
 // Area S (workspace, manage): receptionist settings, knowledge, call handling,
 // integrations, team and the business profile, for one business.
@@ -168,7 +169,7 @@ async function answeredAgent(c: Business, orgSuspended: boolean, voices?: Voice[
       live,
     },
     escalation_rules: { transfer_on_request: false, escalate_on_negative_sentiment: false, notify_email: c.booking?.notifyEmail ?? "", notify_sms: "" },
-    tool_permissions: ["end_call", ...(live ? ["lookup_availability", "book_appointment", "take_message"] : [])],
+    tool_permissions: ["end_call", ...(live ? ["lookup_availability", "book_appointment", ...["reschedule_appointment", "cancel_appointment"].filter((n) => toolAllowed(s, n)), "take_message"] : [])],
     transfer_rules: [],
     qualification_questions: s.questions ?? [],
     restricted_topics: s.avoid ?? [],

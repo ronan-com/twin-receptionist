@@ -464,6 +464,21 @@ function profileSections(s: Settings, booking: { minutes: number } | null, callb
   return sections.length ? `\n${sections.join("\n\n")}\n` : "";
 }
 
+// Moving or cancelling a booking they already have. Only when this receptionist books directly
+// (the tools are find_booking, reschedule_appointment and cancel_appointment, see server/bookingChange.ts).
+function changeSection(flow: BookingFlow): string {
+  if (flow !== "book") return "";
+  return `
+Moving or cancelling a booking they already have
+- If they want to change or cancel a booking, call find_booking. It looks under the number they are calling from. Never use book_appointment to move a booking.
+- If it finds nothing, ask for the full name the booking is under and the day and time it is for, then call find_booking again with name, booked_date (YYYY-MM-DD) and booked_time (HH:MM, 24 hour). If it still finds nothing, do not guess or hint at other bookings: say you can't find it, and take a message with request_callback.
+- Only ever talk about a booking find_booking returned. Never read out or change anyone else's booking.
+- To move it: read the booking back, ask what day suits, call check_availability, offer two or three of the times it returns, and once they agree call reschedule_appointment with the booking_id and that slot's exact start value. Tell them the new day and time only if it says rescheduled. If it says the time is gone, check availability again and offer other times.
+- To cancel it: read the booking back (what, day, time) and ask "Would you like me to cancel that?". Only after a clear yes, call cancel_appointment with the booking_id and confirmed set to yes. If they are unsure, do not cancel. Then say it is cancelled and offer to book another time.
+- Bookings in the past can't be changed. If a tool says it can't be done, say so and take a message with request_callback.
+`;
+}
+
 export function buildInstructions(s: Settings, booking: { minutes: number } | null = null, knowledge: KnowledgeEntry[] = []): string {
   const preset = industry(s.industry);
   const noun = businessNoun(s);
@@ -554,7 +569,7 @@ ${step2}
 3. Ask for their full name. If it is unusual, ask them to spell it.
 4. On a call, ask for the best mobile number. Read it back in groups (for example "oh four one two, three four five, six seven eight") and ask them to confirm. If they correct it, read the corrected number back before continuing. By text, skip this unless they give a different number.${collectStep}${questions}
 ${finish}
-
+${changeSection(flow)}
 Rules
 - You are an AI assistant. If asked, say so plainly.
 - ${preset.guardrail}

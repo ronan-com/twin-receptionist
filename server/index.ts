@@ -43,6 +43,7 @@ import { callDetail, listCalls } from "./calls";
 import { startCallSync } from "./callsync";
 import { industryKeyOf, workspaceBusinesses } from "./answered";
 import { audit } from "./audit";
+import { deleteAgency, deleteOwnAccount, previewAgencyDelete } from "./deletion";
 import { supportSeller } from "./supportAccess";
 import { readOnlyView, supportGate } from "./supportChanges";
 import { startSupportSync, supportPublicRoutes, supportSettingsRoute } from "./supportSync";
@@ -596,6 +597,11 @@ async function route(req: Request, server?: { requestIP(r: Request): { address: 
   // The Answered workspace: the businesses this person works with, in Answered's shapes.
   if (path === "/api/session/businesses" && method === "GET") return json(await workspaceBusinesses(ctx));
 
+  // A person deleting their own account (Settings, Account): they're signed out as it goes.
+  if (path === "/api/account" && method === "DELETE") {
+    await deleteOwnAccount(ctx, await body(req));
+    return withCookie({ ok: true }, clearCookie(req));
+  }
   if (path === "/api/account" && method === "PUT") {
     await updateProfile(ctx, await body(req));
     return json(await account(ctx));
@@ -697,6 +703,12 @@ async function route(req: Request, server?: { requestIP(r: Request): { address: 
         if (input.colour) await changeBrand(asOwner, scope, { primaryColor: input.colour, accentColor: input.colour }).catch((e) => console.error("[demo colour]", e.message));
       }
       return json(made, 201);
+    }
+    const agencyDelete = path.match(/^\/api\/admin\/agencies\/([a-f0-9-]{36})(\/delete-preview)?$/);
+    if (agencyDelete && agencyDelete[2] && method === "GET") return json(await previewAgencyDelete(ctx, agencyDelete[1]));
+    if (agencyDelete && !agencyDelete[2] && method === "DELETE") {
+      const done = await deleteAgency(ctx, agencyDelete[1], await body(req));
+      return json({ ...done, agencies: await listAgencies(ctx) });
     }
     const agency = path.match(/^\/api\/admin\/agencies\/([a-f0-9-]{36})(\/invites)?$/);
     if (agency && agency[2] && method === "POST") return json(await inviteAgencyOwner(ctx, agency[1], await body(req), appUrl(req)), 201);
@@ -899,8 +911,8 @@ async function route(req: Request, server?: { requestIP(r: Request): { address: 
       return json(await team(ctx));
     }
     if (method === "DELETE") {
-      await removeMember(ctx, teamMember[1]);
-      return json(await team(ctx));
+      const { userDeleted } = await removeMember(ctx, teamMember[1], await body(req));
+      return json({ ...(await team(ctx)), userDeleted });
     }
   }
 

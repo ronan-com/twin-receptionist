@@ -973,6 +973,8 @@ export type TelnyxSettings = {
 export type Agency = {
   id: string;
   name: string;
+  /** The platform's own team: it can't be deleted. */
+  home?: boolean;
   createdAt: string;
   members: number;
   clients: number;

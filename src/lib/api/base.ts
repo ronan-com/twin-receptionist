@@ -63,6 +63,8 @@ export const api = {
   put: <T>(path: string, body?: unknown, opts?: RequestOptions) => request<T>("PUT", path, body ?? {}, opts),
   patch: <T>(path: string, body?: unknown, opts?: RequestOptions) => request<T>("PATCH", path, body ?? {}, opts),
   del: <T>(path: string, opts?: RequestOptions) => request<T>("DELETE", path, undefined, opts),
+  /** A delete that carries a body (the typed confirmation). */
+  remove: <T>(path: string, body: unknown, opts?: RequestOptions) => request<T>("DELETE", path, body, opts),
 };
 
 /** A query string from the defined values only. */

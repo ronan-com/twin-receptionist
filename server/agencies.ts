@@ -1,6 +1,7 @@
 import type { Agency, TelnyxSettings } from "../src/lib/shared";
 import { AuthError, createInvite, emailOf, requireRole, singleAgency, textOf, type Ctx } from "./accounts";
 import { iso, sql } from "./db";
+import { platformHomeOrg } from "./deletion";
 import { newAgencyUsesPlatform } from "./phoneAccount";
 import { ValidationError } from "./prompt";
 import { forgetKey, telnyx } from "./telnyx";
@@ -55,8 +56,10 @@ export async function listAgencies(ctx: Ctx): Promise<Agency[]> {
       (select count(distinct a.user_id)::int from client_access a join clients c on c.id = a.client_id where c.org_id = o.id) as customers,
       (select count(*)::int from clients c where c.org_id = o.id and jsonb_array_length(coalesce(c.data->'phoneNumbers', '[]'::jsonb)) > 0) as with_numbers
     from orgs o order by o.created_at desc`;
+  const home = await platformHomeOrg();
   return orgs.map((o: any) => ({
     id: o.id,
+    home: o.id === home,
     name: o.name,
     createdAt: iso(o.created_at),
     members: o.members,

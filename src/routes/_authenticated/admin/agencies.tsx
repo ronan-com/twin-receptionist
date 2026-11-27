@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { Briefcase, Check, Eye, MailPlus, Pause, Play, Plus, Search } from "lucide-react";
+import { Briefcase, Check, Eye, MailPlus, Pause, Play, Plus, Search, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
@@ -10,8 +10,9 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { PageHeader, Panel, MetricCard, MetricGrid, ErrorState, EmptyState } from "@/components/app/primitives";
 import { StatusBadge } from "@/components/app/StatusBadge";
 import { Field } from "@/components/app/forms";
+import { DeleteDialog, DeletedDialog, type DeletedReport } from "@/components/app/DeleteDialog";
 import { cn } from "@/lib/utils";
-import { fmtDate, fmtNumber } from "@/lib/app/format";
+import { fmtDate, fmtNumber, fmtPhone } from "@/lib/app/format";
 import { platformApi } from "@/lib/api/console";
 import type { Agency } from "@/lib/shared";
 import { LinkBox, useConsole } from "./-shared";
@@ -36,6 +37,20 @@ function AgenciesPage() {
   const [reinvite, setReinvite] = useState<Agency | null>(null);
   const [reinviteEmail, setReinviteEmail] = useState("");
   const [pausing, setPausing] = useState<Agency | null>(null);
+  const [deleting, setDeleting] = useState<Agency | null>(null);
+  const [deleted, setDeleted] = useState<DeletedReport | null>(null);
+  const preview = useQuery({ queryKey: ["console", "agency-delete", deleting?.id], queryFn: () => platformApi.agencyDeletePreview(deleting!.id), enabled: !!deleting, staleTime: 0, gcTime: 0 });
+  const remove = useMutation({
+    mutationFn: ({ id, confirm }: { id: string; confirm: string }) => platformApi.deleteAgency(id, confirm),
+    onSuccess: async (r) => {
+      set(r.agencies);
+      setDeleting(null);
+      setDeleted({ name: r.name, numbers: r.numbers, warnings: r.warnings });
+      await qc.invalidateQueries({ queryKey: ["admin"] });
+      await qc.invalidateQueries({ queryKey: ["console"] });
+    },
+    onError: (e: Error) => toast.error("Couldn't delete the agency", { description: e.message }),
+  });
 
   const set = (agencies: Agency[]) => qc.setQueryData(["console", "agencies"], agencies);
   const create = useMutation({
@@ -179,6 +194,11 @@ function AgenciesPage() {
                       >
                         <MailPlus className="mr-1.5 h-3.5 w-3.5" /> Owner invite
                       </Button>
+                      {!own && !a.home ? (
+                        <Button size="sm" variant="ghost" className="h-8 text-[12.5px] text-destructive hover:text-destructive" onClick={() => setDeleting(a)} data-action="delete-agency">
+                          <Trash2 className="mr-1.5 h-3.5 w-3.5" /> Delete
+                        </Button>
+                      ) : null}
                       {!own ? (
                         a.suspended ? (
                           <Button size="sm" variant="ghost" className="h-8 text-[12.5px]" onClick={() => update.mutate({ id: a.id, change: { suspended: false } })} data-action="resume-agency">
@@ -259,6 +279,37 @@ function AgenciesPage() {
           </form>
         </DialogContent>
       </Dialog>
+
+      <DeleteDialog
+        open={!!deleting}
+        onOpenChange={(o) => !o && setDeleting(null)}
+        title={`Delete the agency ${deleting?.name ?? ""}?`}
+        name={deleting?.name ?? ""}
+        nameLabel="agency name"
+        confirmLabel="Delete agency for good"
+        pending={remove.isPending}
+        onConfirm={(typed) => deleting && remove.mutate({ id: deleting.id, confirm: typed })}
+      >
+        <p>This can't be undone (use Pause if you only want it switched off). It permanently deletes the whole agency:</p>
+        <ul className="list-disc pl-4">
+          <li>
+            {preview.data ? preview.data.clients : "…"} client{preview.data?.clients === 1 ? "" : "s"} and {preview.data ? preview.data.receptionists.length : "…"} receptionist{preview.data?.receptionists.length === 1 ? "" : "s"}, with their assistants on the phone provider
+          </li>
+          <li>
+            {preview.data ? fmtNumber(preview.data.calls) : "…"} call{preview.data?.calls === 1 ? "" : "s"}, {preview.data ? fmtNumber(preview.data.bookings) : "…"} booking/callback request{preview.data?.bookings === 1 ? "" : "s"}, follow-ups, website chats and knowledge
+          </li>
+          <li>
+            {preview.data ? preview.data.members : "…"} team member{preview.data?.members === 1 ? "" : "s"} and {preview.data ? preview.data.logins : "…"} client login{preview.data?.logins === 1 ? "" : "s"} (accounts that belong to no other agency are deleted too), plus every invite and sign-in
+          </li>
+        </ul>
+        {preview.data?.numbers.length ? (
+          <p className="rounded-md bg-canvas-2 p-2 text-ink">
+            Phone numbers on its receptionists: <strong>{preview.data.numbers.map((n) => fmtPhone(n)).join(", ")}</strong>. They are <strong>not</strong> deleted. They stay on the phone account, so release them there if you don't want them.
+          </p>
+        ) : null}
+        <p>The agency's own phone account (its Telnyx or Vapi key) is not touched either.</p>
+      </DeleteDialog>
+      <DeletedDialog report={deleted} onClose={() => setDeleted(null)} />
 
       <Dialog open={!!pausing} onOpenChange={(o) => !o && setPausing(null)}>
         <DialogContent>

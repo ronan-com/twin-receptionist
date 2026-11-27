@@ -5,6 +5,7 @@ import { changeBrand, ownBrand, uploadAsset } from "../brand";
 import type { AgencySnapshot } from "../assistant";
 import { answeredBusiness } from "../answered";
 import { audit } from "../audit";
+import { deleteAccountAsPlatform, deleteCompany, listAccounts, previewCompanyDelete } from "../deletion";
 import { iso, sql } from "../db";
 import { createRequest } from "../numberRequests";
 import { ValidationError } from "../prompt";
@@ -1343,6 +1344,9 @@ export async function consoleRoutes({ req, url, path, method, ctx, appUrl }: Rou
     if (rest === "/system") return json(await system(ctx));
     if (rest === "/businesses") return json({ businesses: await businesses(ctx) });
     if (rest === "/companies") return json({ companies: await companies(ctx) });
+    const coDelete = rest.match(/^\/companies\/([^/]+)\/delete-preview$/);
+    if (coDelete) return json(await previewCompanyDelete(ctx, coDelete[1]));
+    if (rest === "/users") return json({ accounts: await listAccounts(ctx) });
     const co = rest.match(/^\/companies\/([^/]+)$/);
     if (co) return json(await companyDetail(ctx, co[1]));
     const coBrand = rest.match(/^\/companies\/([^/]+)\/brand$/);
@@ -1373,6 +1377,7 @@ export async function consoleRoutes({ req, url, path, method, ctx, appUrl }: Rou
   const company = rest.match(/^\/companies\/([^/]+)(\/.*)?$/);
   if (company) {
     const [, id, sub = ""] = company;
+    if (sub === "" && method === "DELETE") return json(await deleteCompany(ctx, id, await readBody(req)));
     if (sub === "" && method === "PUT") {
       await updateCompany(ctx, id, await readBody(req));
       return json(await companyDetail(ctx, id));
@@ -1426,6 +1431,8 @@ export async function consoleRoutes({ req, url, path, method, ctx, appUrl }: Rou
     await grantPlatformAdmin(ctx, await readBody(req));
     return json({ admins: await platformAdmins() }, 201);
   }
+  const user = rest.match(/^\/users\/([^/]+)$/);
+  if (user && method === "DELETE") return json(await deleteAccountAsPlatform(ctx, user[1], await readBody(req)));
   const pa = rest.match(/^\/platform-admins\/([^/]+)$/);
   if (pa && method === "DELETE") {
     await revokePlatformAdmin(ctx, pa[1]);

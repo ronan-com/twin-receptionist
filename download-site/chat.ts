@@ -43,7 +43,7 @@ export const chatBubble = (m: ChatMount) => !chatEnabled() ? "" : `<div id="chat
 // ---------------- what the model is told ----------------
 const STEP_NAMES: Record<StepId, string> = {
   welcome: "Welcome",
-  brand: "Brand (your brand name and owner email)",
+  brand: "Your details (owner name and email; branding is configured separately by your setup provider)",
   railway: "Hosting (open Railway's Tokens page, create a token with No workspace, paste it here)",
   domain: "Domain (optional: your own address)",
   phones: "Voice (required: choose Telnyx or Vapi and paste that provider's key; if Telnyx's ID check is slow, use Vapi now and add Telnyx later in the dashboard)",

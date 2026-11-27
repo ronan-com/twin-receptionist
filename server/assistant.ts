@@ -95,7 +95,7 @@ function describeRoute(route: string, snap: AgencySnapshot | null): string {
   const names: Record<string, string> = {
     "/admin": "Overview",
     "/admin/clients": "Clients",
-    "/admin/clients/new": "the New receptionist wizard",
+    "/admin/receptionists/new": "the New receptionist wizard",
     "/admin/calls": "Calls",
     "/admin/receptionists": "AI Receptionists",
     "/admin/voices": "Voices",

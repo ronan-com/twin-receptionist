@@ -17,7 +17,7 @@ export function AgencyMark({ to }: { to: string }) {
       for (const k of Object.keys(vars)) root.style.removeProperty(k);
     };
   }, [look]);
-  if (!look?.logo) return <BrandMark to={to} suffix="Admin" />;
+  if (!look?.logo) return <BrandMark to={to} size="sm" />;
   return (
     <Link to={to} className="inline-flex min-w-0 items-center gap-2">
       <img src={look.logo} alt="" className="h-8 max-w-[96px] shrink-0 object-contain" />

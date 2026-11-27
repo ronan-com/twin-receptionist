@@ -131,7 +131,8 @@ export const changeCalendar = (businessId: string, body: { minutes?: number; ena
 export const removeCalendar = (businessId: string) => api.del<{ integrations: Integration[] }>(`${base(businessId)}/calendar`);
 export const testCalendar = (businessId: string) => api.post<{ date: string; result: any }>(`${base(businessId)}/calendar/test`);
 /** A browser navigation (302 to Google/Microsoft), not a fetch. */
-export const calendarSignInUrl = (businessId: string, provider: "google" | "microsoft") => `${base(businessId)}/calendar/signin/${provider}`;
+/** ret "editor": come back to the agency's receptionist editor (Booking tab) instead of the client dashboard. */
+export const calendarSignInUrl = (businessId: string, provider: "google" | "microsoft", ret?: "editor") => `${base(businessId)}/calendar/signin/${provider}${ret ? `?return=${ret}` : ""}`;
 
 export type EmailState = { connected: boolean; address: string; mode: "draft" | "send"; connectedAt: string; lastCheckedAt: string; lastError: string };
 export const getEmail = (businessId: string) => api.get<EmailState>(`${base(businessId)}/email`);

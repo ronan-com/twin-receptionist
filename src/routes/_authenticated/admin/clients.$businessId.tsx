@@ -3,7 +3,8 @@ import { useState } from "react";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { ArrowLeft, ArrowRightLeft, Eye, Pause, Pencil, Phone, Play, Plus, RefreshCw, Share2, Trash2, UserMinus, X } from "lucide-react";
+import { ArrowLeft, Bot, ChevronRight, Mail, MessageSquareText, Mic, Pause, Pencil, Play, Plus, Share2, Trash2, UserMinus, X } from "lucide-react";
+import { nicheIcon } from "@/lib/app/niche-icons";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -178,7 +179,7 @@ function ClientDetailPage() {
             <>
               <NeedsPhone className="h-8 text-[12.5px]" label={<><Plus className="mr-1.5 h-3.5 w-3.5" /> Add receptionist</>}>
               <Button asChild size="sm" className="h-8 text-[12.5px]">
-                <Link to="/admin/clients/new" search={{ company: co.id }} data-action="add-receptionist">
+                <Link to="/admin/receptionists/new" search={{ company: co.id }} data-action="add-receptionist">
                   <Plus className="mr-1.5 h-3.5 w-3.5" /> Add receptionist
                 </Link>
               </Button>
@@ -256,18 +257,19 @@ function ClientDetailPage() {
       </MetricGrid>
 
       <section className="space-y-3" data-section="receptionists">
-        <h2 className="text-[14px] font-semibold text-ink">Receptionists and automations</h2>
+        <h2 className="text-[14px] font-semibold text-ink">AI receptionists</h2>
         {d.receptionists.length === 0 ? (
           <Panel>
             <EmptyState
               compact
+              icon={Bot}
               title="No receptionist yet"
-              description="Add one: it answers calls, replies to texts and emails, and books appointments for this client."
+              description="Make one for this client: it answers calls, replies to texts and chat, and handles email."
               action={
                 !readOnly ? (
                   <NeedsPhone label="Add receptionist">
                   <Button asChild size="sm">
-                    <Link to="/admin/clients/new" search={{ company: co.id }}>Add receptionist</Link>
+                    <Link to="/admin/receptionists/new" search={{ company: co.id }}>Add receptionist</Link>
                   </Button>
                   </NeedsPhone>
                 ) : undefined
@@ -275,28 +277,39 @@ function ClientDetailPage() {
             />
           </Panel>
         ) : (
-          d.receptionists.map((r) => (
-            <ReceptionistCard
-              key={r.id}
-              r={r}
-              companyName={co.name}
-              ownOrg={ownOrg}
-              platform={platform}
-              readOnly={readOnly}
-              canManage={canManage}
-              onOpen={() => {
-                ws.setBusinessId(r.id);
-                void navigate({ to: "/app/receptionist" });
-              }}
-              onViewAs={() => viewAs.mutate(r)}
-              viewing={viewAs.isPending}
-              onChanged={refresh}
-            />
-          ))
+          <Panel padded={false}>
+            <ul className="divide-y divide-hairline" data-list="client-receptionists">
+              {d.receptionists.map((r) => {
+                const NicheIcon = nicheIcon(r.settings.industry).icon;
+                const texts = r.numbers.some((n) => n.capabilities.sms);
+                return (
+                  <li key={r.id} className="row-hover flex flex-col gap-2 px-4 py-3 sm:flex-row sm:items-center sm:justify-between" data-receptionist-row={r.id}>
+                    <div className="flex min-w-0 items-center gap-3">
+                      <span data-hue={nicheIcon(r.settings.industry).hue} className="hue-icon flex h-10 w-10 shrink-0 items-center justify-center rounded-[10px]"><NicheIcon className="h-5 w-5" /></span>
+                      <div className="min-w-0">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="truncate text-[14px] font-semibold text-ink">{r.name}</span>
+                          <StatusBadge tone={r.status === "paused" ? "muted" : "success"} dot>{r.status === "paused" ? "Paused" : "Active"}</StatusBadge>
+                        </div>
+                        <div className="mt-1 flex flex-wrap gap-1.5 text-[11.5px]">
+                          <Link to="/admin/receptionists/$receptionistId" params={{ receptionistId: r.id }} search={{ tab: "voice" }} className="inline-flex items-center gap-1 rounded-full bg-[var(--canvas-2)] px-2 py-0.5 text-ink-muted hover:text-ink"><Mic className="h-3 w-3" /> Voice · {r.numbers.length ? "number on" : "no number"}</Link>
+                          <Link to="/admin/receptionists/$receptionistId" params={{ receptionistId: r.id }} search={{ tab: "messages" }} className="inline-flex items-center gap-1 rounded-full bg-[var(--canvas-2)] px-2 py-0.5 text-ink-muted hover:text-ink"><MessageSquareText className="h-3 w-3" /> Messages · {texts ? "texts on" : "chat"}</Link>
+                          <Link to="/admin/receptionists/$receptionistId" params={{ receptionistId: r.id }} search={{ tab: "email" }} className="inline-flex items-center gap-1 rounded-full bg-[var(--canvas-2)] px-2 py-0.5 text-ink-muted hover:text-ink"><Mail className="h-3 w-3" /> Email</Link>
+                        </div>
+                      </div>
+                    </div>
+                    <Button asChild size="lg" className="self-start sm:self-auto">
+                      <Link to="/admin/receptionists/$receptionistId" params={{ receptionistId: r.id }} search={{ tab: "voice" }} data-action="open-receptionist"><Pencil className="mr-1.5 h-4 w-4" /> Edit receptionist</Link>
+                    </Button>
+                  </li>
+                );
+              })}
+            </ul>
+          </Panel>
         )}
       </section>
 
-      <Panel title="Customers with access" description="The company's own people. Managers can change its receptionists; viewers only look. Access covers every receptionist of this client." padded={false}>
+      <Panel title="Customers with access" description="The client's own people." padded={false}>
         <ul className="divide-y divide-hairline" data-list="customers">
           {d.members.map((m) => (
             <li key={m.id} className="flex flex-col gap-2 px-4 py-2.5 text-[13px] sm:flex-row sm:items-center sm:justify-between" data-customer={m.profile.email}>
@@ -333,7 +346,7 @@ function ClientDetailPage() {
               </div>
             </li>
           ))}
-          {d.members.length === 0 && d.invitations.length === 0 ? <li className="px-4 py-5 text-center text-[12.5px] text-ink-muted">Not shared with anyone at the company yet.</li> : null}
+          {d.members.length === 0 && d.invitations.length === 0 ? <li className="px-4 py-5 text-center text-[12.5px] text-ink-muted">No one yet.</li> : null}
         </ul>
         {canManage && d.receptionists.length ? (
           <form
@@ -373,7 +386,9 @@ function ClientDetailPage() {
         ) : null}
       </Panel>
 
-      <Panel title="Branding" description={`${co.name}'s logo, background and colours on its customer workspace. Blank fields use the agency's branding.`}>
+      <details className="panel px-4 py-3" data-section="client-branding">
+        <summary className="cursor-pointer text-[14px] font-semibold text-ink">Branding <span className="ml-1 text-[12px] font-normal text-ink-muted">logo and colours</span></summary>
+        <div className="mt-4">
         <BrandEditor
           lockable
           brand={d.brand}
@@ -387,7 +402,8 @@ function ClientDetailPage() {
             await qc.invalidateQueries({ queryKey: ["console", "companies"] });
           }}
         />
-      </Panel>
+        </div>
+      </details>
 
       <div className="grid gap-4 xl:grid-cols-3">
         <Panel title="Recent calls" className="xl:col-span-2" padded={false}>
@@ -606,275 +622,5 @@ function ClientDetailPage() {
 
       <CallSheet callId={openCall} onClose={() => setOpenCall(null)} />
     </div>
-  );
-}
-
-function ReceptionistCard({
-  r,
-  companyName,
-  ownOrg,
-  platform,
-  readOnly,
-  canManage,
-  onOpen,
-  onViewAs,
-  viewing,
-  onChanged,
-}: {
-  r: CompanyReceptionist;
-  companyName: string;
-  ownOrg: boolean;
-  platform: boolean;
-  readOnly: boolean;
-  canManage: boolean;
-  onOpen: () => void;
-  onViewAs: () => void;
-  viewing: boolean;
-  onChanged: () => Promise<void>;
-}) {
-  const [numType, setNumType] = useState<"local" | "mobile">("mobile");
-  const [numNote, setNumNote] = useState("");
-  // An agency on its own phone account buys numbers itself; on the platform's it asks for one.
-  // With SINGLE_AGENCY the server's key is the agency's own, so it buys them too.
-  const { ws: consoleWs, single } = useConsole();
-  const ownPhone = (consoleWs.session?.telnyx === "own" || single) && !platform;
-  const s = r.settings;
-  const paused = r.status === "paused";
-  const pause = useMutation({
-    mutationFn: (status: "active" | "paused") => setBusinessStatus(r.id, status),
-    onSuccess: async (_d, status) => {
-      toast.success(status === "paused" ? `${r.name} paused` : `${r.name} resumed`);
-      await onChanged();
-    },
-    onError: (e: Error) => toast.error(e.message),
-  });
-  const request = useMutation({
-    mutationFn: () => requestNumberFor(r.id, numType, numNote.trim()),
-    onSuccess: async () => {
-      toast.success("Number requested", { description: "The platform team will buy and connect it." });
-      setNumNote("");
-      await onChanged();
-    },
-    onError: (e: Error) => toast.error("Couldn't request a number", { description: e.message }),
-  });
-  const who = r.business_name || companyName;
-  // An agency with both engines connected can move a receptionist between them.
-  const enginesQ = useQuery({ queryKey: ["console", "voice-engines"], queryFn: getVoiceEngines, staleTime: 5 * 60_000, enabled: canManage && !readOnly && !platform });
-  const engineLabel = r.provider === "vapi" ? "Vapi" : "Telnyx";
-  const otherEngine = r.provider === "vapi" ? "telnyx" : "vapi";
-  const otherLabel = otherEngine === "vapi" ? "Vapi" : "Telnyx";
-  const canMove = Boolean(enginesQ.data?.engines.find((e) => e.id === otherEngine)?.connected);
-  const [moving, setMoving] = useState(false);
-  const move = useMutation({
-    mutationFn: () => moveReceptionistEngine(r.id, otherEngine),
-    onSuccess: async (res) => {
-      setMoving(false);
-      toast.success(`${r.name} now runs on ${otherLabel}`, {
-        description: res.detached.length
-          ? `${res.detached.map(fmtPhone).join(", ")} no longer rings it (${otherLabel} can't answer ${engineLabel === "Vapi" ? "a Twilio" : "a Telnyx"} number). Add a ${otherLabel === "Vapi" ? "Twilio" : "Telnyx"} number below.`
-          : `Add a ${otherLabel === "Vapi" ? "Twilio" : "Telnyx"} number below when you're ready.`,
-        duration: 12_000,
-      });
-      await onChanged();
-    },
-    onError: (e: Error) => toast.error(`Couldn't move it to ${otherLabel}`, { description: e.message }),
-  });
-  const applyVoice = useMutation({
-    mutationFn: () => applyVapiVoiceSettings(r.id),
-    onSuccess: async () => {
-      toast.success("Voice settings applied", { description: "It now uses the faster voice setup: quicker replies and turn-taking." });
-      await onChanged();
-    },
-    onError: (e: Error) => toast.error("Couldn't apply the voice settings", { description: e.message }),
-  });
-  // An agency owner or admin on its own phone account sees each number as Telnyx reports it (approval status, disconnect).
-  const showOwnNumbers = !readOnly && ownPhone && canManage && r.provider !== "vapi";
-  const plainNumbers = r.numbers.length ? (
-    <ul className="space-y-1.5" data-list="numbers">
-      {r.numbers.map((n) => (
-        <li key={n.id} className="flex items-center justify-between gap-2 text-[13px]">
-          <span className="flex items-center gap-1.5 tabular-nums">
-            <Phone className="h-3.5 w-3.5 text-ink-muted" /> {n.friendly_name}
-          </span>
-          <StatusBadge tone="success">{n.capabilities.sms ? "Calls + texts" : "Calls"}</StatusBadge>
-        </li>
-      ))}
-    </ul>
-  ) : (
-    <p className="text-[12.5px] text-ink-muted">No number yet. You can test it from the browser meanwhile.</p>
-  );
-
-  return (
-    <Panel
-      title={
-        <span className="flex flex-wrap items-center gap-2">
-          <span>{r.name}</span>
-          <StatusBadge tone={paused ? "muted" : "success"} dot>{paused ? "Paused" : "Active"}</StatusBadge>
-          {r.onboarding_pending ? <StatusBadge tone="warning">Waiting for client</StatusBadge> : null}
-          {r.demo_assistant ? <DemoBadge /> : null}
-          <span data-engine={r.provider}><StatusBadge tone="muted">{engineLabel}</StatusBadge></span>
-        </span>
-      }
-      description={`Answers for ${who}${s.voice ? ` · ${s.voice.split(" - ")[0]} voice` : ""} · ${engineLabel} · ${r.number_source ?? (r.numbers.length ? `${engineLabel === "Vapi" ? "Twilio" : "Telnyx"} number` : "No number")}`}
-      actions={
-        <div className="flex flex-wrap gap-1.5">
-          {ownOrg ? (
-            <Button variant="outline" size="sm" className="h-7 text-[12px]" onClick={onOpen} data-action="open-workspace">
-              <Pencil className="mr-1 h-3.5 w-3.5" /> {readOnly ? "Open" : "Open and edit"}
-            </Button>
-          ) : null}
-          {!readOnly && (platform || canManage) ? (
-            <Button variant="outline" size="sm" className="h-7 text-[12px]" onClick={onViewAs} disabled={viewing} data-action="view-as-customer">
-              <Eye className="mr-1 h-3.5 w-3.5" /> See what {who} sees
-            </Button>
-          ) : null}
-          {canManage ? (
-            paused ? (
-              <Button variant="ghost" size="sm" className="h-7 text-[12px]" onClick={() => pause.mutate("active")} disabled={pause.isPending} data-action="resume-receptionist">
-                <Play className="mr-1 h-3.5 w-3.5" /> Resume
-              </Button>
-            ) : (
-              <Button variant="ghost" size="sm" className="h-7 text-[12px]" onClick={() => pause.mutate("paused")} disabled={pause.isPending} data-action="pause-receptionist">
-                <Pause className="mr-1 h-3.5 w-3.5" /> Pause
-              </Button>
-            )
-          ) : null}
-          {canManage && !readOnly && r.provider === "vapi" ? (
-            <Button variant="ghost" size="sm" className="h-7 text-[12px]" onClick={() => applyVoice.mutate()} disabled={applyVoice.isPending} data-action="apply-voice-settings" title="Push the faster voice setup (model, voice and turn-taking) to this receptionist">
-              <RefreshCw className={`mr-1 h-3.5 w-3.5 ${applyVoice.isPending ? "animate-spin" : ""}`} /> Apply new voice settings
-            </Button>
-          ) : null}
-          {canManage && !readOnly && canMove ? (
-            <Button variant="ghost" size="sm" className="h-7 text-[12px]" onClick={() => setMoving(true)} data-action={`move-to-${otherEngine}`}>
-              <ArrowRightLeft className="mr-1 h-3.5 w-3.5" /> Move to {otherLabel}
-            </Button>
-          ) : null}
-        </div>
-      }
-    >
-      <AlertDialog open={moving} onOpenChange={(o) => !move.isPending && setMoving(o)}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Move {r.name} to {otherLabel}?</AlertDialogTitle>
-            <AlertDialogDescription asChild>
-              <div className="space-y-2 text-[13px]">
-                <p>It's set up again on {otherLabel} with everything it has now: its script, business details, knowledge, booking, call handling and the closest {otherLabel} voice. Then the {engineLabel} one is removed.</p>
-                {r.numbers.length ? (
-                  <p data-warning="numbers">
-                    <strong>Its number{r.numbers.length > 1 ? "s" : ""} ({r.numbers.map((n) => n.friendly_name).join(", ")}) will stop ringing it.</strong> {otherLabel} can't answer {engineLabel === "Vapi" ? "a Twilio" : "a Telnyx"} number. The number stays on your {engineLabel === "Vapi" ? "Twilio" : "Telnyx"} account; add a {otherLabel === "Vapi" ? "Twilio" : "Telnyx"} number here afterwards.
-                  </p>
-                ) : (
-                  <p>It has no number yet. Add a {otherLabel === "Vapi" ? "Twilio" : "Telnyx"} number afterwards.</p>
-                )}
-              </div>
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel disabled={move.isPending}>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={(e) => {
-                e.preventDefault();
-                move.mutate();
-              }}
-              disabled={move.isPending}
-              data-action="confirm-move-engine"
-            >
-              {move.isPending ? "Moving…" : `Move to ${otherLabel}`}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-      <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,300px)]" data-receptionist={r.id}>
-        <div className="min-w-0 space-y-3">
-          <ul className="divide-y divide-hairline rounded-[6px] border border-hairline" data-list="automations">
-            {r.automations.map((a) => (
-              <li key={a.key} className="row-hover flex flex-col gap-1 px-3 py-2 text-[12.5px] sm:flex-row sm:items-center sm:justify-between" data-automation-row={a.key}>
-                <div className="flex min-w-0 items-center gap-2.5">
-                  <AutomationIcon automation={a.key} />
-                  <div className="min-w-0">
-                    <div className="font-medium text-ink">{a.label}</div>
-                    <div className="break-words text-[11.5px] text-ink-muted">{a.detail}</div>
-                  </div>
-                </div>
-                <AutomationChips items={[{ ...a, label: a.status === "live" ? "On" : a.status === "attention" ? "Needs attention" : a.status === "paused" ? "Paused" : "Off" }]} />
-              </li>
-            ))}
-          </ul>
-          <KeyValue
-            items={[
-              { label: "Industry", value: industryPreset((s.industry as IndustryKey) ?? "other").label },
-              { label: "Suburb", value: s.suburb || "—" },
-              { label: "Hours", value: s.hours ? describeHours(s.hours).join("; ") : "—" },
-              { label: "Callers can ask for", value: s.services.join(", ") || "—" },
-            ]}
-          />
-          {s.greeting ? <p className="rounded-[6px] bg-canvas-2 px-3 py-2 text-[12.5px] text-ink">“{s.greeting}”</p> : null}
-        </div>
-        <div className="min-w-0">
-          {!readOnly && !paused && !r.demo_assistant ? <TestCall assistantId={r.provider_agent_id} provider={r.provider} clientId={r.business_id} /> : null}
-          <div className="mb-1.5 text-[12.5px] font-medium text-ink">Phone number</div>
-          {showOwnNumbers ? <AttachedNumbers clientId={r.id} fallback={plainNumbers} onChanged={onChanged} /> : plainNumbers}
-          {!r.demo_assistant ? <TextsSwitch clientId={r.id} canEdit={canManage && !readOnly} /> : null}
-          {r.number_requests.length ? (
-            <ul className="mt-3 space-y-1 border-t border-hairline pt-3 text-[12px]" data-list="number-requests">
-              {r.number_requests.map((n) => (
-                <li key={n.id} className="flex items-center justify-between gap-2">
-                  <span className="min-w-0 truncate text-ink-muted">
-                    {n.type === "mobile" ? "Mobile" : "Local"} · {fmtDate(n.created_at)}
-                    {n.status === "declined" && n.reason ? ` · ${n.reason}` : ""}
-                    {n.status === "done" && n.phone_number ? ` · ${fmtPhone(n.phone_number)}` : ""}
-                  </span>
-                  <StatusBadge tone={n.status === "pending" ? "warning" : n.status === "done" ? "success" : "muted"}>{humanize(n.status)}</StatusBadge>
-                </li>
-              ))}
-            </ul>
-          ) : null}
-          {!readOnly && ownPhone ? (
-            canManage ? (
-              r.provider === "vapi" ? <ImportNumber clientId={r.id} timezone={s.timezone} onDone={onChanged} /> : <BuyNumber clientId={r.id} timezone={s.timezone} onBought={onChanged} />
-            ) : (
-              <p className="mt-3 border-t border-hairline pt-3 text-[12px] text-ink-muted">Ask an owner or admin of your agency to buy a number.</p>
-            )
-          ) : !readOnly ? (
-            <>
-            {r.provider === "vapi" && canManage && !platform ? <ImportNumber clientId={r.id} timezone={s.timezone} twilioOnly onDone={onChanged} /> : null}
-            <form
-              className="mt-3 space-y-2 border-t border-hairline pt-3"
-              onSubmit={(e) => {
-                e.preventDefault();
-                request.mutate();
-              }}
-            >
-              <div className="text-[12.5px] font-medium text-ink">Request a number</div>
-              <Select value={numType} onValueChange={(v) => setNumType(v as "local" | "mobile")}>
-                <SelectTrigger className="h-8 text-[12.5px]" aria-label="Number type"><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="mobile">Mobile (calls and texts)</SelectItem>
-                  <SelectItem value="local">Local (calls only)</SelectItem>
-                </SelectContent>
-              </Select>
-              <Input value={numNote} onChange={(e) => setNumNote(e.target.value)} placeholder="Note (optional), e.g. Brisbane area code" className="h-8 text-[12.5px]" maxLength={300} />
-              <Button type="submit" size="sm" variant="outline" className="h-8 w-full text-[12.5px]" disabled={request.isPending} data-action="request-number">
-                {request.isPending ? "Requesting…" : "Request number"}
-              </Button>
-              {platform ? (
-                <p className="text-[11.5px] text-ink-muted">
-                  Then buy it from <Link to="/admin/number-requests" className="text-indigo hover:underline">Number requests</Link>.
-                </p>
-              ) : null}
-            </form>
-            </>
-          ) : null}
-        </div>
-      </div>
-      <div className="mt-4" data-website-chat={r.id}>
-        <WebsiteChatCard clientId={r.id} businessName={who} />
-      </div>
-      <div className="mt-4" data-telegram={r.id}>
-        <Panel title="Telegram" description={`A Telegram bot for ${who}. It answers like the website chat.`}>
-          <TelegramSetup clientId={r.id} />
-        </Panel>
-      </div>
-    </Panel>
   );
 }

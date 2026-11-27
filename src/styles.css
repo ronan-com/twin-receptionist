@@ -72,8 +72,17 @@
   --lime: #a5f3fc;
 
   --canvas: #ffffff;
-  --canvas-2: #f7f8fa;
+  --canvas-2: #f4f6fa;
   --hairline: #e3e8ee;
+  --page: #f6f8fb; /* the page behind the white panels */
+  --surface: #ffffff; /* sidebar, top bar, popovers */
+  --shadow-1: 0 1px 2px rgba(10, 37, 64, 0.05), 0 6px 18px -12px rgba(10, 37, 64, 0.22);
+  --shadow-2: 0 2px 4px rgba(10, 37, 64, 0.06), 0 16px 36px -16px rgba(10, 37, 64, 0.3);
+  /* Up to three brand colours. --indigo is the first (the agency's look and the server's config set it);
+     the other two come from the config, else they are turned from the first. */
+  --brand-1: var(--indigo);
+  --brand-2: #00a6d6;
+  --brand-3: #ff6f91;
   --ink: var(--slate-deep);
   --ink-muted: #425466;
 
@@ -192,16 +201,18 @@
 
 /* Stripe product panel: pale blue-gray hairline, 6px radius, no float */
 @utility panel {
-  background: #fff;
+  background: var(--card);
   border: 1px solid var(--hairline);
-  border-radius: 6px;
+  border-radius: 10px;
   overflow: hidden;
+  box-shadow: var(--shadow-1);
 }
 
 @utility card-surface {
-  background: #fff;
+  background: var(--card);
   border: 1px solid var(--hairline);
-  border-radius: 6px;
+  border-radius: 10px;
+  box-shadow: var(--shadow-1);
 }
 
 /* Thin grid field */
@@ -386,7 +397,9 @@
   }
   [data-hue="indigo"] { --hue: var(--indigo); --hue-ink: var(--primary-ink); }
   /* One accent: the decorative hues all follow the brand colour; only status colours (green, amber, coral) stay distinct. */
-  [data-hue="cyan"], [data-hue="magenta"], [data-hue="violet"], [data-hue="sky"] { --hue: var(--indigo); --hue-ink: var(--primary-ink); }
+  /* Decorative hues follow the brand's colours: the first, second and third. Status colours (green, amber, coral) stay fixed. */
+  [data-hue="cyan"], [data-hue="sky"] { --hue: var(--brand-2); --hue-ink: color-mix(in srgb, var(--brand-2) 62%, #000); }
+  [data-hue="magenta"], [data-hue="violet"] { --hue: var(--brand-3); --hue-ink: color-mix(in srgb, var(--brand-3) 62%, #000); }
   [data-hue="coral"] { --hue: var(--coral); --hue-ink: #b03a17; }
   [data-hue="amber"] { --hue: var(--amber); --hue-ink: #855000; }
   [data-hue="green"] { --hue: var(--green); --hue-ink: #0b6142; }
@@ -406,18 +419,21 @@
   /* KPI tile: a faint wash of its hue and a hue-coloured top rule */
   .hue-tile {
     position: relative;
-    background: #fff;
-    border-color: var(--hairline);
-    transition: box-shadow 0.18s ease;
+    background: linear-gradient(180deg, var(--hue-faint) 0%, var(--card) 62%);
+    border-color: var(--hue-line);
+    transition: box-shadow 0.18s ease, transform 0.18s ease;
   }
   .hue-tile::before {
     content: "";
     position: absolute;
     inset: 0 0 auto 0;
-    height: 0;
+    height: 3px;
+    background: var(--hue);
+    opacity: 0.85;
   }
   .hue-tile:hover {
-    box-shadow: 0 6px 20px -14px rgba(10, 37, 64, 0.35);
+    box-shadow: var(--shadow-2);
+    transform: translateY(-1px);
   }
 
   /* Answered ribbon: brand primary into the accents */
@@ -427,8 +443,9 @@
 
   /* active sidebar item: a tint of the brand colour and an accent bar */
   .nav-active {
-    background: color-mix(in srgb, var(--indigo) 11%, transparent);
+    background: color-mix(in srgb, var(--indigo) 12%, transparent);
     color: var(--ink);
+    box-shadow: inset 2px 0 0 var(--indigo);
   }
   .nav-active::before {
     content: none;
@@ -439,7 +456,7 @@
     transition: background-color 0.15s ease;
   }
   .row-hover:hover {
-    background-color: color-mix(in srgb, var(--indigo) 5%, #fff);
+    background-color: color-mix(in srgb, var(--indigo) 5%, var(--card));
   }
 
   /* sign-in / sign-up side panel: Answered's ribbon sweep */
@@ -520,5 +537,105 @@
   .gs-click { opacity: 0; }
 }
 
-/* Clean pass: dashboards are white, with one accent. */
-[data-app-shell], [data-app-shell] main { background: #fff; }
+/* The page sits a shade behind its white panels, so panels read as layers. */
+[data-app-shell], [data-app-shell] main { background: var(--page); }
+[data-app-shell] aside { background: var(--surface); box-shadow: 1px 0 0 var(--hairline), 6px 0 24px -20px rgba(10, 37, 64, 0.3); }
+
+/* Second and third brand colours, turned from the first when the config gives only one. */
+@supports (color: oklch(from red l c h)) {
+  :root {
+    --brand-2: oklch(from var(--brand-1) l c calc(h - 65));
+    --brand-3: oklch(from var(--brand-1) l c calc(h + 70));
+  }
+}
+
+/* ---------- Home hero, soft gradients, featured nav ---------- */
+.hero-card {
+  position: relative;
+  overflow: hidden;
+  border-radius: 14px;
+  color: #fff;
+  background:
+    radial-gradient(120% 140% at 100% 0%, color-mix(in srgb, var(--brand-3) 70%, transparent) 0%, transparent 55%),
+    radial-gradient(90% 120% at 0% 100%, color-mix(in srgb, var(--brand-2) 65%, transparent) 0%, transparent 60%),
+    linear-gradient(135deg, var(--indigo-deep), var(--indigo));
+  box-shadow: var(--shadow-2);
+}
+.hero-card::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: repeating-linear-gradient(100deg, rgba(255,255,255,.10) 0 1px, transparent 1px 5px);
+  mix-blend-mode: overlay;
+  pointer-events: none;
+}
+.nav-featured {
+  background: linear-gradient(135deg, color-mix(in srgb, var(--indigo) 14%, var(--card)), color-mix(in srgb, var(--brand-2) 10%, var(--card)));
+  border: 1px solid color-mix(in srgb, var(--indigo) 25%, var(--hairline));
+  box-shadow: var(--shadow-1);
+}
+.chip-on {
+  border-color: var(--indigo);
+  background: color-mix(in srgb, var(--indigo) 10%, var(--card));
+  box-shadow: 0 0 0 1px var(--indigo) inset;
+}
+
+/* ---------- Dark mode ----------
+   Variables first; then the few hard-coded light tints used around the app. */
+.dark {
+  --slate-deep: #e8eef7;
+  --ink: #e8eef7;
+  --ink-muted: #9fb0c6;
+  --hairline: #243248;
+  --canvas: #0c121b;
+  --canvas-2: #141c29;
+  --page: #0a0f17;
+  --surface: #0f1622;
+  --card: #121a27;
+  --popover: #121a27;
+  --card-foreground: #e8eef7;
+  --popover-foreground: #e8eef7;
+  --secondary: #141c29;
+  --muted: #141c29;
+  --background: #0a0f17;
+  --foreground: #e8eef7;
+  --border: #243248;
+  --input: #2b3a52;
+  --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.4), 0 8px 22px -14px rgba(0, 0, 0, 0.7);
+  --shadow-2: 0 2px 4px rgba(0, 0, 0, 0.45), 0 18px 40px -16px rgba(0, 0, 0, 0.8);
+  --primary-ink: color-mix(in srgb, var(--indigo) 55%, #fff) !important;
+  color-scheme: dark;
+}
+.dark [data-hue] {
+  --hue-soft: color-mix(in srgb, var(--hue) 24%, var(--card));
+  --hue-faint: color-mix(in srgb, var(--hue) 10%, var(--card));
+  --hue-line: color-mix(in srgb, var(--hue) 30%, var(--hairline));
+  --hue-ink: color-mix(in srgb, var(--hue) 58%, #fff);
+}
+.dark [data-hue].hue-solid, .dark .hue-solid[data-hue] { background: color-mix(in srgb, var(--hue) 75%, #000); color: #fff; }
+.dark .bg-white { background-color: var(--card); }
+.dark .bg-white\/95 { background-color: color-mix(in srgb, var(--surface) 92%, transparent); }
+.dark [data-app-shell] header, .dark [data-app-shell] aside { background-color: var(--surface); }
+.dark .text-slate-deep { color: var(--ink); }
+.dark .ring-white, .dark [class*="ring-white"] { --tw-ring-color: var(--card); }
+/* light tinted notices and chips: darken the fill, lighten their ink */
+.dark [class*="bg-[#ff"], .dark [class*="bg-[#fd"], .dark [class*="bg-[#fb"] { background-color: color-mix(in srgb, #ff7a59 14%, var(--card)); }
+.dark [class*="bg-[#ef"], .dark [class*="bg-[#f4f3"], .dark [class*="bg-[#f7f6"], .dark [class*="bg-[#f5f4"], .dark [class*="bg-[#f0"], .dark [class*="bg-[#e6"], .dark [class*="bg-[#e3"], .dark [class*="bg-[#f1"], .dark [class*="bg-[#f6"] { background-color: color-mix(in srgb, var(--indigo) 16%, var(--card)); }
+.dark [class*="border-[#ff"], .dark [class*="border-[#dc"], .dark [class*="border-[#c8"] { border-color: color-mix(in srgb, var(--ink) 18%, transparent); }
+.dark [class*="text-[#a"], .dark [class*="text-[#8"], .dark [class*="text-[#7"], .dark [class*="text-[#4"], .dark [class*="text-[#b"], .dark [class*="text-[#0"] { color: color-mix(in srgb, currentColor 35%, #fff); }
+.dark [class*="hover:bg-[#ff"]:hover { background-color: color-mix(in srgb, #ff7a59 22%, var(--card)); }
+.dark input, .dark textarea, .dark select { background-color: color-mix(in srgb, var(--canvas-2) 70%, transparent); color: var(--ink); }
+.dark ::placeholder { color: color-mix(in srgb, var(--ink-muted) 70%, transparent); }
+.dark .row-hover:hover { background-color: color-mix(in srgb, var(--indigo) 12%, var(--card)); }
+.dark .nav-active { background: color-mix(in srgb, var(--indigo) 22%, transparent); }
+.dark .recharts-cartesian-grid line { stroke: var(--hairline); }
+.dark .recharts-text, .dark .recharts-cartesian-axis-tick-value { fill: var(--ink-muted); }
+.dark img[data-workspace-logo], .dark [data-workspace-logo] img { background: transparent; }
+
+/* Notification bell, toast stack */
+@keyframes toastIn { from { opacity: 0; transform: translateY(10px) scale(0.98); } to { opacity: 1; transform: none; } }
+.alert-toast { animation: toastIn 0.22s ease-out both; }
+@media (prefers-reduced-motion: reduce) { .alert-toast { animation: none; } }
+
+.dark .bg-ink { color: var(--page); }
+.dark .bg-ink * { color: inherit; }

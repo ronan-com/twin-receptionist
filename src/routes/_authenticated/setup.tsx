@@ -567,7 +567,7 @@ function Done({ account, onBack }: { account: PhoneAccount; onBack: () => void }
           <Link to="/admin/connections">See connections</Link>
         </Button>
         <Button asChild className="h-10 px-5" data-action="setup-first-client">
-          <Link to="/admin/clients/new">
+          <Link to="/admin/receptionists/new">
             Add your first client <ArrowRight />
           </Link>
         </Button>

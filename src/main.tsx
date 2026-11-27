@@ -5,6 +5,9 @@ import { createRoot } from "react-dom/client";
 import { ApiError } from "./lib/api/base";
 import { routeTree } from "./routeTree.gen";
 import "./styles.css";
+import { initTheme } from "./lib/app/theme";
+
+initTheme();
 
 const queryClient = new QueryClient({
   defaultOptions: {

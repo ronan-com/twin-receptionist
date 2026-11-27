@@ -17,12 +17,27 @@ import type { AppointmentStatus, LeadStage } from "@/lib/app/types";
 import { HUE_HEX, dailyCounts, hueFor, type Hue } from "@/components/app/hues";
 import { BizCell, CallSheet, useConsole } from "./-shared";
 import { PRODUCT } from "@/lib/app/product";
+import { Home } from "./-home";
 import { GetStartedChecklist } from "@/components/onboarding/Checklist";
 
 export const Route = createFileRoute("/_authenticated/admin/")({
   head: () => ({ meta: [{ title: `Admin overview — ${PRODUCT}` }] }),
-  component: AdminOverview,
+  component: AdminHome,
 });
+
+// Home is short. The full charts and tables are one tap away under "More numbers".
+function AdminHome() {
+  const [more, setMore] = useState(false);
+  return (
+    <div className="space-y-6">
+      <Home />
+      <details className="panel px-4 py-3" onToggle={(e) => setMore((e.currentTarget as HTMLDetailsElement).open)}>
+        <summary className="cursor-pointer text-[14px] font-semibold text-ink">More numbers</summary>
+        {more ? <div className="mt-4"><AdminOverview /></div> : null}
+      </details>
+    </div>
+  );
+}
 
 function AdminOverview() {
   const { ws, platform, readOnly, orgName, single } = useConsole();
@@ -96,7 +111,7 @@ function AdminOverview() {
             {!readOnly ? (
               <NeedsPhone className="h-8 text-[12.5px]" label={<><Plus className="mr-1.5 h-3.5 w-3.5" /> New receptionist</>}>
                 <Button asChild size="sm" className="h-8 text-[12.5px]">
-                  <Link to="/admin/clients/new" data-cta="new-receptionist">
+                  <Link to="/admin/receptionists/new" data-cta="new-receptionist">
                     <Plus className="mr-1.5 h-3.5 w-3.5" /> New receptionist
                   </Link>
                 </Button>
@@ -135,7 +150,7 @@ function AdminOverview() {
               !readOnly ? (
                 <NeedsPhone size="default" label={<><Plus className="mr-1.5 h-4 w-4" /> Create your first receptionist</>}>
                   <Button asChild data-cta="first-receptionist">
-                    <Link to="/admin/clients/new">
+                    <Link to="/admin/receptionists/new">
                       <Plus className="mr-1.5 h-4 w-4" /> Create your first receptionist
                     </Link>
                   </Button>

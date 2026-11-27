@@ -1,3 +1,4 @@
+import { applySessionLook } from "@/lib/app/theme";
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 import { queryOptions, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
@@ -23,7 +24,11 @@ import type { InternalRole, MembershipRole, Profile } from "./types";
 export const sessionQuery = () =>
   queryOptions({
     queryKey: ["session"],
-    queryFn: authApi.session,
+    queryFn: async () => {
+      const s = await authApi.session();
+      applySessionLook(s); // the install's colours and light/dark
+      return s;
+    },
     staleTime: 60_000,
   });
 

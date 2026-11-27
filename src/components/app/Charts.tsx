@@ -50,7 +50,7 @@ function BarFade({ id, color }: { id: string; color: string }) {
 function ChartTip({ active, payload, label, formatter, colors }: { active?: boolean; payload?: TooltipPayload; label?: string; formatter?: (v: number) => string; colors?: Record<string, string> }) {
   if (!active || !payload?.length) return null;
   return (
-    <div className="rounded-[8px] border border-hairline bg-white px-3 py-2 text-[12px] shadow-[0_8px_28px_-10px_rgba(6,27,49,0.3)]">
+    <div className="rounded-[8px] border border-hairline bg-[var(--card)] px-3 py-2 text-[12px] shadow-[0_8px_28px_-10px_rgba(6,27,49,0.3)]">
       {label ? <div className="mb-1 font-semibold text-ink">{label}</div> : null}
       <div className="space-y-0.5">
         {payload.map((p, i) => {
@@ -78,7 +78,7 @@ export function LegendChips({ items, className }: { items: { label: string; colo
         <span
           key={l.label}
           className="inline-flex h-[22px] items-center gap-1.5 rounded-full border px-2 text-[11.5px] font-medium text-ink"
-          style={{ background: `color-mix(in srgb, ${l.color} 10%, #fff)`, borderColor: `color-mix(in srgb, ${l.color} 28%, #fff)` }}
+          style={{ background: `color-mix(in srgb, ${l.color} 10%, var(--card))`, borderColor: `color-mix(in srgb, ${l.color} 28%, var(--card))` }}
         >
           <span className="h-2 w-2 rounded-full" style={{ background: l.color }} />
           {l.label}
@@ -139,8 +139,8 @@ export function CallVolumeChart({ data }: { data: DailyPoint[] }) {
         <XAxis dataKey="label" tick={AXIS} tickLine={false} axisLine={false} interval="preserveStartEnd" minTickGap={24} />
         <YAxis tick={AXIS} tickLine={false} axisLine={false} allowDecimals={false} width={40} />
         <Tooltip content={<ChartTip />} cursor={{ stroke: CHART_COLORS.hairline }} />
-        <Area type="monotone" dataKey="total" name="Calls" stroke={CHART_COLORS.indigo} strokeWidth={2.2} fill={`url(#${g}-vol)`} activeDot={{ r: 4, strokeWidth: 2, stroke: "#fff" }} />
-        <Area type="monotone" dataKey="answered" name="Answered" stroke={HUE_HEX.cyan} strokeWidth={1.8} fill={`url(#${g}-ans)`} activeDot={{ r: 4, strokeWidth: 2, stroke: "#fff" }} />
+        <Area type="monotone" dataKey="total" name="Calls" stroke={CHART_COLORS.indigo} strokeWidth={2.2} fill={`url(#${g}-vol)`} activeDot={{ r: 4, strokeWidth: 2, stroke: "var(--card)" }} />
+        <Area type="monotone" dataKey="answered" name="Answered" stroke={HUE_HEX.cyan} strokeWidth={1.8} fill={`url(#${g}-ans)`} activeDot={{ r: 4, strokeWidth: 2, stroke: "var(--card)" }} />
       </AreaChart>
     </ResponsiveContainer>
   );
@@ -190,7 +190,7 @@ export function OutcomeDonut({ data }: { data: BreakdownPoint[] }) {
         {data.slice(0, 6).map((d) => (
           <li key={d.key} className="flex items-center justify-between gap-2">
             <span className="inline-flex min-w-0 items-center gap-1.5 text-ink">
-              <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: d.color, boxShadow: `0 0 0 2px color-mix(in srgb, ${d.color} 22%, #fff)` }} />
+              <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: d.color, boxShadow: `0 0 0 2px color-mix(in srgb, ${d.color} 22%, var(--card))` }} />
               <span className="truncate">{d.name}</span>
             </span>
             <span className="shrink-0 tabular-nums text-ink">
@@ -216,8 +216,8 @@ export function TrendChart({ data }: { data: TrendPoint[] }) {
         <XAxis dataKey="label" tick={AXIS} tickLine={false} axisLine={false} interval="preserveStartEnd" minTickGap={24} />
         <YAxis tick={AXIS} tickLine={false} axisLine={false} allowDecimals={false} width={40} />
         <Tooltip content={<ChartTip />} cursor={{ stroke: CHART_COLORS.hairline }} />
-        <Area type="monotone" dataKey="bookings" name="Bookings" stroke={HUE_HEX.cyan} strokeWidth={2} fill={`url(#${g}-b)`} dot={false} activeDot={{ r: 4, strokeWidth: 2, stroke: "#fff" }} />
-        <Area type="monotone" dataKey="leads" name="Leads" stroke={CHART_COLORS.magenta} strokeWidth={2} fill={`url(#${g}-l)`} dot={false} activeDot={{ r: 4, strokeWidth: 2, stroke: "#fff" }} />
+        <Area type="monotone" dataKey="bookings" name="Bookings" stroke={HUE_HEX.cyan} strokeWidth={2} fill={`url(#${g}-b)`} dot={false} activeDot={{ r: 4, strokeWidth: 2, stroke: "var(--card)" }} />
+        <Area type="monotone" dataKey="leads" name="Leads" stroke={CHART_COLORS.magenta} strokeWidth={2} fill={`url(#${g}-l)`} dot={false} activeDot={{ r: 4, strokeWidth: 2, stroke: "var(--card)" }} />
       </AreaChart>
     </ResponsiveContainer>
   );
@@ -316,7 +316,7 @@ export function RankedBars({ data, className, valueLabel = (v) => fmtNumber(v) }
             <div className="h-2 w-full overflow-hidden rounded-full bg-canvas-2">
               <div
                 className="h-full rounded-full"
-                style={{ width: `${(d.value / max) * 100}%`, background: `linear-gradient(90deg, color-mix(in srgb, ${color} 55%, #fff), ${color})` }}
+                style={{ width: `${(d.value / max) * 100}%`, background: `linear-gradient(90deg, color-mix(in srgb, ${color} 55%, var(--card)), ${color})` }}
               />
             </div>
           </li>

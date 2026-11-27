@@ -55,10 +55,10 @@ const Ctx = createContext<GetStartedApi | null>(null);
 export const useGetStarted = () => useContext(Ctx);
 
 const NAV_COPY: Record<string, { title: string; body: string }> = {
-  "/admin": { title: "Overview", body: "Your home base: calls, bookings and anything that needs attention, across all your clients." },
+  "/admin": { title: "Home", body: "Your home base: today's calls, messages, emails and bookings, your receptionists, and anything that needs attention." },
   "/admin/clients": { title: "Clients", body: "The businesses you look after. Add one, send them an onboarding link, and see their receptionist." },
   "/admin/calls": { title: "Calls", body: "Every call your receptionists answer, with the transcript and outcome. Test calls show up here too." },
-  "/admin/receptionists": { title: "AI Receptionists", body: "All your receptionists in one list. Open one to change its greeting, hours and call handling." },
+  "/admin/receptionists": { title: "AI Receptionist", body: "The main product: one receptionist that answers calls (Voice agent), texts and web chat (Message agent) and email (Email agent). Make one here, open one to change it." },
   "/admin/voices": { title: "Voices", body: "Listen to the voices on offer and see which one each receptionist uses." },
   "/admin/phone-numbers": { title: "Phone Numbers", body: "The numbers your receptionists answer. Connect one so real callers get through." },
   "/admin/number-requests": { title: "Number Requests", body: "Ask for a new number for a client. When it is ready it appears under Phone Numbers." },
@@ -174,7 +174,7 @@ export function GetStartedProvider({
               onTour={startTour}
               onCreate={() => {
                 closeDialog();
-                void navigate({ to: "/admin/clients/new" });
+                void navigate({ to: "/admin/receptionists/new" });
               }}
               onSkip={closeDialog}
               onGuide={(k) => {
@@ -187,7 +187,7 @@ export function GetStartedProvider({
               kind={guide}
               back={from === "welcome" ? () => setDialog("welcome") : null}
               onDone={() => {
-                const to = guide === "receptionist" ? "/admin/clients/new" : "/admin/clients";
+                const to = guide === "receptionist" ? "/admin/receptionists/new" : "/admin/clients";
                 closeDialog();
                 void navigate({ to });
               }}

@@ -93,7 +93,7 @@ export const TUTORIALS: Tutorial[] = [
       "Pick a template and answer a few questions.",
       "Press **Create receptionist**.",
     ],
-    to: "/admin/clients/new",
+    to: "/admin/receptionists/new",
     toLabel: "New receptionist",
     guide: "receptionist",
     keywords: "create new template wizard setup",

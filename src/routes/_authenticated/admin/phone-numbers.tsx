@@ -12,6 +12,9 @@ import { adminAgentsQuery, adminNumbersQuery, adminBusinessesQuery } from "@/lib
 import type { AdminNumberRow } from "@/lib/api/console";
 import { BizCell, useConsole } from "./-shared";
 import { OwnedNumbers } from "./-own-numbers";
+import { BuyNumber } from "./-buy-number";
+import { NumberCaps } from "./-number-caps";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { PRODUCT } from "@/lib/app/product";
 
 export const Route = createFileRoute("/_authenticated/admin/phone-numbers")({
@@ -28,6 +31,7 @@ function AdminNumbersPage() {
   const q = useQuery(adminNumbersQuery());
   const bizQ = useQuery(adminBusinessesQuery());
   const [search, setSearch] = useState("");
+  const [buyFor, setBuyFor] = useState("");
 
   const rows = useMemo(() => {
     const s = search.trim().toLowerCase().replace(/\s/g, "");
@@ -41,7 +45,7 @@ function AdminNumbersPage() {
     { key: "number", header: "Number", cell: (n) => <span className="whitespace-nowrap font-medium tabular-nums text-ink">{n.friendly_name}</span> },
     { key: "client", header: "Client", cell: (n) => <BizCell biz={n.business} showAgency={platform} /> },
     { key: "receptionist", header: "Answers", hideBelow: "md", cell: (n) => <span className="text-ink-muted">{n.agent.name}</span> },
-    { key: "caps", header: "Takes", hideBelow: "sm", cell: (n) => <StatusBadge tone={n.capabilities.sms ? "indigo" : "muted"}>{n.capabilities.sms ? "Calls + texts" : "Calls"}</StatusBadge> },
+    { key: "caps", header: "Takes", hideBelow: "sm", cell: (n) => <NumberCaps sms={n.capabilities.sms} /> },
     { key: "health", header: "Status", cell: () => <StatusBadge tone="success" dot>Connected</StatusBadge> },
     {
       key: "open",
@@ -60,7 +64,7 @@ function AdminNumbersPage() {
       <PageHeader
         eyebrow={platform ? "Platform console" : "Agency console"}
         title="Phone numbers"
-        description={single ? "Each number rings its client's receptionist. Buy one from the client's page." : "Each number rings its client's receptionist. Agencies request numbers; the platform team buys and connects them."}
+        description="Each number rings a receptionist."
         actions={
           single ? null : (
             <Button asChild size="sm" variant="outline" className="h-8 text-[12.5px]">
@@ -87,6 +91,19 @@ function AdminNumbersPage() {
         </TableToolbar>
         <DataTable columns={columns} rows={rows} rowKey={(n) => `${n.business_id}:${n.id}`} loading={q.isPending} empty={{ title: "No numbers yet", description: "Open a client and request a number.", icon: Phone }} />
       </Panel>
+      {canUseOwn ? (
+        <Panel title="Get a number" description="Pick who it's for, then buy one or use one you have.">
+          <div className="grid gap-2 sm:max-w-sm">
+            <Select value={buyFor} onValueChange={setBuyFor}>
+              <SelectTrigger className="h-9 text-[13px]" aria-label="Receptionist" data-field="buy-for"><SelectValue placeholder="Which receptionist?" /></SelectTrigger>
+              <SelectContent>
+                {(agentsQ.data ?? []).map((a) => <SelectItem key={a.id} value={a.id}>{a.name} ({a.business.name})</SelectItem>)}
+              </SelectContent>
+            </Select>
+            {buyFor ? <BuyNumber key={buyFor} clientId={buyFor} onBought={async () => { await Promise.all([q.refetch(), bizQ.refetch(), qc.invalidateQueries({ queryKey: ["admin"] })]); }} /> : null}
+          </div>
+        </Panel>
+      ) : null}
       {canUseOwn ? (
         <Panel title="Numbers already on your Telnyx account" description="Numbers you own in Telnyx that no receptionist answers yet. Connect one to a receptionist to start taking calls on it.">
           <OwnedNumbers

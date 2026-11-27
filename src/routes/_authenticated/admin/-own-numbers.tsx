@@ -10,6 +10,7 @@ import { attachOwnedNumber, detachOwnedNumber, getNumberState, getOwnedNumbers }
 import { fmtPhone } from "@/lib/app/format";
 import { PENDING_NOTE, TELNYX_ORDERS_URL, numberFailed, numberIsLive, numberWaiting, type OwnedNumber } from "@/lib/ownNumbers";
 import { typeOfNumber, type ConnectedNumber } from "@/lib/shared";
+import { NumberCaps, ownedCanText } from "./-number-caps";
 
 // An agency on its own Telnyx account can answer calls on numbers it already owns there,
 // and sees which numbers Telnyx is still approving. These sit beside the "buy a number" dialog.
@@ -179,7 +180,7 @@ export function OwnedNumbers({ clientId, receptionists, onChanged, empty }: { cl
               <div className="min-w-0">
                 <div className="flex flex-wrap items-center gap-2">
                   <span className="font-medium tabular-nums text-ink">{fmtPhone(n.phoneNumber)}</span>
-                  {n.type ? <span className="text-[12px] capitalize text-ink-muted">{typeLabel(n.type)}</span> : null}
+                  <NumberCaps sms={ownedCanText(n.type)} />
                   <NumberBadge status={n.status} />
                 </div>
                 <div className="mt-0.5 text-[12px] text-ink-muted">

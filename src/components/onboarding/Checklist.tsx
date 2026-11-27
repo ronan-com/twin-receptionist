@@ -73,7 +73,7 @@ export function useGetStartedItems(enabled: boolean) {
         title: "Create your first receptionist",
         hint: "Pick a template, set the hours and call handling, choose a voice.",
         done: (c?.agents ?? 0) > 0 || Boolean(withReceptionist),
-        to: "/admin/clients/new",
+        to: "/admin/receptionists/new",
         cta: "Create receptionist",
         guide: "receptionist",
       },
@@ -82,7 +82,7 @@ export function useGetStartedItems(enabled: boolean) {
         title: "Make a test call",
         hint: "Press Talk to this receptionist on its page and say hello from your browser.",
         done: (calls.data ?? []).some((x) => x.channel === "web"),
-        to: withReceptionist ? "/admin/clients/$businessId" : "/admin/clients/new",
+        to: withReceptionist ? "/admin/clients/$businessId" : "/admin/receptionists/new",
         cta: withReceptionist ? "Open receptionist" : "Create one first",
         guide: "testcall",
       },
@@ -124,7 +124,7 @@ function ItemLink({ item, companyId, className, children }: { item: Item; compan
         {children}
       </Link>
     );
-  const to = item.to === "/admin/clients/$businessId" ? "/admin/clients/new" : (item.to as "/admin/clients");
+  const to = item.to === "/admin/clients/$businessId" ? "/admin/receptionists/new" : (item.to as "/admin/clients");
   return (
     <Link to={to} className={className} data-cta={`gs-${item.key}`}>
       {children}
@@ -148,7 +148,7 @@ export function GetStartedChecklist() {
       aria-labelledby="gs-heading"
       className="overflow-hidden rounded-xl border border-hairline bg-white shadow-sm"
     >
-      <div className="relative border-b border-hairline bg-[linear-gradient(135deg,color-mix(in_srgb,var(--indigo)_10%,#fff),#fff_70%)] px-4 py-3.5 sm:px-5">
+      <div className="relative border-b border-hairline bg-[linear-gradient(135deg,color-mix(in_srgb,var(--indigo)_10%,var(--card)),var(--card)_70%)] px-4 py-3.5 sm:px-5">
         <div className="flex items-start gap-3 pr-8">
           <div className="min-w-0 flex-1">
             <h2 id="gs-heading" className="text-[15px] font-semibold tracking-[-0.01em] text-ink">
@@ -198,7 +198,7 @@ export function GetStartedChecklist() {
             key={item.key}
             data-gs-item={item.key}
             data-done={item.done ? "true" : "false"}
-            className={cn("flex flex-col gap-2 px-4 py-3 sm:flex-row sm:items-center sm:gap-3 sm:px-5", idx === next && !loading && "bg-[color-mix(in_srgb,var(--indigo)_5%,#fff)]")}
+            className={cn("flex flex-col gap-2 px-4 py-3 sm:flex-row sm:items-center sm:gap-3 sm:px-5", idx === next && !loading && "bg-[color-mix(in_srgb,var(--indigo)_5%,var(--card))]")}
           >
             <div className="flex min-w-0 flex-1 items-start gap-3">
               <span

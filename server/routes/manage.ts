@@ -5,7 +5,7 @@ import { audit } from "../audit";
 import { changeBrand, isBrandLocked, ownBrand, resolveBrand, uploadAsset } from "../brand";
 import { availability, bookingLive } from "../booking";
 import { CalendarError, calendarLink, providerOf } from "../calendars";
-import { dashboardSignInStart } from "../connect";
+import { dashboardSignInStart, withOutcome } from "../connect";
 import { iso, sql } from "../db";
 import { checkEmail, connectEmail, disconnectEmail, emailStatus, setEmailMode } from "../email";
 import { recordIncident } from "../incidents";
@@ -806,13 +806,15 @@ export async function manageRoutes(args: ClientRouteArgs): Promise<Response | nu
   if (signin && method === "GET") {
     // A link the browser follows, so errors go back to the page rather than as JSON.
     // GET, so check the write permission here too.
-    const back = args.url.searchParams.get("return") === "admin" ? `/admin/clients/${client.id}` : "/app/integrations";
+    // return=admin: the client's console page; return=editor: the agency's receptionist editor (Booking tab); else the client dashboard.
+    const ret = args.url.searchParams.get("return");
+    const back = ret === "admin" ? `/admin/clients/${client.id}` : ret === "editor" ? `/admin/receptionists/${client.id}?tab=booking` : "/app/integrations";
     const redirect = (to: string) => new Response(null, { status: 302, headers: { Location: to } });
-    if (!canWrite(access) || ctx.viewing) return redirect(`${back}?error=${encodeURIComponent("Your access to this business is view-only.")}`);
+    if (!canWrite(access) || ctx.viewing) return redirect(withOutcome(back, `error=${encodeURIComponent("Your access to this business is view-only.")}`));
     try {
       return redirect(await dashboardSignInStart(signin[1] as "google" | "microsoft", clientOrgId, client, back));
     } catch (err) {
-      return redirect(`${back}?error=${encodeURIComponent((err as Error).message)}`);
+      return redirect(withOutcome(back, `error=${encodeURIComponent((err as Error).message)}`));
     }
   }
   if (rest === "/email") {

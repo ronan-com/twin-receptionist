@@ -8,7 +8,22 @@ import { request } from "@/lib/api/base";
 
 type Item = { provider: string; balance?: number; currency?: string; low?: boolean; url?: string; message?: string };
 
-export function ProviderWarnings({ enabled = true }: { enabled?: boolean }) {
+export type ProviderWarning = Item;
+
+const LABEL: Record<string, string> = { telnyx: "Telnyx", twilio: "Twilio", vapi: "Vapi", openrouter: "AI (OpenRouter)", database: "Database" };
+
+/** A title that matches the cause: a missing key is not a low balance. */
+export function warningInfo(i: Item): { title: string; text: string; missingKey: boolean } {
+  const name = LABEL[i.provider] ?? i.provider.charAt(0).toUpperCase() + i.provider.slice(1);
+  const missingKey = /no key is set/i.test(i.message ?? "");
+  if (missingKey) return { title: "AI key missing", text: "Chat, texts and email replies are off. Add a key in Connections.", missingKey };
+  if (i.provider === "database") return { title: "Database almost full", text: i.message ?? "", missingKey };
+  const bal = i.balance != null ? `Balance is low (${i.balance} ${i.currency ?? ""})`.trim() : (i.message ?? "Running low");
+  return { title: `${name} credit low`, text: bal, missingKey };
+}
+
+/** Low balances and a nearly full database. They show in the bell and as a small pop-up (see alerts.tsx), not as a bar. */
+export function useProviderWarnings(enabled = true): Item[] {
   const q = useQuery({
     queryKey: ["provider-status", "warnings"],
     enabled,
@@ -24,7 +39,12 @@ export function ProviderWarnings({ enabled = true }: { enabled?: boolean }) {
       }
     },
   });
-  const items = q.data ?? [];
+  return q.data ?? [];
+}
+
+/** The old top bar. Not used by the app any more; kept for anything that still imports it. */
+export function ProviderWarnings({ enabled = true }: { enabled?: boolean }) {
+  const items = useProviderWarnings(enabled);
   if (items.length === 0) return null;
   return (
     <div data-provider-warnings className="space-y-px">

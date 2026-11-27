@@ -48,7 +48,7 @@ describe("skip the phone step", () => {
     expect(html(b, "phones")).toContain('action="/setup/' + b.code + '/a/phones-skip"');
     // Secondary: a small text link under the options, not a button in the bar.
     expect(html(b, "phones")).toMatch(/<div class="skip-phones"><form[^>]*phones-skip"><input[\s\S]*?<button class="linkbtn"/);
-    expect(html(b, "phones").indexOf("Or use Vapi + Twilio")).toBeLessThan(html(b, "phones").indexOf("data-skip-phones"));
+    expect(html(b, "phones").indexOf("Or use Vapi (Twilio optional)")).toBeLessThan(html(b, "phones").indexOf("data-skip-phones"));
     expect(html(b, "vapi")).toContain("Skip for now — connect it later in your dashboard");
   });
 
@@ -127,7 +127,8 @@ describe("skip the phone step", () => {
     const b = await buyer("v");
     // Missing fields are refused before anything is called.
     stub(200, {});
-    expect((await run(b, "phones-vapi", { vapiKey: "priv-0123456789abcdef", vapiPublic: "pub-0123456789abcdef" }))?.text).toMatch(/Twilio Account SID/);
+    // Half of the Twilio details is refused (Twilio itself is optional: both empty is fine, see the Vapi-only test).
+    expect((await run(b, "phones-vapi", { vapiKey: "priv-0123456789abcdef", vapiPublic: "pub-0123456789abcdef", twilioSid: SID }))?.text).toMatch(/Twilio Auth Token/);
     expect(calls).toHaveLength(0);
     // Twilio refusing is an error, and nothing is kept.
     globalThis.fetch = (async (url: any) => new Response(JSON.stringify(String(url).includes("twilio") ? { message: "Authenticate" } : []), { status: String(url).includes("twilio") ? 401 : 200, headers: { "Content-Type": "application/json" } })) as any;
@@ -150,7 +151,7 @@ describe("skip the phone step", () => {
     expect(phoneSettings(b.id, s)).toEqual({ VOICE_PROVIDER: "vapi", VAPI_API_KEY: "priv-0123456789abcdef", VAPI_PUBLIC_KEY: "pub-0123456789abcdef", TWILIO_ACCOUNT_SID: SID, TWILIO_AUTH_TOKEN: "t".repeat(32) });
     expect(await run(b, "extras-continue")).toBeNull();
     expect(firstOpen(b, getSetup(b.id))).toBe("install");
-    expect(html(b, "phones")).toContain("Vapi + Twilio connected");
+    expect(html(b, "phones")).toContain("Vapi connected");
     expect(html(b, "install")).toContain("Vapi");
     // "Use Telnyx instead" forgets both and goes back to Phones.
     expect(await run(b, "phones-vapi-remove")).toBeNull();

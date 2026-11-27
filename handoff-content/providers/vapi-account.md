@@ -13,7 +13,7 @@ Vapi runs your receptionists' voice. You need two keys from it: a **private** on
 2. Open the [API Keys page](https://dashboard.vapi.ai/org/api-keys) (**API Keys** in the sidebar).
 3. Under **Private API Keys**, click the copy icon next to the key (or **Add Key**, then **Create Private Token**). Paste it into the **Vapi private API key** box.
 4. Under **Public API Keys**, do the same (**Add Key**, then **Create Public Token** if there isn't one). Paste it into the **Vapi public key** box.
-5. Add your Twilio details below them (see the Twilio guide) and press **Check and use Vapi + Twilio**.
+5. Optional: add your Twilio details below them for Australian numbers and texts (see the Twilio guide). Press **Check and use Vapi**.
 
 Vapi doesn't sell Australian numbers: your numbers and texts come from Twilio.
 

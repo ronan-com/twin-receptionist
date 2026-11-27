@@ -347,9 +347,9 @@ describe("install for them", () => {
 
   test("refused until the required steps are filled, and says which", async () => {
     const b = addBuyer("Early Buyer", "early@example.com");
-    expect((await A.installFor(b, ADMIN)).message).toMatch(/Still to fill in: Brand, Hosting \(Railway\), Phones \(Telnyx\)/);
+    expect((await A.installFor(b, ADMIN)).message).toMatch(/Still to fill in: Brand, Hosting \(Railway\), Phones \(Telnyx, or Vapi \+ Twilio\)/);
     await A.fillStep(b, ADMIN, "brand", { productName: "Early", ownerEmail: "e@e.test" });
-    expect((await A.installFor(b, ADMIN)).message).toMatch(/Still to fill in: Hosting \(Railway\), Phones \(Telnyx\)/);
+    expect((await A.installFor(b, ADMIN)).message).toMatch(/Still to fill in: Hosting \(Railway\), Phones \(Telnyx, or Vapi \+ Twilio\)/);
     expect(getSetup(b.id).phase).toBe("idle");
   });
 

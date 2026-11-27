@@ -246,16 +246,16 @@ function vapiTwilio(c: Ctx): string {
   const on = !!c.s.vapi?.confirmed && !!c.s.twilio?.confirmed;
   const fl = c.flash?.form || {};
   return `<section class="phone-alt" data-option="vapi-twilio">
-  <h3 class="extras-head">Or use Vapi + Twilio</h3>
-  <p class="hint">Vapi runs the receptionists' voice and Twilio gives you Australian numbers and sends the texts. Both on your own accounts.</p>
-  ${on ? notice("ok", `Vapi + Twilio connected (${esc(secretHint(c.b.id, "vapi_key") || "Vapi")}, ${esc(c.s.twilio?.sid || "Twilio")}). Your receptionists run on Vapi. ${mini(c, "phones-vapi-remove", "Use Telnyx instead", "linkbtn")}`) : ""}
+  <h3 class="extras-head">Or use Vapi (Twilio optional)</h3>
+  <p class="hint">Vapi runs the receptionists' voice. Twilio is optional: add it now or later for Australian phone numbers and texts. Leave the Twilio boxes empty to use Vapi on its own.</p>
+  ${on ? notice("ok", `Vapi connected (${esc(secretHint(c.b.id, "vapi_key") || "Vapi")})${c.s.twilio?.confirmed ? `, Twilio ${esc(c.s.twilio.sid || "")}` : ", no Twilio yet"}. Your receptionists run on Vapi. ${mini(c, "phones-vapi-remove", "Use Telnyx instead", "linkbtn")}`) : ""}
   <form id="vapitwilio" method="post" action="${base(c)}/a/phones-vapi">${hidden(c)}
   <div class="two"><div>${secretIn("vapiKey", "Private key", secretHint(c.b.id, "vapi_key"), "Vapi private API key")}</div>
   <div><label class="f" for="vapiPublic">Vapi public key</label><input id="vapiPublic" name="vapiPublic" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" maxlength="300" placeholder="Public key (used by the browser test call)" value="${esc(fl.vapiPublic ?? "")}"></div></div>
   <div class="two"><div><label class="f" for="twilioSid">Twilio Account SID</label><input id="twilioSid" name="twilioSid" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" maxlength="60" placeholder="AC..." value="${esc(fl.twilioSid ?? c.s.twilio?.sid ?? "")}"></div>
   <div>${secretIn("twilioToken", "Auth Token", secretHint(c.b.id, "twilio_token"), "Twilio Auth Token")}</div></div>
   ${showMeHow(["vapi-account", "twilio-account"])}
-  <p><button class="btn o" type="submit" form="vapitwilio" data-action="phones-vapi">Check and use Vapi + Twilio ${icon("right")}</button></p>
+  <p><button class="btn o" type="submit" form="vapitwilio" data-action="phones-vapi">Check and use Vapi ${icon("right")}</button></p>
   </form></section>`;
 }
 

@@ -43,7 +43,7 @@ export function didStep(s: SetupData, id: AssistId): boolean {
     case "brand": return !!s.brand;
     case "railway": return !!s.railway?.confirmed;
     case "server": return !!s.server?.chosen;
-    case "phones": return !!s.phones?.confirmed || (!!s.vapi?.confirmed && !!s.twilio?.confirmed);
+    case "phones": return !!s.phones?.confirmed || !!s.vapi?.confirmed;
     case "email": return !!s.email?.confirmed;
     case "domain": return !!s.domain?.confirmed && !!s.domain.host;
     case "calendars": return !!s.calendars?.google || !!s.calendars?.microsoft;
@@ -70,7 +70,7 @@ export function detailOf(b: { id: number }, s: SetupData, id: AssistId): string 
     case "brand": return s.brand ? `${s.brand.productName} · ${s.brand.ownerEmail}${s.brand.logo ? " · logo" : ""}${s.brand.colour ? ` · ${s.brand.colour}` : ""}` : "";
     case "railway": return s.railway?.confirmed ? `${s.railway.workspaceName || "workspace"}${s.railway.plan ? ` · ${s.railway.plan}` : ""} ${h("railway_token")}`.trim() : "";
     case "server": return s.server?.chosen ? `${s.server.region || ""} ${s.server.size || ""} ${h("do_token")}`.trim() : "";
-    case "phones": return !s.phones?.confirmed && s.vapi?.confirmed && s.twilio?.confirmed ? `Vapi ${h("vapi_key")} + Twilio ${s.twilio.sid || ""}`.trim() : s.phones?.confirmed ? `Telnyx ${h("telnyx_key")}${s.phones.balance ? ` · ${s.phones.balance}` : ""}`.trim() : s.skipped?.phones && !s.vapi?.confirmed ? "Skipped: the buyer connects it later in their dashboard (Connections)" : "";
+    case "phones": return !s.phones?.confirmed && s.vapi?.confirmed ? `Vapi ${h("vapi_key")}${s.twilio?.confirmed ? ` + Twilio ${s.twilio.sid || ""}` : ""}`.trim() : s.phones?.confirmed ? `Telnyx ${h("telnyx_key")}${s.phones.balance ? ` · ${s.phones.balance}` : ""}`.trim() : s.skipped?.phones && !s.vapi?.confirmed ? "Skipped: the buyer connects it later in their dashboard (Connections)" : "";
     case "email": return s.email?.confirmed ? `${s.email.mode === "smtp" ? "SMTP" : "Resend"} · ${s.email.address || ""}` : "";
     case "domain": return s.domain?.host ? `${s.domain.host} · DNS by ${s.domain.mode === "manual" ? "hand" : s.domain.mode === "godaddy" ? "GoDaddy" : "Cloudflare"}${s.domain.confirmed ? "" : " (not finished)"}` : "";
     case "calendars": return [s.calendars?.google ? "Google" : "", s.calendars?.microsoft ? "Microsoft" : ""].filter(Boolean).join(" + ");

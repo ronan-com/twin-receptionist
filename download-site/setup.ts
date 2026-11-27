@@ -297,22 +297,23 @@ export const actions: Record<string, Action> = {
     const keep = { vapiPublic: str(f.vapiPublic, 300), twilioSid: str(f.twilioSid, 60) };
     if (!vKey) return err("Paste your Vapi private API key.", keep);
     if (!vPublic) return err("Paste your Vapi public key too.", keep);
-    if (!sid) return err("Paste your Twilio Account SID.", keep);
-    if (!token) return err("Paste your Twilio Auth Token.", keep);
+    // Twilio is optional: Vapi alone runs the receptionist (browser test calls); Twilio adds numbers and texts.
+    const withTwilio = !!(sid || token);
+    if (withTwilio && !sid) return err("Paste your Twilio Account SID too, or leave both Twilio boxes empty.", keep);
+    if (withTwilio && !token) return err("Paste your Twilio Auth Token too, or leave both Twilio boxes empty.", keep);
     const wait = checkLimit(b); if (wait) return tooMany(wait);
     const r = await checkVapi(vKey, vPublic);
     if (!r.ok) return err(r.message, keep);
-    const w = await checkTwilio(sid, token);
-    if (!w.ok) return err(w.message, keep);
+    if (withTwilio) { const w = await checkTwilio(sid, token); if (!w.ok) return err(w.message, keep); }
     putSecret(b.id, "vapi_key", vKey);
     putSecret(b.id, "vapi_public", vPublic);
-    putSecret(b.id, "twilio_token", token);
+    if (withTwilio) putSecret(b.id, "twilio_token", token);
     // The Vapi path uses nothing from Telnyx.
     deleteSecret(b.id, "telnyx_key");
     updateSetup(b.id, (s) => {
       s.brand!.ownPhoneAccount = false;
       s.vapi = { confirmed: true };
-      s.twilio = { sid, confirmed: true };
+      if (withTwilio) s.twilio = { sid, confirmed: true };
       s.phones = { checked: true, provider: "vapi" };
       if (s.skipped) { delete s.skipped.vapi; delete s.skipped.twilio; delete s.skipped.phones; }
       nextStep(b, s, "phones");

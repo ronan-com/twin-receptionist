@@ -167,7 +167,7 @@ describe("Invite them", () => {
     expect(card).toContain(`Send invite email to ann@example.com`);
     expect(card).toContain(`/setup/${b.code}`);
     expect(card).toMatch(/Done by us<\/span><b>Brand<\/b>/);
-    expect(card).toMatch(/Left for them<\/span><b>[^<]*Phones \(Telnyx\)[^<]*Install<\/b>/);
+    expect(card).toMatch(/Left for them<\/span><b>[^<]*Phones \(Telnyx, or Vapi \+ Twilio\)[^<]*Install<\/b>/);
     expect(card).not.toContain("Send their dashboard login");
     const list = await adminPage();
     expect(list).toMatch(/Ann Agency[\s\S]*?Not invited yet/);

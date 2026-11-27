@@ -19,6 +19,7 @@ import {
   checkEmail,
   connectEmail,
   disconnectEmail,
+  setEmailMode,
   removeCalendar,
   setUpCalendar,
   testCalendar,
@@ -263,11 +264,12 @@ function IntegrationDialog({
   const [endpoint, setEndpoint] = useState(String(c["endpoint_url"] ?? ""));
   const [address, setAddress] = useState("");
   const [password, setPassword] = useState("");
-  const [mode, setMode] = useState<"draft" | "send">("draft");
+  const savedMode: "draft" | "send" = c["mode"] === "send" ? "send" : "draft";
+  const [mode, setMode] = useState<"draft" | "send">(savedMode);
   const [testResult, setTestResult] = useState<string | null>(null);
 
   const run = useMutation({
-    mutationFn: async (action: "setup" | "save" | "remove" | "test" | "hook" | "unhook" | "mail" | "unmail" | "check") => {
+    mutationFn: async (action: "setup" | "save" | "remove" | "test" | "hook" | "unhook" | "mail" | "unmail" | "mode" | "check") => {
       switch (action) {
         case "setup": {
           const res = await setUpCalendar(businessId, { provider, minutes: Number(minutes), notifyEmail: notifyEmail.trim() });
@@ -291,6 +293,9 @@ function IntegrationDialog({
         case "mail":
           await connectEmail(businessId, { address: address.trim(), password, mode });
           return { action };
+        case "mode":
+          await setEmailMode(businessId, mode);
+          return { action };
         case "unmail":
           await disconnectEmail(businessId);
           return { action };
@@ -308,6 +313,7 @@ function IntegrationDialog({
         unhook: "Webhook removed",
         mail: "Email inbox connected",
         unmail: "Email inbox disconnected",
+        mode: mode === "send" ? "Replies are sent automatically" : "Replies are saved as drafts",
         check: "Inbox checked",
       };
       if (res.action !== "test") {
@@ -319,7 +325,7 @@ function IntegrationDialog({
         window.location.assign(calendarSignInUrl(businessId, provider));
         return;
       }
-      if (res.action !== "test" && res.action !== "check") onClose();
+      if (res.action !== "test" && res.action !== "check" && res.action !== "mode") onClose();
     },
     onError: (e) => toast.error("Couldn't save", { description: e.message }),
   });
@@ -411,13 +417,24 @@ function IntegrationDialog({
       ) : def.provider === "email_mailbox" ? (
         existing ? (
           <div className="grid gap-3">
-            <p className="text-[12.5px] text-ink-muted">
-              Replies are {c["mode"] === "send" ? "sent automatically" : "saved as drafts for you to check and send"}. We check the inbox every minute.
-            </p>
+            <Field label="Replies" htmlFor="em-mode">
+              <Select value={mode} onValueChange={(v) => setMode(v as "draft" | "send")} disabled={!canEdit}>
+                <SelectTrigger id="em-mode"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="draft">Draft replies</SelectItem>
+                  <SelectItem value="send">Send automatically</SelectItem>
+                </SelectContent>
+              </Select>
+            </Field>
             {canEdit ? (
-              <Button size="sm" variant="outline" className="w-fit" onClick={() => run.mutate("check")} disabled={busy}>
-                Check now
-              </Button>
+              <div className="flex flex-wrap gap-2">
+                <Button size="sm" onClick={() => run.mutate("mode")} disabled={busy || mode === savedMode} data-action="save-email-mode">
+                  Save changes
+                </Button>
+                <Button size="sm" variant="outline" onClick={() => run.mutate("check")} disabled={busy}>
+                  Check now
+                </Button>
+              </div>
             ) : null}
           </div>
         ) : (
@@ -432,7 +449,7 @@ function IntegrationDialog({
               <Select value={mode} onValueChange={(v) => setMode(v as "draft" | "send")} disabled={!canEdit}>
                 <SelectTrigger id="em-mode"><SelectValue /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="draft">Save as drafts for me to send</SelectItem>
+                  <SelectItem value="draft">Draft replies</SelectItem>
                   <SelectItem value="send">Send automatically</SelectItem>
                 </SelectContent>
               </Select>

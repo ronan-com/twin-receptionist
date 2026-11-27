@@ -33,7 +33,7 @@ import {
 } from "./accounts";
 import { isLocal } from "./auth";
 import { migrate, sql } from "./db";
-import { checkEmail, connectEmail, connectedClientIds, disconnectEmail, emailStatus } from "./email";
+import { checkEmail, connectEmail, connectedClientIds, disconnectEmail, emailStatus, setEmailMode } from "./email";
 import { SAMPLE_OWNED, attachNumber, detachNumber, ownedUnassigned, sampleOwned } from "./ownNumbers";
 import { checkBuyable, sampleNumbers, searchFor } from "./numbers";
 import { ValidationError, buildInstructions, greetingOf, knowledgeFor, normaliseSettings } from "./prompt";
@@ -101,6 +101,7 @@ import { platformSettingsRoutes } from "./platformSettingsApi";
 import { emailSettingsRoutes } from "./emailSettings";
 import type { BookingProvider, BookingState } from "../src/lib/shared";
 import { connectNumberForTexts, enableTexting, sendTestText, textingState } from "./texting";
+import { setTexts, splitNumbers, textsAfterBuy, textsStatus, textsWhenLive } from "./textsControl";
 import { BOOKING_TOOL_DEFS } from "./booking";
 import { VapiError, asProvider, connectedEngines, installProvider, ownKeyInstall, providerOfClient, providerOfOrg } from "./voice/config";
 import { providerById, voiceFor, voiceForOrg } from "./voice";
@@ -410,6 +411,12 @@ async function moveEngine(ctx: Ctx, orgId: string, client: Business, to: VoicePr
   return { client: moved, detached };
 }
 
+/** The live and still-pending numbers of a receptionist, for the Texts switch. */
+async function engineNumbers(ctx: Ctx, client: Business) {
+  const { numbers, pending } = await numberState(ctx, client);
+  return splitNumbers({ numbers, pending });
+}
+
 async function numberState(ctx: Ctx, client: Business): Promise<NumberState> {
   // The demo receptionist never asks the carrier.
   if (isDemo(client.assistantId)) {
@@ -422,7 +429,10 @@ async function numberState(ctx: Ctx, client: Business): Promise<NumberState> {
   // Remember the connected numbers so the client list can show them without asking Telnyx again.
   const current = numbers.map((n) => n.phoneNumber);
   if (JSON.stringify(current) !== JSON.stringify(client.phoneNumbers ?? [])) {
-    await saveClient({ ...client, phoneNumbers: current });
+    const saved = { ...client, phoneNumbers: current };
+    await saveClient(saved);
+    // A number that has just gone live (approved after it was added) starts taking texts if the Texts switch is on.
+    await textsWhenLive(saved, current.filter((n) => !(client.phoneNumbers ?? []).includes(n))).catch((err) => console.error(`[texting ${client.id}]`, err.message));
   }
   return { provider: engine.id, support: { ...engine.numbers.support(), rule: NUMBER_RULE[engine.id] }, numbers, pending, balance, canBuy: await canBuyNumbers(ctx), canUseOwn: engine.id === "telnyx" && (await canUseOwnNumbers(ctx)), requests: await requestsForClient(client.id) };
 }
@@ -754,15 +764,7 @@ async function route(req: Request, server?: { requestIP(r: Request): { address: 
         // Bought on our account; each agency's receptionist still lives under its own team.
         const order = await voiceFor(client).numbers.buy(client, input);
         await markDone(r.id, order.phoneNumbers[0] ?? String(input.phoneNumber));
-        if (order.status === "success" && voiceFor(client).id === "telnyx") {
-          const fresh = (await getClient(client.id)) ?? client;
-          // Australian mobiles only: US numbers need 10DLC registration in Telnyx before they can text.
-          for (const n of order.phoneNumbers.filter((p) => p.startsWith("+614"))) {
-            await connectNumberForTexts(fresh, { phoneNumber: n }).catch((err) =>
-              console.error(`[texting ${client.id}] ${n}`, err.message),
-            );
-          }
-        }
+        await textsAfterBuy((await getClient(client.id)) ?? client, order).catch((err) => console.error(`[texting ${client.id}]`, err.message));
       }
       return json({ requests: await listRequests(ctx), pending: await pendingCount() });
     }
@@ -1154,6 +1156,7 @@ async function route(req: Request, server?: { requestIP(r: Request): { address: 
     } else if (match[2] === "/email") {
       if (method === "GET") return json(await emailStatus(client.id));
       if (method === "PUT") return json(await connectEmail(client.id, await req.json()));
+      if (method === "PATCH") return json(await setEmailMode(client.id, await req.json()));
       if (method === "DELETE") {
         await disconnectEmail(client.id);
         return json(await emailStatus(client.id));
@@ -1166,7 +1169,17 @@ async function route(req: Request, server?: { requestIP(r: Request): { address: 
         if (method === "GET") return json({ enabled: false, numbers: [], waiting: [] });
         throw new ValidationError("Telnyx texting isn't used with Vapi. Follow-up texts go out from a Twilio number instead.");
       }
-      if (method === "GET") return json(await textingState(client));
+      // The Texts switch: its status, and on/off (switching on again is the retry).
+      if (method === "GET") return json(await textsStatus(client, await engineNumbers(ctx, client)));
+      if (method === "PUT") {
+        const input = await body(req);
+        requireRole(ctx, "admin");
+        if (typeof input?.on !== "boolean") throw new ValidationError("Choose on or off.");
+        const nums = await engineNumbers(ctx, client);
+        const saved = await setTexts(client, input.on, nums);
+        await audit(ctx, input.on ? "texts.on" : "texts.off", {}, { clientId: client.id });
+        return json(await textsStatus(saved, nums));
+      }
       if (method === "POST") {
         await enableTexting(client);
         return json(await textingState(client));
@@ -1291,17 +1304,9 @@ async function route(req: Request, server?: { requestIP(r: Request): { address: 
         const withSources = { ...client, numberSources: { ...client.numberSources, ...Object.fromEntries(order.phoneNumbers.map((n) => [n, source])) } };
         await saveClient(withSources);
         const state = await numberState(ctx, withSources);
-        // A mobile that's live straight away also takes texts. Others can be added from the texts card.
-        // (Texting is Telnyx's: a Vapi receptionist has none.)
-        if (order.status === "success" && voiceFor(client).id === "telnyx") {
-          const fresh = (await getClient(client.id)) ?? client;
-          // Australian mobiles only: US numbers need 10DLC registration in Telnyx before they can text.
-          for (const n of order.phoneNumbers.filter((p) => p.startsWith("+614"))) {
-            await connectNumberForTexts(fresh, { phoneNumber: n }).catch((err) =>
-              console.error(`[texting ${client.id}] ${n}`, err.message),
-            );
-          }
-        }
+        // An Australian mobile switches texts on (unless the owner turned them off): now when it's live,
+        // or by itself once approved. The Texts switch on the receptionist's card controls it after that.
+        await textsAfterBuy((await getClient(client.id)) ?? client, order).catch((err) => console.error(`[texting ${client.id}]`, err.message));
         return json({ order, ...state }, 201);
       }
     } else if (method === "GET") {

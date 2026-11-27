@@ -170,6 +170,8 @@ export type Business = {
   numberSources?: Record<string, NumberSource>;
   // The Telnyx messaging profile our own texting bot is on (server/texting.ts). Missing: not set up yet.
   textingProfileId?: string;
+  // The owner's Texts switch. Missing: on for what's already set up; "on" once texting was set up with a number (or switched on); "off" stops texts both ways.
+  textsPref?: "on" | "off";
   // The voice engine this receptionist's assistant lives on. Missing means Telnyx (every
   // receptionist made before Vapi was added). Set when it is made (the agency's choice, or the
   // wizard's Voice engine pick), and changed by "Move to Telnyx/Vapi".
@@ -321,6 +323,9 @@ export type NumberOrder = {
 
 // numbers: take texts. waiting: answer calls but don't take texts yet.
 export type TextingState = { enabled: boolean; numbers: string[]; waiting: string[] };
+
+/** The Texts switch: on (answering), off, waiting (number still being approved), cant (no number that can text), failed (switched on but not connected: try again). */
+export type TextsStatus = TextingState & { on: boolean; status: "on" | "off" | "waiting" | "cant" | "failed"; detail: string };
 
 // What the voice engine can do about phone numbers, so the screens say it honestly.
 // Telnyx: search, buy and attach. Vapi: it only sells free US numbers, so for an

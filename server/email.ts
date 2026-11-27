@@ -273,6 +273,36 @@ export async function connectEmail(clientId: string, input: unknown, publicOnly 
   return emailStatus(clientId);
 }
 
+/**
+ * Changes how a connected mailbox's replies go out, without disconnecting: "draft" saves them for the
+ * owner to send, "send" sends them. Sending is checked first (the outgoing server must accept the login),
+ * so a mailbox that can only read stays on drafts. `verify` is swappable for tests.
+ */
+export async function setEmailMode(
+  clientId: string,
+  input: unknown,
+  verify: (box: Mailbox, creds: Creds) => Promise<void> = async (box, creds) => {
+    await smtp(box, creds).verify();
+  },
+): Promise<EmailStatus> {
+  const mode: EmailMode | null = (input as { mode?: unknown } | null)?.mode === "send" ? "send" : (input as { mode?: unknown } | null)?.mode === "draft" ? "draft" : null;
+  if (!mode) throw new ValidationError("Choose drafts or send automatically.");
+  const box = await loadBox(clientId);
+  if (!box) throw new ValidationError("Connect an inbox first.");
+  if (box.mode !== mode) {
+    if (mode === "send") {
+      try {
+        await verify(box, await credentialsFor(clientId, box));
+      } catch (err) {
+        throw new ValidationError(`Sending from ${box.smtpHost} didn't work: ${(err as Error).message}. Keep replies as drafts, or check the outgoing server settings.`);
+      }
+    }
+    // Only the mode changes: the connect time stays, so mail already in the inbox is still never looked at.
+    await updateBox(clientId, { ...box, mode });
+  }
+  return emailStatus(clientId);
+}
+
 // Saves a mailbox connected through "Sign in with Google/Microsoft", after checking
 // the token really opens it.
 export async function connectOAuth(clientId: string, result: SignInResult): Promise<EmailStatus> {

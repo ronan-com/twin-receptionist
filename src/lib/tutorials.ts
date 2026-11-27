@@ -167,7 +167,8 @@ export const TUTORIALS: Tutorial[] = [
     summary: "Give a receptionist its own number.",
     steps: [
       "Open **Clients** and choose the client.",
-      "Press **Add a number**, pick one and press **Buy**.",
+      "Press **Add a number**, then **Buy a new number** and pick one.",
+      "Press **Buy for** (the price shows first).",
       "Australian numbers need proof of address. Approval takes 1 to 3 days.",
     ],
     to: "/admin/clients",
@@ -206,6 +207,20 @@ export const TUTORIALS: Tutorial[] = [
     keywords: "twilio vapi regulatory bundle backup",
   },
   {
+    id: "texts-switch",
+    group: "numbers",
+    title: "Turn texts on or off",
+    summary: "Let a receptionist answer texts.",
+    steps: [
+      "Open **Clients** and choose the client.",
+      "Under the number, use the **Texts** switch.",
+      "If it says **Not connected**, press **Try again**.",
+    ],
+    to: "/admin/clients",
+    toLabel: "Open Clients",
+    keywords: "texts sms text messages switch on off mobile number approval",
+  },
+  {
     id: "request-number",
     group: "numbers",
     title: "Get a phone number for a client",
@@ -229,8 +244,8 @@ export const TUTORIALS: Tutorial[] = [
     summary: "When the business is open.",
     steps: [
       OPEN_RECEPTIONIST,
-      "Open **Business hours** and set each day, or turn on **Answer calls 24/7**.",
-      "Press **Save**.",
+      "Open the **Hours & voicemail** tab and set each day under **Opening hours**.",
+      "Press **Save changes**.",
     ],
     to: "/admin/receptionists",
     toLabel: "Open Receptionists",
@@ -271,7 +286,7 @@ export const TUTORIALS: Tutorial[] = [
     summary: "Teach it the answers callers ask for.",
     steps: [
       OPEN_RECEPTIONIST,
-      "Choose **Answers to common questions** and press **Add knowledge**.",
+      "Press **Settings**, then **Answers to common questions**, then **Add knowledge**.",
       "Write the question and answer, then press **Add**.",
     ],
     to: "/admin/receptionists",
@@ -285,7 +300,7 @@ export const TUTORIALS: Tutorial[] = [
     summary: "Put callers through to a person.",
     steps: [
       OPEN_RECEPTIONIST,
-      "On **Transfers**, turn on **Transfer calls** and enter the number.",
+      "Open the **Transfers** tab, turn on **Transfer calls** and enter the number.",
       "Pick when to transfer and press **Save changes**.",
     ],
     to: "/admin/receptionists",
@@ -299,7 +314,7 @@ export const TUTORIALS: Tutorial[] = [
     summary: "What it does when you're closed.",
     steps: [
       OPEN_RECEPTIONIST,
-      "On **Hours & voicemail**, choose what happens after hours.",
+      "Open the **Hours & voicemail** tab and choose what happens under **When it answers**.",
       "Press **Save changes**.",
     ],
     to: "/admin/receptionists",

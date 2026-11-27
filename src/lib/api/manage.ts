@@ -137,6 +137,7 @@ export type EmailState = { connected: boolean; address: string; mode: "draft" | 
 export const getEmail = (businessId: string) => api.get<EmailState>(`${base(businessId)}/email`);
 export const connectEmail = (businessId: string, body: { address: string; password: string; mode: "draft" | "send" }) =>
   api.put<EmailState>(`${base(businessId)}/email`, body);
+export const setEmailMode = (businessId: string, mode: "draft" | "send") => api.patch<EmailState>(`${base(businessId)}/email`, { mode });
 export const disconnectEmail = (businessId: string) => api.del<EmailState>(`${base(businessId)}/email`);
 export const checkEmail = (businessId: string) => api.post<EmailState>(`${base(businessId)}/email/check`);
 

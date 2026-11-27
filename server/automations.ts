@@ -592,6 +592,8 @@ export function statusFor(client: Business, a: AutomationSettings, i: StatusInpu
 
 export async function smsNumberOf(client: Business): Promise<string | null | undefined> {
   if (isDemo(client.assistantId)) return null;
+  // The owner switched Texts off: nothing goes out by text either.
+  if (client.textsPref === "off") return null;
   try {
     // Vapi has no texting of its own: a Twilio number of the agency's that it answers sends them.
     if (providerOfClient(client) === "vapi") return await twilioSmsNumber(currentOrg(), client.phoneNumbers ?? []);

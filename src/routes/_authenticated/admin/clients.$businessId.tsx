@@ -23,6 +23,7 @@ import { BrandEditor } from "./-brand";
 import { BuyNumber } from "./-buy-number";
 import { ImportNumber } from "./-import-number";
 import { AttachedNumbers } from "./-own-numbers";
+import { TextsSwitch } from "./-texts-switch";
 import { TestCall } from "@/components/app/TestCall";
 import { WebsiteChatCard } from "@/components/app/webchat/WebsiteChatCard";
 import { PRODUCT } from "@/lib/app/product";
@@ -812,6 +813,7 @@ function ReceptionistCard({
           {!readOnly && !paused && !r.demo_assistant ? <TestCall assistantId={r.provider_agent_id} provider={r.provider} clientId={r.business_id} /> : null}
           <div className="mb-1.5 text-[12.5px] font-medium text-ink">Phone number</div>
           {showOwnNumbers ? <AttachedNumbers clientId={r.id} fallback={plainNumbers} onChanged={onChanged} /> : plainNumbers}
+          {!r.demo_assistant ? <TextsSwitch clientId={r.id} canEdit={canManage && !readOnly} /> : null}
           {r.number_requests.length ? (
             <ul className="mt-3 space-y-1 border-t border-hairline pt-3 text-[12px]" data-list="number-requests">
               {r.number_requests.map((n) => (

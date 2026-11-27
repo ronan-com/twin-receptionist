@@ -37,7 +37,7 @@ export const GUIDES: Record<GuideKind, { title: string; blurb: string; steps: St
     steps: [
       { title: "Open Clients and add a client", hint: "Choose Add client, then Send the client an onboarding link.", cursor: [83, 20] },
       { title: "Enter their name and email", hint: "We email them a link. You can also copy it and send it yourself.", cursor: [40, 62] },
-      { title: "Send the link", hint: "They set up their business and receptionist in their own workspace.", cursor: [74, 86] },
+      { title: "Press Create and get link", hint: "They set up their business and receptionist in their own workspace.", cursor: [74, 86] },
     ],
   },
 };
@@ -348,7 +348,7 @@ function InviteScene({ step }: { step: number }) {
       </div>
       <div className="text-[13px] font-semibold text-ink">Onboarding link sent</div>
       <div className="w-4/5 truncate rounded border border-hairline bg-white px-2 py-1 font-mono text-[10px] text-ink-muted">…/invite/k3x9a2c7e1</div>
-      <MockButton className="gs-press">Send onboarding link</MockButton>
+      <MockButton className="gs-press">Create and get link</MockButton>
     </div>
   );
 }

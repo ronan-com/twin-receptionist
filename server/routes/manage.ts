@@ -7,7 +7,7 @@ import { availability, bookingLive } from "../booking";
 import { CalendarError, calendarLink, providerOf } from "../calendars";
 import { dashboardSignInStart } from "../connect";
 import { iso, sql } from "../db";
-import { checkEmail, connectEmail, disconnectEmail, emailStatus } from "../email";
+import { checkEmail, connectEmail, disconnectEmail, emailStatus, setEmailMode } from "../email";
 import { recordIncident } from "../incidents";
 import { webhookSecret } from "../notify";
 import { createRequest, requestsForClient } from "../numberRequests";
@@ -824,6 +824,11 @@ export async function manageRoutes(args: ClientRouteArgs): Promise<Response | nu
     if (method === "PUT") {
       const s = await connectEmail(client.id, await readBody(req));
       await audit(ctx, "integration.email_mailbox.connected", { summary: `Email inbox ${s.address} connected` }, where);
+      return json(s);
+    }
+    if (method === "PATCH") {
+      const s = await setEmailMode(client.id, await readBody(req));
+      await audit(ctx, "integration.email_mailbox.mode", { summary: s.mode === "send" ? "Email replies set to send automatically" : "Email replies set to drafts" }, where);
       return json(s);
     }
     if (method === "DELETE") {

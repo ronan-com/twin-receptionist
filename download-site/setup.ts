@@ -86,7 +86,8 @@ export function stepDone(b: Buyer, s: SetupData, id: StepId): boolean {
 /** The first step still to do. Optional steps never hold anyone up. */
 export const firstOpen = (b: Buyer, s: SetupData): StepId => STEPS.find((id) => !isOptional(id) && !stepDone(b, s, id)) || "done";
 /** An optional step opens from the extras screen, so it's viewable as soon as extras is. */
-export const canView = (b: Buyer, s: SetupData, id: StepId) => CONFIG.previewJump || STEPS.indexOf(isOptional(id) ? OPTIONAL_HUB : id) <= STEPS.indexOf(firstOpen(b, s));
+// An install under way, or a finished one, always shows its own screen, whatever else is (or isn't) stored on the earlier steps.
+export const canView = (b: Buyer, s: SetupData, id: StepId) => CONFIG.previewJump || (s.phase !== "idle" && (id === "install" || id === "done")) || STEPS.indexOf(isOptional(id) ? OPTIONAL_HUB : id) <= STEPS.indexOf(firstOpen(b, s));
 /** Settings are baked into the server when it's made; after that they can't change here. */
 export const locked = (s: SetupData) => s.phase !== "idle";
 const nextStep = (b: Buyer, s: SetupData, from: StepId) => {

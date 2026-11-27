@@ -264,8 +264,17 @@ const hasS = (c: Ctx, n: Parameters<typeof secretHint>[1]) => !!secretHint(c.b.i
 function domainManualRecords(c: Ctx) {
   const rs = c.s.email?.resend;
   const rows = [...(rs?.records || []), ...(rs?.dmarc ? [rs.dmarc] : [])];
-  return `${head(c, "Add your email records", `Add each one where you manage DNS for <b>${esc(c.s.domain!.zone!)}</b>. They tick off as they appear; you can keep going meanwhile.`)}
-${rows.length ? recordTable(rows, true) : notice("info", "Nothing to add for email.")}
+  const zone = esc(c.s.domain!.zone!);
+  if (!rows.length) {
+    // No email set up: nothing to add yet. The two records for the dashboard itself come on the Install step.
+    return `${head(c, "Your web address is saved", `<b>${esc(c.s.domain!.host || c.s.domain!.zone!)}</b> will be your dashboard's address.`)}
+<p class="hint">You don't add anything yet. After you press Install, the next screen shows two DNS records to add where you manage <b>${zone}</b>. Until your address is ready, you open your dashboard on its Railway address.</p>
+${showMeHow(["registrar-dns-records"])}
+${mainForm(c, "domain-continue", "")}
+${nav(c, `${mini(c, "domain-edit", "Change domain", "btn o")}${primary("Continue")}`)}`;
+  }
+  return `${head(c, "Add your email records", `Add each one where you manage DNS for <b>${zone}</b>. They tick off as they appear; you can keep going meanwhile.`)}
+${recordTable(rows, true)}
 <p class="hint">Your dashboard's two records come on the Install step.</p>
 ${showMeHow(["registrar-dns-records"])}
 ${rs && rs.status !== "verified" ? `<p class="status"><span class="spin"></span>Waiting for Resend to verify${rs.lastCheck ? ` · checked ${when(rs.lastCheck)}` : ""}</p>` : rs ? notice("ok", "Resend verified your email domain.") : ""}

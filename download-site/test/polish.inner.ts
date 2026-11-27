@@ -140,7 +140,7 @@ describe("Continue always moves on", () => {
     const js = readFileSync(join(import.meta.dir, "../public/wizard.js"), "utf8");
     expect(js).toContain('addEventListener("pageshow"');
     expect(js).toMatch(/e\.persisted\) location\.reload\(\)/);
-    expect(js).toContain("30000"); // the button is given back
+    expect(js).toContain("120000"); // the button is given back
   });
 });
 

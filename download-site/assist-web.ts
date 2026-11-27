@@ -43,13 +43,22 @@ export function assistPanel(h: Helpers, sid: string, b: Buyer, s: SetupData): st
   const table = `<table class="records steps"><thead><tr><th>Step</th><th>Status</th><th>What's set</th><th>When</th></tr></thead><tbody>${rows.map((r) => `<tr><td data-l="Step"><b>${esc(r.title)}</b>${r.optional ? ` <span class="hint">optional</span>` : ""}</td><td data-l="Status">${by(r)}</td><td data-l="What's set">${esc(r.detail)}</td><td data-l="When">${r.at ? `${esc(h.when(r.at))} · ${esc(r.who || "")}` : ""}</td></tr>`).join("")}${s.assist?.steps?.openrouter ? `<tr><td data-l="Step"><b>AI help (OpenRouter)</b> <span class="hint">optional</span></td><td data-l="Status"><span class="pill live">Done by you</span></td><td data-l="What's set">${esc(secretHint(b.id, "openrouter_key") || "key saved")}</td><td data-l="When">${esc(h.when(s.assist.steps.openrouter.at))} · ${esc(s.assist.steps.openrouter.by)}</td></tr>` : ""}</tbody></table>`;
 
   const brand = s.brand;
+  const bcols = brand?.colours?.length ? brand.colours : brand?.colour ? [brand.colour] : [];
+  const btheme = brand?.theme || "light";
   const brandForm = form("brand", `<div class="two"><div>${text("ownerName", "Owner name", brand?.ownerName || s.prefill?.ownerName || "", "e.g. Dana Smith")}</div><div>${text("ownerEmail", "Owner email", brand?.ownerEmail || s.prefill?.ownerEmail || b.email, "", 'type="email" required')}</div></div>
   <div class="two"><div>${text("productName", "Agency name", brand?.productName || s.prefill?.agencyName || "", "e.g. Acme AI", "required")}</div></div>
   <label class="f" for="logoFile">Logo (optional)</label><input id="logoFile" type="file" accept="image/png,image/jpeg,image/webp">
   <input type="hidden" id="logo" name="logo" value="${esc(brand?.logo || "")}"><input type="hidden" id="removeLogo" name="removeLogo" value="">
   <p class="hint" id="logoNote">${brand?.logo ? "Logo added. Choose another file to replace it." : "A PNG or JPG works best. It's shrunk in your browser, like the buyer's."}</p>
   <p class="logoRow"><img id="logoPreview" alt="Logo" width="96"${brand?.logo ? ` src="${esc(brand.logo)}"` : " hidden"}> <button type="button" class="linkbtn" id="logoRemove"${brand?.logo ? "" : " hidden"}>Remove logo</button></p>
-  <label class="f" for="colour">Brand colour</label><input id="colour" name="colour" type="color" value="${esc(brand?.colour || "#635bff")}">`);
+  <label class="f" for="colour">Brand colours <span class="hint">1 to 3, the first is the main one</span></label>
+  <div class="colours">
+    <label class="cpick" for="colour"><input id="colour" name="colour" type="color" value="${esc(bcols[0] || "#4f46e5")}" aria-label="Main colour"><span>Main</span></label>
+    <label class="cpick" for="colour2"><input id="colour2" name="colour2" type="color" value="${esc(bcols[1] || "#0ea5e9")}" aria-label="Second colour"><span class="ctick"><input type="checkbox" name="colour2on" value="1"${bcols[1] ? " checked" : ""}> Second</span></label>
+    <label class="cpick" for="colour3"><input id="colour3" name="colour3" type="color" value="${esc(bcols[2] || "#f59e0b")}" aria-label="Third colour"><span class="ctick"><input type="checkbox" name="colour3on" value="1"${bcols[2] ? " checked" : ""}> Third</span></label>
+  </div>
+  <label class="f">Look</label>
+  <div class="choice looks"><label class="opt"><input type="radio" name="theme" value="light"${btheme === "light" ? " checked" : ""}><b>Light</b></label><label class="opt"><input type="radio" name="theme" value="dark"${btheme === "dark" ? " checked" : ""}><b>Dark</b></label></div>`);
   const hosting = form("railway", pass("token", "Railway account token", secretHint(b.id, "railway_token"), "Their Railway token (No workspace, Hobby plan)"), "Check and save");
   const phones = form("phones", `<h4>Telnyx (recommended)</h4>${pass("key", "Telnyx API key", secretHint(b.id, "telnyx_key"), "KEY...")}`, "Check and save")
     + form("phones-vapi", `<h4>Or use Vapi + Twilio</h4><p class="hint">Vapi for voice, Twilio for numbers and texts.</p><div class="two"><div>${pass("vapiKey", "Vapi private key", secretHint(b.id, "vapi_key"))}</div><div>${pass("vapiPublic", "Vapi public key", secretHint(b.id, "vapi_public"))}</div></div><div class="two"><div>${text("twilioSid", "Twilio Account SID", s.twilio?.sid)}</div><div>${pass("twilioToken", "Twilio auth token", secretHint(b.id, "twilio_token"))}</div></div>`, "Check and save Vapi + Twilio", "btn o");
@@ -176,7 +185,7 @@ export async function assistRoute(what: string, b: Buyer, f: Record<string, stri
   const wait = allow(`assist:${c.email}`, 240, 60 * 60_000);
   if (wait) return back({ ok: false, message: `Too many changes just now. Wait ${Math.ceil(wait / 60)} minutes.`, kind: "err" });
   switch (what) {
-    case "brand": return back(await fillStep(b, c.email, "brand", { productName: f.productName || "", ownerEmail: f.ownerEmail || "", ownerName: f.ownerName || "", logo: f.logo || "", removeLogo: f.removeLogo || "", colour: f.colour || "" }));
+    case "brand": return back(await fillStep(b, c.email, "brand", { productName: f.productName || "", ownerEmail: f.ownerEmail || "", ownerName: f.ownerName || "", logo: f.logo || "", removeLogo: f.removeLogo || "", colour: f.colour || "", colour2: f.colour2 || "", colour2on: f.colour2on || "", colour3: f.colour3 || "", colour3on: f.colour3on || "", theme: f.theme || "" }));
     case "railway": return back(await fillStep(b, c.email, "railway", { token: f.token || "" }));
     case "phones": return back(await fillStep(b, c.email, "phones", { key: f.key || "" }));
     case "phones-vapi": return back(await fillStep(b, c.email, "phones", { vapiKey: f.vapiKey || "", vapiPublic: f.vapiPublic || "", twilioSid: f.twilioSid || "", twilioToken: f.twilioToken || "" }, "phones-vapi"));

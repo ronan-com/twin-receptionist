@@ -152,3 +152,18 @@ describe("Voice and AI are required", () => {
     expect(detailOf(b, s, "phones")).toContain("Twilio " + SID);
   });
 });
+
+describe("our admin's Brand form matches the buyer's wizard", () => {
+  test("owner name, up to three colours and light/dark are saved, and shown in the step's summary", async () => {
+    const b = addBuyer("Brand Admin", "brand-admin@example.com");
+    const out = await fillStep(b, "admin@us.test", "brand", { productName: "Acme AI", ownerEmail: "dana@acme.test", ownerName: "Dana Smith", colour: "#0a8f5c", colour2: "#f59e0b", colour2on: "1", colour3: "#ec4899", colour3on: "1", theme: "dark", logo: "", removeLogo: "" });
+    expect(out.ok).toBe(true);
+    const s = getSetup(b.id);
+    expect(s.brand).toMatchObject({ productName: "Acme AI", ownerName: "Dana Smith", colour: "#0a8f5c", colours: ["#0a8f5c", "#f59e0b", "#ec4899"], theme: "dark" });
+    expect(detailOf(b, s, "brand")).toContain("#0a8f5c #f59e0b #ec4899");
+    expect(detailOf(b, s, "brand")).toContain("dark");
+    // unticked second and third colours do not count; no theme given keeps the stored one
+    expect((await fillStep(b, "admin@us.test", "brand", { productName: "Acme AI", ownerEmail: "dana@acme.test", ownerName: "Dana Smith", colour: "#112233", colour2: "#f59e0b", colour3: "#ec4899", theme: "" })).ok).toBe(true);
+    expect(getSetup(b.id).brand).toMatchObject({ colours: ["#112233"], theme: "dark" });
+  });
+});

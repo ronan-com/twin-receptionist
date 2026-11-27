@@ -68,7 +68,7 @@ export function stepRows(b: Buyer, s: SetupData): StepRow[] {
 export function detailOf(b: { id: number }, s: SetupData, id: AssistId): string {
   const h = (n: Parameters<typeof secretHint>[1]) => secretHint(b.id, n) || "";
   switch (id) {
-    case "brand": return s.brand ? `${s.brand.productName} · ${s.brand.ownerEmail}${s.brand.logo ? " · logo" : ""}${s.brand.colour ? ` · ${s.brand.colour}` : ""}` : "";
+    case "brand": return s.brand ? `${s.brand.productName} · ${s.brand.ownerEmail}${s.brand.logo ? " · logo" : ""}${s.brand.colours?.length ? ` · ${s.brand.colours.join(" ")}` : s.brand.colour ? ` · ${s.brand.colour}` : ""}${s.brand.theme ? ` · ${s.brand.theme}` : ""}` : "";
     case "railway": return s.railway?.confirmed ? `${s.railway.workspaceName || "workspace"}${s.railway.plan ? ` · ${s.railway.plan}` : ""} ${h("railway_token")}`.trim() : "";
     case "phones": return !s.phones?.confirmed && s.vapi?.confirmed ? `Vapi ${h("vapi_key")}${s.twilio?.confirmed ? ` + Twilio ${s.twilio.sid || ""}` : ""}`.trim() : s.phones?.confirmed ? `Telnyx ${h("telnyx_key")}${s.phones.balance ? ` · ${s.phones.balance}` : ""}`.trim() : s.skipped?.phones && !s.vapi?.confirmed ? "Skipped: the buyer connects it later in their dashboard (Connections)" : "";
     case "ai": return s.ai?.confirmed ? `OpenRouter ${h("openrouter_key")}`.trim() : "";

@@ -82,7 +82,7 @@ export function useGetStartedItems(enabled: boolean) {
         title: "Make a test call",
         hint: "Press Talk to this receptionist on its page and say hello from your browser.",
         done: (calls.data ?? []).some((x) => x.channel === "web"),
-        to: withReceptionist ? "/admin/clients/$businessId" : "/admin/receptionists/new",
+        to: withReceptionist ? "/admin/receptionists/$receptionistId" : "/admin/receptionists/new",
         cta: withReceptionist ? "Open receptionist" : "Create one first",
         guide: "testcall",
       },
@@ -107,14 +107,14 @@ export function useGetStartedItems(enabled: boolean) {
     return out;
   }, [brand.data, counts.data, companies.data, calls.data, phoneItem, phoneNeeded]);
 
-  const target = (companies.data ?? []).find((c) => c.receptionists.length > 0)?.id;
+  const target = (companies.data ?? []).find((c) => c.receptionists.length > 0)?.receptionists[0]?.id;
   return { items, loading, firstCompanyId: target };
 }
 
 function ItemLink({ item, companyId, className, children }: { item: Item; companyId?: string; className?: string; children: ReactNode }) {
-  if (item.to === "/admin/clients/$businessId" && companyId)
+  if (item.to === "/admin/receptionists/$receptionistId" && companyId)
     return (
-      <Link to="/admin/clients/$businessId" params={{ businessId: companyId }} className={className} data-cta={`gs-${item.key}`}>
+      <Link to="/admin/receptionists/$receptionistId" params={{ receptionistId: companyId }} search={{ tab: "voice" }} className={className} data-cta={`gs-${item.key}`}>
         {children}
       </Link>
     );
@@ -124,7 +124,7 @@ function ItemLink({ item, companyId, className, children }: { item: Item; compan
         {children}
       </Link>
     );
-  const to = item.to === "/admin/clients/$businessId" ? "/admin/receptionists/new" : (item.to as "/admin/clients");
+  const to = item.to === "/admin/receptionists/$receptionistId" ? "/admin/receptionists/new" : (item.to as "/admin/clients");
   return (
     <Link to={to} className={className} data-cta={`gs-${item.key}`}>
       {children}

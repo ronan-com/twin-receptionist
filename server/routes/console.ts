@@ -336,6 +336,9 @@ async function overview(ctx: Ctx) {
   const [calls] = await sql`
     select count(*)::int as n from call_log
     where channel <> 'web' and started_at > now() - interval '30 days' and (${scope}::uuid is null or org_id = ${scope}::uuid)`;
+  const [mb] = await sql`
+    select count(*)::int as n from mailboxes m join clients c on c.id = m.client_id
+    where (${scope}::uuid is null or c.org_id = ${scope}::uuid)`;
   let agencies: number | undefined;
   let providerErrors = 0;
   if (scope === null) {
@@ -354,6 +357,8 @@ async function overview(ctx: Ctx) {
     providerErrors,
     pendingNumberRequests: r.n,
     calls30d: calls.n,
+    /** Connected email inboxes (the AI Email Agent). */
+    inboxes: mb.n,
     ...(agencies !== undefined ? { agencies } : {}),
   };
 }
@@ -369,6 +374,27 @@ async function calls(ctx: Ctx, url: URL) {
       and (${scope}::uuid is null or org_id = ${scope}::uuid)
     order by started_at desc limit 10000`;
   return rows.map((r: any) => callRow(r, clients.get(r.client_id)));
+}
+
+/**
+ * What the bell needs and nothing more: calls and texts that started after `since` (default: the last
+ * 10 minutes, never more than a day back), newest first, at most 20. GET /api/console/calls/recent?since=<iso>.
+ * `now` is the server's clock, to send back as the next `since`.
+ */
+export async function recentCalls(ctx: Ctx, url: URL) {
+  const scope = scopeOf(ctx);
+  const nowMs = Date.now();
+  const asked = Date.parse(url.searchParams.get("since") ?? "");
+  const since = new Date(Math.min(nowMs, Math.max(Number.isFinite(asked) ? asked : nowMs - 10 * 60_000, nowMs - 24 * 3_600_000)));
+  const rows = await sql`
+    select l.id, l.client_id, l.channel, l.from_number, l.started_at, c.data->'settings'->>'businessName' as business_name
+    from call_log l left join clients c on c.id = l.client_id
+    where l.started_at > ${since} and (${scope}::uuid is null or l.org_id = ${scope}::uuid)
+    order by l.started_at desc limit 20`;
+  return {
+    now: new Date(nowMs).toISOString(),
+    calls: rows.map((r: any) => ({ id: r.id, business_id: r.client_id, channel: r.channel, from_number: r.from_number, started_at: iso(r.started_at), business_name: r.business_name ?? "" })),
+  };
 }
 
 async function transcript(c: ClientRow, providerId: string): Promise<{ summary: string; messages: CallMessage[] }> {
@@ -1340,6 +1366,7 @@ export async function consoleRoutes({ req, url, path, method, ctx, appUrl }: Rou
   if (get) {
     if (rest === "/overview") return json(await overview(ctx));
     if (rest === "/calls") return json({ calls: await calls(ctx, url) });
+    if (rest === "/calls/recent") return json(await recentCalls(ctx, url));
     const call = rest.match(/^\/calls\/([^/]+)$/);
     if (call) return json({ call: await callDetail(ctx, call[1]) });
     if (rest === "/bookings-leads") return json(await bookingsLeads(ctx, url));

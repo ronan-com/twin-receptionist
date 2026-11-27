@@ -50,6 +50,11 @@ function AdminSettingsPage() {
   return (
     <div className="space-y-5" data-page="admin-settings">
       <PageHeader eyebrow={platform ? "Platform console" : "Agency console"} title="Settings" description={orgName || "Your team"} />
+      {ws.session?.needsPassword && tab !== "account" ? (
+        <Notice tone="warning" title="Choose a password" action={<Button size="sm" variant="outline" className="h-7 bg-white text-[12px]" onClick={() => setTab("account")} data-action="choose-password">Set password</Button>}>
+          You signed in with a one-time link. Set a password to sign in next time.
+        </Notice>
+      ) : null}
       <Tabs value={tab} onValueChange={setTab}>
         <TabsList className="max-w-full overflow-x-auto">
           <TabsTrigger value="team">Team</TabsTrigger>

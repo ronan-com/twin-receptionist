@@ -47,7 +47,7 @@ function AdminLayout() {
   const supportUnread = variant === "agency" ? support.unread : 0;
 
   // Low balances (was the bar across the top), new calls and messages: in the bell, with a small pop-up and a sound.
-  const live = useLiveAlerts(ws.loading || !ws.session ? null : ws.range, !ws.loading && !!ws.session && !ws.viewing);
+  const live = useLiveAlerts(!ws.loading && !!ws.session && !ws.viewing);
 
   const notifications = useMemo(() => {
     const out: AlertItem[] = [];

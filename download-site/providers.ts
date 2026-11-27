@@ -234,7 +234,7 @@ export async function railwayUpload(token: string, projectId: string, environmen
   const text = await res.text();
   let json: any = {};
   try { json = text ? JSON.parse(text) : {}; } catch {}
-  if (res.status === 413) throw new ProviderError("Railway said the app upload is too large. Contact support.", 413);
+  if (res.status === 413) throw new ProviderError("Railway said the app upload is too large.", 413);
   if (!res.ok) throw railwayErr(res.status, String(json?.message || json?.error || ""));
   if (!json.deploymentId) throw new ProviderError("Railway took the upload but didn't start a build. Press Try again.", 500);
   return { deploymentId: String(json.deploymentId), url: json.url, deploymentDomain: json.deploymentDomain };

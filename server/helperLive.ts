@@ -7,6 +7,7 @@ import { ValidationError } from "./prompt";
 import { listClients, getOrgClient } from "./store";
 import type { HelperDeps } from "./helper";
 import { telnyx } from "./telnyx";
+import { sniffAudio, wavOfPcm } from "./voice/telnyx";
 import type { Voice } from "../src/lib/shared";
 
 // The live wiring of server/helper.ts: its confirmed changes go through the same functions the
@@ -96,16 +97,25 @@ export function helperDeps(ctx: Ctx, f: Fns): HelperDeps {
  * failure is remembered per agency for ten minutes so a missing key isn't retried on every reply.
  */
 const failedAt = new Map<string, number>();
-export function telnyxSpeaker(orgId: string, voices: () => Promise<Voice[]>): (text: string) => Promise<Uint8Array | null> {
+// The voices list is the same for everyone: asked of the provider at most once every ten minutes.
+const voiceCache: { at: number; list: Voice[] } = { at: 0, list: [] };
+export function telnyxSpeaker(orgId: string, voices: () => Promise<Voice[]>): NonNullable<HelperDeps["speak"]> {
   return async (text) => {
     if (Date.now() - (failedAt.get(orgId) ?? 0) < 10 * 60_000) return null;
     try {
-      const list = await voices();
+      if (Date.now() - voiceCache.at > 10 * 60_000 || !voiceCache.list.length) {
+        voiceCache.list = await voices();
+        voiceCache.at = Date.now();
+      }
+      const list = voiceCache.list;
       const voice = (list.find((v) => v.recommended) ?? list[0])?.id;
       if (!voice || !/^Telnyx\.[A-Za-z0-9_.-]{2,100}$/.test(voice)) return null;
       const res = await telnyx<{ base64_audio?: string }>("POST", "/text-to-speech/speech", { text: text.slice(0, 500), voice, language: "en-AU", output_type: "base64_output" });
       if (!res?.base64_audio) throw new Error("no audio");
-      return new Uint8Array(Buffer.from(res.base64_audio, "base64"));
+      // Telnyx may answer with a finished file or raw 24 kHz PCM: say which, so the browser can play it.
+      const audio = Buffer.from(res.base64_audio, "base64");
+      const type = sniffAudio(audio);
+      return type ? { body: new Uint8Array(audio), type } : { body: new Uint8Array(wavOfPcm(audio)), type: "audio/wav" };
     } catch {
       failedAt.set(orgId, Date.now());
       return null;

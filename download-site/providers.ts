@@ -1,7 +1,7 @@
 // Every call we make to a buyer's provider account. Each check answers in plain
 // English and never echoes the key it was given. In test mode (MOCK_*=1) each base
 // URL points at the local fakes in mock/serve.ts instead; nothing real is called.
-import { Resolver } from "node:dns/promises";
+import { Resolver, lookup as dnsLookup } from "node:dns/promises";
 import nodemailer from "nodemailer";
 import { CONFIG } from "./lib";
 import type { DnsRecord } from "./store";
@@ -528,15 +528,50 @@ function smtpProblem(e: any): string {
   if (["ECONNREFUSED", "ESOCKET", "ECONNECTION"].includes(code)) return "The email server refused the connection. Check the port: 587 or 465.";
   return "The email server said: " + resp.replace(/[\r\n]+/g, " ").slice(0, 160);
 }
-const transport = (url: string) => nodemailer.createTransport(url, { connectionTimeout: 15000, greetingTimeout: 15000, socketTimeout: 20000 } as any);
-export async function checkSmtp(url: string): Promise<Check> {
-  const t = transport(url);
+/** True for any address that isn't a public internet one: private, loopback, link-local (cloud metadata), shared, multicast, reserved. */
+export function isPrivateAddress(ip: string): boolean {
+  const v = ip.trim().toLowerCase().replace(/^\[|\]$/g, "").split("%")[0];
+  const mapped = /^::ffff:(\d+\.\d+\.\d+\.\d+)$/.exec(v);
+  if (mapped) return isPrivateAddress(mapped[1]);
+  const m4 = /^(\d+)\.(\d+)\.(\d+)\.(\d+)$/.exec(v);
+  if (m4) {
+    const [a, b, c] = [Number(m4[1]), Number(m4[2]), Number(m4[3])];
+    if ([a, b, c, Number(m4[4])].some((n) => n > 255)) return true;
+    return a === 0 || a === 10 || a === 127 || a >= 224 || (a === 100 && b >= 64 && b <= 127) || (a === 169 && b === 254) || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168) || (a === 192 && b === 0 && c === 0) || (a === 198 && (b === 18 || b === 19));
+  }
+  if (v.includes(":")) {
+    if (v === "::" || v === "::1") return true;
+    const first = parseInt(v.split(":")[0] || "0", 16);
+    if ((first & 0xfe00) === 0xfc00 || (first & 0xffc0) === 0xfe80 || (first & 0xff00) === 0xff00) return true; // fc00::/7, fe80::/10, ff00::/8
+    if (v.startsWith("64:ff9b:") || v.startsWith("2001:db8") || v.startsWith("100:")) return true;
+    return false;
+  }
+  return true; // not an address we understand: don't connect
+}
+
+/** Looks the SMTP host up once and returns a public address to connect to (so the check and the connection use the same one). */
+export async function publicSmtpAddress(host: string, resolve: (h: string) => Promise<{ address: string }[]> = (h) => dnsLookup(h, { all: true })): Promise<{ ok: true; ip: string } | { ok: false; message: string }> {
+  let found: { address: string }[];
+  try { found = await resolve(host); } catch { return { ok: false, message: "We couldn't find that email server. Check the server name." }; }
+  if (!found.length || found.some((f) => isPrivateAddress(f.address))) return { ok: false, message: "That email server isn't on the public internet, so we can't connect to it. Use your email provider's own server name." };
+  return { ok: true, ip: (found.find((f) => !f.address.includes(":")) ?? found[0]).address };
+}
+
+/** With `pin` the connection goes to that address (checked as public) while the certificate is still checked against the host name. */
+const transport = (url: string, pin?: string) => {
+  const opts = { connectionTimeout: 15000, greetingTimeout: 15000, socketTimeout: 20000 } as any;
+  if (!pin) return nodemailer.createTransport(url, opts);
+  const u = new URL(url);
+  return nodemailer.createTransport({ host: pin, port: Number(u.port), secure: u.protocol === "smtps:", auth: { user: decodeURIComponent(u.username), pass: decodeURIComponent(u.password) }, tls: { servername: u.hostname }, ...opts });
+};
+export async function checkSmtp(url: string, pin?: string): Promise<Check> {
+  const t = transport(url, pin);
   try { await t.verify(); return { ok: true, message: "Signed in to your email server." }; }
   catch (e) { return { ok: false, message: smtpProblem(e) }; }
   finally { t.close(); }
 }
-export async function smtpSend(url: string, from: string, to: string, productName: string): Promise<Check> {
-  const t = transport(url);
+export async function smtpSend(url: string, from: string, to: string, productName: string, pin?: string): Promise<Check> {
+  const t = transport(url, pin);
   try {
     await t.sendMail({ from, to, subject: `${productName}: your email sender works`, text: `This is a test email from the ${productName} setup. Your email sender works.` });
     return { ok: true, message: `Test email sent to ${to}. Check your inbox (and spam folder).` };

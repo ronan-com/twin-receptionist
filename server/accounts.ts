@@ -113,11 +113,11 @@ export const singleAgency = () => ["1", "true", "yes", "on"].includes((process.e
 export const canChangeServerSettings = (ctx: Ctx) =>
   ctx.user.platformAdmin || (singleAgency() && ctx.role === "owner" && !ctx.viewing);
 
-export async function startSession(userId: string, orgId: string | null): Promise<string> {
+export async function startSession(userId: string, orgId: string | null, opts: { firstLogin?: boolean } = {}): Promise<string> {
   const token = newToken();
   await sql`
-    insert into sessions (token_hash, user_id, org_id, expires_at)
-    values (${hashToken(token)}, ${userId}, ${orgId}, ${new Date(Date.now() + SESSION_DAYS * 86_400_000)})`;
+    insert into sessions (token_hash, user_id, org_id, expires_at, first_login)
+    values (${hashToken(token)}, ${userId}, ${orgId}, ${new Date(Date.now() + SESSION_DAYS * 86_400_000)}, ${opts.firstLogin === true})`;
   // Housekeeping: drop this person's expired sessions.
   await sql`delete from sessions where user_id = ${userId} and expires_at < now()`;
   return token;
@@ -355,14 +355,16 @@ export async function bootstrapOwner(): Promise<"created" | "skipped"> {
  * The one-time sign-in link (/welcome?t=...). The token is compared by its hash in constant time, deleted
  * the moment it matches (so it works once, even if two requests race), and refused after 24 hours.
  */
-export async function firstLogin(input: any): Promise<string> {
-  const refuse = () => {
-    recentFailures("welcome").push(Date.now());
+export async function firstLogin(input: any, ip = ""): Promise<string> {
+  // Per caller, so one person guessing cannot lock the owner out of their own link; only well-formed tokens count.
+  const key = `welcome:${ip || "unknown"}`;
+  const refuse = (counts = true) => {
+    if (counts) recentFailures(key).push(Date.now());
     return new AuthError("This sign-in link has already been used or has expired. Sign in with your email, or choose \"Forgot password\".", 401);
   };
-  if (recentFailures("welcome").length >= 10) throw new AuthError("Too many tries. Wait 15 minutes, then sign in with your email.", 429);
+  if (recentFailures(key).length >= 10) throw new AuthError("Too many tries. Wait 15 minutes, then sign in with your email.", 429);
   const token = String(input?.token ?? "").slice(0, 200);
-  if (token.length < 32) throw refuse();
+  if (token.length < 32 || !/^[A-Za-z0-9_-]+$/.test(token)) throw refuse(false);
   const given = Buffer.from(hashToken(token), "hex");
   const rows = await sql`select token_hash, user_id, expires_at from first_logins`;
   let hit: { token_hash: string; user_id: string; expires_at: Date } | null = null;
@@ -373,7 +375,7 @@ export async function firstLogin(input: any): Promise<string> {
   if (!hit) throw refuse();
   const [burned] = await sql`delete from first_logins where token_hash = ${hit.token_hash} returning user_id`;
   if (!burned || new Date(hit.expires_at).getTime() < Date.now()) throw refuse();
-  return startSession(hit.user_id, null);
+  return startSession(hit.user_id, null, { firstLogin: true });
 }
 
 const loginFailures = new Map<string, number[]>();
@@ -438,8 +440,13 @@ export async function updateProfile(ctx: Ctx, input: any): Promise<void> {
   if (input?.name !== undefined) await sql`update users set name = ${textOf(input.name, 80)} where id = ${ctx.user.id}`;
   if (input?.newPassword !== undefined) {
     const [u] = await sql`select password_hash, password_unset from users where id = ${ctx.user.id}`;
-    // An owner made by the install has no password yet, so there is no current one to ask for.
-    if (!u.password_unset && !(await Bun.password.verify(String(input?.currentPassword ?? ""), u.password_hash))) {
+    // An owner made by the install has no password yet, so there is no current one to ask for. That is
+    // allowed only in the session the one-time sign-in link opened, and only for FIRST_LOGIN_HOURS after
+    // it; anyone else with a stolen session cookie must use the email reset ("Forgot password").
+    if (u.password_unset) {
+      const [s] = await sql`select 1 from sessions where token_hash = ${ctx.tokenHash} and first_login and created_at > now() - ${FIRST_LOGIN_HOURS + " hours"}::interval`;
+      if (!s) throw new ValidationError('Choose "Forgot password" on the sign-in page to set your password.');
+    } else if (!(await Bun.password.verify(String(input?.currentPassword ?? ""), u.password_hash))) {
       throw new ValidationError("Your current password isn't right.");
     }
     const hash = await hashPassword(passwordOf(input.newPassword));

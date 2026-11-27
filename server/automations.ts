@@ -377,7 +377,8 @@ export function telephonyPayload(a: AutomationSettings, current: Record<string, 
   return {
     telephony_settings: {
       ...current,
-      supports_unauthenticated_web_calls: current.supports_unauthenticated_web_calls ?? true,
+      // Always on: the browser test call needs it, and the test call's own check no longer switches it on.
+      supports_unauthenticated_web_calls: true,
       time_limit_secs: a.callLimits.maxMinutes * 60,
       user_idle_timeout_secs: a.callLimits.idleSeconds,
       recording_settings: { ...(current.recording_settings ?? {}), enabled: a.recording.enabled, channels: "dual", format: "mp3" },

@@ -309,11 +309,9 @@ export const telnyxProvider: VoiceProvider = {
         if (err instanceof TelnyxError && err.status === 404) throw new ValidationError("This receptionist isn't set up on the phone service yet. Save it once, then try the test call again.");
         throw err;
       }
-      if (current.supports_unauthenticated_web_calls !== true) {
-        await telnyx("POST", `/ai/assistants/${assistantId}`, { telephony_settings: { ...current, supports_unauthenticated_web_calls: true } }).catch((err) => {
-          throw new ValidationError(`The test call can't start: the phone service wouldn't allow browser calls (${(err as Error).message}).`);
-        });
-      }
+      // Read-only: a GET never changes the assistant. Saving the receptionist switches browser calls on
+      // (server/automations.ts telephonyPayload), so the fix for an older one is to save it once.
+      if (current.supports_unauthenticated_web_calls !== true) throw new ValidationError("The test call isn't switched on for this receptionist yet. Save the receptionist once, then try the test call again.");
     }
     return { provider: "telnyx", assistantId };
   },

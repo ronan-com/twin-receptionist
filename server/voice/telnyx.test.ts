@@ -21,7 +21,7 @@ mock.module("../telnyx", () => ({
   telnyx: async (method: string, path: string, body?: unknown) => {
     calls.push({ method, path, body });
     if (method === "POST" && path === "/ai/assistants") return { data: { id: "assistant-new" } };
-    if (method === "GET" && path.startsWith("/ai/assistants/")) return { data: { telephony_settings: { default_texml_app_id: "texml-1" } } };
+    if (method === "GET" && path.startsWith("/ai/assistants/")) return { data: { telephony_settings: { default_texml_app_id: "texml-1", supports_unauthenticated_web_calls: true } } };
     return { data: {} };
   },
   runAsOrg: (_o: unknown, fn: () => unknown) => fn(),

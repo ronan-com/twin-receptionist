@@ -34,11 +34,11 @@ import { inactivePage, startRoute } from "./genericlink";
 import { ticketsApi } from "./tickets";
 import { brokerApi } from "./broker";
 import { MAX_SYNC_BODY, bearerOf, buyerBySyncToken, ownerResetLink, receive } from "./sync";
-import { appSource, bundleSignatureOk, latestRelease, packageOf, signBundleUrl, sourceDownload, sourceUrlFor } from "./releases";
+import { checkedAppSource, bundleSignatureOk, latestRelease, packageOf, signBundleUrl, sourceDownload, sourceUrlFor } from "./releases";
 import { startAlerts } from "./alerts";
 import { DEMO, DEMO_KEY, DemoOffline, demoBuyer, demoDashboard } from "./demo";
 import { serveOwnHost, tlsAllowedResponse } from "./hosts";
-import { consumeState, exchangeCode, isProvider, mockOAuthRoute, oauthEnabled, oauthStart, readBrowserCookie, type OAuthProvider } from "./oauth";
+import { consumeState, exchangeCode, isProvider, markStateUsed, mockOAuthRoute, oauthEnabled, oauthStart, readBrowserCookie, type OAuthProvider } from "./oauth";
 import { oauthComplete, oauthGuard, OAUTH_STEP } from "./setup";
 
 if ((process.env.PREVIEW_JUMP || "").trim() === "1" && !ANY_MOCK) {
@@ -237,7 +237,8 @@ async function handle(req: Request, srv: Bun.Server<unknown>): Promise<Response>
     const p: OAuthProvider = oc[1];
     const wait = allow(`oauthcb:${ip}`, 30, 10 * 60_000);
     if (wait) return tooMany(wait);
-    const c = consumeState(p, url.searchParams.get("state") || "", readBrowserCookie(req));
+    // OpenRouter's callback carries our state as ?s= (we put it in the callback address); the cookie alone is only a fallback.
+    const c = consumeState(p, url.searchParams.get("state") || (p === "openrouter" ? url.searchParams.get("s") : "") || "", readBrowserCookie(req));
     const clear = { "Set-Cookie": "ob=; Path=/oauth; HttpOnly; Max-Age=0" };
     if (!c.ok) return html(oauthLostPage(), 400, clear);
     const b = db().query("SELECT * FROM buyers WHERE id = ?").get(c.buyerId) as Buyer | null;
@@ -246,9 +247,9 @@ async function handle(req: Request, srv: Bun.Server<unknown>): Promise<Response>
     const back = `/setup/${b.code}?step=${step}`;
     let flash: SetupData["flash"] | null = null;
     updateSetup(b.id, (s) => { delete s.moved; });
-    if (url.searchParams.get("error") || !url.searchParams.get("code")) flash = { kind: "err", text: "Sign-in was cancelled. Try again, or paste a key instead." };
+    if (url.searchParams.get("error") || !url.searchParams.get("code")) { if (c.key) markStateUsed(c.key); flash = { kind: "err", text: "Sign-in was cancelled. Try again, or paste a key instead." }; }
     else {
-      try { flash = await oauthComplete(b, p, await exchangeCode(p, url.searchParams.get("code")!, c.verifier)); }
+      try { const tokens = await exchangeCode(p, url.searchParams.get("code")!, c.verifier); if (c.key) markStateUsed(c.key); flash = await oauthComplete(b, p, tokens); }
       catch (e) { console.error(`[oauth] ${p}: ${(e as Error)?.message || "error"}`); flash = { kind: "err", text: "That sign-in didn't work. Try again, or paste a key instead." }; }
     }
     // On to the next step when the sign-in finished this one (even if they had been sent Back to it); else back to the same step with the message.
@@ -346,7 +347,7 @@ async function handle(req: Request, srv: Bun.Server<unknown>): Promise<Response>
       const sBuyer = Number(url.searchParams.get("b"));
       const retry = allow(`relbundle:${ip}`, 20, 60 * 60_000);
       if (retry) return json({ error: "too many requests" }, 429, { "Retry-After": String(retry) });
-      if (!Number.isInteger(sBuyer) || !bundleSignatureOk(sBuyer, sm[1], url.searchParams.get("exp") || "", url.searchParams.get("sig") || "")) return json({ error: "expired or invalid" }, 403);
+      if (!Number.isInteger(sBuyer) || !bundleSignatureOk(sBuyer, sm[1], url.searchParams.get("exp") || "", url.searchParams.get("sig") || "", Date.now(), "source")) return json({ error: "expired or invalid" }, 403);
       const sb = db().query("SELECT revoked_at FROM buyers WHERE id = ?").get(sBuyer) as { revoked_at: string | null } | null;
       if (!sb || sb.revoked_at || !packageOf(sm[1])) return json({ error: "not found" }, 404);
       try {
@@ -366,7 +367,9 @@ async function handle(req: Request, srv: Bun.Server<unknown>): Promise<Response>
     const rel = await latestRelease();
     if (!buyer || buyer.revoked_at || !rel || rel.version !== bm[1]) return json({ error: "not found" }, 404);
     console.log(`[release] buyer ${buyerId} downloaded ${rel.version}`);
-    return respond(await appSource(), 200, { "Content-Type": "application/gzip", "Cache-Control": "no-store", "Content-Disposition": `attachment; filename="app-${rel.version}.tgz"` });
+    let bundle: Uint8Array;
+    try { bundle = await checkedAppSource(); } catch (e) { return json({ error: (e as Error).message }, 503); }
+    return respond(bundle, 200, { "Content-Type": "application/gzip", "Cache-Control": "no-store", "Content-Disposition": `attachment; filename="app-${rel.version}.tgz"` });
   }
 
   // ---- our admin dashboard ----

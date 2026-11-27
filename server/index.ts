@@ -55,7 +55,7 @@ import { startAutoUpdate, updatesRoute } from "./autoUpdate";
 import { installLogCapture } from "./problems";
 import { OTHER_BRAND, UI_PRODUCT, brandedIndex } from "./product";
 import { agencySnapshot, consoleRoutes, isClientPaused } from "./routes/console";
-import { assistantRoute } from "./assistant";
+import { assistantRoute, createLimiter } from "./assistant";
 import { helperRoute } from "./helper";
 import { helperDeps, telnyxSpeaker } from "./helperLive";
 import { webchatAdmin, webchatPublic } from "./webchat";
@@ -583,6 +583,14 @@ async function clientAccessFor(ctx: Ctx, orgId: string, id: string): Promise<{ c
 // organisation they're working in.
 const telegramDeps = (): TelegramDeps => ({ ...liveTelegramDeps, publicUrl });
 
+// The caller's address for rate limits: the last x-forwarded-for entry (the one our own proxy added), else the socket.
+function callerAddress(req: Request, server?: { requestIP(r: Request): { address: string } | null }): string {
+  const fwd = (req.headers.get("x-forwarded-for") ?? "").split(",").map((p) => p.trim()).filter(Boolean);
+  return fwd[fwd.length - 1] || server?.requestIP(req)?.address || "unknown";
+}
+
+const previewLimiter = createLimiter(40, 10 * 60_000);
+
 async function route(req: Request, server?: { requestIP(r: Request): { address: string } | null }): Promise<Response> {
   const url = new URL(req.url);
   const path = url.pathname;
@@ -641,7 +649,7 @@ async function route(req: Request, server?: { requestIP(r: Request): { address: 
   if (path.startsWith("/api/signup/")) return (await signupRoutes(req, path, { createClient }, server)) ?? json({ error: "Not found" }, 404);
   if (path === "/api/signup" && method === "POST") return withCookie({ ok: true }, sessionCookie(req, await signUp(await body(req))), 201);
   // The one-time link from the setup wizard's done screen: signs the owner in once (server/accounts.ts firstLogin).
-  if (path === "/api/welcome" && method === "POST") return withCookie({ ok: true }, sessionCookie(req, await firstLogin(await body(req))));
+  if (path === "/api/welcome" && method === "POST") return withCookie({ ok: true }, sessionCookie(req, await firstLogin(await body(req), callerAddress(req, server))));
   if (path === "/api/login" && method === "POST") return withCookie({ ok: true }, sessionCookie(req, await signIn(await body(req))));
   if (path === "/api/logout" && method === "POST") {
     await signOut(await sessionFrom(req));
@@ -1014,7 +1022,18 @@ async function route(req: Request, server?: { requestIP(r: Request): { address: 
   // in can play a sample, business users too (they pick their receptionist's voice), so this sits before the
   // business-user gate below. Failures are plain JSON errors: the page reads them and says what went wrong.
   if (path === "/api/voices/preview" && method === "GET") {
-    const clip = await telnyxVoicePreview(url.searchParams.get("voice") ?? "");
+    // A sample costs a text-to-speech call on the agency's phone key: a per-person limit, and business users
+    // never see the phone provider's own error text.
+    const limit = previewLimiter.take(ctx.user.id);
+    if (!limit.ok) return json({ error: "That's a lot of voice samples. Try again in a few minutes." }, 429);
+    let clip: Awaited<ReturnType<typeof telnyxVoicePreview>>;
+    try {
+      clip = await telnyxVoicePreview(url.searchParams.get("voice") ?? "");
+    } catch (err) {
+      if (ctx.role !== "customer" || err instanceof ValidationError) throw err;
+      console.error("[voice preview]", (err as Error).message);
+      return json({ error: "That voice sample isn't available right now. Try again in a moment." }, 502);
+    }
     return new Response(new Blob([new Uint8Array(clip.body)], { type: clip.type }), { headers: { "Content-Type": clip.type, "Cache-Control": "private, max-age=86400" } });
   }
 
@@ -1026,7 +1045,13 @@ async function route(req: Request, server?: { requestIP(r: Request): { address: 
     const found = await clientAccessFor(ctx, orgId, webCall[1]);
     if (!found) return json({ error: "That business isn't shared with you." }, 404);
     if (found.orgId !== orgId) enterOrg(found.orgId);
-    return json(await withinSeconds(12, "The phone service took too long to answer. Try the test call again in a moment.", () => voiceFor(found.client).webCall(found.client.assistantId)));
+    try {
+      return json(await withinSeconds(12, "The phone service took too long to answer. Try the test call again in a moment.", () => voiceFor(found.client).webCall(found.client.assistantId)));
+    } catch (err) {
+      if (ctx.role !== "customer" || err instanceof ValidationError) throw err;
+      console.error("[web call]", (err as Error).message);
+      return json({ error: "The test call can't start right now. Try again in a moment." }, 502);
+    }
   }
 
   if (ctx.role === "customer") return json({ error: "Not allowed." }, 403);

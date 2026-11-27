@@ -774,7 +774,9 @@ ${mail}
     if (!what && method === "GET") return c.html(buyerPage(sess.sid, sess.email, b, flashOf(url), agTabOf(url.searchParams.get("tab"))));
     if (what === "setup" && method === "GET") {
       // Their wizard as they see it, with every form switched off and links kept inside /admin.
+      // The owner's one-time sign-in token never reaches our staff: it is taken out before anything is drawn.
       const s = getSetup(b.id);
+      delete s.firstLogin;
       const want = url.searchParams.get("step");
       const view = (s.phase === "done" ? "done" : STEPS.includes(want as any) ? want : s.step) as any;
       let html = wizardPage(b, s, b.code, "admin-read-only-view", view);

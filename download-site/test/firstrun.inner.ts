@@ -12,7 +12,7 @@ process.env.SITE_URL = "http://localhost:4500";
 for (const k of ["MOCK_DO", "MOCK_RAILWAY", "MOCK_CF", "MOCK_RESEND", "MOCK_TELNYX", "MOCK_OAUTH", "HOSTING"]) delete process.env[k];
 
 const { addBuyer } = await import("../lib");
-const { actions, finish, railwayVars, buildSettings, ownerNameOf, dashboardLink, firstLoginFresh } = await import("../setup");
+const { actions, finish, railwayVars, buildSettings, ownerNameOf, dashboardLink, firstLoginFresh, dropExpiredFirstLogins } = await import("../setup");
 const { getSetup, putSecret, updateSetup } = await import("../store");
 const { wizardPage } = await import("../wizard");
 
@@ -71,6 +71,17 @@ describe("first run", () => {
     const vars = await railwayVars(b.id, getSetup(b.id), "rail-token-0123456789");
     finish(b.id, "https://acme.up.railway.app");
     expect(getSetup(b.id).firstLogin?.token).toBe(vars.FIRST_LOGIN_TOKEN);
+  });
+
+  test("an expired one-time token is dropped from the stored setup; a fresh one stays", async () => {
+    const old = await buyer("old");
+    await railwayVars(old.id, getSetup(old.id), "rail-token-0123456789");
+    const fresh = await buyer("fresh");
+    await railwayVars(fresh.id, getSetup(fresh.id), "rail-token-0123456789");
+    updateSetup(old.id, (s) => { s.firstLogin!.at = new Date(Date.now() - 25 * 3_600_000).toISOString(); });
+    expect(dropExpiredFirstLogins()).toBeGreaterThanOrEqual(1);
+    expect(getSetup(old.id).firstLogin).toBeUndefined();
+    expect(getSetup(fresh.id).firstLogin?.token).toBeTruthy();
   });
 
   test("the server install (DigitalOcean) gets the same variables", async () => {

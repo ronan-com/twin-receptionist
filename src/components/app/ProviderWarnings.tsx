@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { AlertTriangle } from "lucide-react";
 import { request } from "@/lib/api/base";
+import { sessionQuery } from "@/lib/app/workspace";
 
 // A thin warning strip when a phone/AI provider balance is low or the database is
 // nearly full. Reads GET /api/provider-status; an older server (404) or any error
@@ -24,9 +25,12 @@ export function warningInfo(i: Item): { title: string; text: string; missingKey:
 
 /** Low balances and a nearly full database. They show in the bell and as a small pop-up (see alerts.tsx), not as a bar. */
 export function useProviderWarnings(enabled = true): Item[] {
+  // The route is for owners and admins: a member asking for it only gets a 403 in the console.
+  const s = useQuery(sessionQuery()).data;
+  const allowed = Boolean(s?.signedIn && (s.role === "owner" || s.role === "admin" || s.user.platformAdmin));
   const q = useQuery({
     queryKey: ["provider-status", "warnings"],
-    enabled,
+    enabled: enabled && allowed,
     retry: false,
     staleTime: 5 * 60_000,
     refetchInterval: 10 * 60_000,

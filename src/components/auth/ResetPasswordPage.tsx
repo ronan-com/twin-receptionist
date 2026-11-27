@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Link, useNavigate } from "@tanstack/react-router";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Loader2 } from "lucide-react";
 import { BrandMark } from "@/components/app/BrandMark";
 import { Button } from "@/components/ui/button";
@@ -12,6 +12,7 @@ import { FormError } from "./AuthLayout";
 
 // Choose a new password from the emailed link (/reset/<token>, or /reset-password?token=...).
 export function ResetPasswordPage({ token }: { token: string | null }) {
+  useQuery(sessionQuery()); // loads the agency's colours and light/dark look, like the sign-in page
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [password, setPassword] = useState("");

@@ -17,6 +17,7 @@ export const Route = createFileRoute("/invite/$token")({
 });
 
 function InvitePage() {
+  useQuery(sessionQuery()); // loads the agency's colours and light/dark look, like the sign-in page
   const { token } = Route.useParams();
   const navigate = useNavigate();
   const queryClient = useQueryClient();

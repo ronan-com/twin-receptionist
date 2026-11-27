@@ -67,7 +67,7 @@ sed "s/__DOMAIN__/$DOMAIN/" src/deploy/aws/setupsite.caddy.tmpl > /opt/twin/site
 ADMIN_DOMAIN=${7:-setup.sageai.agency}
 ADMIN_PATHS="/admin /admin/* /styles.css /favicon.svg /admin-live.js /tickets.css /wizard.css /wizard.js /chat.css /chat.js /fonts/*"
 site_block() { # <host> <paths served here> [redirect target for everything else, default: the generic $DOMAIN]
-  local to=$3
+  local to=${3:-}
   [ -n "$to" ] || to="https://$DOMAIN{uri} 308"
   printf '\n%s {\n\t@own path %s\n\thandle @own {\n\t\treverse_proxy setup-site:4500\n\t}\n\thandle {\n\t\tredir %s\n\t}\n}\n' "$1" "$2" "$to"
 }

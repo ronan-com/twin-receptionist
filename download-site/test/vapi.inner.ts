@@ -33,6 +33,7 @@ async function buyer(n: string) {
   await run(b, "brand", { productName: "Acme Calls", ownerEmail: "boss@acme.test" });
   // Phones comes after hosting; this puts the buyer where the phones step is allowed.
   putSecret(b.id, "railway_token", "rail-token-0123456789");
+  putSecret(b.id, "openrouter_key", "sk-or-test-0123456789"); // AI is required
   updateSetup(b.id, (s) => { s.railway = { confirmed: true }; s.ai = { confirmed: true }; s.step = "phones"; });
   return b;
 }
@@ -162,14 +163,14 @@ describe("Telnyx first, Vapi and Twilio as backup options", () => {
     expect((await run(b, "twilio", { twilioSid: "nope", twilioToken: "x" }))?.kind).toBe("err");
   });
 
-  test("the Voice screen: Telnyx, Vapi or Skip (no sign-in buttons, no Twilio); each provider opens on its own with a link to where its key is made", async () => {
+  test("the Voice screen: Telnyx or Vapi (no skip, no sign-in buttons, no Twilio); each provider opens on its own with a link to where its key is made", async () => {
     const { wizardPage } = await import("../wizard");
     const b = await buyer("j");
     const html = (view: string, opt = "") => wizardPage(b, getSetup(b.id), b.code, "sid", view as any, undefined, opt);
     const phones = html("phones");
     expect(phones).toContain("Telnyx");
     expect(phones).toContain("Vapi");
-    expect(phones).toContain("Skip for now");
+    expect(phones).not.toContain("Skip for now");
     expect(phones).toContain(`href="/setup/${b.code}?step=phones&amp;opt=telnyx"`);
     expect(phones).not.toContain('name="key"'); // nothing to paste until a provider is chosen
     expect(phones).not.toMatch(/Twilio/); // Twilio is not part of Voice any more

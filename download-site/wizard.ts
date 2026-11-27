@@ -11,7 +11,6 @@ import { oauthEnabled, type OAuthProvider } from "./oauth";
 import { brokerOn, offered } from "./broker";
 import { PHONE_LATER, agencyUrl, canView, dashboardLink, firstOpen, hostOf, locked, oauthRedirect, phoneSkipped, stepDone, updateInfo, webUrl, zoneOf } from "./setup";
 import { detailOf, hasAssist, helpedStep, stepRows, type AssistId } from "./assist";
-import { personFormHtml, personHelpHtml } from "./wizhelp";
 import { DEFAULT_REGION, DEFAULT_SIZE, RAILWAY_PLAN_UNKNOWN_MSG, RAILWAY_TRIAL_MSG } from "./providers";
 import { OPTIONAL_HUB, STEPS, csrfToken, isOptional, logRead, secretHint, type DnsRecord, type SetupData, type StepId } from "./store";
 
@@ -300,9 +299,7 @@ function server(c: Ctx) {
 ${nav(c, primary("Check and continue"))}`;
 }
 
-/** Railway: the buyer can install with no phone provider and connect it later in their dashboard. */
-const skipPhones = (c: Ctx) => (RAILWAY && !c.s.phones?.confirmed && !c.s.vapi?.confirmed ? `<div class="skip-phones">${mini(c, "phones-skip", "Skip for now", "linkbtn", " data-skip-phones")}</div>` : "");
-/** After a skip: a gentle nudge to connect now (before the install), and the same reminder on the Done screen. */
+/** Older setups that skipped Voice before it became required: the reminder on their Done screen. */
 const phoneLaterNote = (c: Ctx) => notice("warn", `<b>No voice provider yet.</b> ${esc(PHONE_LATER)}.${c.s.phase === "idle" && c.view !== "phones" ? ` <a class="btn o" href="${base(c)}?step=phones" data-action="connect-phones">Connect now</a>` : ""}`);
 
 const phonesSummary = (c: Ctx) => {
@@ -343,12 +340,12 @@ function phones(c: Ctx) {
   ${secretIn("key", "KEY...", saved, "Telnyx API key")}
   ${showMeHow(["telnyx-account", "telnyx-api-key"])}
   <p><button class="btn o" type="submit">Check key</button></p></form>`;
-  const ready = tel || !!s.vapi?.confirmed || phoneSkipped(s);
+  const ready = tel || !!s.vapi?.confirmed;
   return `${head(c, "Voice", "Telnyx carries your calls.")}
 <div class="body">${connected}
 ${tel ? "" : `${oauthBtn(c, "telnyx", "Sign in with Telnyx")}${pasteBox(c, "telnyx", form, !oauthEnabled("telnyx"))}`}
 ${vapiTwilio(c)}
-${phoneSkipped(s) ? phoneLaterNote(c) : skipPhones(c)}</div>
+</div>
 ${nav(c, ready ? mini(c, "phones-continue", `Continue ${icon("right")}`, "btn p") : "")}`;
 }
 
@@ -359,7 +356,7 @@ function vapi(c: Ctx) {
   ${secretIn("vapiKey", "Private key", vSaved, "Vapi private API key")}
   <label class="f" for="vapiPublic">Vapi public key (used by the browser test call)</label><input id="vapiPublic" name="vapiPublic" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" maxlength="300" placeholder="Public key" value="${val(c, "vapiPublic", "")}">
   ${showMeHow(["vapi-account", "twilio-account"])}`)}
-  ${phoneSkipped(c.s) ? "" : skipPhones(c)}</div>
+</div>
 ${nav(c, `${mini(c, "vapi-skip", "Skip", "linkbtn")}${primary("Check and continue")}`)}`;
 }
 
@@ -471,7 +468,7 @@ ${nav(c, `<a class="btn o" href="${base(c)}?step=domain">Add my domain</a>${prim
 ${nav(c, `${mini(c, "cal-skip", "Skip for now")}${primary("Check and continue")}`)}`;
 }
 
-/** Voice, Railway: Telnyx, Vapi or Skip. One provider card at a time, each with a button straight to where its key is made. */
+/** Voice, Railway: Telnyx or Vapi (one is required). One provider card at a time, each with a button straight to where its key is made. */
 function phonesRailway(c: Ctx) {
   const s = c.s;
   const tel = !!s.phones?.confirmed && hasS(c, "telnyx_key");
@@ -512,9 +509,8 @@ ${nav(c, primary("Check keys"))}`;
 <div class="body"><div class="vchoice">
   <a class="vc telnyx" href="${base(c)}?step=phones&amp;opt=telnyx">${plogo("telnyx")}<span><b>Telnyx</b><small>Phone numbers and calls. Recommended.</small></span></a>
   <a class="vc vapi" href="${base(c)}?step=phones&amp;opt=vapi">${plogo("vapi")}<span><b>Vapi</b><small>Use your own Vapi account.</small></span></a>
-  <form method="post" action="${base(c)}/a/phones-skip">${hidden(c)}<button class="vc skip" type="submit" data-skip-phones><span><b>Skip for now</b><small>Connect it later in your dashboard.</small></span></button></form>
 </div>
-${phoneSkipped(s) ? phoneLaterNote(c) : ""}</div>
+<p class="hint">Stuck on Telnyx's ID check? Pick Vapi now and add Telnyx later in your dashboard.</p></div>
 ${nav(c, "")}`;
 }
 
@@ -650,7 +646,7 @@ function installRailway(c: Ctx) {
   if (s.phase === "idle") {
     const rows: [string, string][] = [
       ["Address", host ? esc(host) : "Your Railway address (ready as soon as it's built)"], ["Hosting", `Railway${s.railway?.workspaceName ? ` · ${esc(s.railway.workspaceName)}` : ""} · from US$5/mo`],
-      ["Voice", phonesSummary(c)], ["AI", secretHint(c.b.id, "openrouter_key") ? `OpenRouter ${esc(secretHint(c.b.id, "openrouter_key") || "")}` : "Add later"], ["Email", s.email?.from ? esc(s.email.from) : "Add later"],
+      ["Voice", phonesSummary(c)], ["AI", secretHint(c.b.id, "openrouter_key") ? `OpenRouter ${esc(secretHint(c.b.id, "openrouter_key") || "")}` : "Not connected"], ["Email", s.email?.from ? esc(s.email.from) : "Add later"],
       ...(host ? [["DNS", manual ? "You add two records" : "Handled by the wizard"] as [string, string]] : [["Own domain", "Add later"] as [string, string]]),
     ];
     return `${head(c, "Ready to install", `We'll set up ${P(c)} in your Railway account. You can close the page while it runs.`)}
@@ -856,10 +852,10 @@ const HELP: Record<string, { say: string; chips: string[] }> = {
   welcome: { say: "Hi! I'll guide you through. It takes about 10 minutes. Press Start.", chips: ["What do I need?", "What will it cost?"] },
   brand: { say: "Pick your name, colours and look. You can change them later.", chips: ["Can I change this later?", "What logo works best?"] },
   railway: { say: "Open Railway, make a token, paste it here.", chips: ["Where do I find my Railway token?", "What is No workspace?", "What is the Hobby plan?"] },
-  phones: { say: "Telnyx is the easy pick. Vapi works too. Or skip and do it later.", chips: ["Telnyx or Vapi?", "Can I skip this?"] },
+  phones: { say: "Telnyx is the easy pick. Vapi works too. Stuck on Telnyx's ID check? Pick Vapi now, add Telnyx later in your dashboard.", chips: ["Telnyx or Vapi?", "Telnyx wants an ID check"] },
   "phones:telnyx": { say: "Open Telnyx, create an API key, paste it here.", chips: ["How do I get my Telnyx key?", "Why upgrade my Telnyx account?"] },
   "phones:vapi": { say: "Copy both keys from Vapi and paste them here.", chips: ["Which two Vapi keys?", "Where do I add Vapi credit?"] },
-  ai: { say: "Sign in with OpenRouter, or paste a key.", chips: ["What is OpenRouter?", "How much credit do I need?"] },
+  ai: { say: "Needed so your receptionists can think. Sign in with OpenRouter, or paste a key.", chips: ["What is OpenRouter?", "How much credit do I need?"] },
   extras: { say: "All optional. Skip any and add them later.", chips: ["What does my own email do?", "Do I need my own domain?"] },
   email: { say: "Paste a Resend key to send from your own address.", chips: ["How do I get a Resend key?", "Can I skip email?"] },
   domain: { say: "Type your domain. We show you what to add.", chips: ["Do I need a domain?", "Where do I add the records?"] },
@@ -967,18 +963,17 @@ ${live ? `<noscript><meta http-equiv="refresh" content="8"></noscript>` : ""}
 <body>
 <div class="ribbon" aria-hidden="true"></div>
 <header class="top"><a class="mark" href="/setup/${esc(code)}">${markLogo(s.brand?.logo)}<span>${esc(s.brand?.productName || "Your agency")}</span></a>
-<nav><a href="/guide" target="_blank" rel="noopener">Full guide</a><a href="#person">Talk to a person</a></nav></header>
+<nav><a href="/guide" target="_blank" rel="noopener">Full guide</a></nav></header>
 <div class="shell wiz acc-${acc}" data-status="/setup/${esc(code)}/status" data-rev="${statusRev(c)}"${live ? ' data-live="1"' : ""}>
 ${rail(c)}
 <main>
   <div class="phonebar"><div class="lab"><span>Step ${i + 1} of ${mainSteps.length}</span><b>${META[view].title}</b></div><progress class="bar" max="${mainSteps.length}" value="${i + 1}">${i + 1} of ${mainSteps.length}</progress></div>
   <section class="card step-${view}">${b.demo === 1 ? notice("info", "<b>Test run.</b> Every account here is pretend: press Continue on each step. Nothing real is connected.") : ""}${assistNote(c)}${lockNote}${(flLink ? fl + flLink + screenOf(c) : withFlash(screenOf(c), fl))}</section>
-  ${personHelpHtml(b, s, code, hidden(c))}
   <p class="foot">${icon("shield")} Your keys are stored encrypted.</p>
 </main>
 ${helperCard(c)}
 </div>
-${chatBubble({ url: `/setup/${code}/chat`, t: csrfToken(sid, code), view, person: personFormHtml(b, s, code, hidden(c), "chat") })}
+${chatBubble({ url: `/setup/${code}/chat`, t: csrfToken(sid, code), view })}
 </body>
 </html>`;
 }
@@ -1003,7 +998,7 @@ export function startShell(_style: Style, title: string, inner: string): string 
 <body>
 <div class="ribbon" aria-hidden="true"></div>
 <header class="top"><span class="mark">${markLogo()}<span>Your AI receptionist agency</span></span>
-<nav>${CONFIG.supportEmail ? `<a href="mailto:${esc(CONFIG.supportEmail)}">Help</a>` : ""}</nav></header>
+</header>
 <div class="shell wiz admshell"><main>
   <section class="card">${inner}</section>
   <p class="foot">Your keys are stored encrypted.</p>

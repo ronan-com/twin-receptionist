@@ -6,7 +6,6 @@
 //   GET  /setup/<code>[?step=x]     the buyer's setup wizard (the old /download/<code> redirects here)
 //   GET  /setup/<code>/status       JSON for live progress (wizard.js)
 //   POST /setup/<code>/a/<action>   every wizard form (same-origin + per-session CSRF token)
-//   POST /setup/<code>/a/help-request  "I need a person": a help ticket for us (wizhelp.ts; same checks, 5 an hour)
 //   POST /setup/<code>/chat         "Need help?" question (JSON; same checks; only when OPENROUTER_API_KEY is set)
 //   POST /chat                      the same from the public /guide page (same-origin only; no code, so no setup context)
 //   GET  /p/<droplet token>/next    the buyer's new server asks for work ("wait", "go ...", "stop")
@@ -27,7 +26,7 @@ import { chatEnabled, chatReply, parseChatBody } from "./chat";
 import { badCodePage, demoOfflinePage, forbiddenPage, guidePage, homePage, limitedPage, notFoundPage, oauthLostPage, revokedPage } from "./pages";
 import { actions, allow, appUrlOf, canView, firstOpen, pBundle, pExit, pLog, pNext, startTicker } from "./setup";
 import { STEPS, csrfOk, getSetup, logRead, newSessionId, redact, secretValues, siteKey, updateSetup, type SetupData, type StepId, isOptional } from "./store";
-import { HELP_SENT, noteStepError, wizardHelpRequest } from "./wizhelp";
+import { noteStepError } from "./wizhelp";
 import { statusRev, wizardPage } from "./wizard";
 import { adminRoute } from "./admin-web";
 import { inactivePage, startRoute } from "./genericlink";
@@ -485,13 +484,6 @@ async function handle(req: Request, srv: Bun.Server<unknown>): Promise<Response>
           : { kind: "err" as const, text: r.message };
       console.log(`[owner-reset] buyer ${b.id}: ${r ? (r.ok ? "link issued" : r.reason) : "not allowed"}`);
       return html(wizardPage(b, getSetup(b.id), m[1], sid, "done", flash));
-    }
-    // "I need a person" (wizhelp.ts): a help ticket for us, and back to the same step with a confirmation.
-    if (m[2] === "help-request") {
-      const r0 = wizardHelpRequest(b, getSetup(b.id), f, req.headers.get("user-agent") || "", m[1]);
-      updateSetup(b.id, (s) => { s.flash = r0.ok ? { kind: "ok", text: HELP_SENT } : { kind: "err", text: r0.message }; });
-      const v0 = STEPS.includes(f.v as StepId) ? f.v : "";
-      return redirect(`/setup/${m[1]}${v0 ? `?step=${v0}` : ""}#person`);
     }
     const act = actions[m[2]];
     if (!act) return html(notFoundPage(), 404);

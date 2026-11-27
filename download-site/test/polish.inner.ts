@@ -55,7 +55,8 @@ async function doneBuyer(opts: { extrasDone?: boolean; step?: string } = {}) {
 async function browser(code: string) {
   const r = await fetch(`${SITE}/setup/${code}`);
   const cookie = (r.headers.get("set-cookie") || "").split(";")[0];
-  const t = (await r.text()).match(/name="t" value="([^"]+)"/)![1];
+  const body = await r.text();
+  const t = (body.match(/name="t" value="([^"]+)"/) || body.match(/data-t="([^"]+)"/))![1]; // some steps (the Voice choice) have no form, only the helper card's token
   const get = (path: string, c = cookie) => fetch(`${SITE}${path}`, { redirect: "manual", headers: { cookie: c } });
   const page = async (step = "", opt = "") => (await get(`/setup/${code}${step ? `?step=${step}${opt ? `&opt=${opt}` : ""}` : ""}`)).text();
   const post = (action: string, f: Record<string, string>) => fetch(`${SITE}/setup/${code}/a/${action}`, { method: "POST", redirect: "manual", headers: { cookie, origin: SITE, "content-type": "application/x-www-form-urlencoded" }, body: new URLSearchParams({ t, ...f }).toString() });
@@ -101,11 +102,10 @@ describe("Continue always moves on", () => {
   test("after an error the page is the same step with the message, and Continue still works from it", async () => {
     const b = await doneBuyer();
     const br = await browser(b.code);
-    // A form that fails (a help request with no words): back on the same step, with the message shown
-    const bad = await br.post("help-request", { v: "ai", problem: "" });
-    expect(loc(bad)).toBe(`/setup/${b.code}?step=ai#person`);
+    // A form that fails (an AI key paste with nothing in it, nothing stored yet to reuse is replaced by the stored one): use a bad Telnyx key instead
+    const bad = await br.post("phones", { v: "phones", key: "" });
+    expect(bad.status).toBe(303);
     const html = await (await br.get(`/setup/${b.code}?step=ai`)).text();
-    expect(html).toContain("Please tell us what");
     expect(html).toContain("/a/ai-continue\""); // connected already: Continue is still there
     expect(loc(await br.post("ai-continue", { v: "ai" }))).toBe(`/setup/${b.code}?step=extras`);
   });
@@ -167,15 +167,16 @@ describe("a step shows what is really connected", () => {
   });
 });
 
-describe("Voice: Telnyx, Vapi or Skip", () => {
-  test("three choices; each provider opens on its own page with a link to where its key is made; no sign-in buttons; no Twilio", async () => {
+describe("Voice: Telnyx or Vapi", () => {
+  test("two choices; each provider opens on its own page with a link to where its key is made; no sign-in buttons; no Twilio", async () => {
     const b = addBuyer("Voice Buyer", "voice@example.com");
     await actions.start(b, {}); await actions.brand(b, { productName: "Voice Co", ownerEmail: "o@v.test" });
     store.updateSetup(b.id, (s) => { s.railway = { confirmed: true }; s.step = "phones"; });
     store.putSecret(b.id, "railway_token", "rail-token-0123456789");
     const br = await browser(b.code);
     const choose = await br.page("phones");
-    for (const w of ["Telnyx", "Vapi", "Skip for now"]) expect(choose).toContain(w);
+    for (const w of ["Telnyx", "Vapi", "Stuck on Telnyx"]) expect(choose).toContain(w);
+    expect(choose).not.toContain("Skip");
     expect(choose).not.toMatch(/Twilio|Sign in with|name="key"/);
     expect(choose).toContain(`step=phones&amp;opt=telnyx`);
     expect(choose).toContain(`step=phones&amp;opt=vapi`);
@@ -189,13 +190,8 @@ describe("Voice: Telnyx, Vapi or Skip", () => {
     expect(vap).not.toMatch(/Twilio|Sign in with/);
     // The sign-in route for Telnyx is off too (parked)
     expect((await br.get(`/setup/${b.code}/oauth/telnyx`)).status).toBe(404);
-    // Skip moves on; the choice can be undone with "Choose a different provider"
-    const skip = await br.post("phones-skip", { v: "phones" });
-    expect(loc(skip)).toBe(`/setup/${b.code}`);
-    expect(store.getSetup(b.id).skipped?.phones).toBe(true);
-    const again = await br.page("phones");
-    expect(again).toContain("No voice provider yet");
-    expect(again).toContain("Skip for now"); // the three choices are still there
+    // No Skip: the skip route does not exist
+    expect((await br.post("phones-skip", { v: "phones" })).status).toBe(404);
     store.putSecret(b.id, "vapi_key", "priv-0123456789abcdef");
     store.updateSetup(b.id, (s) => { s.vapi = { confirmed: true }; s.phones = { checked: true, provider: "vapi" }; });
     expect(await br.page("phones")).toContain("Vapi connected");
@@ -299,32 +295,25 @@ describe("how the pages look", () => {
   });
 });
 
-describe("Talk to a person", () => {
-  test("the chat panel has a 'Talk to a person' tab with the form (and keeps the AI helper); sending it makes a help ticket our admin sees", async () => {
+describe("No ask-a-person in the wizard", () => {
+  test("no 'Talk to a person' link, tab, form or box on any step; the help-request route is gone; the AI helper stays; no support email lines", async () => {
     process.env.OPENROUTER_API_KEY = "sk-or-chat-test-0123456789";
+    process.env.SUPPORT_EMAIL = "";
     const b = await doneBuyer({ extrasDone: false, step: "ai" });
+    for (const step of ["welcome", "brand", "railway", "phones", "ai", "extras", "install"] as const) {
+      const html = wizardPage(b, store.getSetup(b.id), b.code, "sid", step);
+      expect(html).not.toContain("Talk to a person");
+      expect(html).not.toContain("#person");
+      expect(html).not.toContain("help-request");
+      expect(html).not.toContain("person-form");
+      expect(html).not.toContain("mailto:");
+      expect(html).not.toMatch(/contact (us|support)|text us|email us/i);
+    }
     const html = wizardPage(b, store.getSetup(b.id), b.code, "sid", "ai");
     delete process.env.OPENROUTER_API_KEY;
-    const panel = html.slice(html.indexOf('<div id="chat"'));
-    expect(panel).toContain("Ask the helper"); // the AI chat is still there
-    expect(panel).toContain('class="chat-tab chat-person-btn"');
-    expect(panel).toContain("Talk to a person");
-    expect(panel).toContain(`action="/setup/${b.code}/a/help-request"`);
-    expect(panel).toContain('id="chat-problem"');
-    // and the box at the bottom of every step, and the header link, are there without the chat
-    expect(html).not.toContain('<summary>Talk to a person</summary>'); // one entry point: no extra button at the bottom
-    expect(html).toContain('href="#person"'); // the header link
-    expect(html).toContain('<div class="person-ask">'); // its form is there (shown when you get to #person)
-    // Sending it (as the panel's form would): a ticket with the step they were on
+    expect(html).toContain("Ask the helper"); // the AI chat is still there
     const br = await browser(b.code);
-    const r = await br.post("help-request", { v: "ai", problem: "My OpenRouter sign-in keeps failing", contact: "o@polish.test", phone: "" });
-    expect(r.status).toBe(303);
-    expect(loc(r)).toBe(`/setup/${b.code}?step=ai#person`);
-    const t = T.listTickets("all", b.id)[0];
-    expect(t).toBeTruthy();
-    expect(t.subject).toContain("AI");
-    expect(JSON.stringify(T.messagesOf(t.id))).toContain("OpenRouter sign-in keeps failing");
-    expect(chatBubble({ url: "/setup/x/chat" })).toBe(""); // chat off: no bubble (the bottom box still works)
+    expect((await br.post("help-request", { v: "ai", problem: "hi" })).status).toBe(404);
   });
 });
 

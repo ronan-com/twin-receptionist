@@ -8,8 +8,6 @@ export const esc = (s: unknown) =>
   String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
 
 // The public pages are generic: no product or company name anywhere.
-const support = () =>
-  CONFIG.supportEmail ? `<a href="mailto:${esc(CONFIG.supportEmail)}">${esc(CONFIG.supportEmail)}</a>` : `the person who sent you your setup link`;
 
 export function layout(title: string, body: string, opts: { active?: "home" | "guide"; wizard?: boolean; js?: boolean; chat?: ChatMount; refresh?: number } = {}) {
   return `<!doctype html>
@@ -33,7 +31,7 @@ ${opts.refresh ? `<noscript><meta http-equiv="refresh" content="${opts.refresh}"
 </div></header>
 <main class="wrap">${body}</main>
 ${opts.chat ? chatBubble(opts.chat) : ""}
-<footer class="foot"><div class="wrap">Your own AI receptionist agency, on your own accounts. Questions: ${support()}</div></footer>
+<footer class="foot"><div class="wrap">Your own AI receptionist agency, on your own accounts.</div></footer>
 </body>
 </html>`;
 }
@@ -102,11 +100,11 @@ ${withCodeBox ? codeBox() : ""}`);
 }
 
 export const badCodePage = () =>
-  messagePage(404, "That setup link isn't valid", `Check you copied the whole link from your purchase email. If it still doesn't work, contact ${support()}.`, true);
+  messagePage(404, "That setup link isn't valid", `Check you copied the whole link from your purchase email.`, true);
 /** A "Sign in with ..." came back that we can't match to a sign-in we started (another browser, or older than 10 minutes). Not a bad setup link. */
 export const oauthLostPage = () =>
-  messagePage(400, "That sign-in didn't finish", `It came back to a different browser, or took more than 10 minutes. Open your setup link again and try once more, or paste a key instead. If it keeps happening, contact ${support()}.`);
-export const revokedPage = () => messagePage(410, "This setup link has been turned off", `If you think that's a mistake, contact ${support()}.`);
+  messagePage(400, "That sign-in didn't finish", `It came back to a different browser, or took more than 10 minutes. Open your setup link again and try once more, or paste a key instead.`);
+export const revokedPage = () => messagePage(410, "This setup link has been turned off", `The link has been switched off.`);
 export const limitedPage = (retry: number) => messagePage(429, "Too many tries", `Please wait ${retry} seconds and try again.`);
 export const notFoundPage = () => messagePage(404, "Page not found", "That page doesn't exist.");
 export const demoOfflinePage = (back: string) => messagePage(503, "The test dashboard is offline right now", `The test app isn't answering, so we can't open the dashboard. Try again in a minute. <a href="${esc(back)}">Back to your setup</a>`);
@@ -183,7 +181,7 @@ ${sec("wizard", "3. The setup page, step by step", RAILWAY ? `
   <li><b>Welcome.</b> Open the private link from your purchase email. Your progress is saved, so you can stop and come back.</li>
   <li><b>Brand.</b> Type your brand name and owner email. You sign in with that email.</li>
   <li><b>Hosting.</b> Paste your Railway token and press <b>Check</b>.</li>
-  <li><b>Phones.</b> Paste your Telnyx key and press <b>Check</b>. Or, under it, use <b>Vapi + Twilio</b>. No account approved yet? <b>Skip for now</b> and connect it later in your dashboard, under <b>Connections</b>.</li>
+  <li><b>Phones.</b> Paste your Telnyx key and press <b>Check</b>. Or, under it, use <b>Vapi + Twilio</b>. Telnyx's ID check slow? Use <b>Vapi</b> now and add Telnyx later in your dashboard, under <b>Connections</b>.</li>
   <li><b>Extras (optional).</b> Email, your own domain and calendars. Press <b>Skip all and continue</b> to go straight on.</li>
   <li><b>Install.</b> Press the install button and wait about 5 minutes. If it stops, press <b>Try again</b>.</li>
   <li><b>Done.</b> Open your address and sign in. Then delete your Railway token (and Cloudflare token, if you made one).</li>

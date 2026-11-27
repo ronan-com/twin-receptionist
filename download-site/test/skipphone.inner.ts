@@ -1,5 +1,5 @@
-// Skipping the phone provider (Telnyx approval can take hours to two days): the buyer still installs,
-// the app gets no voice key at all, and every screen says to connect it later in the dashboard.
+// Voice (Telnyx or Vapi) and AI (OpenRouter) are REQUIRED: there is no Skip, a buyer who had skipped Voice before is sent back to it,
+// and Install is refused until both are connected with a key that passed its check.
 import { afterAll, describe, expect, test } from "bun:test";
 import { mkdtempSync } from "node:fs";
 import { join } from "node:path";
@@ -12,8 +12,8 @@ process.env.SITE_URL = "http://localhost:4500";
 for (const k of ["MOCK_DO", "MOCK_RAILWAY", "MOCK_CF", "MOCK_RESEND", "MOCK_TELNYX", "MOCK_OAUTH", "HOSTING"]) delete process.env[k];
 
 const { addBuyer } = await import("../lib");
-const { actions, phoneSettings, railwayVars, firstOpen, PHONE_LATER } = await import("../setup");
-const { getSetup, hasSecret, putSecret, updateSetup } = await import("../store");
+const { actions, phoneSettings, railwayVars, firstOpen } = await import("../setup");
+const { getSetup, hasSecret, putSecret, updateSetup, deleteSecret } = await import("../store");
 const { wizardPage } = await import("../wizard");
 const { installBlockers, detailOf, fillStep, stepRows } = await import("../assist");
 const { getSecret } = await import("../store");
@@ -35,75 +35,60 @@ async function buyer(n: string) {
   await run(b, "start");
   await run(b, "brand", { productName: "Acme Calls", ownerEmail: "boss@acme.test" });
   putSecret(b.id, "railway_token", "rail-token-0123456789");
+  putSecret(b.id, "openrouter_key", "sk-or-test-0123456789"); // AI is required and already done in most of these tests
   updateSetup(b.id, (s) => { s.railway = { confirmed: true }; s.ai = { confirmed: true }; s.extrasDone = true; s.step = "phones"; });
   return b;
 }
 const html = (b: any, view: string) => wizardPage(b, getSetup(b.id), b.code, "sid", view as any);
 const TKEY = "KEY0123456789ABCDEF0123456789_abcdefghijkl";
 
-describe("skip the phone step", () => {
-  test("the Phones and Vapi steps offer Skip for now", async () => {
+describe("Voice and AI are required", () => {
+  test("the Voice and Vapi steps have no Skip, and the skip action is gone", async () => {
     const b = await buyer("a");
-    expect(html(b, "phones")).toContain("Skip for now");
-    expect(html(b, "phones")).toContain('action="/setup/' + b.code + '/a/phones-skip"');
-    // One of the three choices on the Voice step (Telnyx, Vapi, Skip), a plain button that posts to phones-skip.
-    expect(html(b, "phones")).toMatch(/<form[^>]*phones-skip"><input[\s\S]*?<button class="vc skip"[^>]*data-skip-phones/);
-    expect(html(b, "phones").indexOf("Telnyx")).toBeLessThan(html(b, "phones").indexOf("data-skip-phones"));
-    expect(html(b, "vapi")).toContain("Skip for now");
+    for (const v of ["phones", "vapi"]) {
+      expect(html(b, v)).not.toContain("Skip for now");
+      expect(html(b, v)).not.toContain("phones-skip");
+      expect(html(b, v)).not.toContain("data-skip-phones");
+    }
+    expect(html(b, "phones")).toContain("Stuck on Telnyx");
+    expect((actions as any)["phones-skip"]).toBeUndefined();
   });
 
-  test("skip: no network, no key kept, the wizard moves on and the install is allowed", async () => {
+  test("no voice key: Install is refused and the wizard stays on Voice (also with the backup-options shortcut)", async () => {
     const b = await buyer("b");
-    // Before skipping, the install is held up by the phone step.
-    await run(b, "phones-backup");
-    expect((await run(b, "install-start"))?.text).toMatch(/Telnyx/);
-    putSecret(b.id, "telnyx_key", "KEY-half-typed-000000000000");
-    stub(500, {});
-    expect(await run(b, "phones-skip")).toBeNull();
-    expect(calls).toHaveLength(0);
-    const s = getSetup(b.id);
-    expect(s.skipped?.phones).toBe(true);
-    expect(s.step).toBe("install");
-    expect(hasSecret(b.id, "telnyx_key")).toBe(false);
-    // A gentle nudge to go back and connect now.
-    expect(html(b, "install")).toContain("No voice provider yet.");
-    expect(html(b, "install")).toContain('href="/setup/' + b.code + '?step=phones" data-action="connect-phones">Connect now</a>');
-    expect(firstOpen(b, getSetup(b.id))).toBe("install");
-    expect(installBlockers(b, getSetup(b.id))).toEqual([]);
-    expect(detailOf(b, getSetup(b.id), "phones")).toMatch(/later in their dashboard/);
-    // install-start gets past the phone check (it stops only because no app package is loaded in this test).
-    const r = await run(b, "install-start");
-    expect(r?.text || "").not.toMatch(/Telnyx|phone/i);
+    expect(firstOpen(b, getSetup(b.id))).toBe("phones");
+    expect((await run(b, "install-start"))?.kind).toBe("err");
+    await run(b, "phones-backup"); // the DigitalOcean-era "no Telnyx yet" shortcut must not count on Railway
+    expect(firstOpen(b, getSetup(b.id))).toBe("phones");
+    expect((await run(b, "install-start"))?.text).toMatch(/earlier steps|voice|Telnyx/i);
+    expect(await run(b, "phones-continue")).toBeNull();
+    expect(getSetup(b.id).step).not.toBe("install");
   });
 
-  test("the installed app gets no voice key at all, and stays one agency (SINGLE_AGENCY)", async () => {
-    const b = await buyer("c");
-    expect(await run(b, "phones-skip")).toBeNull();
-    expect(phoneSettings(b.id, getSetup(b.id))).toEqual({});
-    const vars = await railwayVars(b.id, getSetup(b.id), "rail-token-0123456789");
-    for (const k of ["TELNYX_API_KEY", "VAPI_API_KEY", "VAPI_PUBLIC_KEY", "VOICE_PROVIDER"]) expect(k in vars).toBe(false);
-    expect(vars.SINGLE_AGENCY).toBe("1");
+  test("a buyer who skipped Voice before it became required is sent back to Voice", async () => {
+    const b = await buyer("old");
+    updateSetup(b.id, (s) => { s.phones = { deferred: true, provider: "telnyx" }; s.skipped = { phones: true, vapi: true }; s.step = "install"; });
+    expect(firstOpen(b, getSetup(b.id))).toBe("phones");
+    expect((await run(b, "install-start"))?.kind).toBe("err");
+    expect(phoneSettings(b.id, getSetup(b.id))).toEqual({}); // nothing is sent to an app without a key
   });
 
-  test("the step list, install summary and Done screen say: not connected yet, connect it in your dashboard", async () => {
-    const b = await buyer("d");
-    await run(b, "phones-skip");
-    expect(html(b, "install")).toContain(PHONE_LATER);
-    expect(html(b, "install")).not.toContain('<span class="s">'); // the step list has no descriptions under the names
-    updateSetup(b.id, (s) => { s.phase = "done"; s.step = "done"; s.resultUrl = "https://acme.up.railway.app"; s.tempUrl = "https://acme.up.railway.app"; });
-    const done = html(b, "done");
-    expect(done).toContain("<b>No voice provider yet.</b> Not connected yet — connect it in your dashboard (Connections)");
-  });
-
-  test("adding a Telnyx key afterwards (the buyer, or our admin's Set up for them) undoes the skip", async () => {
-    const b = await buyer("e");
-    await run(b, "phones-skip");
+  test("no OpenRouter key: Continue does not move on and Install is refused; a validated key (stored) opens the way", async () => {
+    const b = await buyer("ai");
     stub(200, { data: { available_credit: "12.50", currency: "USD" } });
     expect(await run(b, "phones", { key: TKEY })).toBeNull();
-    const s = getSetup(b.id);
-    expect(s.skipped?.phones).toBeUndefined();
-    expect(phoneSettings(b.id, s)).toEqual({ TELNYX_API_KEY: TKEY, VOICE_PROVIDER: "telnyx" });
-    expect(html(b, "phones")).not.toContain("data-skip-phones");
+    await run(b, "phones-continue");
+    deleteSecret(b.id, "openrouter_key");
+    updateSetup(b.id, (s) => { s.ai = undefined; s.step = "ai"; });
+    expect(firstOpen(b, getSetup(b.id))).toBe("ai");
+    await run(b, "ai-continue");
+    expect(getSetup(b.id).step).toBe("ai");
+    expect((await run(b, "install-start"))?.kind).toBe("err");
+    // "confirmed" without a stored key does not count either
+    updateSetup(b.id, (s) => { s.ai = { confirmed: true, via: "paste" }; });
+    expect(firstOpen(b, getSetup(b.id))).toBe("ai");
+    putSecret(b.id, "openrouter_key", "sk-or-test-0123456789");
+    expect(firstOpen(b, getSetup(b.id))).toBe("install");
   });
 
   test("Telnyx path: one key on the Phones step, done, the app gets TELNYX_API_KEY", async () => {
@@ -156,11 +141,8 @@ describe("skip the phone step", () => {
     expect(getSetup(b.id).step).toBe("phones");
   });
 
-  test("our admin's Set up for them offers the same three: Telnyx, Vapi + Twilio, or skip", async () => {
+  test("our admin's Set up for them offers Telnyx or Vapi + Twilio (no skip)", async () => {
     const b = await buyer("adm");
-    expect((await fillStep(b, "admin@us.test", "phones", {}, "phones-skip")).ok).toBe(true);
-    expect(getSetup(b.id).skipped?.phones).toBe(true);
-    expect(phoneSettings(b.id, getSetup(b.id))).toEqual({});
     const SID = "AC" + "d".repeat(32);
     globalThis.fetch = (async (url: any) => new Response(JSON.stringify(String(url).includes("twilio") ? { status: "active", friendly_name: "Acme" } : []), { status: 200, headers: { "Content-Type": "application/json" } })) as any;
     const out = await fillStep(b, "admin@us.test", "phones", { vapiKey: "priv-0123456789abcdef", vapiPublic: "pub-0123456789abcdef", twilioSid: SID, twilioToken: "t".repeat(32) }, "phones-vapi");

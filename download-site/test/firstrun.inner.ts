@@ -22,7 +22,10 @@ async function buyer(n: string) {
   await actions.brand(b, { productName: "Acme Calls", ownerEmail: "jane.smith@acme.test" });
   putSecret(b.id, "railway_token", "rail-token-0123456789");
   updateSetup(b.id, (s) => { s.railway = { confirmed: true }; s.ai = { confirmed: true }; s.step = "phones"; });
-  await actions["phones-skip"](b, {});
+  // Voice is required: a Telnyx key that passed its check (the check itself is stubbed here).
+  putSecret(b.id, "telnyx_key", "platform-fake-firstrun-0001");
+  updateSetup(b.id, (s) => { s.phones = { confirmed: true, provider: "telnyx", checked: true }; });
+  putSecret(b.id, "openrouter_key", "sk-or-test-0123456789");
   return b;
 }
 const doneHtml = (b: any) => wizardPage(b, getSetup(b.id), b.code, "sid", "done");

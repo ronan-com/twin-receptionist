@@ -53,22 +53,6 @@
   fab.addEventListener("click", function () { setOpen(true); });
   root.querySelector(".chat-x").addEventListener("click", function () { setOpen(false); });
   document.addEventListener("keydown", function (e) { if (e.key === "Escape" && root.classList.contains("open")) setOpen(false); });
-  // "Talk to a person": a tab in the panel with the same ask-a-person form as the box at the bottom of the step (it makes a help request for our team).
-  const aiPane = root.querySelector(".chat-ai"), personPane = root.querySelector(".chat-person-box");
-  const tabs = root.querySelectorAll(".chat-tab");
-  function show(which) {
-    if (!personPane) return;
-    aiPane.hidden = which === "person"; personPane.hidden = which !== "person";
-    Array.prototype.forEach.call(tabs, function (t) { t.classList.toggle("on", t.getAttribute("data-tab") === which); });
-    if (which === "person") {
-      const q = personPane.querySelector("textarea");
-      const last = history.filter(function (m) { return m.role === "user"; }).pop();
-      if (q && !q.value && last) q.value = String(last.content).slice(0, 1000);
-      if (q) q.focus();
-    } else box.focus();
-  }
-  Array.prototype.forEach.call(tabs, function (t) { t.addEventListener("click", function () { show(t.getAttribute("data-tab")); }); });
-
   async function ask(q) {
     q = String(q || "").trim();
     if (!q || busy) return;

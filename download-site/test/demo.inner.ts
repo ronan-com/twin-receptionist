@@ -115,6 +115,8 @@ describe("real buyer, the short path", () => {
     putSecret(b.id, "railway_token", "railway-test-token-0000");
     expect((await run(b, "install-start"))?.kind).toBe("err"); // OpenRouter is required
     updateSetup(b.id, (s) => { s.ai = { confirmed: true, via: "paste" }; });
+    expect((await run(b, "install-start"))?.kind).toBe("err"); // "confirmed" without a stored, checked key is not enough
+    putSecret(b.id, "openrouter_key", "sk-or-test-0123456789");
     expect(await run(b, "ai-continue")).toBeNull();
     expect(getSetup(b.id).step).toBe("extras");
     expect((await run(b, "install-start"))?.kind).toBe("err"); // Connect more comes first (nothing on it is needed: Skip all and continue)

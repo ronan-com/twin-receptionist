@@ -70,12 +70,14 @@ export function stepDone(b: Buyer, s: SetupData, id: StepId): boolean {
     case "domain": return (!!s.domain?.confirmed && !!s.domain.host) || !!s.skipped?.domain;
     case "server": return !!s.server?.chosen && (b.demo === 1 || hasSecret(b.id, "do_token") || s.phase !== "idle");
     case "railway": return !!s.railway?.confirmed && (b.demo === 1 || hasSecret(b.id, "railway_token") || s.phase !== "idle");
-    case "phones": return !!s.phones?.confirmed || !!s.phones?.deferred || !!s.vapi?.confirmed || !!s.skipped?.phones;
+    // Voice is required on Railway: a Telnyx or Vapi key that passed its check (or an install already under way). "Not now" is not a way through.
+    case "phones": return !!s.phones?.confirmed || (!RAILWAY && !!s.phones?.deferred) || !!s.vapi?.confirmed || s.phase !== "idle";
     case "vapi": return !!s.vapi?.confirmed || !!s.skipped?.vapi;
     case "twilio": return !!s.twilio?.confirmed || !!s.skipped?.twilio;
     case "email": return !!s.email?.confirmed || !!s.skipped?.email;
     case "calendars": return !!s.calendars?.done || !!s.skipped?.calendars;
-    case "ai": return !!s.ai?.confirmed || hasSecret(b.id, "openrouter_key") || s.phase !== "idle";
+    // AI is required: a key that passed its check (it is only stored after it does), or an install already under way.
+    case "ai": return (!!s.ai?.confirmed && (b.demo === 1 || hasSecret(b.id, "openrouter_key"))) || s.phase !== "idle";
     case "extras": return !!s.extrasDone;
     case "install": return s.phase === "done";
     case "done": return s.phase === "done";
@@ -125,8 +127,8 @@ function extrasProblem(b: Buyer, s: SetupData): string | null {
 
 /** Telnyx is needed, unless the buyer switched to Vapi in the backup options. */
 function phonesProblem(b: Buyer, s: SetupData): string | null {
-  if (s.phones?.confirmed || s.vapi?.confirmed || phoneSkipped(s)) return null;
-  return RAILWAY ? "Choose a voice provider first: connect Telnyx or Vapi on the Voice step, or press Skip for now." : "Telnyx is needed for your phones. Go back to Phones and add your Telnyx key, or Vapi + Twilio.";
+  if (s.phones?.confirmed || s.vapi?.confirmed) return null;
+  return RAILWAY ? "Choose a voice provider first: connect Telnyx or Vapi on the Voice step." : "Telnyx is needed for your phones. Go back to Phones and add your Telnyx key, or Vapi + Twilio.";
 }
 
 const LOCKED_MSG = "Your server has already been made with these settings. To change them, delete the server on the Install step first.";
@@ -419,25 +421,6 @@ export const actions: Record<string, Action> = {
     return null;
   },
 
-  // No phone provider yet (a new Telnyx account can take hours to two days to be approved): install
-  // without one. The app starts with no voice key and the owner pastes it later in Connections.
-  // Railway only: there the app is one agency (SINGLE_AGENCY) that brings its own key.
-  "phones-skip"(b) {
-    const g = guard(b, "phones"); if (g) return g;
-    if (!RAILWAY) return err("Add your Telnyx key to continue.");
-    const s0 = getSetup(b.id);
-    if (s0.phones?.confirmed || s0.vapi?.confirmed) return err("Your phone provider is already connected.");
-    // Nothing half-entered goes to the app: it starts with no voice key at all.
-    deleteSecret(b.id, "telnyx_key"); deleteSecret(b.id, "vapi_key"); deleteSecret(b.id, "vapi_public");
-    updateSetup(b.id, (s) => {
-      delete s.vapi;
-      s.phones = { deferred: true, provider: "telnyx" };
-      s.skipped = { ...s.skipped, phones: true, vapi: true };
-      nextStep(b, s, "phones");
-    });
-    return null;
-  },
-
   // ---- Backup option: Vapi instead of Telnyx for voice (added from the last optional screen) ----
   async vapi(b, f) {
     const g = guard(b, "vapi"); if (g) return g;
@@ -645,7 +628,7 @@ export const actions: Record<string, Action> = {
   // "Continue" on a screen that is already done (Login with ... and pasting both stay on the screen so the buyer sees the result).
   "railway-continue"(b) { const g = guard(b, "railway"); if (g) return g; updateSetup(b.id, (s) => { if (s.railway?.confirmed) nextStep(b, s, "railway"); }); return null; },
   "phones-continue"(b) { const g = guard(b, "phones"); if (g) return g; updateSetup(b.id, (s) => { if (stepDone(b, s, "phones")) nextStep(b, s, "phones"); }); return null; },
-  "ai-continue"(b) { const g = guard(b, "ai"); if (g) return g; updateSetup(b.id, (s) => { if (s.ai?.confirmed) nextStep(b, s, "ai"); }); return null; },
+  "ai-continue"(b) { const g = guard(b, "ai"); if (g) return g; updateSetup(b.id, (s) => { if (stepDone(b, s, "ai")) nextStep(b, s, "ai"); }); return null; },
 
   // ---- AI (OpenRouter): "Login with OpenRouter" (oauthComplete) or paste a key. The key goes to the app as OPENROUTER_API_KEY. ----
   async ai(b, f) {
@@ -666,7 +649,7 @@ export const actions: Record<string, Action> = {
     if (missing) return err("Finish the earlier steps first.");
     const p = phonesProblem(b, s) || extrasProblem(b, s); if (p) return err(p);
     if (RAILWAY ? !hasSecret(b.id, "railway_token") : !hasSecret(b.id, "do_token")) return err(RAILWAY ? "Your Railway token is missing. Go back to the Railway step and check it again." : "Your DigitalOcean token is missing. Go back to the Server step and check it again.");
-    if (!currentPackage()) return err("The app isn't ready to install yet. We've been told; please try again later or contact support.");
+    if (!currentPackage()) return err("The app isn't ready to install yet. Please try again later.");
     const wait = allow(`install:${b.id}`, 6, 10 * MIN); if (wait) return tooMany(wait);
     updateSetup(b.id, (s) => { s.phase = "creating"; s.error = undefined; if (!s.dropletId && !s.rw?.projectId) s.progress = []; s.step = "install"; });
     kick(b.id);
@@ -1074,7 +1057,7 @@ async function tickCreate(id: number) {
       }
       const dtok = newToken("d");
       const userData = buildUserData({ dropletToken: dtok, env: buildSettings(id, s), productName: s.brand!.productName, testMode: CONFIG.mockDO });
-      if (Buffer.byteLength(userData) > USER_DATA_LIMIT) return fail(id, "create_failed", "Your settings are too long to send to DigitalOcean (64 KB limit). Contact support.");
+      if (Buffer.byteLength(userData) > USER_DATA_LIMIT) return fail(id, "create_failed", "Your settings are too long to send to DigitalOcean (64 KB limit).");
       progress(id, `Creating your server in DigitalOcean (${s.server!.size}, ${s.server!.regions?.find((r) => r.slug === s.server!.region)?.name || s.server!.region})`);
       setDropletToken(id, dtok);
       const r = await doApi(token, "POST", "/v2/droplets", {
@@ -1745,7 +1728,7 @@ async function locateAgency(token: string, projectId: string): Promise<{ envId: 
   const svcs = (p?.services?.edges || []).map((x: any) => x.node);
   const env = envs.find((e: any) => e.name === "production") || envs[0];
   const app = svcs.find((x: any) => x.name === "app");
-  if (!env || !app) throw new ProviderError("We couldn't find your agency in that Railway project (its app service may have been renamed or deleted). Contact support.");
+  if (!env || !app) throw new ProviderError("We couldn't find your agency in that Railway project (its app service may have been renamed or deleted).");
   return { envId: String(env.id), appId: String(app.id) };
 }
 

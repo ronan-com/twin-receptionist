@@ -114,7 +114,7 @@ function lockedOut(b: Buyer): Out | null {
 const ACTION_OF: Record<AssistId, string> = { brand: "brand", railway: "railway", server: "server", phones: "phones", ai: "ai", email: "email", domain: "domain", calendars: "calendars", vapi: "vapi", twilio: "twilio" };
 
 /** Fill one step for the buyer. `f` holds the same field names the wizard form uses. Never audits a key. */
-export async function fillStep(b: Buyer, admin: string, step: AssistId, f: Record<string, string>, as?: "phones-vapi" | "phones-skip"): Promise<Out> {
+export async function fillStep(b: Buyer, admin: string, step: AssistId, f: Record<string, string>, as?: "phones-vapi"): Promise<Out> {
   const lock = lockedOut(b); if (lock) return lock;
   const s0 = getSetup(b.id);
   if (NEEDS_BRAND.includes(step) && !s0.brand) return bad("Fill in the Brand first: the other steps use the brand name.");
@@ -129,9 +129,7 @@ export async function fillStep(b: Buyer, admin: string, step: AssistId, f: Recor
     out = fromFlash(f2, "Domain added. The records to add are listed below.");
     s = getSetup(b.id);
   }
-  if (as === "phones-skip" && flash?.kind !== "err") out = { ...out, message: "Phones skipped: they connect their phone provider later in their dashboard (Connections)." };
   if (didStep(s, step) && flash?.kind !== "err") updateSetup(b.id, mark(step, admin));
-  else if (as === "phones-skip") { /* nothing filled in to mark */ }
   else if (flash?.kind !== "err") out = { ...out, message: out.message || "Saved, but not finished yet." };
   const note = step === "domain" ? `${s.domain?.mode || ""} ${s.domain?.host || ""}`.trim() : step === "brand" ? str(f.productName, 60) : "";
   audit(b, admin, `${out.ok ? "filled" : "tried"}: ${step}`, `${note}${out.ok ? "" : ` · ${out.message.slice(0, 120)}`}`.trim());
@@ -421,7 +419,7 @@ export function dropHost(b: Buyer, admin: string): Out {
 // ---------------- the buyer's side of it ----------------
 // Registered here so every place that loads the admin also has these (server.ts imports admin-web, which imports this).
 const STEP_OF_ACTION: Record<string, AssistId> = { brand: "brand", railway: "railway", server: "server", phones: "phones", ai: "ai", email: "email", smtp: "email", domain: "domain", calendars: "calendars", vapi: "vapi", twilio: "twilio",
-  "email-skip": "email", "domain-skip": "domain", "cal-skip": "calendars", "vapi-skip": "vapi", "twilio-skip": "twilio", "phones-skip": "phones", "phones-vapi": "phones" };
+  "email-skip": "email", "domain-skip": "domain", "cal-skip": "calendars", "vapi-skip": "vapi", "twilio-skip": "twilio", "phones-vapi": "phones" };
 for (const [name, step] of Object.entries(STEP_OF_ACTION)) {
   const real = actions[name];
   if (!real) continue;

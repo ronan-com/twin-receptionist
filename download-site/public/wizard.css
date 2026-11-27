@@ -511,3 +511,7 @@ header nav .linkbtn { white-space: nowrap; }
 .choice.looks { grid-template-columns: 1fr 1fr; max-width: 360px; margin-top: 0; }
 .pl.cal { background: #fdeef6; color: #c2255c; display: inline-grid; place-items: center; }
 .pl.cal svg.i { width: 16px; height: 16px; }
+.mini3 li { display: block; position: relative; padding-left: 34px; min-height: 22px; line-height: 22px; }
+.mini3 li::before { position: absolute; left: 0; top: 0; }
+.pl.cal { width: 26px; height: 26px; display: inline-grid; place-items: center; }
+.pl.cal svg { width: 16px; height: 16px; }

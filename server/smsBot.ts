@@ -4,7 +4,7 @@ import { sql } from "./db";
 import { LlmError, llmConfigured } from "./llm";
 import type { KnowledgeEntry } from "./prompt";
 import { contactKey, isOptedOut, sendSms, setOptOut } from "./sms";
-import { smsSecretOk, smsHookUrl, twilioSignatureOk } from "./smsWebhook";
+import { smsSecretOk, smsHookUrl, telnyxSignatureOk, twilioSignatureOk } from "./smsWebhook";
 import { getClient, orgOfClient } from "./store";
 import { enterOrg } from "./telnyx";
 import { twilioCredsFor } from "./twilio";
@@ -169,6 +169,9 @@ export async function telnyxTextHook(req: Request, clientId: string, secret: str
   if (!smsSecretOk(clientId, secret)) return notFound();
   const raw = await req.text();
   if (raw.length > 200_000) return new Response("Too large", { status: 413 });
+  // Telnyx signs every webhook (ed25519): checked whenever the server has the account's public key.
+  const publicKey = process.env.TELNYX_PUBLIC_KEY?.trim();
+  if (publicKey && !telnyxSignatureOk(publicKey, raw, req.headers.get("telnyx-signature-ed25519"), req.headers.get("telnyx-timestamp"))) return new Response("Bad signature", { status: 403 });
   let data: any;
   try {
     data = JSON.parse(raw)?.data;

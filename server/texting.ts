@@ -98,6 +98,9 @@ export async function migrateTexting(client: Business): Promise<void> {
   const profileId = await enableTexting(client);
   for (const n of numbers) await telnyx("PATCH", `/messaging_phone_numbers/${encodeURIComponent(n)}`, { messaging_profile_id: profileId });
   await removeTextingProfile(legacy, client).catch((err) => console.error(`[texting ${client.id}] couldn't remove the old messaging profile`, err.message));
+  // Telnyx keeps "messaging" on the assistant, pointing at the profile just removed. Turn it off so the
+  // assistant stops claiming texts (checked against the live API: the call is accepted and sticks).
+  await telnyx("POST", `/ai/assistants/${client.assistantId}`, { enabled_features: ["telephony"] }).catch((err) => console.error(`[texting ${client.id}] couldn't switch off the assistant's own texting`, err.message));
 }
 
 export async function textingState(client: Business): Promise<TextingState> {

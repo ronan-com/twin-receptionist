@@ -1,4 +1,4 @@
-import { createHmac, timingSafeEqual } from "node:crypto";
+import { createHmac, createPublicKey, timingSafeEqual, verify } from "node:crypto";
 import { publicUrl } from "./booking";
 
 // Where a provider tells our server a text arrived. One address per receptionist, with a secret
@@ -48,4 +48,25 @@ export function twilioSignatureOk(authToken: string, url: string, params: Record
   const a = Buffer.from(given);
   const b = Buffer.from(twilioSignature(authToken, url, params));
   return a.length === b.length && timingSafeEqual(a, b);
+}
+
+/**
+ * Telnyx's own webhook signature (https://developers.telnyx.com/docs/messaging/messages/receiving-webhooks):
+ * headers `telnyx-signature-ed25519` (base64) and `telnyx-timestamp`; the signed text is `<timestamp>|<raw body>`;
+ * the key is the account's public key (portal, Keys & Credentials, Public Key: 32 raw bytes in base64).
+ * Checked only when the server has that key (TELNYX_PUBLIC_KEY): the address secret always guards the hook.
+ */
+const ED25519_SPKI_PREFIX = Buffer.from("302a300506032b6570032100", "hex");
+export function telnyxSignatureOk(publicKeyB64: string, rawBody: string, signatureB64: string | null, timestamp: string | null, nowMs = Date.now()): boolean {
+  if (!signatureB64 || !timestamp) return false;
+  const t = Number(timestamp);
+  if (!Number.isFinite(t) || Math.abs(nowMs - t * 1000) > 5 * 60_000) return false;
+  try {
+    const raw = Buffer.from(publicKeyB64, "base64");
+    if (raw.length !== 32) return false;
+    const key = createPublicKey({ key: Buffer.concat([ED25519_SPKI_PREFIX, raw]), format: "der", type: "spki" });
+    return verify(null, Buffer.from(`${timestamp}|${rawBody}`), key, Buffer.from(signatureB64, "base64"));
+  } catch {
+    return false;
+  }
 }

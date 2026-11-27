@@ -95,7 +95,7 @@ async function clientId(p: OAuthProvider): Promise<string> {
   if (r) return r.client_id;
   // Dynamic client registration (RFC 7591): a public client (no secret; PKCE protects the code), made the first time it is needed.
   // https://developers.telnyx.com/api-reference/oauth-protocol  https://docs.railway.com/integrations/oauth
-  const scope = p === "railway" ? env("RAILWAY_OAUTH_SCOPES") || RAILWAY_SCOPES : env("TELNYX_OAUTH_SCOPE") || "admin";
+  const scope = p === "railway" ? env("RAILWAY_OAUTH_SCOPES") || RAILWAY_SCOPES : env("TELNYX_OAUTH_SCOPE") || TELNYX_SCOPES;
   const res = await fetch(endpoints(p).register, {
     method: "POST", redirect: "error", signal: AbortSignal.timeout(20_000),
     headers: { "Content-Type": "application/json", "User-Agent": UA },
@@ -106,6 +106,9 @@ async function clientId(p: OAuthProvider): Promise<string> {
   db().query("INSERT OR REPLACE INTO oauth_clients (provider, redirect_uri, client_id, created_at) VALUES (?, ?, ?, ?)").run(p, redirectUri(p), String(j.client_id), now());
   return String(j.client_id);
 }
+// Telnyx's registration refuses the old catch-all "admin" scope (invalid_client_metadata: allowed_scopes); it takes the granular
+// ones listed at https://api.telnyx.com/.well-known/oauth-authorization-server. These cover what the receptionist uses.
+const TELNYX_SCOPES = "ai.read ai.write messaging.read messaging.write numbers.read numbers.write voice.read voice.write billing.read account_management.read speech.read reporting.read";
 const RAILWAY_SCOPES = "openid email profile offline_access workspace:admin project:admin";
 
 /** Starts a login: remembers state + verifier, returns where to send the buyer and the cookie to set. */
@@ -121,7 +124,7 @@ export async function oauthStart(buyerId: number, p: OAuthProvider): Promise<{ u
   } else {
     q.set("response_type", "code"); q.set("client_id", await clientId(p)); q.set("redirect_uri", redirectUri(p)); q.set("state", state);
     q.set("code_challenge", challengeOf(verifier)); q.set("code_challenge_method", "S256");
-    q.set("scope", p === "railway" ? env("RAILWAY_OAUTH_SCOPES") || RAILWAY_SCOPES : env("TELNYX_OAUTH_SCOPE") || "admin");
+    q.set("scope", p === "railway" ? env("RAILWAY_OAUTH_SCOPES") || RAILWAY_SCOPES : env("TELNYX_OAUTH_SCOPE") || TELNYX_SCOPES);
   }
   return { url: `${e.authorize}?${q}`, cookie: browserCookie(browser) };
 }

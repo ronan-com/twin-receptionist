@@ -6,7 +6,8 @@ import { blankSettings, type Business } from "../src/lib/shared";
 import { migrate, sql } from "./db";
 import { SMS_LIMITS, handleText, isStart, isStop, telnyxTextHook, twilioTextHook, type BotDeps, type InboundText } from "./smsBot";
 import { SmsOptedOut, contactKey, sendSms, setOptOut } from "./sms";
-import { smsSecret, twilioSignature } from "./smsWebhook";
+import { generateKeyPairSync, sign } from "node:crypto";
+import { smsSecret, telnyxSignatureOk, twilioSignature } from "./smsWebhook";
 import { insertClient } from "./store";
 import { createLimiter, dbStore } from "./webchat";
 
@@ -213,6 +214,28 @@ describe("the webhooks", () => {
     expect((await telnyxTextHook(hookReq("/x", "{nope"), client.id, secret(), d)).status).toBe(400);
     expect((await telnyxTextHook(hookReq("/x", telnyxBody()), client.id, secret(), d)).status).toBe(200);
     expect(sent.map((s) => s.to)).toEqual([CUSTOMER]);
+  });
+
+  test("Telnyx's ed25519 signature is checked when the server has the account's public key", async () => {
+    const { publicKey, privateKey } = generateKeyPairSync("ed25519");
+    const pub = (publicKey.export({ format: "der", type: "spki" }) as Buffer).subarray(-32).toString("base64");
+    const body = telnyxBody();
+    const ts = String(Math.floor(Date.now() / 1000));
+    const sig = sign(null, Buffer.from(`${ts}|${body}`), privateKey).toString("base64");
+    expect(telnyxSignatureOk(pub, body, sig, ts)).toBe(true);
+    expect(telnyxSignatureOk(pub, body + " ", sig, ts)).toBe(false);
+    expect(telnyxSignatureOk(pub, body, sig, String(Number(ts) - 3600))).toBe(false);
+    expect(telnyxSignatureOk(pub, body, null, ts)).toBe(false);
+    const { deps } = bot();
+    const d = { ...deps, fetch: pretendModel("hi").fn };
+    process.env.TELNYX_PUBLIC_KEY = pub;
+    try {
+      const signed = new Request("https://app.example.com/x", { method: "POST", body, headers: { "telnyx-signature-ed25519": sig, "telnyx-timestamp": ts } });
+      expect((await telnyxTextHook(signed, client.id, secret(), d)).status).toBe(200);
+      expect((await telnyxTextHook(hookReq("/x", body), client.id, secret(), d)).status).toBe(403);
+    } finally {
+      delete process.env.TELNYX_PUBLIC_KEY;
+    }
   });
 
   describe("Twilio", () => {

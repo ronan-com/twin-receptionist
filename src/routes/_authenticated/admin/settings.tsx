@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, redirect, useNavigate } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { KeyRound, ShieldCheck, Trash2, UserPlus, X } from "lucide-react";
@@ -14,8 +14,6 @@ import { Field } from "@/components/app/forms";
 import { fmtDate } from "@/lib/app/format";
 import { brandApi, getInternalAdmins, grantPlatformAdmin, platformApi, revokePlatformAdmin, teamApi, type AccountRow } from "@/lib/api/console";
 import { DeleteDialog } from "@/components/app/DeleteDialog";
-import type { Brand } from "@/lib/shared";
-import { BrandEditor } from "./-brand";
 import { LinkBox, READ_ONLY_HINT, useConsole } from "./-shared";
 import { PRODUCT } from "@/lib/app/product";
 import { EmailCalendarsSection } from "./-email-calendars";
@@ -23,10 +21,14 @@ import { EmailSendingSection } from "./-email-sending";
 import { SupportSection } from "./-support";
 import { UpdatesSection } from "./-updates";
 
-const TABS = ["team", "branding", "account", "platform", "accounts", "sending", "email", "support", "updates"] as const;
+const TABS = ["team", "account", "platform", "accounts", "sending", "email", "support", "updates"] as const;
 type Tab = (typeof TABS)[number];
 
 export const Route = createFileRoute("/_authenticated/admin/settings")({
+  // Branding moved to its own page (Brand); old links still land there.
+  beforeLoad: ({ location }) => {
+    if (/tab=branding/.test(location.searchStr ?? "")) throw redirect({ to: "/admin/branding", replace: true });
+  },
   validateSearch: (s: Record<string, unknown>): { tab?: Tab } => (TABS.includes(s.tab as Tab) ? { tab: s.tab as Tab } : {}),
   head: () => ({ meta: [{ title: `Settings — ${PRODUCT} admin` }] }),
   component: AdminSettingsPage,
@@ -50,7 +52,6 @@ function AdminSettingsPage() {
       <Tabs value={tab} onValueChange={setTab}>
         <TabsList className="max-w-full overflow-x-auto">
           <TabsTrigger value="team">Team</TabsTrigger>
-          <TabsTrigger value="branding">Branding</TabsTrigger>
           <TabsTrigger value="account">Account</TabsTrigger>
           {platform ? <TabsTrigger value="platform">Platform admins</TabsTrigger> : null}
           {platform ? <TabsTrigger value="accounts">All accounts</TabsTrigger> : null}
@@ -61,9 +62,6 @@ function AdminSettingsPage() {
         </TabsList>
         <TabsContent value="team" className="mt-4">
           <TeamSection />
-        </TabsContent>
-        <TabsContent value="branding" className="mt-4">
-          <BrandingSection />
         </TabsContent>
         <TabsContent value="account" className="mt-4">
           <AccountSection />
@@ -279,33 +277,6 @@ function TeamSection() {
             <LinkBox url={link.url} />
           </div>
         ) : null}
-      </Panel>
-    </div>
-  );
-}
-
-// ---- Branding: logo and background for the agency's own screens and its clients' ----
-
-function BrandingSection() {
-  const { ws, canManage, readOnly, orgName } = useConsole();
-  const qc = useQueryClient();
-  const q = useQuery({ queryKey: ["console", "brand"], queryFn: brandApi.get });
-  if (q.error) return <ErrorState message={(q.error as Error).message} onRetry={() => void q.refetch()} />;
-  return (
-    <div className="space-y-4" data-section="branding">
-      {readOnly ? <Notice tone="info">{READ_ONLY_HINT}</Notice> : !canManage ? <Notice tone="info">Only owners and admins can change the branding.</Notice> : null}
-      <Panel title="Default branding" description="Used on your clients' workspaces unless a client has its own (set it on the client's page).">
-        <BrandEditor
-          brand={q.data}
-          canManage={canManage}
-          previewName={orgName || "Your client"}
-          upload={brandApi.upload}
-          save={brandApi.set}
-          onSaved={async (b: Brand) => {
-            qc.setQueryData(["console", "brand"], b);
-            await ws.refresh();
-          }}
-        />
       </Panel>
     </div>
   );

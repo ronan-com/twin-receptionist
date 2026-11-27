@@ -59,6 +59,7 @@ import { signupRoutes } from "./routes/signup";
 import { automationHooks, automationRoutes } from "./routes/automations";
 import { applyAutomations, bookingBlocked, startAutomations, withAutomations } from "./automations";
 import { workspaceRoutes } from "./routes/workspace";
+import { workspaceMoreRoutes } from "./routes/workspaceMore";
 import type { ClientAccess, RouteArgs } from "./routes/http";
 import { changeBrand, ownBrand, serveAsset, uploadAsset } from "./brand";
 import { accessibleClients, customerClientId, setFollowUpStage, customersFor, inviteCustomer, removeCustomer, revokeCustomerInvite } from "./customers";
@@ -212,6 +213,11 @@ async function setUpBooking(client: Business, input: any) {
   return syncAssistant(next);
 }
 
+// The MCP header value is a secret: it never leaves the server once saved.
+function noMcpSecret<T extends Business>(c: T): T {
+  return c.mcp ? { ...c, mcp: { url: c.mcp.url, ...(c.mcp.headerName ? { headerName: c.mcp.headerName } : {}) } } : c;
+}
+
 async function changeBooking(client: Business, input: any) {
   if (!client.booking) throw new ValidationError("Set up a calendar first.");
   const booking = { ...client.booking, provider: providerOf(client) };
@@ -220,6 +226,7 @@ async function changeBooking(client: Business, input: any) {
     if (!MINUTES.includes(Number(input.minutes))) throw new ValidationError("Choose an appointment length from the list.");
     booking.minutes = Number(input.minutes);
   }
+  if (typeof input?.requireApproval === "boolean") booking.requireApproval = input.requireApproval || undefined;
   if (input?.notifyEmail !== undefined) booking.notifyEmail = checkEmailAddress(input.notifyEmail);
   if (input?.leadWebhook !== undefined) booking.leadWebhook = await checkWebhookUrl(input.leadWebhook);
   return syncAssistant({ ...client, booking });
@@ -890,7 +897,7 @@ async function route(req: Request, server?: { requestIP(r: Request): { address: 
       if (clientOrgId !== orgId) enterOrg(clientOrgId);
       rest = one[2] ?? "";
     }
-    const handler = area[1] === "workspace" ? workspaceRoutes : manageRoutes;
+    const handler = area[1] === "workspace" ? async (a: Parameters<typeof workspaceRoutes>[0]) => (await workspaceRoutes(a)) ?? (await workspaceMoreRoutes(a)) : manageRoutes;
     return (await handler({ ...base, client, clientOrgId, access, rest })) ?? json({ error: "Not found" }, 404);
   }
 
@@ -1051,7 +1058,7 @@ async function route(req: Request, server?: { requestIP(r: Request): { address: 
   }
 
   if (path === "/api/clients") {
-    if (method === "GET") return json({ clients: await listClients(orgId) });
+    if (method === "GET") return json({ clients: (await listClients(orgId)).map(noMcpSecret) });
     if (method === "POST") {
       const input = await req.json();
       const created = await createClient(orgId, input, { quick: input?.defaultVoice === true });
@@ -1089,8 +1096,8 @@ async function route(req: Request, server?: { requestIP(r: Request): { address: 
     if (!client) return json({ error: "That receptionist no longer exists." }, 404);
 
     if (!match[2]) {
-      if (method === "GET") return json({ client });
-      if (method === "PUT") return json({ client: await updateClient(client, await req.json()) });
+      if (method === "GET") return json({ client: noMcpSecret(client) });
+      if (method === "PUT") return json({ client: noMcpSecret(await updateClient(client, await req.json())) });
       if (method === "DELETE") {
         requireRole(ctx, "admin");
         if (!isDemo(client.assistantId)) await voiceFor(client).deleteAssistant(client);

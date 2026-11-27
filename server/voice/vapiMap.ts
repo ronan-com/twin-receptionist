@@ -121,6 +121,8 @@ export type VapiBuild = {
   /** `${publicUrl}/hooks/${clientId}`; null when booking isn't live or there's no public address. */
   hookBase: string | null;
   toolKey: string;
+  /** The business's own MCP server (Streamable HTTP), given to the assistant as a tool. */
+  mcp?: { url: string; headerName?: string; headerValue?: string } | null;
   /** Where end-of-call reports go (and the secret they carry); null with no public address. */
   events: { url: string; secret: string } | null;
   transfer: TransferSpec | null;
@@ -218,6 +220,13 @@ export function vapiAssistantBody(b: VapiBuild) {
   });
   const tools: unknown[] = [{ type: "endCall" }];
   if (b.hookBase) for (const d of BOOKING_TOOL_DEFS) if (b.tools.includes(d.name)) tools.push(functionTool(d));
+  if (b.mcp?.url) {
+    tools.push({
+      type: "mcp",
+      server: { url: b.mcp.url, timeoutSeconds: TOOL_TIMEOUT_SECONDS, ...(b.mcp.headerName && b.mcp.headerValue ? { headers: { [b.mcp.headerName]: b.mcp.headerValue } } : {}) },
+      metadata: { protocol: "shttp" },
+    });
+  }
   if (b.transfer) {
     tools.push({
       type: "transferCall",

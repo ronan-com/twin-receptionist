@@ -2,7 +2,7 @@ import { DAYS, TIMEZONES, countryForTimezone, countryOfNumber, formatNumber, typ
 import { createInvite, emailOf, type Ctx } from "../accounts";
 import { answeredBusiness, industryKeyOf, industryLabelOf, membershipRole } from "../answered";
 import { audit } from "../audit";
-import { changeBrand, ownBrand, resolveBrand, uploadAsset } from "../brand";
+import { changeBrand, isBrandLocked, ownBrand, resolveBrand, uploadAsset } from "../brand";
 import { availability, bookingLive } from "../booking";
 import { CalendarError, calendarLink, providerOf } from "../calendars";
 import { dashboardSignInStart } from "../connect";
@@ -167,6 +167,7 @@ async function answeredAgent(c: Business, orgSuspended: boolean, voices?: Voice[
       allow_new_patients: true,
       provider: c.booking ? providerOf(c) : null,
       lead_webhook: c.booking?.leadWebhook ?? "",
+      require_approval: c.booking?.requireApproval ?? false,
       live,
     },
     escalation_rules: { transfer_on_request: false, escalate_on_negative_sentiment: false, notify_email: c.booking?.notifyEmail ?? "", notify_sms: "" },
@@ -635,6 +636,7 @@ export async function manageRoutes(args: ClientRouteArgs): Promise<Response | nu
           change.minutes = Number(rules.default_duration_minutes);
         }
         if (typeof rules?.enabled === "boolean" && rules.enabled !== next.booking.enabled) change.enabled = rules.enabled;
+        if (typeof rules?.require_approval === "boolean" && rules.require_approval !== Boolean(next.booking.requireApproval)) change.requireApproval = rules.require_approval;
         const notify = body.escalation_rules?.notify_email;
         if (typeof notify === "string" && notify.trim() !== (next.booking.notifyEmail ?? "")) change.notifyEmail = notify;
         const hook = rules?.lead_webhook;
@@ -756,6 +758,7 @@ export async function manageRoutes(args: ClientRouteArgs): Promise<Response | nu
               enabled: b.enabled,
               notifyEmail: b.notifyEmail ?? "",
               leadWebhook: b.leadWebhook ?? "",
+              requireApproval: b.requireApproval ?? false,
               live: bookingLive(client),
               link: providerOf(client) === "builtin" ? null : await calendarLink(client.id),
             }
@@ -773,7 +776,7 @@ export async function manageRoutes(args: ClientRouteArgs): Promise<Response | nu
     } else if (method === "PUT") {
       const body = await readBody(req);
       const input: Record<string, unknown> = {};
-      for (const k of ["minutes", "enabled", "notifyEmail", "leadWebhook"]) if (body[k] !== undefined) input[k] = body[k];
+      for (const k of ["minutes", "enabled", "notifyEmail", "leadWebhook", "requireApproval"]) if (body[k] !== undefined) input[k] = body[k];
       if (!client.booking) throw new ValidationError(input.leadWebhook !== undefined ? "Set up bookings first: the webhook sends each booking and callback." : "Set up a calendar first.");
       next = await d.changeBooking(client, input);
       const hook = input.leadWebhook !== undefined;
@@ -914,6 +917,10 @@ export async function manageRoutes(args: ClientRouteArgs): Promise<Response | nu
     if (method === "GET") return json(await brandState(clientOrgId, client.id));
     if (method === "PUT") {
       const body = await readBody(req);
+      const locked = await brandLocked(access, where);
+      if (locked) return locked;
+      // Only the agency can lock or unlock it.
+      if (access === "manager") delete body.lockClient;
       await changeBrand(asBrandEditor(ctx), where, body);
       await saveColours(where, body);
       await audit(ctx, "brand.updated", { summary: "Workspace branding changed" }, where);
@@ -922,6 +929,8 @@ export async function manageRoutes(args: ClientRouteArgs): Promise<Response | nu
   }
   const brandUp = rest.match(/^\/brand\/(logo|background)$/);
   if (brandUp && method === "POST") {
+    const locked = await brandLocked(access, where);
+    if (locked) return locked;
     if (Number(req.headers.get("content-length") ?? 0) > 2_000_000) throw new ValidationError("That image is too big.");
     await uploadAsset(asBrandEditor(ctx), where, brandUp[1] as "logo" | "background", new Uint8Array(await req.arrayBuffer()));
     await audit(ctx, "brand.updated", { summary: brandUp[1] === "logo" ? "Logo uploaded" : "Background image uploaded" }, where);
@@ -1018,6 +1027,11 @@ function onboardingOf(c: Business): "pending" | "done" {
 const HEX = /^#[0-9a-fA-F]{6}$/;
 const COLOUR_KEYS = ["primaryColor", "accentColor"] as const;
 
+// The agency can lock a business's branding: its own users then get a plain 403.
+async function brandLocked(access: ClientAccess | null, where: { orgId: string; clientId: string }): Promise<Response | null> {
+  return access === "manager" && (await isBrandLocked(where.orgId, where.clientId)) ? json({ error: "Your agency manages your branding." }, 403) : null;
+}
+
 const asBrandEditor = (ctx: Ctx): Ctx => ({ ...ctx, role: "admin" });
 
 async function colours(orgId: string, clientId: string | null) {
@@ -1056,6 +1070,7 @@ async function brandState(orgId: string, clientId: string) {
     resolveBrand(orgId, clientId),
   ]);
   return {
+    locked: await isBrandLocked(orgId, clientId),
     own: { ...own, ...ownC },
     agency: { ...agency, ...agencyC },
     effective: {

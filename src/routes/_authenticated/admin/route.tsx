@@ -13,6 +13,8 @@ import { GetStartedProvider } from "@/components/onboarding/GetStarted";
 import { AssistantProvider } from "@/components/assistant/Assistant";
 import { useSupportUnread } from "@/components/app/SupportDialog";
 import { ConnectPhoneBanner } from "@/components/app/PhoneGate";
+import { SectionTabs } from "@/components/app/SectionTabs";
+import { ProviderWarnings } from "@/components/app/ProviderWarnings";
 
 // The console. Variant "platform" (the platform admin: everything) or "agency"
 // (agency staff: their own agency). Business users are sent to their workspace,
@@ -83,15 +85,8 @@ function AdminLayout() {
   }
 
   const role = ws.session?.role;
-  const label =
-    variant === "platform"
-      ? { title: "Platform console", sub: "Platform admin" }
-      : ws.session?.singleAgency
-        ? // A buyer's own copy: the agency IS the brand shown above, so don't repeat a second name.
-          { title: role === "owner" ? "Agency owner" : role === "admin" ? "Agency admin" : "Agency team", sub: ws.session?.user.email ?? "" }
-        : { title: ws.org?.name ?? "Agency", sub: role === "owner" ? "Agency owner" : role === "admin" ? "Agency admin" : "Agency team" };
-
-  const navItems = adminNavFor(variant).filter((n) => !(variant === "agency" && (ws.session?.telnyx === "own" || ws.session?.singleAgency) && n.to === "/admin/number-requests"));
+  const navItems = adminNavFor(variant);
+  const hasQueue = !(variant === "agency" && (ws.session?.telnyx === "own" || ws.session?.singleAgency));
   // "Get started" is for the agency's own owners and admins: not the platform admin, not a read-only view.
   const getStarted = variant === "agency" && !ws.isPlatformAdmin && !ws.viewing && (role === "owner" || role === "admin") && !!ws.session;
 
@@ -111,17 +106,10 @@ function AdminLayout() {
       nav={navItems}
       variant="admin"
       brandTo="/admin"
-      sidebarHeader={
-        <div
-          className="mx-2 rounded-[6px] border border-[var(--hue-line)] bg-[linear-gradient(135deg,var(--hue-soft),#fff_80%)] px-2.5 py-1.5 text-[12px] text-ink-muted"
-          data-hue={variant === "platform" ? "indigo" : "sky"}
-          data-console={variant}
-        >
-          <span className="font-medium text-ink">{label.title}</span> · {label.sub}
-        </div>
-      }
       banner={
-        !ws.viewing ? (
+        <>
+        <ProviderWarnings />
+        {!ws.viewing ? (
           <ConnectPhoneBanner />
         ) : ws.viewing ? (
           <div className="border-b border-[#dcdaff] bg-[#f4f3ff] px-4 py-2 text-[12.5px] text-[#4338ca]">
@@ -142,11 +130,13 @@ function AdminLayout() {
               </button>
             </div>
           </div>
-        ) : null
+        ) : null}
+        </>
       }
       topbarRight={<DateRangeSelect value={ws.rangePreset} onChange={ws.setRangePreset} />}
       notifications={notifications}
     >
+      <SectionTabs variant={variant} hasQueue={hasQueue} />
       <Outlet />
     </AppShell>
     </GetStartedProvider>

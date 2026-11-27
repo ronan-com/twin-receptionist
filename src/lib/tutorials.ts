@@ -456,7 +456,7 @@ export const TUTORIALS: Tutorial[] = [
       "Pick your colours and press **Save colours**.",
       "Your clients see your brand. To give one client its own, use the **Branding** panel on that client's page.",
     ],
-    to: "/admin/settings?tab=branding",
+    to: "/admin/branding",
     toLabel: "Open Branding",
     keywords: "logo colour color brand white label",
   },

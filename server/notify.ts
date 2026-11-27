@@ -100,6 +100,24 @@ export async function confirmToCaller(client: Business, r: BookingRequest, chang
   return sendAccountEmail(r.email, `Your ${what} at ${s.businessName}: ${whenText(client, r)}`, lines.join("\n"));
 }
 
+/** The caller's note that the business couldn't take the time they asked for. */
+export async function declineToCaller(client: Business, r: BookingRequest): Promise<boolean> {
+  if (r.kind !== "booking" || !r.email) return false;
+  const s = client.settings;
+  const what = industry(s.industry).booking;
+  const number = client.phoneNumbers?.[0];
+  const lines = [
+    `Hi ${r.name.split(" ")[0] || "there"},`,
+    "",
+    `Sorry, we can't do the ${what} you asked for on ${whenText(client, r)}.`,
+    "",
+    number ? `Please call us on ${formatNumber(number)} and we'll find another time.` : "Please get in touch and we'll find another time.",
+    "",
+    s.businessName,
+  ];
+  return sendAccountEmail(r.email, `Your ${what} request at ${s.businessName}`, lines.join("\n"));
+}
+
 function emailText(client: Business, r: BookingRequest, change?: BookingChange): { subject: string; text: string } {
   const who = r.name || "Someone";
   const how = r.channel === "sms" ? "by text" : r.channel === "email" ? "by email" : r.channel === "web" ? "in the website chat" : "on a call";
@@ -117,7 +135,20 @@ function emailText(client: Business, r: BookingRequest, change?: BookingChange):
     return { subject: `${moved ? "Booking moved" : "Booking cancelled"}: ${who}, ${r.service || "appointment"}`, text: lines.join("\n") };
   }
   const lines =
-    r.kind === "booking"
+    r.kind === "booking" && r.status === "pending"
+      ? [
+          `${client.settings.receptionistName || "Your AI receptionist"} took a booking request ${how}. It needs your approval.`,
+          "",
+          `When:     ${whenText(client, r)}`,
+          `Name:     ${who}`,
+          `Phone:    ${formatNumber(r.phone)}`,
+          ...(r.email ? [`Email:    ${r.email}`] : []),
+          `Service:  ${r.service || "not given"}`,
+          ...(r.note ? [`Notes:    ${r.note}`] : []),
+          "",
+          "Approve or decline it in your Calendar. The time is held for them until you do.",
+        ]
+      : r.kind === "booking"
       ? [
           `${client.settings.receptionistName || "Your AI receptionist"} booked ${aBooking(client)} ${how}.`,
           "",
@@ -136,7 +167,7 @@ function emailText(client: Business, r: BookingRequest, change?: BookingChange):
           ...(r.start ? [`Best time:  ${r.start}`] : []),
           ...(r.note ? [`Message:    ${r.note}`] : []),
         ];
-  const subject = r.kind === "booking" ? `New booking: ${who}, ${r.service || "appointment"}` : `Call back: ${who}`;
+  const subject = r.kind === "booking" && r.status === "pending" ? `Approve booking: ${who}, ${r.service || "appointment"}` : r.kind === "booking" ? `New booking: ${who}, ${r.service || "appointment"}` : `Call back: ${who}`;
   return { subject, text: lines.join("\n") };
 }
 

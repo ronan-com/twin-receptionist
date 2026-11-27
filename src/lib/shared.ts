@@ -97,6 +97,8 @@ export type BookingSetup = {
   notifyEmail?: string;
   // ...and POSTed here as JSON, for a CRM.
   leadWebhook?: string;
+  // The AI takes a booking as a pending request; the business approves or declines it.
+  requireApproval?: boolean;
   createdAt: string;
 };
 
@@ -116,7 +118,7 @@ export type BookingRequest = {
   service: string;
   // The booked time, or the preferred callback time.
   start: string;
-  status: "booked" | "failed" | "saved";
+  status: "booked" | "failed" | "saved" | "pending" | "declined";
   note: string;
   // The caller's email, when they gave one (their booking confirmation goes there).
   email?: string;
@@ -126,6 +128,8 @@ export type BookingRequest = {
   rescheduledFrom?: string;
   // Set when the caller cancelled the booking by phone (the booking's apptStatus is then "cancelled").
   cancelledAt?: string;
+  // The business's decision on a pending booking ("declined"), set when it is declined.
+  declinedAt?: string;
   // Where a callback stands, set by the business.
   stage?: "new" | "contacted" | "won" | "lost";
 };
@@ -168,6 +172,8 @@ export type Business = {
   // receptionist made before Vapi was added). Set when it is made (the agency's choice, or the
   // wizard's Voice engine pick), and changed by "Move to Telnyx/Vapi".
   voiceProvider?: VoiceProviderId;
+  // An MCP server the voice assistant can use as a tool (the business's own apps). Never sent to the browser with its header value.
+  mcp?: { url: string; headerName?: string; headerValue?: string };
   // Made from the console's "send the client an onboarding link": "pending" until the
   // client finishes setting it up in their workspace, then "done".
   onboarding?: "pending" | "done";
@@ -840,6 +846,8 @@ export type Brand = {
   primaryColor?: string;
   accentColor?: string;
   sidebarColor?: string;
+  /** Set by the agency: the business can't change its own branding. */
+  lockClient?: boolean;
 };
 
 // `support` is set for a sign-in by the setup provider's support person (Settings, "Support"); `by` is who.

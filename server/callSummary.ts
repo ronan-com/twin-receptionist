@@ -5,6 +5,7 @@ import { getClient } from "./store";
 import { voiceFor } from "./voice";
 import { chatText, llmConfigured } from "./llm";
 import { callerKey } from "./callerMemory";
+import { notifyCallSummary } from "./notify";
 
 // Summaries and outcomes for real calls. server/callsync.ts upserts each call from the phone
 // provider; this file fills in `summary` and `outcome` once the call has ended, once per call
@@ -130,7 +131,7 @@ type Receptionist = { id: string; org_id: string; assistant_id: string; voice_pr
 export async function summariseEnded(c: Receptionist, deps?: Partial<SummaryDeps> & { business?: Business | null }): Promise<number> {
   const provider = c.voice_provider === "vapi" ? "vapi" : "telnyx";
   const rows = (await sql`
-    select id, provider_call_id, from_number, started_at, ended_at, duration_seconds from call_log
+    select id, provider_call_id, from_number, started_at, ended_at, duration_seconds, summary from call_log
     where client_id = ${c.id} and provider = ${provider} and (summary is null or (provider = 'vapi' and outcome is null)) and channel <> 'web'
       and ended_at is not null and ended_at < ${new Date(Date.now() - QUIET_MS)} and started_at > ${new Date(Date.now() - MAX_AGE_DAYS * 86_400_000)}
       and summary_tries < ${MAX_TRIES}
@@ -161,6 +162,10 @@ export async function summariseEnded(c: Receptionist, deps?: Partial<SummaryDeps
       if (!out.summary && !out.outcome) continue;
       await sql`update call_log set summary = coalesce(summary, ${out.summary}), outcome = coalesce(outcome, ${out.outcome}), updated_at = now() where id = ${r.id}`;
       if (out.summary) filled++;
+      // A newly written summary goes on to the webhook and the business's apps. Never blocks or fails the pass.
+      if (out.summary && !r.summary && r.from_number) {
+        notifyCallSummary(business, { callId: r.id, phone: r.from_number, summary: out.summary, outcome: out.outcome, at: new Date(r.started_at).toISOString() }).catch(() => {});
+      }
     } catch (err) {
       failure = err as Error;
     }

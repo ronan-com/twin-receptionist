@@ -3,13 +3,19 @@ import { requireRole } from "../accounts";
 import { audit } from "../audit";
 import { ValidationError } from "../prompt";
 import { getSetting, putSetting } from "../store";
+import { AppError, SYNCABLE, appsKey, connector, openKey, packKey, xeroAuth, type AppEntry, type Stored } from "../appConnectors";
 import { json, readBody, type ClientRouteArgs, type RouteArgs } from "./http";
 
 // "Connect your apps": per-business API keys (ServiceM8, Cliniko, Tradify, Xero) and an
 // optional Pipedream Connect link. Secrets live in app_settings and never go back to the
-// browser. Full actions (creating jobs, contacts) can follow; today a saved key is checked
-// with "Test connection" and kept ready for them.
-//   /api/workspace/<id>/apps | apps/<provider> | apps/<provider>/test | pipedream/connect
+// browser. A saved key is checked with "Test connection". ServiceM8, Cliniko and Xero can also
+// be switched on ("Send bookings to ...", off by default) and then get each booking, callback and
+// call summary (server/appConnectors.ts). Tradify has no public API, so it can't be switched on.
+// Pipedream Connect only links accounts; to feed a Pipedream workflow, paste its HTTP trigger URL
+// as the webhook (it receives bookings, callbacks and "call_summary" events).
+// The MCP link is a separate thing: the voice assistant calls it as a tool (Vapi and Telnyx); the
+// text chatbot does not (it only has the booking tools), so use the webhook for text chats.
+//   /api/workspace/<id>/apps | apps/<provider> | apps/<provider>/test | apps/<provider>/settings | apps/<provider>/options | pipedream/connect
 //   /api/console/pipedream (the agency's own Pipedream project, set once)
 
 const clip = (v: unknown, max: number) => String(v ?? "").trim().slice(0, max);
@@ -23,15 +29,17 @@ export const APP_KEYS = {
 export type AppProvider = keyof typeof APP_KEYS;
 const isProvider = (p: string): p is AppProvider => p in APP_KEYS;
 
-type Stored = Partial<Record<AppProvider, { key: string; savedAt: string }>>;
-const keyOf = (clientId: string) => `apps:${clientId}`;
+const keyOf = appsKey;
+const CONFIG_KEYS = ["practitionerId", "appointmentTypeId", "businessId", "staffUuid"] as const;
+
+const appFetch = (u: string, i?: RequestInit) => fetch(u, { ...i, signal: AbortSignal.timeout(10_000), redirect: "manual" });
 
 export type Fetcher = (url: string, init?: RequestInit) => Promise<{ ok: boolean; status: number }>;
 
 /** A cheap read with the saved key. Tradify has no public check, so it only says the key was saved. */
 export async function testApp(provider: AppProvider, key: string, doFetch: Fetcher = (u, i) => fetch(u, { ...i, signal: AbortSignal.timeout(8000) })): Promise<{ ok: boolean; message: string }> {
   const name = APP_KEYS[provider].name;
-  if (provider === "tradify") return { ok: true, message: "Saved. Tradify has no key check, so it's ready for when actions are added." };
+  if (provider === "tradify") return { ok: true, message: "Saved. Tradify has no public API to check it against, so nothing is sent to it." };
   let url = "";
   let headers: Record<string, string> = {};
   if (provider === "servicem8") {
@@ -46,6 +54,15 @@ export async function testApp(provider: AppProvider, key: string, doFetch: Fetch
   } else {
     url = "https://api.xero.com/connections";
     headers = { Authorization: `Bearer ${key}`, Accept: "application/json" };
+    // A Xero custom connection ("clientId:clientSecret") is exchanged for a token first.
+    if (/^[^:\s]{8,}:[^\s]{8,}$/.test(key)) {
+      try {
+        await xeroAuth(key, doFetch as any);
+        return { ok: true, message: `${name} accepted the key.` };
+      } catch (err) {
+        return { ok: false, message: err instanceof AppError ? err.message : `Couldn't reach ${name}. Try again in a moment.` };
+      }
+    }
   }
   try {
     const r = await doFetch(url, { headers });
@@ -58,9 +75,19 @@ export async function testApp(provider: AppProvider, key: string, doFetch: Fetch
 }
 
 async function view(client: Business, orgId: string) {
-  const saved = (await getSetting<Stored>(keyOf(client.id))) ?? {};
+  const saved = ((await getSetting<Stored>(keyOf(client.id))) ?? {}) as Stored;
   return {
-    apps: (Object.keys(APP_KEYS) as AppProvider[]).map((p) => ({ provider: p, name: APP_KEYS[p].name, hint: APP_KEYS[p].hint, connected: Boolean(saved[p]?.key), savedAt: saved[p]?.savedAt ?? null })),
+    apps: (Object.keys(APP_KEYS) as AppProvider[]).map((p) => ({
+      provider: p,
+      name: APP_KEYS[p].name,
+      hint: APP_KEYS[p].hint,
+      connected: Boolean(saved[p]?.key),
+      savedAt: saved[p]?.savedAt ?? null,
+      syncable: SYNCABLE.includes(p),
+      enabled: Boolean(saved[p]?.enabled),
+      config: saved[p]?.config ?? {},
+      last: saved[p]?.last ?? null,
+    })),
     pipedream: Boolean((await pipedreamOf(orgId))?.clientSecret),
   };
 }
@@ -141,22 +168,49 @@ export async function appsRoutes(args: ClientRouteArgs): Promise<Response | null
     return json({ url: await pipedreamConnectUrl(pd, client.id) });
   }
 
-  const one = rest.match(/^\/apps\/([a-z0-9]+)(\/test)?$/);
+  const one = rest.match(/^\/apps\/([a-z0-9]+)(\/test|\/settings|\/options)?$/);
   if (!one || !isProvider(one[1])) return null;
   const provider = one[1];
   const saved = ((await getSetting<Stored>(keyOf(client.id))) ?? {}) as Stored;
 
-  if (one[2]) {
+  if (one[2] === "/test") {
     if (method !== "POST") return null;
     const key = saved[provider]?.key;
     if (!key) throw new ValidationError("Save a key first.");
-    return json(await testApp(provider, key));
+    return json(await testApp(provider, openKey(key)));
+  }
+  if (one[2] === "/options") {
+    // What the card lets the business pick from (Cliniko practitioners, appointment types, locations; ServiceM8 staff).
+    if (method !== "GET") return null;
+    const key = saved[provider]?.key;
+    if (!key) throw new ValidationError("Save a key first.");
+    if (!SYNCABLE.includes(provider)) return json({});
+    try {
+      return json(await (connector(provider, openKey(key), saved[provider]?.config ?? {}, appFetch) as any).options());
+    } catch (err) {
+      throw new ValidationError(err instanceof AppError ? err.message : `Couldn't reach ${APP_KEYS[provider].name}. Try again in a moment.`);
+    }
+  }
+  if (one[2] === "/settings") {
+    if (method !== "PUT") return null;
+    const entry = saved[provider];
+    if (!entry?.key) throw new ValidationError("Save a key first.");
+    if (!SYNCABLE.includes(provider)) throw new ValidationError(`${APP_KEYS[provider].name} has no public API, so bookings can't be sent to it. Use Pipedream, an MCP link or the webhook.`);
+    const b = await readBody(args.req);
+    const config: Record<string, string> = { ...(entry.config ?? {}) };
+    if (b.config && typeof b.config === "object") for (const k of CONFIG_KEYS) if (k in b.config) config[k] = clip(b.config[k], 80);
+    const next: AppEntry = { ...entry, enabled: typeof b.enabled === "boolean" ? b.enabled : Boolean(entry.enabled), config };
+    await putSetting(keyOf(client.id), { ...saved, [provider]: next });
+    await audit(args.ctx, "integration.app.settings", { summary: `${APP_KEYS[provider].name}: send bookings ${next.enabled ? "on" : "off"}` }, { orgId: clientOrgId, clientId: client.id });
+    return json(await view(client, clientOrgId));
   }
   if (method === "PUT") {
     const b = await readBody(args.req);
     const key = clip(b.key, 500);
     if (key.length < 8) throw new ValidationError("Paste the whole key.");
-    await putSetting(keyOf(client.id), { ...saved, [provider]: { key, savedAt: new Date().toISOString() } });
+    const old = saved[provider];
+    // A new key keeps the business's switch and choices; the last sync result is cleared.
+    await putSetting(keyOf(client.id), { ...saved, [provider]: { key: packKey(key), savedAt: new Date().toISOString(), ...(old?.enabled ? { enabled: true } : {}), ...(old?.config ? { config: old.config } : {}) } });
     await audit(args.ctx, "integration.app.saved", { summary: `${APP_KEYS[provider].name} key saved` }, { orgId: clientOrgId, clientId: client.id });
     return json(await view(client, clientOrgId));
   }

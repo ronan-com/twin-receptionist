@@ -4,12 +4,64 @@ import { toast } from "sonner";
 import { Check, ExternalLink, Link2, Loader2, Plug } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { getApps, getMcp, pipedreamConnect, putMcp, removeAppKey, saveAppKey, testAppKey, type AppCard } from "@/lib/api/clean";
+import { getAppOptions, getApps, getMcp, saveAppSettings, pipedreamConnect, putMcp, removeAppKey, saveAppKey, testAppKey, type AppCard } from "@/lib/api/clean";
 import { useWorkspace } from "@/lib/app/workspace";
 import { cn } from "@/lib/utils";
 
 // Connect your apps. Every way is optional: paste an app's key, paste an MCP link,
 // use the webhook below, or (when the agency has set it up) pick from thousands of apps.
+
+const PICKS: Record<string, { field: string; label: string; from: "businesses" | "practitioners" | "appointmentTypes" | "staff" }[]> = {
+  cliniko: [
+    { field: "businessId", label: "Location", from: "businesses" },
+    { field: "practitionerId", label: "Practitioner", from: "practitioners" },
+    { field: "appointmentTypeId", label: "Appointment type", from: "appointmentTypes" },
+  ],
+  servicem8: [{ field: "staffUuid", label: "Schedule jobs with (optional)", from: "staff" }],
+};
+const SEND_NOTE: Record<string, string> = {
+  servicem8: "Finds or adds the caller as a client, creates a job (a Work Order for a booking, a Quote for a callback) and adds the call summary as a note.",
+  cliniko: "Finds or adds the caller as a patient, books the appointment with your choices below, and adds the call summary to the patient's notes.",
+  xero: "Finds or adds the caller as a contact and adds the booking and call summary to their history. Xero is accounting, so no appointment is made.",
+};
+
+function SendBox({ app }: { app: AppCard }) {
+  const ws = useWorkspace();
+  const qc = useQueryClient();
+  const id = ws.businessId!;
+  const canEdit = ws.access.canEdit;
+  const picks = PICKS[app.provider] ?? [];
+  const opts = useQuery({ queryKey: ["app-options", id, app.provider], enabled: picks.length > 0 && app.connected && canEdit, queryFn: () => getAppOptions(id, app.provider), retry: false });
+  const save = useMutation({ mutationFn: (b: { enabled?: boolean; config?: Record<string, string> }) => saveAppSettings(id, app.provider, b), onSuccess: (d) => qc.setQueryData(["apps", id], d), onError: (e: Error) => toast.error("Couldn't save", { description: e.message }) });
+  return (
+    <div className="space-y-2 rounded-lg bg-[#f6f7f9] p-3">
+      <label className="flex items-center gap-2 text-[13.5px] font-medium text-ink">
+        <input type="checkbox" checked={app.enabled} disabled={!canEdit || save.isPending} onChange={(e) => save.mutate({ enabled: e.target.checked })} aria-label={`Send bookings to ${app.name}`} />
+        Send bookings to {app.name}
+      </label>
+      <p className="text-[12px] text-ink-muted">{SEND_NOTE[app.provider]}</p>
+      {canEdit && picks.length ? (
+        <div className="grid gap-2 sm:grid-cols-2">
+          {picks.map((p) => (
+            <label key={p.field} className="text-[12px] text-ink-muted">
+              {p.label}
+              <select className="mt-1 h-9 w-full rounded-md border border-hairline bg-white px-2 text-[13px] text-ink" value={app.config[p.field] ?? ""} onChange={(e) => save.mutate({ config: { [p.field]: e.target.value } })}>
+                <option value="">{opts.isLoading ? "Loading..." : "Choose"}</option>
+                {(opts.data?.[p.from] ?? []).map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}
+              </select>
+            </label>
+          ))}
+        </div>
+      ) : null}
+      {opts.isError ? <p className="text-[12px] text-[#a41d1d]">Couldn't load your {app.name} choices. Check the key with Test connection.</p> : null}
+      {app.last ? (
+        <p className={cn("text-[12px]", app.last.ok ? "text-ink-muted" : "text-[#a41d1d]")} data-last-sync role="status">
+          Last sync: {new Date(app.last.at).toLocaleString()} ({app.last.what}){app.last.ok ? ", sent" : `, failed: ${app.last.error ?? "unknown error"}`}
+        </p>
+      ) : null}
+    </div>
+  );
+}
 
 function KeyCard({ app }: { app: AppCard }) {
   const ws = useWorkspace();
@@ -37,6 +89,8 @@ function KeyCard({ app }: { app: AppCard }) {
         </div>
       ) : null}
       <p className="text-[12px] text-ink-muted">{app.hint}</p>
+      {app.connected && app.syncable ? <SendBox app={app} /> : null}
+      {!app.syncable ? <p className="text-[12px] text-ink-muted">Tradify has no public API, so bookings can't be sent to it. Use the Pipedream button, an MCP link or the webhook below.</p> : null}
       {app.connected && canEdit ? (
         <div className="flex flex-wrap items-center gap-2">
           <Button size="sm" variant="outline" className="h-8" disabled={test.isPending} onClick={() => test.mutate()}>
@@ -117,7 +171,7 @@ export function ConnectApps() {
       ) : null}
       <div className="grid gap-3 md:grid-cols-2">{(q.data?.apps ?? []).map((a) => <KeyCard key={a.provider} app={a} />)}</div>
       <McpBox />
-      <p className="text-[12.5px] text-ink-muted">Saved keys are kept private and never shown again. Actions like creating jobs from a booking are added app by app. For anything else, use the webhook below.</p>
+      <p className="text-[12.5px] text-ink-muted">Saved keys are kept private and never shown again. Switch on "Send bookings" on an app to have each booking, callback and call summary sent to it. Anything goes to the webhook below too. Your MCP link is used by the phone assistant only.</p>
     </section>
   );
 }

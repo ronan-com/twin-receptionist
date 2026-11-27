@@ -5,6 +5,7 @@ import { resolveBrand } from "./brand";
 import { orgOfClient } from "./store";
 import { isPublicHost } from "./net";
 import { ValidationError } from "./prompt";
+import { syncBooking, syncSummary, type SummaryPush } from "./appConnectors";
 
 // Tells the business about each booking and callback the receptionist takes:
 //   - an email to the address they chose (needs SMTP_URL and MAIL_FROM)
@@ -195,6 +196,22 @@ function emailText(client: Business, r: BookingRequest, change?: BookingChange):
   return { subject, text: lines.join("\n") };
 }
 
+/** The webhook POST (signed). Checked again at send time: a name can be repointed after it was saved. */
+async function postWebhook(setup: NonNullable<Business["booking"]>, payload: Record<string, unknown>): Promise<void> {
+  if (!(await isPublicHost(new URL(setup.leadWebhook!).hostname))) throw new Error("webhook host is not public");
+  const body = JSON.stringify(payload);
+  // Lets the receiver check it really came from here (HMAC-SHA256 of the body).
+  const signature = createHmac("sha256", webhookSecret(setup.token)).update(body).digest("hex");
+  const res = await fetch(setup.leadWebhook!, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "X-Twin-Signature": `sha256=${signature}` },
+    body,
+    redirect: "manual",
+    signal: AbortSignal.timeout(8000),
+  });
+  if (!res.ok) throw new Error(`webhook answered ${res.status}`);
+}
+
 export async function notifyBusiness(client: Business, r: BookingRequest, change?: BookingChange): Promise<void> {
   const setup = client.booking;
   if (!setup) return;
@@ -204,31 +221,23 @@ export async function notifyBusiness(client: Business, r: BookingRequest, change
     jobs.push(sendAccountEmail(setup.notifyEmail, subject, text));
   }
   if (setup.leadWebhook) {
-    jobs.push(
-      (async () => {
-        // Checked again at send time: a name can be repointed after it was saved.
-        if (!(await isPublicHost(new URL(setup.leadWebhook!).hostname))) throw new Error("webhook host is not public");
-        const body = JSON.stringify({
-          event: change ? `booking_${change.kind}` : r.kind,
-          ...(change ? { previousStart: change.was } : {}),
-          business: client.settings.businessName,
-          receptionistId: client.id,
-          ...r,
-        });
-        // Lets the receiver check it really came from here (HMAC-SHA256 of the body).
-        const signature = createHmac("sha256", webhookSecret(setup.token)).update(body).digest("hex");
-        const res = await fetch(setup.leadWebhook!, {
-          method: "POST",
-          headers: { "Content-Type": "application/json", "X-Twin-Signature": `sha256=${signature}` },
-          body,
-          redirect: "manual",
-          signal: AbortSignal.timeout(8000),
-        });
-        if (!res.ok) throw new Error(`webhook answered ${res.status}`);
-      })(),
-    );
+    jobs.push(postWebhook(setup, { event: change ? `booking_${change.kind}` : r.kind, ...(change ? { previousStart: change.was } : {}), business: client.settings.businessName, receptionistId: client.id, ...r }));
   }
+  // The business's own apps (ServiceM8, Cliniko, Xero), for the ones it switched on. Moves and cancellations aren't sent.
+  if (!change) jobs.push(syncBooking(client, r));
   for (const result of await Promise.allSettled(jobs)) {
     if (result.status === "rejected") console.error(`[notify ${client.id}]`, (result.reason as Error).message);
+  }
+}
+
+/** A finished call's summary: to the webhook ("call_summary") and the switched-on apps. Only logs on failure. */
+export async function notifyCallSummary(client: Business, s: SummaryPush & { callId: string }): Promise<void> {
+  const setup = client.booking;
+  const jobs: Promise<unknown>[] = [syncSummary(client, s)];
+  if (setup?.leadWebhook) {
+    jobs.push(postWebhook(setup, { event: "call_summary", business: client.settings.businessName, receptionistId: client.id, callId: s.callId, phone: s.phone, summary: s.summary, outcome: s.outcome, at: s.at }));
+  }
+  for (const result of await Promise.allSettled(jobs)) {
+    if (result.status === "rejected") console.error(`[notify ${client.id}] summary`, (result.reason as Error).message);
   }
 }

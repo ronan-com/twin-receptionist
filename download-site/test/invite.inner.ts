@@ -158,7 +158,7 @@ describe("generic setup site: no product name anywhere", () => {
     const brandHtml = wizardPage(w, getSetup(w.id), w.code, "sid-w", "brand");
     expect(brandHtml).toContain('name="ownerName" maxlength="80" required autocomplete="name" value="Wendy Welcome"');
     expect(brandHtml).toContain('value="wendy@example.com"');
-    expect(brandHtml).toContain('name="productName" maxlength="60" required value="Welcome Voice"');
+    expect(brandHtml).toContain('name="productName" maxlength="60" value="Welcome Voice"');
     // The preview shows the exact email; nothing is sent by looking.
     const pv = (await call("GET", `/admin/b/${w.id}/email`)).body;
     expect(pv).toContain("Hi Wendy,");

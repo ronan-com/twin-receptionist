@@ -899,10 +899,14 @@ async function tickOne(id: number) {
   const wantsEmail = s.email?.mode === "resend" && s.email.resend && s.email.resend.status !== "verified" && !!s.email.resend.records?.length && hasSecret(id, "resend_key");
   const wantsDomain = s.step === "domain" && s.domain?.mode === "cloudflare" && s.domain.cf?.zoneId && ["pending", "initializing"].includes(s.domain.cf.status || "");
   const updating = s.update?.phase === "running";
-  if (!["creating", "dns", "starting", "installing", "deploying", "domain"].includes(s.phase) && !wantsEmail && !wantsDomain && !updating) return;
+  const addingDomain = s.domainAdd?.phase === "running";
+  const watchingDomain = s.phase === "done" && !!s.domainPending && !!s.domain?.host && RAILWAY;
+  if (!["creating", "dns", "starting", "installing", "deploying", "domain"].includes(s.phase) && !wantsEmail && !wantsDomain && !updating && !addingDomain && !watchingDomain) return;
   busy.add(id);
   try {
     if (updating) await tickUpdate(id);
+    else if (addingDomain) await tickDomainAdd(id);
+    else if (watchingDomain) await tickDomainWatch(id);
     else if (isDemoBuyer(id)) { if (["creating", "deploying"].includes(s.phase)) await tickDemoInstall(id); }
     else if (RAILWAY && s.phase === "creating") await tickRailCreate(id);
     else if (s.phase === "deploying") await tickRailDeploy(id);
@@ -1803,6 +1807,151 @@ actions["update-retry"] = (b) => {
   runUpdate(b.id);
   return { kind: "info", text: "Trying the update again. Your agency keeps running as it is until the new version is ready." };
 };
+
+// ======================= Your own domain, after the install =======================
+// The Done screen's "Add your own domain" / "Change domain". Like the update: they paste their Railway token again, we use it for
+// this one change (create the custom domain on their app, point PUBLIC_URL at it and FALLBACK_URL at the Railway address, which makes
+// Railway restart the app), then delete it. The records then show on the Done screen and nothing needs a token to go live: the
+// app itself switches to the domain once it answers (server/booking.ts), and the Done screen watches public DNS (tickDomainWatch).
+const setDA = (id: number, fn: (d: NonNullable<SetupData["domainAdd"]>, s: SetupData) => void) => updateSetup(id, (s) => { if (s.domainAdd) fn(s.domainAdd, s); });
+const failDA = (id: number, msg: string) => setDA(id, (d, s) => { d.phase = "failed"; d.error = msg; s.progress = [...(s.progress || []), "The change stopped. Your agency is still running as before."]; });
+/** Short grace after the variables change, so the restart has begun (Railway keeps the old copy answering until the new one is ready). */
+const DOMAIN_RESTART_WAIT_MS = () => (fast ? 1500 : 25_000);
+const canChangeDomain = (b: Buyer, s: SetupData) => RAILWAY && s.phase === "done" && b.demo !== 1 && !!s.rw?.projectId && s.update?.phase !== "running";
+
+actions["domain-add-open"] = (b) => {
+  const s = getSetup(b.id);
+  if (!canChangeDomain(b, s) || s.domainAdd?.phase === "running") return null;
+  updateSetup(b.id, (s) => { s.domainAdd = { phase: "ask" }; });
+  return null;
+};
+actions["domain-add-cancel"] = (b) => {
+  const s = getSetup(b.id);
+  if (!s.domainAdd || s.domainAdd.phase === "running") return null;
+  deleteSecret(b.id, "railway_token");
+  updateSetup(b.id, (s) => { delete s.domainAdd; });
+  return null;
+};
+actions["domain-add-start"] = async (b, f) => {
+  const s = getSetup(b.id);
+  if (!canChangeDomain(b, s)) return err("This agency can't change its address from here.");
+  if (s.domainAdd?.phase === "running") return null;
+  const domain = normalizeDomain(str(f.domain, 253));
+  if (!domain) return err("Type your domain, like yourbusiness.com.", f);
+  const host = `app.${domain}`;
+  if (host === hostOf(s) && !s.domainPending) return err(`${host} is already your address.`, f);
+  const wait = allow(`domainadd:${b.id}`, 6, 10 * MIN); if (wait) return tooMany(wait);
+  const token = str(f.token, 300) || getSecret(b.id, "railway_token") || "";
+  if (!token) return err("Paste your Railway token.", f);
+  const r = await checkRailway(token);
+  if (!r.ok) return err(r.message, f);
+  let loc = { envId: "", appId: "" };
+  try { loc = await locateAgency(token, s.rw!.projectId!); } catch (e) { return err(errMsg(e), f); }
+  putSecret(b.id, "railway_token", token);
+  logClear(b.id);
+  updateSetup(b.id, (s) => {
+    s.domainAdd = { phase: "running", host, zone: domain, from: hostOf(s) || undefined, envId: loc.envId, appId: loc.appId, startedAt: now() };
+    s.progress = []; delete s.flash;
+  });
+  kick(b.id);
+  return null;
+};
+actions["domain-add-retry"] = (b) => {
+  const s = getSetup(b.id);
+  if (s.domainAdd?.phase !== "failed") return null;
+  if (!hasSecret(b.id, "railway_token")) { setDA(b.id, (d) => { d.phase = "ask"; }); return err("Paste your Railway token again to carry on."); }
+  setDA(b.id, (d) => { d.phase = "running"; d.error = undefined; });
+  kick(b.id);
+  return null;
+};
+
+/** One step per tick; each piece is saved as it's done, so a retry carries on. */
+async function tickDomainAdd(id: number) {
+  const s = getSetup(id);
+  const d = s.domainAdd;
+  if (!d || d.phase !== "running" || !d.host || !d.zone || !d.envId || !d.appId) return;
+  const token = await railwayToken(id);
+  if (!token || !s.rw?.projectId) return failDA(id, "We don't have your Railway token any more. Press Try again and paste it.");
+  const projectId = s.rw.projectId;
+  const temp = s.tempUrl || webUrl(s.rw.serviceDomain);
+  try {
+    if (d.from && !d.removedOld) {
+      // Changing the address: the old one is taken off the app. Best effort: the new one works either way.
+      progress(id, `Taking ${d.from} off your agency`);
+      try {
+        const list = (await railway(token, "query($p: String!, $e: String!, $s: String!) { domains(projectId: $p, environmentId: $e, serviceId: $s) { customDomains { id domain } } }", { p: projectId, e: d.envId, s: d.appId })).domains?.customDomains || [];
+        for (const c of list) if (String(c.domain).toLowerCase() !== d.host) await railway(token, "mutation($id: String!) { customDomainDelete(id: $id) }", { id: String(c.id) });
+      } catch (e) { safeLog("domain change: old domain", e); }
+      setDA(id, (d) => { d.removedOld = true; });
+      return;
+    }
+    if (!d.customDomainId) {
+      progress(id, `Connecting ${d.host}`);
+      const cd = (await railway(token, `mutation($input: CustomDomainCreateInput!) { customDomainCreate(input: $input) { ${DOMAIN_FIELDS} } }`, { input: { projectId, environmentId: d.envId, serviceId: d.appId, domain: d.host, targetPort: APP_PORT } })).customDomainCreate;
+      const records = railRecords(cd, d.host, d.zone);
+      setDA(id, (d) => { d.customDomainId = String(cd.id); d.records = records; });
+      return;
+    }
+    if (!d.varsSet) {
+      progress(id, "Pointing your agency at its new address");
+      // No skipDeploys: Railway restarts the app so it picks these up. FALLBACK_URL is the address that works from the start.
+      await railway(token, "mutation($input: VariableCollectionUpsertInput!) { variableCollectionUpsert(input: $input) }", { input: { projectId, environmentId: d.envId, serviceId: d.appId, variables: { PUBLIC_URL: `https://${d.host}`, ...(temp ? { FALLBACK_URL: temp } : {}) } } });
+      setDA(id, (d) => { d.varsSet = true; d.varsAt = now(); });
+      return;
+    }
+    if (Date.now() - Date.parse(d.varsAt || now()) < DOMAIN_RESTART_WAIT_MS()) return;
+    // Railway keeps the old copy answering until the restarted one is ready, so an answer at the Railway address is the check.
+    if (!due(`da-health:${id}`, fast ? 1000 : 5000)) return;
+    const healthy = await fetch(`${temp}/api/health`, { signal: AbortSignal.timeout(8000) }).then((r) => r.ok).catch(() => false);
+    if (!healthy) { if (ago(d.varsAt) > 10 * MIN) failDA(id, `Your agency isn't answering at ${temp} after the change. Wait a minute and press Try again.`); return; }
+    // Done on Railway: the token is forgotten, and the Done screen takes over (records, check, "live" once it answers).
+    const removed = deleteSecret(id, "railway_token").changes;
+    updateSetup(id, (s) => {
+      const d = s.domainAdd!;
+      s.domain = { mode: "manual", zone: d.zone, sub: "app", host: d.host, confirmed: true };
+      s.rw = { ...s.rw, records: d.records, customDomainId: undefined, domainOk: false };
+      s.domainPending = true;
+      s.finishRecords = (d.records || []).map(({ cfId, ...r }) => r);
+      s.tempUrl = temp || s.tempUrl;
+      s.progress = [...(s.progress || []), `${d.host} is connected. Add its records where you manage ${d.zone}`];
+      s.flash = { kind: "ok", text: `${d.host} is connected. Add the records below where you manage ${d.zone}; it starts working by itself once they are in.` };
+      delete s.domainAdd;
+    });
+    console.log(`[setup] buyer ${id}: domain ${d.from || "none"} -> ${d.host}; ${removed} token deleted`);
+  } catch (e) {
+    safeLog("domain add", e);
+    if (e instanceof ProviderError && e.status !== 429 && e.status < 500) failDA(id, errMsg(e));
+    else if (!(e instanceof ProviderError)) failDA(id, errMsg(e));
+  }
+}
+
+/**
+ * A finished agency whose own address isn't answering yet (Finish now with DNS pending, or Add your own domain): every so often look at
+ * public DNS and at https://<host>/api/health, tick the records off, and when it answers show the address as live. Needs no token.
+ * In a test run (mock Railway) the address can't resolve, so "every record found in the fake DNS" stands in for it.
+ */
+export async function domainAnswers(host: string, records: DnsRecord[]): Promise<boolean> {
+  if (CONFIG.mockRailway) return records.length > 0 && records.every((r) => r.ok);
+  return fetch(`https://${host}/api/health`, { signal: AbortSignal.timeout(8000), redirect: "manual" }).then((r) => r.ok).catch(() => false);
+}
+async function tickDomainWatch(id: number) {
+  const s = getSetup(id);
+  if (s.phase !== "done" || !s.domainPending || !s.domain?.host) return;
+  if (!due(`dw:${id}`, fast ? 1500 : 30_000)) return;
+  const zone = zoneOf(s);
+  const recs = (s.finishRecords || []).map((r) => ({ ...r }));
+  for (const r of recs) { const live = await recordLive(r, zone).catch(() => ({ ok: false, seen: "" } as any)); r.ok = !!live.ok; r.seen = live.seen; }
+  const host = hostOf(s);
+  const up = await domainAnswers(host, recs);
+  updateSetup(id, (s) => {
+    if (!up) { s.finishRecords = recs; return; }
+    s.domainPending = false; s.finishRecords = undefined; s.resultUrl = `https://${host}`;
+    if (s.rw) s.rw.domainOk = true;
+    s.flash = { kind: "ok", text: `https://${host} is live.` };
+    s.progress = [...(s.progress || []), `https://${host} is ready`];
+  });
+  if (up) console.log(`[setup] buyer ${id}: https://${host} answers; marked live`);
+}
 
 /** One step of the update per tick, like tickRailCreate: each piece is saved as it's done, so a retry carries on. */
 async function tickUpdate(id: number) {

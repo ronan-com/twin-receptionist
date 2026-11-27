@@ -214,6 +214,17 @@ export interface SetupData {
     deploymentId?: string; deployStatus?: string; uploadedAt?: string; healthSince?: string;
     error?: string; startedAt?: string; at?: string; attempt?: number;
   };
+  /**
+   * Add or change the agency's own web address AFTER the install (the Done screen's "Add your own domain"). ask = the form,
+   * running = Railway work (we hold the token only for this), failed = nothing changed. When the Railway part is done the
+   * records show on the Done screen like any pending domain (domainPending + finishRecords) and the token is gone.
+   */
+  domainAdd?: {
+    phase: "ask" | "running" | "failed";
+    host?: string; zone?: string; from?: string;
+    envId?: string; appId?: string; removedOld?: boolean; customDomainId?: string; records?: DnsRecord[]; varsSet?: boolean; varsAt?: string;
+    error?: string; startedAt?: string;
+  };
   // the install
   phase: Phase;
   progress?: string[];

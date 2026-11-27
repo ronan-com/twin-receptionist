@@ -251,7 +251,7 @@ function ReceptionistScene({ step }: { step: number }) {
         <Check className="h-6 w-6" strokeWidth={3} />
       </div>
       <div>
-        <div className="text-[13px] font-semibold text-ink">Chloe is ready</div>
+        <div className="text-[13px] font-semibold text-ink">Your receptionist is ready</div>
         <div className="text-[11px] text-ink-muted">Your new receptionist can take a test call now.</div>
       </div>
       <MockButton className="gs-press">Create receptionist</MockButton>
@@ -267,7 +267,7 @@ function TestCallScene({ step }: { step: number }) {
           <div className="mb-2 flex items-center gap-2">
             <span className="flex h-7 w-7 items-center justify-center rounded-full bg-[color-mix(in_srgb,var(--indigo)_14%,#fff)] text-[11px] font-semibold text-indigo">C</span>
             <div>
-              <div className="text-[11px] font-semibold text-ink">Chloe</div>
+              <div className="text-[11px] font-semibold text-ink">Receptionist</div>
               <Bar w="60px" className="mt-1" />
             </div>
           </div>
@@ -293,7 +293,7 @@ function TestCallScene({ step }: { step: number }) {
       </div>
     );
   const lines: [string, string][] = [
-    ["AI", `Thanks for calling. This is Chloe, how can I help?`],
+    ["AI", `Thanks for calling. How can I help?`],
     ["You", "I'd like to book a check-up."],
     ["AI", "Of course. What day suits you?"],
   ];

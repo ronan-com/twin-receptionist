@@ -201,6 +201,7 @@ export const APPOINTMENT_STATUSES: AppointmentStatus[] = ["pending", "confirmed"
 
 export const INTEGRATION_STATUS_LABELS: Record<IntegrationStatus, string> = {
   available: "Available",
+  coming_soon: "Not available",
   not_connected: "Not connected",
   connected: "Connected",
   error: "Needs attention",

@@ -19,6 +19,7 @@ import { agentsQuery, integrationsQuery, phoneNumbersQuery } from "@/lib/app/que
 import { useRangeMetrics } from "@/lib/app/use-metrics";
 import { isFollowUpDone, tzDateTime } from "@/lib/app/business-logic";
 import { updateLead } from "@/lib/api/workspace";
+import { getCalendar } from "@/lib/api/clean";
 import { useWorkspace } from "@/lib/app/workspace";
 import { cn } from "@/lib/utils";
 import { OTHER_BRAND, PRODUCT } from "@/lib/app/product";
@@ -51,6 +52,11 @@ function HomePage() {
   const agentsQ = useQuery(agentsQuery(ws.businessId));
   const numbersQ = useQuery(phoneNumbersQuery(ws.businessId));
   const integrationsQ = useQuery(integrationsQuery(ws.businessId));
+  const approvals = useQuery({
+    queryKey: ["calendar-pending", ws.businessId],
+    enabled: !!ws.businessId,
+    queryFn: async () => (await getCalendar(ws.businessId!, new Date(Date.now() - 86_400_000), new Date(Date.now() + 120 * 86_400_000))).filter((e) => e.status === "pending"),
+  });
   const [period, setPeriod] = useState<"today" | "week">("today");
   const [openCall, setOpenCall] = useState<string | null>(null);
   const canEdit = ws.access.canEdit;
@@ -178,7 +184,7 @@ function HomePage() {
       {/* 2. Three numbers */}
       <section aria-label="How it's going">
         <div className="mb-2 flex items-center justify-between">
-          <h2 className="text-[16px] font-semibold text-ink">{period === "today" ? "Today" : "This week"}</h2>
+          <h2 className="text-[16px] font-semibold text-ink">What your AI did {period === "today" ? "today" : "this week"}</h2>
           <div role="radiogroup" aria-label="Period" className="inline-flex rounded-full border border-hairline bg-white p-0.5">
             {([["today", "Today"], ["week", "This week"]] as const).map(([v, label]) => (
               <button
@@ -210,6 +216,15 @@ function HomePage() {
           ))}
         </div>
       </section>
+
+      {(approvals.data ?? []).length > 0 ? (
+        <Link to="/app/calendar" data-home-approvals className="flex items-center justify-between gap-3 rounded-xl border border-indigo/30 bg-indigo/5 px-4 py-3.5 outline-none hover:bg-indigo/10">
+          <span className="text-[15px] font-semibold text-ink">
+            {approvals.data!.length} booking{approvals.data!.length === 1 ? "" : "s"} waiting for your approval
+          </span>
+          <ArrowRight className="h-4 w-4 shrink-0 text-ink-muted" />
+        </Link>
+      ) : null}
 
       {/* 3. The to-do list */}
       <section data-home-attention aria-label="Needs your attention" className="panel overflow-hidden">

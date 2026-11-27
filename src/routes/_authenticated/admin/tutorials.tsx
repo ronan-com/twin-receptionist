@@ -29,9 +29,8 @@ function TutorialsPage() {
   return (
     <div className="space-y-5" data-page="admin-tutorials">
       <PageHeader
-        eyebrow="Agency console"
-        title="Tutorials"
-        description="Short how-tos for everything in your dashboard. Open one for the steps, then press Go there."
+        title="Guides"
+        description="Short steps for everything."
         actions={
           getStarted ? (
             <Button size="sm" className="h-9" onClick={() => getStarted.startTour()} data-action="tutorials-take-tour">

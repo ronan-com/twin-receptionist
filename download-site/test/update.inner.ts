@@ -62,9 +62,9 @@ process.env.DATA_DIR = dir;
 process.env.SETUP_SECRET_KEY = Buffer.alloc(32, 5).toString("base64");
 process.env.SITE_URL = "http://localhost:4500";
 process.env.MOCK_RAILWAY = "1";
-process.env.MOCK_DO = "1"; // test mode: check on every tick instead of every few seconds
+process.env.MOCK_FAST = "1"; // test mode: check on every tick instead of every few seconds
 process.env.RAILWAY_API_BASE = `http://127.0.0.1:${rail.port}`;
-for (const k of ["HOSTING", "MOCK_CF", "MOCK_RESEND", "MOCK_TELNYX", "MOCK_OAUTH"]) delete process.env[k];
+for (const k of ["MOCK_CF", "MOCK_RESEND", "MOCK_TELNYX", "MOCK_OAUTH"]) delete process.env[k];
 mkdirSync(join(dir, "packages"), { recursive: true });
 
 const { addBuyer, recordPackage, setPackageNotes, PACKAGES_DIR } = await import("../lib");

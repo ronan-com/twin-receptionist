@@ -5,7 +5,7 @@ WORKDIR /app
 ENV NODE_ENV=production HOST=0.0.0.0 PORT=4500 DATA_DIR=/data TRUST_PROXY=1
 COPY package.json ./
 RUN bun install --production
-# The app code, public/ and provision/; content/ too if you copied the how-tos in (see README).
+# The app code and public/; content/ too if you copied the how-tos in (see README).
 COPY . .
 RUN mkdir -p /data /incoming && chown bun:bun /data
 USER bun

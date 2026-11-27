@@ -6,7 +6,7 @@ Placeholders: `{{brand}}` (the brand name the buyer picks), `{{domain}}` (e.g. `
 
 Style: Australian spelling, short sentences, no exclamation marks. Every step has a collapsed **Step-by-step guide** with the matching how-to from `providers/`.
 
-**Order (Railway, the default):** Welcome · Brand · Hosting (Railway) · Phones (Telnyx) · Email (Resend) · Domain · Calendars (optional) · Install · Live
+**Order:** Welcome · Brand · Hosting (Railway) · Phones (Telnyx) · Email (Resend) · Domain · Calendars (optional) · Install · Live
 
 **Footer on every step:** Your keys are stored encrypted and deleted once your install is done.
 
@@ -237,9 +237,3 @@ Style: Australian spelling, short sentences, no exclamation marks. Every step ha
 - You've tried that a lot in a short time. Please wait {{n}} seconds and try again.
 - For safety we deleted the keys you gave us, since this setup sat unused for a while. Paste them again to carry on.
 - {{Provider}} is busy: wait a minute and try again. / {{Provider}} is having a problem: try again in a few minutes.
-
----
-
-## Backup option: DigitalOcean
-
-Only on a site set to `HOSTING=digitalocean`. Order: Welcome, Brand, Domain, Server, Phones, Email, Calendars, Install, Live. The Server step reads "Your server · We create one server in your DigitalOcean account. You pay DigitalOcean directly." See `wizard.ts` for its exact screens.

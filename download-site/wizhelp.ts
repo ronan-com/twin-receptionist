@@ -5,7 +5,7 @@ import type { SetupData, StepId } from "./store";
 
 /** The step's name, as our admin reads it. */
 const STEP_LABEL: Record<StepId, string> = {
-  welcome: "Welcome", brand: "Brand", domain: "Domain", server: "DigitalOcean server", railway: "Railway", phones: "Voice", ai: "AI",
+  welcome: "Welcome", brand: "Brand", domain: "Domain", railway: "Railway", phones: "Voice", ai: "AI",
   email: "Email", calendars: "Calendars", extras: "Extras", vapi: "Vapi", twilio: "Twilio", install: "Install", done: "Live",
 };
 export const stepLabel = (id: string) => STEP_LABEL[id as StepId] || "setup";

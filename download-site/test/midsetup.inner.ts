@@ -15,7 +15,7 @@ process.env.SETUP_SECRET_KEY = Buffer.alloc(32, 5).toString("base64");
 process.env.SITE_URL = SITE;
 process.env.MOCK_OAUTH = "1";
 process.env.MOCK_TELNYX = "1";
-for (const k of ["MOCK_DO", "MOCK_RAILWAY", "MOCK_CF", "MOCK_RESEND", "HOSTING", "PREVIEW_JUMP", "OPENROUTER_API_KEY"]) delete process.env[k];
+for (const k of ["MOCK_FAST", "MOCK_RAILWAY", "MOCK_CF", "MOCK_RESEND", "PREVIEW_JUMP", "OPENROUTER_API_KEY"]) delete process.env[k];
 
 const { addBuyer, db } = await import("../lib");
 const store = await import("../store");

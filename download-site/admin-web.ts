@@ -23,7 +23,7 @@
 // writes each sign-in and each change to its audit log.
 import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 import { sendSiteMail, siteMailConfigured } from "./mailer";
-import { CONFIG, RAILWAY, addBuyer, currentPackage, humanSize, listPackages, db, markInvited, now, setupLink, sha256, unbrand, type Buyer } from "./lib";
+import { CONFIG, addBuyer, currentPackage, humanSize, listPackages, db, markInvited, now, setupLink, sha256, unbrand, type Buyer } from "./lib";
 import { esc } from "./pages";
 import { agencyUrl, allow, appUrlOf, stepDone, updateInfo } from "./setup";
 import { ago, hasSyncToken, allSnapshots, deleteSyncData, dot, fetchLogs, fetchClients, history, latestSnapshot, logSupport, pushPending, requestPush, seen, supportLog, syncNow, viewAsLink, type Stored } from "./sync";
@@ -390,7 +390,7 @@ function buyerPage(sid: string, email: string, b: Buyer, flash = "", tab: AgTab 
   const live = isInstalling(s);
   const steps = STEPS.map((id) => `<li class="${stepDone(b, s, id) ? "ok" : id === s.step ? "run" : ""}"><i></i>${esc(id)}</li>`).join("");
   const act = (what: string, label: string, cls: string, confirm = "") => `<form method="post" action="/admin/b/${b.id}/${what}">${hiddenT(sid)}<button class="${cls}" type="submit"${confirm ? ` data-confirm="${esc(confirm)}"` : ""}>${label}</button></form>`;
-  const hostNote = RAILWAY ? "Their Railway project stays in their account." : "Their server stays in their DigitalOcean account.";
+  const hostNote = "Their Railway project stays in their account.";
   const rowsHtml: [string, string][] = [
     ["Person", esc(s.brand?.ownerName || s.prefill?.ownerName || "")], ["Email", esc(b.email)], ["Brand", esc(s.brand?.productName || s.prefill?.agencyName || "")], ["Owner email", esc(s.brand?.ownerEmail || "")],
     ["Domain", esc(s.domain?.host || "")], ["Step", esc(s.phase === "done" ? "Done" : `${s.step}${s.phase !== "idle" ? ` (${s.phase})` : ""}`)],
@@ -528,7 +528,7 @@ function settingsPage(sid: string, email: string, flash = "") {
 <h2>This site</h2>
 <div class="summary">
 <div><span>Setup site address</span><b>${esc(CONFIG.siteUrl)}</b></div>
-<div><span>Agencies install on</span><b>${RAILWAY ? "Railway" : "DigitalOcean"}</b></div>
+<div><span>Agencies install on</span><b>Railway</b></div>
 <div><span>Emailing from this site</span><b>${onoff(welcomeConfigured())}</b></div>
 <div><span>Alerts sent anywhere</span><b>${onoff(alertChannel, "Yes", "Recorded here only")}</b></div>
 </div>

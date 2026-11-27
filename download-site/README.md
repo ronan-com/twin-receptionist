@@ -7,12 +7,9 @@ a successful install we delete every key they gave us and have no login to their
 app sends us a health heartbeat (counts only; on by default, the buyer can switch it off) and we can
 "View as" them only while the buyer has switched on Support access in their app (sync.ts).
 
-Two hosting options, chosen for the whole site with `HOSTING`:
-
-- **Railway** (default, the easy one): the agency and its Postgres run in the buyer's own
-  Railway project. No server to look after.
-- **DigitalOcean** (`HOSTING=digitalocean`): a droplet in the buyer's account runs
-  `deploy/selfhost/install.sh` (Caddy, Postgres, the app).
+Hosting is **Railway** only: the agency and its Postgres run in the buyer's own Railway
+project. No server to look after. (A buyer who wants a plain server of their own uses
+`deploy/selfhost/`, outside this site.)
 
 One Bun process + SQLite (`bun:sqlite`), behind Caddy. Many buyers at once: all wizard state is
 per buyer in SQLite, and background work runs from a ticker that picks up again after a restart.
@@ -20,19 +17,18 @@ A closed tab loses nothing. We manage buyers at **/admin** (or with `admin.ts`).
 
 ```
 server.ts          routes, CSRF + same-origin check, rate limits, security headers, startup guards
-setup.ts           the wizard engine: actions, background ticker, Railway + DigitalOcean installs
+setup.ts           the wizard engine: actions, background ticker, the Railway install
 wizard.ts          the wizard screens (same look as the app's own Setup wizard)
 admin-web.ts       /admin: our buyers dashboard (sign-in, list, add, per-buyer view and actions)
 store.ts           per-buyer state, encrypted secrets vault, install log, tokens, CSRF tokens
-providers.ts       Railway, DigitalOcean, Cloudflare, Telnyx, Resend, SMTP, Google/Microsoft, public DNS
-userdata.ts        (DigitalOcean) the droplet's first-boot script; provision/runner.sh runs on it
+providers.ts       Railway, Cloudflare, Telnyx, Resend, SMTP, Google/Microsoft, public DNS
 content.ts         loads the how-tos (handoff-content/providers/*.md) and the welcome email
 pages.ts           /, /guide, error pages
 chat.ts           the Need help? chat: bubble HTML, what the model is told, OpenRouter call (public/chat.js, chat.css)
 lib.ts             settings, database, buyer codes, bundles, production guard
 admin.ts           command-line admin
 public/            wizard.css + Inter fonts, wizard.js, styles.css (/, /guide), favicon
-mock/serve.ts      TEST ONLY: fake Railway, DigitalOcean, Cloudflare, Resend, SMTP and DNS
+mock/serve.ts      TEST ONLY: fake Railway, Cloudflare, Resend, SMTP and DNS
 test/              end-to-end tests (puppeteer), see below
 deploy/            compose.yml + Caddyfile + .env.example for our small server
 ```
@@ -78,8 +74,7 @@ steps: email and calendars in the app's **Settings > Email and calendars**, the 
 (Networking > Custom Domain, then set `PUBLIC_URL`). There is no "re-run a step against the live
 install": we hold no Railway token after install, by design.
 
-The DigitalOcean path keeps its long order (the droplet's https certificate needs a domain), so
-nothing is optional there. **Test runs** (admin "Start a test run") use the Railway path above, so
+**Test runs** (admin "Start a test run") use the Railway path above, so
 they also only need Brand, Railway and Telnyx (all pretend) and may skip the extras.
 
 ### What Install does on Railway
@@ -118,7 +113,7 @@ retry carries on where it stopped.
    Railway issues the certificate on its own once the records are in, and the Done page lists them.
 
 **Logo and colour.** They travel as the app's `BRAND_LOGO_PNG` (base64) and `BRAND_COLOUR` settings
-(DigitalOcean: the same two lines in `.env`). With `SINGLE_AGENCY` the app applies them once, when the
+With `SINGLE_AGENCY` the app applies them once, when the
 owner first creates the account (`applyInstallBrand` in `server/brand.ts`), then never again, so
 whatever the owner later changes in Settings sticks. The installed app sends a brand-new copy's owner
 straight to its "Set up your agency" page, with the agency name filled in from `PRODUCT_NAME`.
@@ -136,14 +131,6 @@ unverified accounts land on a "limited trial" that can't deploy code, so we requ
 Certificates are Let's Encrypt, normally within an hour of the DNS being right. Private
 registry images need Pro, which is why we upload source instead.
 
-### DigitalOcean (`HOSTING=digitalocean`)
-
-Order: Welcome, Brand, Domain, Server (DigitalOcean token, region, size), Phones, Email,
-Calendars, Install, Done. Install creates a droplet whose first-boot script asks our site for
-work (`GET /p/<droplet token>/next`), downloads the bundle with a one-time link, runs
-`install.sh` and posts its log back (`provision/runner.sh`). Retry reuses the same droplet;
-**Delete the server** deletes it. Needs `PROVISION_URL` (https) reachable from the droplet.
-
 ## Secrets
 
 - Stored in the `secrets` table, AES-256-GCM, key derived from `SETUP_SECRET_KEY`, bound to
@@ -151,7 +138,7 @@ work (`GET /p/<droplet token>/next`), downloads the bundle with a one-time link,
 - Never sent back to the browser: forms show `Saved (••••abcd)`. Never logged. Install logs are
   redacted (every stored secret, plus anything shaped like a known key).
 - After the install finishes we delete every secret and keep only: brand and owner email,
-  domain, the Railway project id (or droplet id/IP), addresses, timestamps, the redacted log.
+  domain, the Railway project id, addresses, timestamps, the redacted log.
 - A setup nobody touches for `SECRETS_IDLE_DAYS` (14) loses its stored keys; the buyer pastes
   them again if they come back.
 - We never hold a way in: no SSH key, no Railway access after the token is deleted.
@@ -225,8 +212,6 @@ Sessions: random 256-bit id, `HttpOnly`, `SameSite=Strict`, `Path=/admin`, 12 ho
 |---|---|---|
 | `SETUP_SECRET_KEY` | (required) | 32 bytes, base64 (`bun admin.ts gen-key`). **Never change or lose it**: it unlocks the keys of half-finished setups and signs every session. Keep a copy apart from the backups. |
 | `SITE_URL` | `http://localhost:4500` | Public https address, no path. Setup links use it. |
-| `HOSTING` | `railway` | or `digitalocean` |
-| `PROVISION_URL` | `SITE_URL` | DigitalOcean only: what droplets call. Must be https. |
 | `SELLER_NAME` / `PRODUCT_NAME` / `SUPPORT_EMAIL` | | Shown on pages and in the welcome email |
 | `DATA_DIR` | `download-site/data` | SQLite + bundles (`/data` in Docker) |
 | `CONTENT_DIR` | | Folder with `providers/*.md` and `welcome-email.md`; else `download-site/content`, else `../handoff-content` |
@@ -244,8 +229,8 @@ Sessions: random 256-bit id, `HttpOnly`, `SameSite=Strict`, `Path=/admin`, 12 ho
 | `LOOKUPS_PER_MINUTE`, `REQUESTS_PER_MINUTE`, `CHECKS_PER_10_MIN`, `TEST_EMAILS_PER_HOUR`, `SECRETS_IDLE_DAYS` | 20, 600, 20, 3, 14 | |
 | `DNS_SERVERS` | `1.1.1.1,8.8.8.8` | Public resolvers to ask |
 
-Test only (refused on a public address): `MOCK_RAILWAY`, `MOCK_DO`, `MOCK_CF`, `MOCK_RESEND`,
-`MOCK_TELNYX`, `MOCK_OAUTH`, `MOCK_PORT_BASE`, `MOCK_APP_PORTS`, `EXTRA_LISTEN`, `PREVIEW_JUMP`,
+Test only (refused on a public address): `MOCK_RAILWAY`, `MOCK_FAST`, `MOCK_CF`, `MOCK_RESEND`,
+`MOCK_TELNYX`, `MOCK_OAUTH`, `MOCK_PORT_BASE`, `MOCK_APP_PORTS`, `PREVIEW_JUMP`,
 `*_API_BASE`, `TEST_SITE`.
 
 ## Help chat
@@ -278,7 +263,7 @@ bun download-site/admin.ts backup [file]                               # consist
 bun download-site/admin.ts gen-key                                     # a new SETUP_SECRET_KEY (first install only)
 ```
 
-Publish a new app version (Railway and DigitalOcean both install from it). `make-package.sh` /
+Publish a new app version (Railway installs from it). `make-package.sh` /
 `make-bundle.sh` never include `download-site/` (our database, keys and old bundles live there) in the
 app source that goes to buyers:
 
@@ -377,7 +362,6 @@ the uploaded source and runs it with a local `postgres:16` on `127.0.0.1:<MOCK_A
 ```bash
 bash download-site/test/run-e2e.sh            # Railway (default), ports 4520-4529 + 4550-4559
 node download-site/test/admin-e2e.mjs         # /admin, ports 4560-4569
-node download-site/test/e2e-digitalocean.mjs  # DigitalOcean variant (needs the dind image, see mock/droplet)
 ```
 
 `run-e2e.sh` covers, with screenshots of every step at 390 px (and desktop) in `test-shots/` and

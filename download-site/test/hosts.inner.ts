@@ -23,7 +23,7 @@ const rail = Bun.serve({
 });
 
 Object.assign(process.env, { DATA_DIR: dir, SETUP_SECRET_KEY: Buffer.alloc(32, 7).toString("base64"), SITE_URL: SITE, MOCK_RAILWAY: "1", MOCK_TELNYX: "1", RAILWAY_API_BASE: `http://127.0.0.1:${rail.port}`, DNS_SERVERS: "127.0.0.1", ADMIN_EMAILS: ADMIN });
-for (const k of ["MOCK_DO", "MOCK_CF", "MOCK_RESEND", "MOCK_OAUTH", "HOSTING", "PREVIEW_JUMP"]) delete process.env[k];
+for (const k of ["MOCK_FAST", "MOCK_CF", "MOCK_RESEND", "MOCK_OAUTH", "PREVIEW_JUMP"]) delete process.env[k];
 
 const { addBuyer, db, now, CONFIG } = await import("../lib");
 const H = await import("../hosts");

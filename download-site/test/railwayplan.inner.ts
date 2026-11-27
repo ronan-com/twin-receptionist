@@ -8,7 +8,7 @@ const dir = mkdtempSync(join(tmpdir(), "railwayplan-test-"));
 process.env.DATA_DIR = dir;
 process.env.SETUP_SECRET_KEY = Buffer.alloc(32, 7).toString("base64");
 process.env.SITE_URL = "http://localhost:4500";
-for (const k of ["MOCK_DO", "MOCK_RAILWAY", "MOCK_CF", "MOCK_RESEND", "MOCK_TELNYX", "MOCK_OAUTH", "HOSTING"]) delete process.env[k];
+for (const k of ["MOCK_FAST", "MOCK_RAILWAY", "MOCK_CF", "MOCK_RESEND", "MOCK_TELNYX", "MOCK_OAUTH"]) delete process.env[k];
 
 const { addBuyer } = await import("../lib");
 const { actions } = await import("../setup");

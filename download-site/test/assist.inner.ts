@@ -96,14 +96,14 @@ process.env.DATA_DIR = dir;
 process.env.SETUP_SECRET_KEY = Buffer.alloc(32, 9).toString("base64");
 process.env.SITE_URL = "http://localhost:4500";
 process.env.MOCK_RAILWAY = "1";
-process.env.MOCK_DO = "1"; // test mode: check on every tick instead of every few seconds
+process.env.MOCK_FAST = "1"; // test mode: check on every tick instead of every few seconds
 process.env.MOCK_TELNYX = "1";
 process.env.RAILWAY_API_BASE = `http://127.0.0.1:${rail.port}`;
 process.env.CF_API_BASE = `http://127.0.0.1:${cf.port}/client/v4`;
 process.env.GODADDY_API_BASE = `http://127.0.0.1:${gd.port}`;
 process.env.DNS_SERVERS = "127.0.0.1";
 process.env.ADMIN_EMAILS = ADMIN;
-for (const k of ["HOSTING", "MOCK_CF", "MOCK_RESEND", "MOCK_OAUTH", "SITE_SMTP_URL", "SITE_MAIL_FROM"]) delete process.env[k];
+for (const k of ["MOCK_CF", "MOCK_RESEND", "MOCK_OAUTH", "SITE_SMTP_URL", "SITE_MAIL_FROM"]) delete process.env[k];
 mkdirSync(join(dir, "packages"), { recursive: true });
 
 const { addBuyer, findBuyer, recordPackage, PACKAGES_DIR } = await import("../lib");
@@ -199,7 +199,7 @@ describe("admin fills steps, the buyer's wizard sees them", () => {
 
   test("an install that has started closes the admin's forms; a reset buyer can't be filled either", async () => {
     const c = addBuyer("Locked Buyer", "locked@example.com");
-    store.updateSetup(c.id, (s) => { s.phase = "installing"; });
+    store.updateSetup(c.id, (s) => { s.phase = "creating"; });
     expect((await A.fillStep(c, ADMIN, "brand", { productName: "X", ownerEmail: "x@x.test" })).message).toMatch(/started/);
     store.updateSetup(c.id, (s) => { s.phase = "idle"; });
     db_revoke(c.id);

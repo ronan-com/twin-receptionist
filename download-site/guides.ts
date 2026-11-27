@@ -19,8 +19,6 @@ export const STEP_GUIDES: Partial<Record<StepId, ProviderId[]>> = {
 };
 /** Steps with nothing to do at another company (a name and colours, a "Connect more" menu, the finish line). */
 export const STEPS_WITHOUT_GUIDE: StepId[] = ["welcome", "brand", "extras", "done"];
-/** Hosting is Railway only: the old server step has no guide and the helper isn't told about it. */
-export const STEPS_NOT_USED: StepId[] = ["server"];
 
 const stripLinks = (md: string) => md.replace(/\[([^\]]+)\]\((https?:[^)\s]+)\)/g, "$1 ($2)");
 

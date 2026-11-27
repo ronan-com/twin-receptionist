@@ -11,7 +11,7 @@ const SITE = `http://127.0.0.1:${PORT}`;
 process.env.DATA_DIR = dir;
 process.env.SETUP_SECRET_KEY = Buffer.alloc(32, 7).toString("base64");
 process.env.SITE_URL = SITE;
-for (const k of ["MOCK_DO", "MOCK_RAILWAY", "MOCK_CF", "MOCK_RESEND", "MOCK_TELNYX", "MOCK_OAUTH", "HOSTING", "PREVIEW_JUMP"]) delete process.env[k];
+for (const k of ["MOCK_FAST", "MOCK_RAILWAY", "MOCK_CF", "MOCK_RESEND", "MOCK_TELNYX", "MOCK_OAUTH", "PREVIEW_JUMP"]) delete process.env[k];
 
 const { addBuyer, db } = await import("../lib");
 const sync = await import("../sync");

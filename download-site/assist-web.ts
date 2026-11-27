@@ -1,6 +1,6 @@
 // The "Set up for them" panel on /admin/b/<id> and its routes (POST /admin/b/<id>/assist/<what>, GET /admin/b/<id>/status).
 // All the work is in assist.ts; this file is forms, the result page and the audit list. admin-web.ts hands us its page helpers.
-import { RAILWAY, now, type Buyer } from "./lib";
+import { now, type Buyer } from "./lib";
 import { esc } from "./pages";
 import { allow, appUrlOf, hostOf } from "./setup";
 import { getSetup, logRead, hasSecret, secretHint, type SetupData } from "./store";
@@ -27,7 +27,7 @@ const flashKey = (sid: string, id: number) => `${sid}:${id}`;
 const setFlash = (sid: string, id: number, out: Out) => { flashes.set(flashKey(sid, id), { out, at: Date.now() }); for (const [k, v] of flashes) if (Date.now() - v.at > 10 * 60_000) flashes.delete(k); };
 const takeFlash = (sid: string, id: number) => { const k = flashKey(sid, id); const f = flashes.get(k); flashes.delete(k); return f?.out; };
 
-export const ACTIVE_PHASES = ["creating", "dns", "starting", "installing", "deploying", "domain"];
+export const ACTIVE_PHASES = ["creating", "deploying", "domain"];
 export const isInstalling = (s: SetupData) => ACTIVE_PHASES.includes(s.phase);
 
 const pass = (name: string, label: string, saved?: string | null, ph = "") => `<label class="f" for="a-${name}">${label}</label><input id="a-${name}" name="${name}" type="password" autocomplete="off" autocapitalize="off" spellcheck="false" maxlength="300" placeholder="${saved ? `Saved (${esc(saved)}). Paste a new one to replace it.` : esc(ph)}">`;
@@ -50,8 +50,7 @@ export function assistPanel(h: Helpers, sid: string, b: Buyer, s: SetupData): st
   <p class="hint" id="logoNote">${brand?.logo ? "Logo added. Choose another file to replace it." : "A PNG or JPG works best. It's shrunk in your browser, like the buyer's."}</p>
   <p class="logoRow"><img id="logoPreview" alt="Logo" width="96"${brand?.logo ? ` src="${esc(brand.logo)}"` : " hidden"}> <button type="button" class="linkbtn" id="logoRemove"${brand?.logo ? "" : " hidden"}>Remove logo</button></p>
   <label class="f" for="colour">Brand colour</label><input id="colour" name="colour" type="color" value="${esc(brand?.colour || "#635bff")}">`);
-  const hosting = RAILWAY ? form("railway", pass("token", "Railway account token", secretHint(b.id, "railway_token"), "Their Railway token (No workspace, Hobby plan)"), "Check and save")
-    : form("server", pass("token", "DigitalOcean token", secretHint(b.id, "do_token"), "Their DigitalOcean token"), "Check and save");
+  const hosting = form("railway", pass("token", "Railway account token", secretHint(b.id, "railway_token"), "Their Railway token (No workspace, Hobby plan)"), "Check and save");
   const phones = form("phones", `<h4>Telnyx (recommended)</h4>${pass("key", "Telnyx API key", secretHint(b.id, "telnyx_key"), "KEY...")}`, "Check and save")
     + form("phones-vapi", `<h4>Or use Vapi + Twilio</h4><p class="hint">Vapi for voice, Twilio for numbers and texts.</p><div class="two"><div>${pass("vapiKey", "Vapi private key", secretHint(b.id, "vapi_key"))}</div><div>${pass("vapiPublic", "Vapi public key", secretHint(b.id, "vapi_public"))}</div></div><div class="two"><div>${text("twilioSid", "Twilio Account SID", s.twilio?.sid)}</div><div>${pass("twilioToken", "Twilio auth token", secretHint(b.id, "twilio_token"))}</div></div>`, "Check and save Vapi + Twilio", "btn o");
   const email = form("email", `<p class="hint">Resend (the wizard adds the sending domain, and the records go in with their domain's DNS below).</p>${pass("key", "Resend API key", secretHint(b.id, "resend_key"), "re_...")}${text("address", "Send from", s.email?.address || "", "hello@mail.theirbusiness.com")}`, "Check and save")
@@ -100,9 +99,9 @@ export function assistPanel(h: Helpers, sid: string, b: Buyer, s: SetupData): st
       return `<p>${h.notice("ok", `Installed${s.assist?.installBy ? ` by ${esc(s.assist.installBy.by)}` : ""}. Live at <a href="${esc(url)}" target="_blank" rel="noopener noreferrer"><b>${esc(url)}</b></a> ${h.copyBtn(url)}${s.domainPending ? " (their own address starts working once its DNS records are in: use Check DNS above)" : ""}`)}</p>
       <p class="hint">Send the owner their dashboard login from <a href="/admin/b/${b.id}?tab=setup#invite">Invite them</a>, below.</p>`;
     }
-    if (live) return `<p class="status"><span class="spin"></span>Installing: ${esc(s.installStep || s.progress?.[s.progress.length - 1] || s.phase)}. This page updates by itself; the log below streams.</p>`;
+    if (live) return `<p class="status"><span class="spin"></span>Installing: ${esc(s.progress?.[s.progress.length - 1] || s.phase)}. This page updates by itself; the log below streams.</p>`;
     if (s.phase === "failed" || s.phase === "create_failed") return `${h.notice("err", esc(s.error || "The install stopped."))}<form method="post" action="/admin/b/${b.id}/assist/install" class="sf">${h.hiddenT(sid)}<button class="btn p" type="submit">Try the install again</button></form>`;
-    return `<form method="post" action="/admin/b/${b.id}/assist/install" class="sf">${h.hiddenT(sid)}${can.ok ? `<p class="hint">Everything required is filled in. Optional extras left empty are simply not added. This runs the same install as the buyer's Install button, in their ${RAILWAY ? "Railway" : "DigitalOcean"} account.</p><button class="btn p" type="submit" data-confirm="Install ${esc(b.name)} now?">Install for them</button>` : `<p class="hint">${esc(can.why)}</p><button class="btn p" type="button" disabled>Install for them</button>`}</form>`;
+    return `<form method="post" action="/admin/b/${b.id}/assist/install" class="sf">${h.hiddenT(sid)}${can.ok ? `<p class="hint">Everything required is filled in. Optional extras left empty are simply not added. This runs the same install as the buyer's Install button, in their Railway account.</p><button class="btn p" type="submit" data-confirm="Install ${esc(b.name)} now?">Install for them</button>` : `<p class="hint">${esc(can.why)}</p><button class="btn p" type="button" disabled>Install for them</button>`}</form>`;
   })();
 
   const audit = supportLog(b.id, 40);
@@ -114,7 +113,7 @@ export function assistPanel(h: Helpers, sid: string, b: Buyer, s: SetupData): st
 ${flash ? h.notice(flash.kind || (flash.ok ? "ok" : "err"), esc(flash.message)).replace('class="notice ', 'class="notice flash ') : ""}
 ${table}
 ${box("Brand: name, logo, colour", brandForm)}
-${box(RAILWAY ? "Hosting: Railway token" : "Server: DigitalOcean token", hosting)}
+${box("Hosting: Railway token", hosting)}
 ${box("Phones: Telnyx key, or Vapi + Twilio", phones)}
 ${box("Optional: email (Resend or SMTP)", email)}
 ${box("Optional: calendars (Google, Microsoft)", cal)}
@@ -179,7 +178,6 @@ export async function assistRoute(what: string, b: Buyer, f: Record<string, stri
   switch (what) {
     case "brand": return back(await fillStep(b, c.email, "brand", { productName: f.productName || "", ownerEmail: f.ownerEmail || "", ownerName: f.ownerName || "", logo: f.logo || "", removeLogo: f.removeLogo || "", colour: f.colour || "" }));
     case "railway": return back(await fillStep(b, c.email, "railway", { token: f.token || "" }));
-    case "server": return back(await fillStep(b, c.email, "server", { token: f.token || "" }));
     case "phones": return back(await fillStep(b, c.email, "phones", { key: f.key || "" }));
     case "phones-vapi": return back(await fillStep(b, c.email, "phones", { vapiKey: f.vapiKey || "", vapiPublic: f.vapiPublic || "", twilioSid: f.twilioSid || "", twilioToken: f.twilioToken || "" }, "phones-vapi"));
     case "email": return back(await fillStep(b, c.email, "email", { key: f.key || "", address: f.address || "" }));

@@ -15,7 +15,7 @@ process.env.SETUP_SECRET_KEY = Buffer.alloc(32, 9).toString("base64");
 process.env.SITE_URL = SITE;
 process.env.MOCK_OAUTH = "1";
 process.env.MOCK_TELNYX = "1";
-for (const k of ["MOCK_DO", "MOCK_RAILWAY", "MOCK_CF", "MOCK_RESEND", "HOSTING", "PREVIEW_JUMP", "OPENROUTER_API_KEY", "OAUTH_PARKED_ON"]) delete process.env[k];
+for (const k of ["MOCK_FAST", "MOCK_RAILWAY", "MOCK_CF", "MOCK_RESEND", "PREVIEW_JUMP", "OPENROUTER_API_KEY", "OAUTH_PARKED_ON"]) delete process.env[k];
 
 const { addBuyer } = await import("../lib");
 const store = await import("../store");
@@ -409,7 +409,7 @@ describe("Backup voice, Twilio and the plain-words copy", () => {
     expect(phoneSettings(b.id, store.getSetup(b.id))).toMatchObject({ VOICE_PROVIDER: "telnyx", VAPI_API_KEY: "priv-0123456789abcdef" });
   });
 
-  test("Twilio from Connect more is not lost when there is no voice provider (old setups, DigitalOcean)", async () => {
+  test("Twilio from Connect more is not lost when there is no voice provider (old setups)", async () => {
     const { phoneSettings } = await import("../setup");
     const b = addBuyer("Twilio Buyer", "twi@example.com");
     store.putSecret(b.id, "twilio_token", "t".repeat(32));

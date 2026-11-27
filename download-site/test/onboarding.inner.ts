@@ -15,7 +15,7 @@ process.env.MOCK_TELNYX = "1";
 process.env.ADMIN_EMAILS = ADMIN;
 process.env.SITE_SMTP_URL = "smtp://127.0.0.1:1";
 process.env.SITE_MAIL_FROM = "setup@example.com";
-for (const k of ["HOSTING", "MOCK_DO", "MOCK_CF", "MOCK_RESEND", "PREVIEW_JUMP", "RESEND_API_KEY", "ALERT_WEBHOOK_URL", "ALERT_EMAIL_TO"]) delete process.env[k];
+for (const k of ["MOCK_FAST", "MOCK_CF", "MOCK_RESEND", "PREVIEW_JUMP", "RESEND_API_KEY", "ALERT_WEBHOOK_URL", "ALERT_EMAIL_TO"]) delete process.env[k];
 
 const { addBuyer, db, now } = await import("../lib");
 const oauth = await import("../oauth");

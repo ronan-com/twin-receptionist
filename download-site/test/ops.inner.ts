@@ -14,7 +14,7 @@ process.env.DATA_DIR = dir;
 process.env.SETUP_SECRET_KEY = Buffer.alloc(32, 9).toString("base64");
 process.env.SITE_URL = SITE;
 process.env.RAILWAY_API_BASE = `http://127.0.0.1:${RAIL_PORT}`;
-for (const k of ["MOCK_DO", "MOCK_RAILWAY", "MOCK_CF", "MOCK_RESEND", "MOCK_TELNYX", "MOCK_OAUTH", "HOSTING", "PREVIEW_JUMP", "ALERT_WEBHOOK_URL", "ALERT_EMAIL_TO", "SITE_SMTP_URL", "SITE_MAIL_FROM", "ADMIN_EMAILS"]) delete process.env[k];
+for (const k of ["MOCK_FAST", "MOCK_RAILWAY", "MOCK_CF", "MOCK_RESEND", "MOCK_TELNYX", "MOCK_OAUTH", "PREVIEW_JUMP", "ALERT_WEBHOOK_URL", "ALERT_EMAIL_TO", "SITE_SMTP_URL", "SITE_MAIL_FROM", "ADMIN_EMAILS"]) delete process.env[k];
 
 const { addBuyer, db, recordPackage, PACKAGES_DIR, sha256 } = await import("../lib");
 const sync = await import("../sync");

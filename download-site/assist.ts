@@ -5,7 +5,7 @@
 // if the admin ticks "keep for later changes". Every action is written to the audit log (support_log) with who and when,
 // never with a key. The buyer's wizard (wizard.ts) shows the steps done here as "Set up by your provider".
 import { sendSiteMail, siteMailConfigured } from "./mailer";
-import { CONFIG, RAILWAY, currentPackage, markInvited, now, setupLink, unbrand, type Buyer } from "./lib";
+import { CONFIG, currentPackage, markInvited, now, setupLink, unbrand, type Buyer } from "./lib";
 import { asAdmin } from "./ctx";
 import { actions, allow, appUrlOf, firstOpen, hostOf, kick, stepDone, type Flash } from "./setup";
 import { OPTIONAL_STEPS, STEPS, deleteSecret, getSecret, getSetup, hasSecret, putSecret, secretHint, updateSetup, type DnsRecord, type SetupData, type StepId } from "./store";
@@ -26,10 +26,10 @@ const errText = (e: unknown) => (e instanceof ProviderError ? e.message : "Somet
 export function audit(b: { id: number }, admin: string, action: string, note = "") { logSupport(b.id, admin, action, note); }
 
 // ---------------- the steps our admin can fill ----------------
-export type AssistId = "brand" | "railway" | "server" | "phones" | "ai" | "email" | "domain" | "calendars" | "vapi" | "twilio";
+export type AssistId = "brand" | "railway" | "phones" | "ai" | "email" | "domain" | "calendars" | "vapi" | "twilio";
 export const ASSIST_STEPS: { id: AssistId; title: string; optional: boolean }[] = [
   { id: "brand", title: "Brand", optional: false },
-  ...(RAILWAY ? [{ id: "railway" as const, title: "Hosting (Railway)", optional: false }] : [{ id: "server" as const, title: "Server (DigitalOcean)", optional: false }]),
+  { id: "railway", title: "Hosting (Railway)", optional: false },
   { id: "phones", title: "Phones (Telnyx, or Vapi + Twilio)", optional: false },
   { id: "ai", title: "AI (OpenRouter)", optional: false },
   { id: "email", title: "Email", optional: true },
@@ -43,7 +43,6 @@ export function didStep(s: SetupData, id: AssistId): boolean {
   switch (id) {
     case "brand": return !!s.brand;
     case "railway": return !!s.railway?.confirmed;
-    case "server": return !!s.server?.chosen;
     case "phones": return !!s.phones?.confirmed || !!s.vapi?.confirmed;
     case "ai": return !!s.ai?.confirmed;
     case "email": return !!s.email?.confirmed;
@@ -71,7 +70,6 @@ export function detailOf(b: { id: number }, s: SetupData, id: AssistId): string 
   switch (id) {
     case "brand": return s.brand ? `${s.brand.productName} · ${s.brand.ownerEmail}${s.brand.logo ? " · logo" : ""}${s.brand.colour ? ` · ${s.brand.colour}` : ""}` : "";
     case "railway": return s.railway?.confirmed ? `${s.railway.workspaceName || "workspace"}${s.railway.plan ? ` · ${s.railway.plan}` : ""} ${h("railway_token")}`.trim() : "";
-    case "server": return s.server?.chosen ? `${s.server.region || ""} ${s.server.size || ""} ${h("do_token")}`.trim() : "";
     case "phones": return !s.phones?.confirmed && s.vapi?.confirmed ? `Vapi ${h("vapi_key")}${s.twilio?.confirmed ? ` + Twilio ${s.twilio.sid || ""}` : ""}`.trim() : s.phones?.confirmed ? `Telnyx ${h("telnyx_key")}${s.phones.balance ? ` · ${s.phones.balance}` : ""}`.trim() : s.skipped?.phones && !s.vapi?.confirmed ? "Skipped: the buyer connects it later in their dashboard (Connections)" : "";
     case "ai": return s.ai?.confirmed ? `OpenRouter ${h("openrouter_key")}`.trim() : "";
     case "email": return s.email?.confirmed ? `${s.email.mode === "smtp" ? "SMTP" : "Resend"} · ${s.email.address || ""}` : "";
@@ -111,7 +109,7 @@ function lockedOut(b: Buyer): Out | null {
   return null;
 }
 
-const ACTION_OF: Record<AssistId, string> = { brand: "brand", railway: "railway", server: "server", phones: "phones", ai: "ai", email: "email", domain: "domain", calendars: "calendars", vapi: "vapi", twilio: "twilio" };
+const ACTION_OF: Record<AssistId, string> = { brand: "brand", railway: "railway", phones: "phones", ai: "ai", email: "email", domain: "domain", calendars: "calendars", vapi: "vapi", twilio: "twilio" };
 
 /** Fill one step for the buyer. `f` holds the same field names the wizard form uses. Never audits a key. */
 export async function fillStep(b: Buyer, admin: string, step: AssistId, f: Record<string, string>, as?: "phones-vapi"): Promise<Out> {
@@ -260,7 +258,7 @@ export function setupInviteEmail(b: Buyer, st: InviteState): { subject: string; 
   const agency = s.brand?.productName || s.prefill?.agencyName || "";
   const did = st.done.length ? `\nAlready done for you: ${st.done.join(", ")}.` : "";
   const todo = st.done.length ? ` ${st.left.length ? `Left for you: ${st.left.join(", ")}.` : "Everything is filled in."}` : "";
-  const host = RAILWAY ? "A Railway account (Hobby plan, needs a card): your agency's server lives here." : "A DigitalOcean account with a payment method: your agency's server lives here.";
+  const host = "A Railway account (Hobby plan, needs a card): your agency's server lives here.";
   const sign = signOff(b) ? `\n\n${signOff(b)}` : "";
   return {
     subject: "Your private setup link",
@@ -432,7 +430,7 @@ export function dropHost(b: Buyer, admin: string): Out {
 
 // ---------------- the buyer's side of it ----------------
 // Registered here so every place that loads the admin also has these (server.ts imports admin-web, which imports this).
-const STEP_OF_ACTION: Record<string, AssistId> = { brand: "brand", railway: "railway", server: "server", phones: "phones", ai: "ai", email: "email", smtp: "email", domain: "domain", calendars: "calendars", vapi: "vapi", twilio: "twilio",
+const STEP_OF_ACTION: Record<string, AssistId> = { brand: "brand", railway: "railway", phones: "phones", ai: "ai", email: "email", smtp: "email", domain: "domain", calendars: "calendars", vapi: "vapi", twilio: "twilio",
   "email-skip": "email", "domain-skip": "domain", "cal-skip": "calendars", "vapi-skip": "vapi", "twilio-skip": "twilio", "phones-vapi": "phones" };
 for (const [name, step] of Object.entries(STEP_OF_ACTION)) {
   const real = actions[name];

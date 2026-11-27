@@ -5,7 +5,6 @@
 # oven/bun:1.4.0 and postgres:16. Uses ports E2E_PORT..+9 (default 4520-4529) and the app
 # ports E2E_PORT+30..+39 (4550-4559). Everything it makes is named wiz-test-rail-* and labelled
 # wiz-test-port=<E2E_PORT>; only those are removed at the end, by name/label.
-# The DigitalOcean variant: node download-site/test/e2e-digitalocean.mjs (needs the dind image).
 set -euo pipefail
 HERE=$(cd "$(dirname "$0")" && pwd)
 SITE=$(cd "$HERE/.." && pwd)

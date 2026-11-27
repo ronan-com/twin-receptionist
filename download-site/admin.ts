@@ -90,7 +90,7 @@ switch (cmd) {
     if (!buyers.length) console.log("  (none yet)");
     for (const b of buyers) {
       const s = getSetup(b.id);
-      const where = s.phase === "done" ? `INSTALLED${s.attemptVersion ? ` v${s.attemptVersion}` : ""} ${s.installedAt?.slice(0, 16).replace("T", " ")} https://${s.domain?.host} (droplet ${s.dropletId}, ${s.ip})`
+      const where = s.phase === "done" ? `INSTALLED${s.attemptVersion ? ` v${s.attemptVersion}` : ""} ${s.installedAt?.slice(0, 16).replace("T", " ")} https://${s.domain?.host}`
         : s.phase !== "idle" ? `install: ${s.phase}${s.error ? ` (${s.error.slice(0, 80)})` : ""}` : `setup step: ${s.step}`;
       console.log(`  #${b.id}  ${b.name} <${b.email}>  added ${b.created_at.slice(0, 10)}  ${b.revoked_at ? `REVOKED ${b.revoked_at.slice(0, 10)}` : where}`);
       console.log(`       ${setupLink(b.code)}`);
@@ -117,8 +117,6 @@ switch (cmd) {
 
   case "reset": {
     const b = buyerArg(args[0]);
-    const s = getSetup(b.id);
-    if (s.dropletId && s.phase !== "done") console.log(`Note: ${b.name} has a server (droplet ${s.dropletId}) that isn't finished. It stays in their DigitalOcean account; they can delete it there.`);
     resetSetup(b.id);
     console.log(`${b.name}'s setup is wiped (and any keys we held deleted). Their link starts from the beginning.`);
     break;

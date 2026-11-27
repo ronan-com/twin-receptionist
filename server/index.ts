@@ -90,11 +90,12 @@ import {
   tokenMatches,
 } from "./booking";
 import { CalendarError, calendarLink, cancelEvent, disconnectCalendar, providerOf, upcomingEvents } from "./calendars";
-import { mailerReady } from "./mailer";
+import { mailerReady, startOutbox } from "./mailer";
 import { checkEmailAddress, checkWebhookUrl, webhookSecret } from "./notify";
 import { oauthAvailable } from "./oauth";
 import { refresh as loadPlatformSettings } from "./platformSettings";
 import { platformSettingsRoutes } from "./platformSettingsApi";
+import { emailSettingsRoutes } from "./emailSettings";
 import type { BookingProvider, BookingState } from "../src/lib/shared";
 import { connectNumberForTexts, enableTexting, sendTestText, textingState } from "./texting";
 import { BOOKING_TOOL_DEFS } from "./booking";
@@ -618,6 +619,8 @@ async function route(req: Request, server?: { requestIP(r: Request): { address: 
   // The platform team's view of every agency. Not scoped to a team.
   if (path.startsWith("/api/admin/")) {
     // Email sender and Google/Microsoft apps (Settings, "Email and calendars").
+    // Settings, "Email": main and backup sender, test email, recent emails.
+    if (path.startsWith("/api/admin/email-settings")) return (await emailSettingsRoutes(req, path, method, ctx)) ?? json({ error: "Not found" }, 404);
     if (path.startsWith("/api/admin/platform-settings")) return (await platformSettingsRoutes(req, path, method, ctx)) ?? json({ error: "Not found" }, 404);
     if (path === "/api/admin/number-requests" && method === "GET") {
       return json({ requests: await listRequests(ctx), pending: await pendingCount() });
@@ -1192,6 +1195,8 @@ startSupportSync();
 startTicketSync();
 // The owner's automatic updates, with this agency's own Railway project token (server/autoUpdate.ts).
 startAutoUpdate();
+// Account emails that failed on every sender are tried again (server/mailer.ts).
+startOutbox();
 
 // Check every connected mailbox once a minute. One at a time, so a slow mail
 // server can't pile up connections.

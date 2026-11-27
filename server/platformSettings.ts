@@ -19,11 +19,16 @@ import { seal, unseal } from "./secrets";
 export type Service = "mail" | "google" | "microsoft";
 export const SERVICES: Service[] = ["mail", "google", "microsoft"];
 
-export type MailConfig = { smtpUrl: string; from: string };
+// The account-email sender, and an optional backup tried when it fails (server/mailer.ts).
+// provider: which choice in Settings, "Email" made it (server/mailPresets.ts); "" when pasted as an address.
+export type MailConfig = { smtpUrl: string; from: string; provider?: string; backupUrl?: string; backupFrom?: string; backupProvider?: string };
 export type OAuthClient = { clientId: string; clientSecret: string };
 
 // As kept in app_settings.
-type StoredMail = { smtpUrl: string; from: string; last4: string; updatedAt: string; updatedBy: string };
+type StoredMail = {
+  smtpUrl: string; from: string; last4: string; updatedAt: string; updatedBy: string;
+  provider?: string; backupUrl?: string; backupFrom?: string; backupProvider?: string;
+};
 type StoredOAuth = { clientId: string; clientSecret: string; last4: string; updatedAt: string; updatedBy: string };
 
 type Saved<T> = { value: T | null; meta: { last4: string; updatedAt: string; updatedBy: string } | null; problem: string };
@@ -57,7 +62,14 @@ async function load(): Promise<void> {
     return open(r, (secret) => ({ clientId: String(r!.clientId), clientSecret: secret }), "clientSecret");
   };
   snapshot = {
-    mail: open(m, (url) => ({ smtpUrl: url, from: String(m!.from) }), "smtpUrl"),
+    mail: open(m, (url) => ({
+      smtpUrl: url,
+      from: String(m!.from),
+      provider: String(m!.provider ?? ""),
+      backupUrl: m!.backupUrl ? unseal(String(m!.backupUrl)) : "",
+      backupFrom: String(m!.backupFrom ?? ""),
+      backupProvider: String(m!.backupProvider ?? ""),
+    }), "smtpUrl"),
     google: oauth("google"),
     microsoft: oauth("microsoft"),
   };
@@ -90,7 +102,7 @@ const env = (name: string) => (process.env[name] ?? "").trim();
 export function mailConfig(): MailConfig & { source: "saved" | "server" | "none" } {
   const s = saved().mail.value;
   if (s) return { ...s, source: "saved" };
-  const e = { smtpUrl: env("SMTP_URL"), from: env("MAIL_FROM") };
+  const e = { smtpUrl: env("SMTP_URL"), from: env("MAIL_FROM"), provider: "", backupUrl: env("SMTP_BACKUP_URL"), backupFrom: env("MAIL_BACKUP_FROM"), backupProvider: "" };
   return { ...e, source: e.smtpUrl && e.from ? "server" : "none" };
 }
 
@@ -116,8 +128,23 @@ export function savedSecret(service: Service): string {
   return "smtpUrl" in v ? v.smtpUrl : v.clientSecret;
 }
 
+/**
+ * Saves the sender. Fields left out keep what's saved (so pasting a new main address keeps the backup);
+ * backupUrl "" removes the backup.
+ */
 export async function saveMail(input: MailConfig, by: string): Promise<void> {
-  const record: StoredMail = { smtpUrl: seal(input.smtpUrl), from: input.from, last4: last4OfSmtp(input.smtpUrl), updatedAt: new Date().toISOString(), updatedBy: by };
+  const was = snapshot.mail.value;
+  const v: MailConfig = { ...(was ?? {}), ...input };
+  if (input.provider === undefined && input.smtpUrl !== was?.smtpUrl) v.provider = "";
+  const record: StoredMail = {
+    smtpUrl: seal(v.smtpUrl),
+    from: v.from,
+    last4: last4OfSmtp(v.smtpUrl),
+    updatedAt: new Date().toISOString(),
+    updatedBy: by,
+    provider: v.provider ?? "",
+    ...(v.backupUrl ? { backupUrl: seal(v.backupUrl), backupFrom: v.backupFrom ?? "", backupProvider: v.backupProvider ?? "" } : {}),
+  };
   await putSetting(KEY.mail, record);
   await load();
 }

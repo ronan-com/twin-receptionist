@@ -19,10 +19,11 @@ import { BrandEditor } from "./-brand";
 import { LinkBox, READ_ONLY_HINT, useConsole } from "./-shared";
 import { PRODUCT } from "@/lib/app/product";
 import { EmailCalendarsSection } from "./-email-calendars";
+import { EmailSendingSection } from "./-email-sending";
 import { SupportSection } from "./-support";
 import { UpdatesSection } from "./-updates";
 
-const TABS = ["team", "branding", "account", "platform", "accounts", "email", "support", "updates"] as const;
+const TABS = ["team", "branding", "account", "platform", "accounts", "sending", "email", "support", "updates"] as const;
 type Tab = (typeof TABS)[number];
 
 export const Route = createFileRoute("/_authenticated/admin/settings")({
@@ -32,11 +33,13 @@ export const Route = createFileRoute("/_authenticated/admin/settings")({
 });
 
 function AdminSettingsPage() {
-  const { ws, platform, orgName } = useConsole();
+  const { ws, platform, orgName, canManage, role } = useConsole();
   // The server's own email sender and Google/Microsoft apps: the platform admin, or (SINGLE_AGENCY) the owner.
   const serverSettings = platform || Boolean(ws.session?.serverSettings);
   // Sharing stats and Support access: on a self-hosted copy (SINGLE_AGENCY), for its owner (and a support session, read-only).
   const supportTab = Boolean(ws.session?.singleAgency) && !platform;
+  // How account emails are sent: the platform admin, or (SINGLE_AGENCY) the agency's owners and admins.
+  const sendingTab = platform || (Boolean(ws.session?.singleAgency) && canManage && (role === "owner" || role === "admin"));
   const { tab = "team" } = Route.useSearch();
   const navigate = useNavigate();
   const setTab = (t: string) => void navigate({ to: "/admin/settings", search: t === "team" ? {} : { tab: t as Tab }, replace: true });
@@ -51,6 +54,7 @@ function AdminSettingsPage() {
           <TabsTrigger value="account">Account</TabsTrigger>
           {platform ? <TabsTrigger value="platform">Platform admins</TabsTrigger> : null}
           {platform ? <TabsTrigger value="accounts">All accounts</TabsTrigger> : null}
+          {sendingTab ? <TabsTrigger value="sending">Email</TabsTrigger> : null}
           {serverSettings ? <TabsTrigger value="email">Email and calendars</TabsTrigger> : null}
           {supportTab ? <TabsTrigger value="support">Support</TabsTrigger> : null}
           {supportTab ? <TabsTrigger value="updates">Updates</TabsTrigger> : null}
@@ -72,6 +76,11 @@ function AdminSettingsPage() {
         {platform ? (
           <TabsContent value="accounts" className="mt-4">
             <AllAccountsSection />
+          </TabsContent>
+        ) : null}
+        {sendingTab ? (
+          <TabsContent value="sending" className="mt-4">
+            <EmailSendingSection />
           </TabsContent>
         ) : null}
         {serverSettings ? (

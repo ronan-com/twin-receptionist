@@ -84,7 +84,7 @@ async function dispatch(client: Business, o: Out): Promise<string> {
     send: async () => {
       if (o.channel === "sms") {
         await sendSms(client, { from: from!, to: o.to!, text: o.text, meta: { twin_followup: o.kind } });
-      } else if (!(await sendAccountEmail(o.to!, o.subject, o.text))) throw new Error("Email isn't set up");
+      } else if (!(await sendAccountEmail(o.to!, o.subject, o.text, { queue: false }))) throw new Error("Email isn't set up");
     },
   });
 }
@@ -349,7 +349,7 @@ export async function sendTest(
   const msg = renderMessage(o.kind, o.channel, f, vars);
   if (o.channel === "email") {
     if (!mailerReady()) throw new ValidationError("Email isn't set up on this server yet.");
-    if (!(await sendAccountEmail(o.email, `[Test] ${msg.subject}`, msg.text))) throw new ValidationError("Email isn't set up on this server yet.");
+    if (!(await sendAccountEmail(o.email, `[Test] ${msg.subject}`, msg.text, { queue: false }))) throw new ValidationError("Email isn't set up on this server yet.");
     return { sentTo: o.email };
   }
   const to = auMobile(o.phone);

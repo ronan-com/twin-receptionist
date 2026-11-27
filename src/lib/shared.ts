@@ -963,6 +963,22 @@ export type PlatformSettings = {
 
 export type PlatformTestResult = { ok: true; message: string; redirectUri?: string };
 
+// Settings, "Email" (server/emailSettings.ts): how account emails are sent, with an optional backup.
+export type EmailProviderId = "resend" | "gmail" | "microsoft" | "zoho_au" | "zoho" | "smtp";
+export type EmailSenderView = { provider: EmailProviderId; label: string; host: string; port: number; username: string; from: string; last4: string };
+export type RecentEmail = { id: string; to: string; subject: string; status: "pending" | "sent" | "failed"; via: string; attempts: number; error: string; at: string; nextAt: string };
+export type EmailSettings = {
+  // saved: set in the dashboard. server: from the server's own settings file. none: not set (links are shown to copy).
+  source: "saved" | "server" | "none";
+  primary: EmailSenderView | null;
+  backup: EmailSenderView | null;
+  savedAt: string;
+  savedBy: string;
+  problem: string;
+  recent: RecentEmail[];
+  testTo: string;
+};
+
 export type TelnyxSettings = {
   provider?: VoiceProviderId;
   mode: "own" | "platform" | "none";

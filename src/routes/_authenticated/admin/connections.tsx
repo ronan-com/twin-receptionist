@@ -16,6 +16,7 @@ import { EngineChoice, PhoneKeyFields, engineName, keysReady, type PhoneKeyValue
 import { cn } from "@/lib/utils";
 import { READ_ONLY_HINT, useConsole } from "./-shared";
 import { TwilioCard } from "./-twilio-card";
+import { VapiCard } from "./-vapi-card";
 import { OpenRouterCard } from "./-openrouter-card";
 import { PRODUCT } from "@/lib/app/product";
 import { BalancesCard, PipedreamCard } from "./-pipedream";
@@ -58,7 +59,7 @@ function ConnectionsPage() {
         platform={platform}
         backup={(openEngine) => (
           <details className="rounded-[12px] border border-dashed border-hairline bg-white" data-section="backup-options">
-            <summary className="cursor-pointer select-none px-5 py-3 text-[13px] font-medium text-ink-muted">Other options (backup)</summary>
+            <summary className="cursor-pointer select-none px-5 py-3 text-[13px] font-medium text-ink-muted">Backup: Vapi and Twilio</summary>
             <div className="space-y-4 border-t border-hairline p-4">
               {readOnly || !canManage || a.mode !== "own" ? null : (
                 <div className="flex flex-col gap-3 rounded-[10px] border border-hairline p-4 sm:flex-row sm:items-center sm:justify-between" data-card="vapi-option">
@@ -73,6 +74,7 @@ function ConnectionsPage() {
                   </Button>
                 </div>
               )}
+              <VapiCard account={a} canManage={canManage} isOwner={role === "owner" || ws.isPlatformAdmin} readOnly={readOnly} />
               <TwilioCard engine={a.provider} canManage={canManage} isOwner={role === "owner" || ws.isPlatformAdmin} readOnly={readOnly} />
             </div>
           </details>
@@ -131,8 +133,13 @@ function PhoneCard({ account: a, platform, backup }: { account: PhoneAccount; pl
       });
     },
   });
+  const test = useMutation({
+    mutationFn: () => phoneApi.test("", { provider: a.provider }),
+    onSuccess: (r) => toast.success(`${name} accepts the key`, { description: r.balance ? `Credit ${fmtCredit(r.balance)}.` : "Checked just now." }),
+    onError: (e: Error) => toast.error(`${name} test failed`, { description: e.message }),
+  });
   const disconnect = useMutation({
-    mutationFn: phoneApi.disconnect,
+    mutationFn: () => phoneApi.disconnect(a.provider),
     onSuccess: async (acct) => {
       await done(acct);
       setRemoving(false);
@@ -209,6 +216,15 @@ function PhoneCard({ account: a, platform, backup }: { account: PhoneAccount; pl
           <Button className="h-10 shrink-0 px-5" onClick={() => setReplacing(true)} data-action="connect-key">
             <KeyRound /> Connect your key
           </Button>
+        ) : a.mode === "platform" && a.installed && !readOnly && canManage ? (
+          <div className="flex shrink-0 gap-2">
+            <Button size="sm" variant="outline" className="h-8 text-[12.5px]" onClick={() => test.mutate()} disabled={test.isPending} data-action="test-key">
+              {test.isPending ? "Testing…" : "Test"}
+            </Button>
+            <Button size="sm" variant="outline" className="h-8 text-[12.5px]" onClick={() => setReplacing(true)} data-action="replace-key">
+              <KeyRound /> Replace key
+            </Button>
+          </div>
         ) : a.mode === "none" && !readOnly && !connectHere ? (
           <Button asChild className="h-10 shrink-0 px-5">
             <Link to="/setup">Finish set-up</Link>
@@ -238,6 +254,11 @@ function PhoneCard({ account: a, platform, backup }: { account: PhoneAccount; pl
                 Set-up guide
               </Link>
             </Button>
+            {canManage ? (
+              <Button size="sm" variant="outline" className="h-8 text-[12.5px]" onClick={() => test.mutate()} disabled={test.isPending} data-action="test-key">
+                {test.isPending ? "Testing…" : "Test"}
+              </Button>
+            ) : null}
             {canManage ? (
               <Button size="sm" variant="outline" className="h-8 text-[12.5px]" onClick={() => setReplacing(true)} data-action="replace-key">
                 <KeyRound /> Replace key

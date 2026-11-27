@@ -8,7 +8,7 @@ process.env.SMS_WEBHOOK_SECRET = "test-sms-secret";
 const { migrate, sql } = await import("./db");
 const { publicUrl, savePublicUrl } = await import("./booking");
 const { getClient, insertClient } = await import("./store");
-const { setTexts, splitNumbers, textsAfterBuy, textsStatus, textsWhenLive } = await import("./textsControl");
+const { numbersBecameLive, setTexts, splitNumbers, textsAfterBuy, textsStatus, textsWhenLive } = await import("./textsControl");
 const { smsNumberOf } = await import("./automations");
 
 const orgId = crypto.randomUUID();
@@ -150,7 +150,35 @@ describe("the Texts switch on Telnyx", () => {
     expect((await getClient(off.id))!.textsPref).toBe("off");
   });
 
-  test("a pending number that goes live starts texting when the switch is on, and not when it's off or never set", async () => {
+  test("waiting lists only pending numbers that can text; an active landline goes under cantText", async () => {
+    if (!ready) return;
+    const LANDLINE = "+61255501301";
+    const c = base({ textingProfileId: "prof-1", phoneNumbers: [LANDLINE, MOBILE] });
+    answer(/messaging_profiles\/prof-1\/phone_numbers/, { data: [] });
+    const st = await textsStatus(c, { active: [LANDLINE], pending: [MOBILE] });
+    expect(st.status).toBe("waiting");
+    expect(st.waiting).toEqual([MOBILE]);
+    expect(st.cantText).toEqual([LANDLINE]);
+    // Only a landline: nothing waits, it can't text.
+    const only = await textsStatus(base({ textingProfileId: "prof-1", phoneNumbers: [LANDLINE] }), { active: [LANDLINE], pending: [] });
+    expect(only).toMatchObject({ status: "cant", waiting: [], cantText: [LANDLINE] });
+  });
+
+  test("a number that was waiting for approval and is now live is picked up, and texting switches on by itself", async () => {
+    if (!ready) return;
+    // What the sync keeps between looks: the number was listed but still pending, now the carrier says active.
+    expect(numbersBecameLive({ phoneNumbers: [MOBILE], pendingNumbers: [MOBILE] }, { active: [MOBILE], pending: [] })).toEqual([MOBILE]);
+    expect(numbersBecameLive({ phoneNumbers: [MOBILE], pendingNumbers: [] }, { active: [MOBILE], pending: [] })).toEqual([]);
+    expect(numbersBecameLive({ phoneNumbers: [MOBILE], pendingNumbers: [MOBILE] }, { active: [], pending: [MOBILE] })).toEqual([]);
+    expect(numbersBecameLive({}, { active: [MOBILE], pending: [] })).toEqual([MOBILE]);
+    answer(/^\/messaging_profiles$/, { data: { id: "prof-sync" } });
+    const c = base({ phoneNumbers: [MOBILE], pendingNumbers: [MOBILE] });
+    await insertClient(orgId, c);
+    await textsWhenLive(c, numbersBecameLive(c, { active: [MOBILE], pending: [] }));
+    expect(calls.some((x) => x.method === "PATCH" && x.path === `/messaging_phone_numbers/${encodeURIComponent(MOBILE)}`)).toBe(true);
+  });
+
+  test("a pending number that goes live starts texting when the switch is on or never touched, and not when it's off", async () => {
     if (!ready) return;
     answer(/^\/messaging_profiles$/, { data: { id: "prof-live" } });
     const on = base({ textsPref: "on" });
@@ -159,9 +187,13 @@ describe("the Texts switch on Telnyx", () => {
     expect(calls.some((x) => x.method === "PATCH" && x.path === `/messaging_phone_numbers/${encodeURIComponent(MOBILE)}`)).toBe(true);
     calls.length = 0;
     await textsWhenLive(base({ textsPref: "off" }), [MOBILE]);
-    await textsWhenLive(base(), [MOBILE]);
     await textsWhenLive({ ...on, textsPref: "on" }, ["+61255501301"]);
     expect(calls.length).toBe(0);
+    // Never touched: the switch shows "on", so an approved number connects.
+    const untouched = base();
+    await insertClient(orgId, untouched);
+    await textsWhenLive(untouched, [MOBILE]);
+    expect(calls.some((x) => x.method === "PATCH" && x.path === `/messaging_phone_numbers/${encodeURIComponent(MOBILE)}`)).toBe(true);
   });
 });
 

@@ -103,14 +103,21 @@ export async function migrateTexting(client: Business): Promise<void> {
   await telnyx("POST", `/ai/assistants/${client.assistantId}`, { enabled_features: ["telephony"] }).catch((err) => console.error(`[texting ${client.id}] couldn't switch off the assistant's own texting`, err.message));
 }
 
+/**
+ * Numbers that answer calls but aren't taking texts: the Australian mobiles will (waiting), landlines and other
+ * numbers never can (cantText).
+ */
+export function sortTextable(numbers: string[]): { waiting: string[]; cantText: string[] } {
+  const all = [...new Set(numbers)];
+  return { waiting: all.filter((n) => AU_MOBILE.test(n)), cantText: all.filter((n) => !AU_MOBILE.test(n)) };
+}
+
 export async function textingState(client: Business): Promise<TextingState> {
-  if (client.assistantId.startsWith("demo-")) return { enabled: false, numbers: [], waiting: client.phoneNumbers ?? [] };
+  if (client.assistantId.startsWith("demo-")) return { enabled: false, numbers: [], ...sortTextable(client.phoneNumbers ?? []) };
   const profileId = await textingProfileId(client);
-  if (!profileId) return { enabled: false, numbers: [], waiting: client.phoneNumbers ?? [] };
+  if (!profileId) return { enabled: false, numbers: [], ...sortTextable(client.phoneNumbers ?? []) };
   const numbers = await numbersOnProfile(profileId);
-  // Numbers that answer this receptionist's calls but don't take texts yet.
-  const waiting = (client.phoneNumbers ?? []).filter((n) => !numbers.includes(n));
-  return { enabled: true, numbers, waiting };
+  return { enabled: true, numbers, ...sortTextable((client.phoneNumbers ?? []).filter((n) => !numbers.includes(n))) };
 }
 
 const AU_NUMBER = /^\+61\d{9}$/;

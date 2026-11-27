@@ -1,6 +1,6 @@
 import type { Business, TextsStatus } from "../src/lib/shared";
 import { numberIsLive, numberWaiting } from "../src/lib/ownNumbers";
-import { connectNumberForTexts, enableTexting, textingState } from "./texting";
+import { connectNumberForTexts, enableTexting, sortTextable, textingState } from "./texting";
 import { telnyx, currentOrg } from "./telnyx";
 import { getClient, saveClient } from "./store";
 import { ownedTwilioNumbers, pointTextsAtUs, releaseTexts, twilioCredsFor } from "./twilio";
@@ -61,7 +61,7 @@ async function savePref(client: Business, pref: "on" | "off"): Promise<Business>
 export async function textsStatus(client: Business, nums: Numbers, tw: TwilioTexts = liveTwilioTexts): Promise<TextsStatus> {
   const base = { enabled: false, numbers: [] as string[], waiting: [] as string[] };
   // A demo receptionist (test lab): nothing is connected anywhere, the switch just remembers its setting.
-  if (isDemo(client.assistantId)) return { ...base, waiting: nums.active, on: wantsTexts(client), status: wantsTexts(client) ? "on" : "off", detail: wantsTexts(client) ? "Answering texts." : "Texts are off." };
+  if (isDemo(client.assistantId)) return { ...base, ...sortTextable(nums.active), on: wantsTexts(client), status: wantsTexts(client) ? "on" : "off", detail: wantsTexts(client) ? "Answering texts." : "Texts are off." };
   if (providerOfClient(client) === "vapi") {
     const numbers = await tw.canText(nums.active).catch((): string[] => []);
     const waiting = nums.active.filter((n) => !numbers.includes(n));
@@ -69,7 +69,9 @@ export async function textsStatus(client: Business, nums: Numbers, tw: TwilioTex
     if (!numbers.length) return { ...base, waiting, on: true, status: "cant", detail: "Texts need a Twilio number that can text." };
     return { enabled: true, numbers, waiting, on: true, status: "on", detail: "Answering texts." };
   }
-  const t = await textingState(client).catch(() => ({ ...base, waiting: nums.active }));
+  const t0 = await textingState(client).catch(() => ({ ...base, ...sortTextable(nums.active) }));
+  // Numbers without texts yet: pending ones that will text are waiting; landlines and other numbers can't text.
+  const t = { ...t0, ...sortTextable([...t0.waiting, ...(t0.cantText ?? []), ...nums.active, ...nums.pending].filter((n) => !t0.numbers.includes(n))) };
   if (!wantsTexts(client)) return { ...t, on: false, status: "off", detail: "Texts are off." };
   if (t.numbers.length) return { ...t, on: true, status: "on", detail: "Answering texts." };
   if (nums.active.some((n) => AU_MOBILE.test(n))) return { ...t, on: true, status: "failed", detail: "Texts aren't connected yet. Try again." };
@@ -125,8 +127,20 @@ export async function textsAfterBuy(client: Business, order: { status: string; p
  * when the Texts switch is on. Best effort; the switch's "Try again" does the same by hand.
  */
 export async function textsWhenLive(client: Business, becameLive: string[]): Promise<void> {
-  if (providerOfClient(client) !== "telnyx" || client.textsPref !== "on") return;
+  // The switch shows "on" until the owner turns it off, so a number approved while it was never touched counts too.
+  if (providerOfClient(client) !== "telnyx" || !wantsTexts(client)) return;
   for (const n of becameLive.filter((p) => AU_MOBILE.test(p))) {
     await connectNumberForTexts((await getClient(client.id)) ?? client, { phoneNumber: n }).catch((err) => console.error(`[texting ${client.id}] ${n}`, err.message));
   }
+}
+
+/**
+ * Which numbers just went live, comparing what was saved at the last look with what the carrier reports now:
+ * a number that was waiting for approval and is now live, or one that wasn't there before and is live. Only
+ * live numbers count, so a number still being approved is never tried early.
+ */
+export function numbersBecameLive(saved: Pick<Business, "phoneNumbers" | "pendingNumbers">, now: Numbers): string[] {
+  const known = saved.phoneNumbers ?? [];
+  const waiting = saved.pendingNumbers ?? [];
+  return now.active.filter((n) => !known.includes(n) || waiting.includes(n));
 }

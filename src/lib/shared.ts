@@ -166,6 +166,9 @@ export type Business = {
   connect?: { tokenHash: string; expiresAt: string; createdAt: string };
   // Numbers Telnyx reports as connected, refreshed whenever the phone number card loads.
   phoneNumbers?: string[];
+  // Of those (and open orders), the ones still waiting for approval the last time they were looked at. A number
+  // that was here and is now live has just been approved (server/textsControl.ts numbersBecameLive).
+  pendingNumbers?: string[];
   // Where each attached number came from (recorded when it's attached; older numbers have none).
   numberSources?: Record<string, NumberSource>;
   // The Telnyx messaging profile our own texting bot is on (server/texting.ts). Missing: not set up yet.
@@ -321,8 +324,9 @@ export type NumberOrder = {
   createdAt: string;
 };
 
-// numbers: take texts. waiting: answer calls but don't take texts yet.
-export type TextingState = { enabled: boolean; numbers: string[]; waiting: string[] };
+// numbers: take texts. waiting: Australian mobiles that will take texts (not connected or approved yet).
+// cantText: answer calls but can't take texts (landlines and other non-mobile numbers).
+export type TextingState = { enabled: boolean; numbers: string[]; waiting: string[]; cantText?: string[] };
 
 /** The Texts switch: on (answering), off, waiting (number still being approved), cant (no number that can text), failed (switched on but not connected: try again). */
 export type TextsStatus = TextingState & { on: boolean; status: "on" | "off" | "waiting" | "cant" | "failed"; detail: string };
@@ -950,6 +954,9 @@ export type PhoneAccount = {
   installProvider: VoiceProviderId;
   // own: the agency's own Telnyx key. platform: runs on the platform's account. none: not connected yet.
   mode: "own" | "platform" | "none";
+  // Each engine side by side (Telnyx is the main one, Vapi the backup). own: the agency's saved key. platform: the
+  // server's own (env) key. none: not connected.
+  engines: Record<VoiceProviderId, { mode: "own" | "platform" | "none"; last4: string; connectedAt: string; publicKey?: string }>;
   last4: string;
   connectedAt: string;
   // The agency's own credit. Null when it isn't theirs to see or the check failed.

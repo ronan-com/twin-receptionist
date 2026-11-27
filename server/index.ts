@@ -67,7 +67,7 @@ import { changeBrand, ownBrand, serveAsset, uploadAsset } from "./brand";
 import { accessibleClients, customerClientId, setFollowUpStage, customersFor, inviteCustomer, removeCustomer, revokeCustomerInvite } from "./customers";
 import { createRequest, declineRequest, listRequests, markDone, pendingCount, pendingRequest, requestsForClient, settleRequests } from "./numberRequests";
 import { createAgency, exitView, inviteAgencyOwner, viewAs, isSuspended, listAgencies, telnyxSettings, updateAgency } from "./agencies";
-import { canBuyNumbers, canUseOwnNumbers, canUseTwilio, checkNewKey, checkVapiKeys, connectPhoneAccount, connectTwilio, countCheck, disconnectPhoneAccount, disconnectTwilio, phoneAccount, pretendAccount, requirePhoneAccount, testTwilio, twilioAccount } from "./phoneAccount";
+import { canBuyNumbers, canUseOwnNumbers, canUseTwilio, connectPhoneAccount, connectTwilio, disconnectPhoneAccount, disconnectTwilio, phoneAccount, pretendAccount, requirePhoneAccount, testPhoneKeys, testTwilio, twilioAccount } from "./phoneAccount";
 import { availableTwilioNumbers, isTestTwilio, requireTwilio, twilioNumbersFor, twilioRegulatory } from "./twilio";
 import { previewEmail, sendSimText, startTextSim } from "./simulator";
 import {
@@ -101,7 +101,7 @@ import { platformSettingsRoutes } from "./platformSettingsApi";
 import { emailSettingsRoutes } from "./emailSettings";
 import type { BookingProvider, BookingState } from "../src/lib/shared";
 import { connectNumberForTexts, enableTexting, sendTestText, textingState } from "./texting";
-import { setTexts, splitNumbers, textsAfterBuy, textsStatus, textsWhenLive } from "./textsControl";
+import { numbersBecameLive, setTexts, splitNumbers, textsAfterBuy, textsStatus, textsWhenLive } from "./textsControl";
 import { BOOKING_TOOL_DEFS } from "./booking";
 import { VapiError, asProvider, connectedEngines, installProvider, ownKeyInstall, providerOfClient, providerOfOrg } from "./voice/config";
 import { providerById, voiceFor, voiceForOrg } from "./voice";
@@ -426,13 +426,16 @@ async function numberState(ctx: Ctx, client: Business): Promise<NumberState> {
   }
   const engine = voiceFor(client);
   const { numbers, pending, balance } = await engine.numbers.state(ctx, client);
-  // Remember the connected numbers so the client list can show them without asking Telnyx again.
+  // Remember the connected numbers so the client list can show them without asking Telnyx again, and which
+  // ones were still waiting for approval, so the next look can tell when one has gone live.
   const current = numbers.map((n) => n.phoneNumber);
-  if (JSON.stringify(current) !== JSON.stringify(client.phoneNumbers ?? [])) {
-    const saved = { ...client, phoneNumbers: current };
+  const split = splitNumbers({ numbers, pending });
+  const becameLive = numbersBecameLive(client, split);
+  if (JSON.stringify(current) !== JSON.stringify(client.phoneNumbers ?? []) || JSON.stringify(split.pending) !== JSON.stringify(client.pendingNumbers ?? [])) {
+    const saved = { ...client, phoneNumbers: current, pendingNumbers: split.pending };
     await saveClient(saved);
     // A number that has just gone live (approved after it was added) starts taking texts if the Texts switch is on.
-    await textsWhenLive(saved, current.filter((n) => !(client.phoneNumbers ?? []).includes(n))).catch((err) => console.error(`[texting ${client.id}]`, err.message));
+    await textsWhenLive(saved, becameLive).catch((err) => console.error(`[texting ${client.id}]`, err.message));
   }
   return { provider: engine.id, support: { ...engine.numbers.support(), rule: NUMBER_RULE[engine.id] }, numbers, pending, balance, canBuy: await canBuyNumbers(ctx), canUseOwn: engine.id === "telnyx" && (await canUseOwnNumbers(ctx)), requests: await requestsForClient(client.id) };
 }
@@ -888,19 +891,11 @@ async function route(req: Request, server?: { requestIP(r: Request): { address: 
     if (ctx.role === "customer" && !ctx.user.platformAdmin) return json({ error: "Not allowed." }, 403);
     if (path.endsWith("/test")) {
       if (method !== "POST") return json({ error: "Not found" }, 404);
-      requireRole(ctx, "admin");
-      countCheck(orgId);
-      const input = await body(req);
-      if (input?.provider === "vapi") {
-        await checkVapiKeys(input.key, input.publicKey);
-        return json({ ok: true, balance: null });
-      }
-      const checked = await checkNewKey(input.key);
-      return json({ ok: true, balance: checked.balance });
+      return json(await testPhoneKeys(ctx, await body(req)));
     }
     if (method === "GET") return json(await phoneAccount(ctx));
     if (method === "PUT") return json(await connectPhoneAccount(ctx, await body(req)));
-    if (method === "DELETE") return json(await disconnectPhoneAccount(ctx));
+    if (method === "DELETE") return json(await disconnectPhoneAccount(ctx, url.searchParams.get("provider")));
     return json({ error: "Not found" }, 404);
   }
 

@@ -6,7 +6,7 @@ import { ValidationError } from "./prompt";
 import { fakeProvider } from "./sandbox";
 import { seal, unseal } from "./secrets";
 import { TelnyxError, forgetKey, telnyx } from "./telnyx";
-import { VapiError, accountMode, asProvider, forgetVapiKey, installProvider, ownKeyInstall, platformVapi, providerOfOrg } from "./voice/config";
+import { VapiError, accountMode, asProvider, forgetVapiKey, installProvider, ownKeyInstall, platformVapi, providerOfOrg, vapiCredsFor } from "./voice/config";
 import { checkVapiKey, vapi } from "./voice/vapi";
 import { TEST_SID, TEST_TOKEN, checkTwilio, clearTwilio, isTestTwilio, parseTwilioInput, saveTwilio, twilioCredsFor } from "./twilio";
 
@@ -161,8 +161,13 @@ export async function phoneAccount(ctx: Ctx): Promise<PhoneAccount> {
     from clients where org_id = ${orgId}`;
   const [k] = await sql`select count(*)::int as n from calendar_links l join clients c on c.id = l.client_id where c.org_id = ${orgId}`;
   const own = mode === "own";
+  const engines = {
+    telnyx: { mode: await accountMode(orgId, "telnyx"), last4: row?.telnyx_key ? (row.telnyx_key_last4 ?? "") : "", connectedAt: row?.telnyx_key ? iso(row.telnyx_key_at) : "" },
+    vapi: { mode: await accountMode(orgId, "vapi"), last4: row?.vapi_key ? (row.vapi_key_last4 ?? "") : "", connectedAt: row?.vapi_key ? iso(row.vapi_key_at) : "", publicKey: row?.vapi_key ? (row.vapi_public_key ?? "") : platformVapi().publicKey },
+  };
   return {
     provider,
+    engines,
     installProvider: installProvider(),
     mode,
     last4: own ? ((provider === "vapi" ? row?.vapi_key_last4 : row?.telnyx_key_last4) ?? "") : "",
@@ -178,8 +183,6 @@ export async function phoneAccount(ctx: Ctx): Promise<PhoneAccount> {
     ...(fakeProvider() ? { testKey: TEST_KEY } : {}),
   };
 }
-
-const INSTALLED = "This server's phone account was set when it was installed. Change the key on the server instead.";
 
 /** Asks Vapi whether the keys work. The private key is read with a cheap GET; the public one is only checked for shape. */
 export async function checkVapiKeys(rawKey: unknown, rawPublic: unknown): Promise<{ key: string; publicKey: string }> {
@@ -204,9 +207,14 @@ export async function checkVapiKeys(rawKey: unknown, rawPublic: unknown): Promis
   return { key, publicKey };
 }
 
+/**
+ * Saves a phone key from Connections (an agency's owners and admins, at any time, including on a SINGLE_AGENCY
+ * install where the server's own key, if any, is only the fallback). `makeDefault: false` adds a key as a
+ * backup without changing which engine new receptionists run on.
+ */
 export async function connectPhoneAccount(ctx: Ctx, input: any): Promise<PhoneAccount> {
   requireRole(ctx, "admin");
-  if (singleAgency() && !ownKeyInstall()) throw new ValidationError(INSTALLED);
+  const makeDefault = input?.makeDefault !== false;
   const orgId = ctx.org!.id;
   countCheck(orgId);
 
@@ -228,7 +236,8 @@ export async function connectPhoneAccount(ctx: Ctx, input: any): Promise<PhoneAc
         }
       }
     }
-    await sql`update orgs set vapi_key = ${seal(key)}, vapi_key_last4 = ${key.slice(-4)}, vapi_public_key = ${publicKey}, vapi_key_at = now(), voice_provider = 'vapi' where id = ${orgId}`;
+    await sql`update orgs set vapi_key = ${seal(key)}, vapi_key_last4 = ${key.slice(-4)}, vapi_public_key = ${publicKey}, vapi_key_at = now() where id = ${orgId}`;
+    if (makeDefault) await sql`update orgs set voice_provider = 'vapi' where id = ${orgId}`;
     forgetVapiKey(orgId);
     await audit(ctx, "phone_account.connect", { provider: "vapi", last4: key.slice(-4) });
     return phoneAccount(ctx);
@@ -255,26 +264,62 @@ export async function connectPhoneAccount(ctx: Ctx, input: any): Promise<PhoneAc
   }
 
   // Connecting Telnyx also makes it this agency's engine for new receptionists.
-  await sql`update orgs set telnyx_key = ${seal(key)}, telnyx_key_last4 = ${key.slice(-4)}, telnyx_key_at = now(), voice_provider = ${installProvider() === "telnyx" ? null : "telnyx"} where id = ${orgId}`;
+  await sql`update orgs set telnyx_key = ${seal(key)}, telnyx_key_last4 = ${key.slice(-4)}, telnyx_key_at = now() where id = ${orgId}`;
+  if (makeDefault) await sql`update orgs set voice_provider = ${installProvider() === "telnyx" ? null : "telnyx"} where id = ${orgId}`;
   forgetKey(orgId);
   await audit(ctx, "phone_account.connect", { last4: key.slice(-4) });
   return phoneAccount(ctx);
 }
 
-export async function disconnectPhoneAccount(ctx: Ctx): Promise<PhoneAccount> {
+export async function disconnectPhoneAccount(ctx: Ctx, which?: unknown): Promise<PhoneAccount> {
   requireRole(ctx, "owner");
-  if (singleAgency() && !ownKeyInstall()) throw new ValidationError(INSTALLED);
   const orgId = ctx.org!.id;
-  const provider = asProvider((await modeOf(orgId)).provider);
+  const provider = which === "vapi" || which === "telnyx" ? which : asProvider((await modeOf(orgId)).provider);
   if (provider === "vapi") {
-    await sql`update orgs set vapi_key = null, vapi_key_last4 = null, vapi_public_key = null, vapi_key_at = null, voice_provider = null where id = ${orgId}`;
+    // Receptionists made on Vapi are unreachable without its key, unless the server's own key stands in.
+    if (!platformVapi().key) {
+      const [n] = await sql`select count(*)::int as n from clients where org_id = ${orgId} and data->>'voiceProvider' = 'vapi'`;
+      if (n?.n > 0) throw new ValidationError("Some receptionists run on Vapi. Move them to Telnyx first, then remove the Vapi keys.");
+    }
+    await sql`update orgs set vapi_key = null, vapi_key_last4 = null, vapi_public_key = null, vapi_key_at = null, voice_provider = case when voice_provider = 'vapi' then null else voice_provider end where id = ${orgId}`;
     forgetVapiKey(orgId);
   } else {
     await sql`update orgs set telnyx_key = null, telnyx_key_last4 = null, telnyx_key_at = null where id = ${orgId}`;
     forgetKey(orgId);
   }
-  await audit(ctx, "phone_account.disconnect", provider === "vapi" ? { provider } : {});
+  await audit(ctx, "phone_account.disconnect", { provider });
   return phoneAccount(ctx);
+}
+
+/**
+ * The Test button: checks a key with its provider without saving it. With nothing typed in it checks what's
+ * already in use for that engine (the agency's saved key, else the server's own).
+ */
+export async function testPhoneKeys(ctx: Ctx, input: any): Promise<{ ok: true; balance: Balance | null; source: "typed" | "saved" | "server" }> {
+  requireRole(ctx, "admin");
+  const orgId = ctx.org!.id;
+  countCheck(orgId);
+  const provider = asProvider(input?.provider);
+  const typed = String(input?.key ?? "").trim();
+  if (provider === "vapi") {
+    if (typed) {
+      await checkVapiKeys(input.key, input.publicKey);
+      return { ok: true, balance: null, source: "typed" };
+    }
+    const creds = await vapiCredsFor(orgId).catch(() => null);
+    if (!creds) throw new ValidationError("No Vapi keys are saved yet. Paste them first.");
+    if (!isTestKey(creds.key)) await checkVapiKey(creds.key).catch((err) => {
+      if (err instanceof VapiError && (err.status === 401 || err.status === 403)) throw new ValidationError("Vapi didn't accept the saved private key. Replace it.");
+      throw err;
+    });
+    return { ok: true, balance: null, source: creds.own ? "saved" : "server" };
+  }
+  if (typed) return { ok: true, balance: (await checkNewKey(typed)).balance, source: "typed" };
+  const [o] = await sql`select telnyx_key from orgs where id = ${orgId}`;
+  const own = Boolean(o?.telnyx_key);
+  const key = own ? unseal(o.telnyx_key) : (process.env.TELNYX_API_KEY ?? "").trim();
+  if (!key) throw new ValidationError("No Telnyx key is saved yet. Paste it first.");
+  return { ok: true, balance: (await checkNewKey(key)).balance, source: own ? "saved" : "server" };
 }
 
 // ---- Twilio (optional): another place numbers come from ----------------------------------
@@ -313,22 +358,29 @@ export async function twilioAccount(ctx: Ctx): Promise<TwilioAccount> {
     name,
     connectedAt: creds?.own ? iso(row?.twilio_at) : "",
     problem,
-    installed: singleAgency() || undefined,
+    // The install's own account (TWILIO_ACCOUNT_SID / TWILIO_AUTH_TOKEN), until the agency saves its own.
+    installed: creds && !creds.own ? true : undefined,
     ...(fakeProvider() ? { testSid: TEST_SID, testToken: TEST_TOKEN } : {}),
   };
 }
 
 /** Checks the credentials with Twilio without saving them. */
-export async function testTwilio(ctx: Ctx, input: unknown): Promise<{ ok: true; name: string }> {
+export async function testTwilio(ctx: Ctx, input: unknown): Promise<{ ok: true; name: string; source: "typed" | "saved" | "server" }> {
   requireRole(ctx, "admin");
   countCheck(ctx.org!.id);
+  const b = (input ?? {}) as Record<string, unknown>;
+  // Nothing typed in: check what's already in use (the agency's saved account, else the server's own).
+  if (!String(b.accountSid ?? "").trim() && !String(b.authToken ?? "").trim() && !String(b.apiKeySid ?? "").trim()) {
+    const saved = await twilioCredsFor(ctx.org!.id);
+    if (!saved) throw new ValidationError("No Twilio account is saved yet. Paste its keys first.");
+    return { ok: true, name: (await checkTwilio(saved)).name, source: saved.own ? "saved" : "server" };
+  }
   const creds = { ...parseTwilioInput(input), own: true };
-  return { ok: true, name: (await checkTwilio(creds)).name };
+  return { ok: true, name: (await checkTwilio(creds)).name, source: "typed" };
 }
 
 export async function connectTwilio(ctx: Ctx, input: unknown): Promise<TwilioAccount> {
   requireRole(ctx, "admin");
-  if (singleAgency()) throw new ValidationError(INSTALLED_TWILIO);
   const orgId = ctx.org!.id;
   countCheck(orgId);
   const parsed = parseTwilioInput(input);
@@ -341,10 +393,7 @@ export async function connectTwilio(ctx: Ctx, input: unknown): Promise<TwilioAcc
 
 export async function disconnectTwilio(ctx: Ctx): Promise<TwilioAccount> {
   requireRole(ctx, "owner");
-  if (singleAgency()) throw new ValidationError(INSTALLED_TWILIO);
   await clearTwilio(ctx.org!.id);
   await audit(ctx, "twilio.disconnect", {});
   return twilioAccount(ctx);
 }
-
-const INSTALLED_TWILIO = "This server's Twilio account was set when it was installed. Change it on the server instead.";

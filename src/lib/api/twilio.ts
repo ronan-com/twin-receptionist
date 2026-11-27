@@ -9,8 +9,8 @@ export type TwilioKeys = { accountSid: string; authToken?: string; apiKeySid?: s
 
 export const twilioApi = {
   get: () => api.get<TwilioAccount>("/api/twilio-account"),
-  /** Checks the credentials with Twilio without saving them. */
-  test: (keys: TwilioKeys) => api.post<{ ok: true; name: string }>("/api/twilio-account/test", keys),
+  /** Checks the credentials with Twilio without saving them. With none, checks the account already in use. */
+  test: (keys: Partial<TwilioKeys> = {}) => api.post<{ ok: true; name: string; source: "typed" | "saved" | "server" }>("/api/twilio-account/test", keys),
   connect: (keys: TwilioKeys) => api.put<TwilioAccount>("/api/twilio-account", keys),
   disconnect: () => api.del<TwilioAccount>("/api/twilio-account"),
   numbers: () => api.get<{ numbers: TwilioNumber[]; regulatory: TwilioRegulatory; test: boolean }>("/api/numbers/twilio"),

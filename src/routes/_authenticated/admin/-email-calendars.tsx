@@ -28,6 +28,7 @@ export function EmailCalendarsSection() {
       <p className="max-w-[680px] text-[12.5px] leading-5 text-ink-muted">
         What you save here is used straight away and replaces the setting in the server's files. Secrets are stored encrypted and never shown again, only their last 4 characters.
       </p>
+      <Notice tone="info">For the simple choices (Resend, Gmail, Microsoft 365, Zoho), a backup sender and the recent emails, use Settings, Email. Pasting a mail server address here still works and keeps any backup.</Notice>
       <MailCard s={s} />
       <OAuthCard s={s} provider="google" />
       <OAuthCard s={s} provider="microsoft" />

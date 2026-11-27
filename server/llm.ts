@@ -10,7 +10,8 @@ import { currentOrg } from "./telnyx";
 // The key: the agency's own (saved in Connections, sealed in orgs.openrouter_key), else the
 // server's OPENROUTER_API_KEY. The model: OPENROUTER_MODEL, else DEFAULT_CHAT_MODEL.
 
-const OPENROUTER = "https://openrouter.ai/api/v1";
+// (OPENROUTER_BASE_URL is for tests and scratch servers that talk to a pretend OpenRouter; never set in production.)
+const OPENROUTER = (process.env.OPENROUTER_BASE_URL ?? "").trim().replace(/\/+$/, "") || "https://openrouter.ai/api/v1";
 export const OPENROUTER_URL = `${OPENROUTER}/chat/completions`;
 // OpenRouter's current Sonnet (https://openrouter.ai/api/v1/models).
 export const DEFAULT_CHAT_MODEL = "anthropic/claude-sonnet-5.5";

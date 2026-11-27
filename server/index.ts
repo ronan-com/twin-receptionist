@@ -54,6 +54,8 @@ import { installLogCapture } from "./problems";
 import { OTHER_BRAND, UI_PRODUCT, brandedIndex } from "./product";
 import { agencySnapshot, consoleRoutes, isClientPaused } from "./routes/console";
 import { assistantRoute } from "./assistant";
+import { helperRoute } from "./helper";
+import { helperDeps, telnyxSpeaker } from "./helperLive";
 import { webchatAdmin, webchatPublic } from "./webchat";
 import { liveTelegramDeps, telegramAdmin, telegramHook, type TelegramDeps } from "./telegram";
 import { manageRoutes, setManageDeps } from "./routes/manage";
@@ -907,6 +909,17 @@ async function route(req: Request, server?: { requestIP(r: Request): { address: 
         return agencySnapshot(ctx, phone, singleAgency());
       },
     });
+  }
+
+  // The built-in Helper: the same assistant with tools (open a page, look things up, make or change a receptionist after a confirm card). server/helper.ts
+  if (path.startsWith("/api/helper/")) {
+    return helperRoute(req, path, ctx, helperDeps(ctx, {
+      product: UI_PRODUCT,
+      createClient,
+      updateClient,
+      snapshot: async () => agencySnapshot(ctx, (await account(ctx)).telnyx, singleAgency()),
+      speak: telnyxSpeaker(orgId, () => providerById("telnyx").voices()),
+    }));
   }
 
   // ---- The Answered UI's route modules (server/routes/*), wired once here ----

@@ -19,13 +19,17 @@ AWS server `twinrecep-app` (i-0a2c31a32dea60a59, ap-southeast-2, managed via SSM
 Stale files: `/opt/twin/sites/chloedemo.caddy` and `chloe-landing.old/`.
 
 ## Code and releases
-- `own-phone-account` head `dd1d9b2` is pushed. Latest release tag `chloe-v1.0.9` (e354f45) **is 19 commits behind the branch head**. Those 19 commits (generic links, delete controls, email options, Telnyx pretrial check, "I need a person", Vapi voices, tutorials, CI) are **not in a tagged release**. The setup site was redeployed after b950af6, so live may include some of them. Live version not confirmed: `/healthz` returns no version.
+- `own-phone-account` head `dd1d9b2` is pushed and **released as `chloe-v1.0.13`** (all feature work is released; only these docs come after it). Live install "Ronan's AI Agency" reports app version 1.0.10 and is due an update.
 - Uncommitted edits found in the `demo-flow` worktree (`download-site/admin-web.ts`, `download-site/server.ts`, `server/index.ts`) were pushed as branch `demo-flow-leftovers`. They are unreviewed and probably superseded by the reconcile in `chloe-finish`.
 - All other local branches match GitHub. Agent worktree branches are already contained in pushed branches.
 
 ## Tests run 27 Nov (Linux laptop)
 - `download-site`: `bun test` **24 pass, 0 fail**. `tsc --noEmit -p download-site` printed nothing (looked clean).
 - Server suite and e2e were **not** run in this pass. See HANDOVER for the last full run (348 pass on Windows).
+
+## Live install (27 Nov, 17:00 AEST)
+- "Ronan's AI Agency" at https://app-production-aa9b9284.up.railway.app returns 200. Its last check-in was 16:54 AEST: version 1.0.10, health ok, phone key ok, 1 client, 1 receptionist, 0 numbers, 0 calls, 0 bookings.
+- Setup admin has 9 buyers. 7 are "Test hh:mm" runs; "Daniel" is unclear. 0 help tickets, 1 alert, 3 onboarding links. Only one install is syncing.
 
 ## Not proven yet (audit focus)
 1. **No real phone call or booking** has been proven on an installed buyer copy.
@@ -57,4 +61,4 @@ Each buyer's dashboard runs on the buyer's own Railway but stays connected to ou
 So **breaking `/api/*` on the setup site, changing the sync shape on only one side (keep `SHAPE` in `sync.ts` and `supportSync.ts` in step), or losing `site.db` (it holds the sync token hashes) cuts every partner off.** `site.db` is backed up nightly to S3.
 
 ## Suggested audit order
-Security items, then a real install plus a real call on current code, then cut a release for the 19 untagged commits (`scripts/release-chloe.sh`), then the HANDOVER to-do list.
+Security items, then a real install plus a real call on current code, then update the live test install to 1.0.13, then the HANDOVER to-do list.

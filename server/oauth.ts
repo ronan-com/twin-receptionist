@@ -29,8 +29,9 @@ const SCOPES: Record<OAuthProvider, Record<OAuthPurpose, string>> = {
   google: {
     // Full mail access is the only Google scope that IMAP and SMTP accept.
     mail: "openid email https://mail.google.com/",
-    // See free/busy times and add events. Google rates this "sensitive", not "restricted".
-    calendar: "openid email https://www.googleapis.com/auth/calendar.events",
+    // Add events (calendar.events) and read busy times (calendar.events.freebusy: the
+    // freeBusy call needs it; calendar.events alone is not listed as enough). Both "sensitive".
+    calendar: "openid email https://www.googleapis.com/auth/calendar.events https://www.googleapis.com/auth/calendar.events.freebusy",
   },
   microsoft: {
     mail: "openid email offline_access https://outlook.office.com/IMAP.AccessAsUser.All https://outlook.office.com/SMTP.Send",

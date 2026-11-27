@@ -246,8 +246,15 @@ const toOwned = (n: any): Omit<TwilioNumber, "assignedTo"> => ({
 /** Every number on the Twilio account (up to 200). */
 export async function ownedTwilioNumbers(creds: TwilioCreds): Promise<Omit<TwilioNumber, "assignedTo">[]> {
   if (isTestTwilio(creds)) return SAMPLE_TWILIO_OWNED;
-  const res = await twilio<{ incoming_phone_numbers?: any[] }>(creds, "GET", "/IncomingPhoneNumbers.json?PageSize=200");
-  return (res.incoming_phone_numbers ?? []).map(toOwned).filter((n) => n.phoneNumber);
+  const out: any[] = [];
+  let next: string | null = "/IncomingPhoneNumbers.json?PageSize=200";
+  // Twilio pages its answer: follow next_page_uri so an account with more than 200 numbers isn't cut short.
+  for (let page = 0; next && page < 5; page++) {
+    const res: { incoming_phone_numbers?: any[]; next_page_uri?: string | null } = await twilio(creds, "GET", next.startsWith("/2010-04-01/") ? `https://api.twilio.com${next}` : next);
+    out.push(...(res.incoming_phone_numbers ?? []));
+    next = res.next_page_uri || null;
+  }
+  return out.map(toOwned).filter((n) => n.phoneNumber);
 }
 
 /** The Twilio numbers none of the agency's receptionists answers, and the ones that do. */

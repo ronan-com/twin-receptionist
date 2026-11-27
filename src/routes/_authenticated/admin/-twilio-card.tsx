@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { ExternalLink, KeyRound, PhoneForwarded } from "lucide-react";
+import { ExternalLink, KeyRound, PhoneForwarded, RefreshCw } from "lucide-react";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -10,7 +10,7 @@ import { Notice } from "@/components/app/primitives";
 import { StatusBadge } from "@/components/app/StatusBadge";
 import { KeyInput } from "@/components/app/PhoneKeyFields";
 import { twilioAccountQuery, twilioApi, type TwilioKeys } from "@/lib/api/twilio";
-import { fmtDate } from "@/lib/app/format";
+import { fmtDate, fmtPhone } from "@/lib/app/format";
 import type { VoiceProviderId } from "@/lib/shared";
 import { cn } from "@/lib/utils";
 
@@ -48,6 +48,8 @@ export function TwilioCard({ engine, canManage, isOwner, readOnly }: { engine: V
     mutationFn: () => twilioApi.connect(keys()),
     onSuccess: (acct) => {
       qc.setQueryData(twilioAccountQuery().queryKey, acct);
+      // A new account: look at its numbers again straight away (never show the last account's list).
+      void qc.invalidateQueries({ queryKey: ["twilio", "numbers"] });
       setOpen(false);
       reset();
       toast.success("Twilio connected", { description: acct.name ? `${acct.name} · checked with Twilio and saved.` : "Checked with Twilio and saved." });
@@ -72,6 +74,7 @@ export function TwilioCard({ engine, canManage, isOwner, readOnly }: { engine: V
   if (!q.data) return null;
   const a = q.data;
   const healthy = a.connected && !a.problem;
+  const manageNumbers = healthy && !readOnly && canManage;
 
   return (
     <section className="overflow-hidden rounded-[12px] border border-hairline bg-white" data-card="twilio-account" data-mode={a.mode}>
@@ -126,6 +129,7 @@ export function TwilioCard({ engine, canManage, isOwner, readOnly }: { engine: V
           </div>
         ) : null}
       </div>
+      {manageNumbers ? <TwilioNumbers /> : null}
       {a.connected && a.problem ? (
         <div className="border-t border-hairline px-5 py-3">
           <Notice tone="danger" title="Twilio isn't accepting your credentials">
@@ -257,5 +261,36 @@ export function TwilioCard({ engine, canManage, isOwner, readOnly }: { engine: V
         </AlertDialogContent>
       </AlertDialog>
     </section>
+  );
+}
+
+/** The numbers on the connected Twilio account, whichever voice engine is the default, so connecting it visibly worked. */
+function TwilioNumbers() {
+  const q = useQuery({ queryKey: ["twilio", "numbers"], queryFn: twilioApi.numbers, staleTime: 0 });
+  return (
+    <div className="border-t border-hairline px-5 py-3" data-twilio-numbers>
+      <div className="mb-2 flex items-center justify-between gap-2">
+        <span className="text-[12.5px] font-medium text-ink">Numbers on this Twilio account{q.data ? ` (${q.data.numbers.length})` : ""}</span>
+        <Button size="sm" variant="ghost" className="h-7 gap-1 text-[12px]" onClick={() => void q.refetch()} disabled={q.isFetching} data-action="sync-twilio-numbers">
+          <RefreshCw className={cn("h-3.5 w-3.5", q.isFetching && "animate-spin")} /> {q.isFetching ? "Checking…" : "Sync"}
+        </Button>
+      </div>
+      {q.isPending ? (
+        <p className="text-[12.5px] text-ink-muted">Looking at your Twilio numbers…</p>
+      ) : q.error ? (
+        <p role="alert" className="text-[12.5px] text-[#a41d1d]">{(q.error as Error).message}</p>
+      ) : q.data.numbers.length === 0 ? (
+        <p className="text-[12.5px] text-ink-muted">There are no numbers on this Twilio account yet.</p>
+      ) : (
+        <ul className="space-y-1">
+          {q.data.numbers.map((n) => (
+            <li key={n.id} className="flex items-center justify-between gap-3 text-[12.5px]" data-number={n.phoneNumber}>
+              <span className="font-medium tabular-nums text-ink">{fmtPhone(n.phoneNumber)}</span>
+              <span className="text-ink-muted">{n.assignedTo ? `Answers for ${n.assignedTo}` : "Not on a receptionist yet"}{n.sms ? " · texts" : ""}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
   );
 }

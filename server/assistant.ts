@@ -35,7 +35,10 @@ export function canUseAssistant(ctx: {
   user: { platformAdmin: boolean };
   viewing?: unknown;
 }): boolean {
-  return Boolean(ctx.org && !ctx.user.platformAdmin && !ctx.viewing && (ctx.role === "owner" || ctx.role === "admin"));
+  // On a single-agency copy the owner is the agency (there is no platform above it), even though the install
+  // also marks that account as the platform admin, so they may use the Helper there.
+  const single = ["1", "true", "yes", "on"].includes((process.env.SINGLE_AGENCY ?? "").trim().toLowerCase());
+  return Boolean(ctx.org && (!ctx.user.platformAdmin || single) && !ctx.viewing && (ctx.role === "owner" || ctx.role === "admin"));
 }
 
 // ---- What the model is told about this agency ----------------------------------

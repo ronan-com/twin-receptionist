@@ -124,7 +124,8 @@ export async function speak(markdown: string): Promise<void> {
         await audio.play();
         return;
       } catch {
-        /* autoplay blocked or bad audio: the browser's voice instead */
+        /* autoplay blocked or bad audio: the browser's voice instead, and no more billed server calls this session */
+        serverVoice = false;
       }
     } else serverVoice = false;
   }

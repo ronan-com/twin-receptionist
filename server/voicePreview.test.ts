@@ -94,11 +94,10 @@ describe("browser test call", () => {
     expect(calls.map((c) => `${c.method} ${c.url.replace("https://api.telnyx.com/v2", "")}`)).toEqual(["GET /ai/assistants/assistant-1"]);
   });
 
-  test("Telnyx: browser calls switched off are switched back on, keeping the other phone settings", async () => {
+  test("Telnyx: browser calls switched off are a plain message, and the check changes nothing (a GET has no side effects)", async () => {
     stub((m) => (m === "GET" ? reply(200, { data: { telephony_settings: { default_texml_app_id: "app-9", supports_unauthenticated_web_calls: false } } }) : reply(200, {})));
-    await telnyxProvider.webCall("assistant-2");
-    expect(calls[1].method).toBe("POST");
-    expect(calls[1].body).toEqual({ telephony_settings: { default_texml_app_id: "app-9", supports_unauthenticated_web_calls: true } });
+    await expect(telnyxProvider.webCall("assistant-2")).rejects.toThrow(/Save the receptionist once/);
+    expect(calls.map((c) => c.method)).toEqual(["GET"]);
   });
 
   test("Telnyx: an assistant that isn't there is a clear message, not a call button that never connects", async () => {

@@ -129,7 +129,8 @@ export async function oauthStart(buyerId: number, p: OAuthProvider): Promise<{ u
   const e = endpoints(p);
   const q = new URLSearchParams();
   if (p === "openrouter") {
-    q.set("callback_url", redirectUri(p)); q.set("code_challenge", challengeOf(verifier)); q.set("code_challenge_method", "S256"); q.set("state", state);
+    // OpenRouter does not hand `state` back, so ours rides inside the callback address itself (?s=...) and is matched exactly.
+    q.set("callback_url", `${redirectUri(p)}?s=${encodeURIComponent(state)}`); q.set("code_challenge", challengeOf(verifier)); q.set("code_challenge_method", "S256"); q.set("state", state);
   } else {
     q.set("response_type", "code"); q.set("client_id", await clientId(p)); q.set("redirect_uri", redirectUri(p)); q.set("state", state);
     q.set("code_challenge", challengeOf(verifier)); q.set("code_challenge_method", "S256");
@@ -138,7 +139,7 @@ export async function oauthStart(buyerId: number, p: OAuthProvider): Promise<{ u
   return { url: `${e.authorize}?${q}`, cookie: browserCookie(browser) };
 }
 
-export type Consumed = { ok: true; buyerId: number; verifier: string } | { ok: false; reason: "bad-state" | "expired" | "browser" | "used" | "denied" };
+export type Consumed = { ok: true; buyerId: number; verifier: string; /** Set only for the cookie-only fallback: the row is still unused until markStateUsed(key) after a good exchange. */ key?: Buffer } | { ok: false; reason: "bad-state" | "expired" | "browser" | "used" | "denied" };
 /**
  * Checks a callback's state and uses it up. Fails when the state is unknown, for another provider, already used, older
  * than 10 minutes, or arrives from a different browser than the one that started it. Always uses the state up once seen.
@@ -150,8 +151,15 @@ export function consumeState(p: OAuthProvider, state: string, browser: string, a
   if (!state && p === "openrouter" && browser) {
     // OpenRouter sends the buyer back with only ?code=: it does not hand our state back. The browser cookie (set when the sign-in
     // started, and only ever sent by that browser) finds the login instead: the newest one this browser started that is still unused.
+    // Only for a callback that carries no state at all (an older sign-in started before the state rode in the address).
     r = db().query("SELECT * FROM oauth_states WHERE provider = 'openrouter' AND browser_hash = ? AND used_at IS NULL ORDER BY created_at DESC LIMIT 1").get(sha256(browser)) as Row | null;
     if (!r) return { ok: false, reason: "bad-state" };
+    if (at - Date.parse(r.created_at) > STATE_MINUTES * 60_000) {
+      db().query("UPDATE oauth_states SET used_at = ? WHERE state_hash = ?").run(new Date(at).toISOString(), r.state_hash);
+      return { ok: false, reason: "expired" };
+    }
+    // The browser matched by construction. The row is used up by markStateUsed once the code has been swapped for a key.
+    return { ok: true, buyerId: r.buyer_id, verifier: r.verifier, key: r.state_hash };
   } else {
     if (!/^[A-Za-z0-9_-]{20,80}$/.test(state)) return { ok: false, reason: "bad-state" };
     r = db().query("SELECT * FROM oauth_states WHERE state_hash = ?").get(sha256(state)) as Row | null;
@@ -163,6 +171,12 @@ export function consumeState(p: OAuthProvider, state: string, browser: string, a
   const want = Buffer.from(r.browser_hash), got = sha256(browser || "-");
   if (want.length !== got.length || !timingSafeEqual(want, got)) return { ok: false, reason: "browser" };
   return { ok: true, buyerId: r.buyer_id, verifier: r.verifier };
+}
+
+/** Uses up a state found by the cookie-only fallback, after its code was exchanged (or the buyer cancelled). */
+export function markStateUsed(key: Buffer, at = Date.now()): void {
+  tables();
+  db().query("UPDATE oauth_states SET used_at = ? WHERE state_hash = ? AND used_at IS NULL").run(new Date(at).toISOString(), key);
 }
 
 export interface Tokens { access: string; refresh?: string; expiresIn?: number }

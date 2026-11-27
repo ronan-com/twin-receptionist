@@ -30,3 +30,15 @@ describe("source download link", () => {
     await expect(sourceDownloadUrl(env, fake(500, {}))).rejects.toThrow(/couldn't give a download link/);
   });
 });
+
+describe("who may download", () => {
+  const ctx = (role: any, extra: any = {}) => ({ tokenHash: "x", user: { id: "u", email: "a@b.c", name: "A", platformAdmin: false }, org: { id: "o", name: "O" }, role, ...extra }) as any;
+  test("only the owner of a single-agency copy; not an admin, not a platform install, not a read-only view", async () => {
+    const { sourceDownloadRoute } = await import("./sourceDownload");
+    expect((await sourceDownloadRoute("POST", ctx("owner"), true)).status).toBe(404);
+    await expect(sourceDownloadRoute("GET", ctx("admin"), true)).rejects.toThrow(/owner/);
+    await expect(sourceDownloadRoute("GET", ctx("member"), true)).rejects.toThrow();
+    await expect(sourceDownloadRoute("GET", ctx("owner"), false)).rejects.toThrow(/own copy/);
+    await expect(sourceDownloadRoute("GET", ctx("owner", { viewing: { org: "x", client: null, business: "" } }), true)).rejects.toThrow();
+  });
+});

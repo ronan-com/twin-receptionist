@@ -11,7 +11,7 @@ import { join } from "node:path";
 const OWNER = "jane.smith@acme.test";
 const TOKEN = "T".repeat(10) + "abcdefghijklmnopqrstuvwxyz0123456789_-";
 
-async function withServer(extra: Record<string, string>, fn: (s: { call: (m: string, p: string, b?: unknown, cookie?: string) => Promise<{ status: number; json: any; cookie: string }>; sql: SQL }) => Promise<void>) {
+async function withServer(extra: Record<string, string>, fn: (s: { call: (m: string, p: string, b?: unknown, cookie?: string, headers?: Record<string, string>) => Promise<{ status: number; json: any; cookie: string }>; sql: SQL }) => Promise<void>) {
   const base = process.env.DATABASE_URL ?? "";
   expect(base).not.toBe("");
   const name = `firstrun_test_${crypto.randomUUID().replace(/-/g, "").slice(0, 12)}`;
@@ -68,8 +68,8 @@ async function withServer(extra: Record<string, string>, fn: (s: { call: (m: str
     } catch {}
     await Bun.sleep(250);
   }
-  const call = async (method: string, path: string, body?: unknown, cookie = "") => {
-    const r = await fetch(baseUrl + path, { method, headers: { "Content-Type": "application/json", ...(cookie ? { Cookie: cookie } : {}) }, body: body === undefined ? undefined : JSON.stringify(body) });
+  const call = async (method: string, path: string, body?: unknown, cookie = "", extra: Record<string, string> = {}) => {
+    const r = await fetch(baseUrl + path, { method, headers: { "Content-Type": "application/json", ...(cookie ? { Cookie: cookie } : {}), ...extra }, body: body === undefined ? undefined : JSON.stringify(body) });
     const text = await r.text();
     let json: any = null;
     try {
@@ -201,5 +201,62 @@ test("connecting Twilio lists the account's numbers whichever voice engine is th
     expect(numbers.status).toBe(200);
     expect(numbers.json.numbers.length).toBeGreaterThan(0);
     expect(numbers.json.numbers[0]).toMatchObject({ phoneNumber: expect.stringMatching(/^\+/), assignedTo: "" });
+  });
+}, 120_000);
+
+test("the first password needs no current one only in the first-login session, and only for 24 hours; anyone else must use the email reset", async () => {
+  await withServer(installed, async ({ call, sql }) => {
+    const { cookie } = await call("POST", "/api/welcome", { token: TOKEN });
+    expect((await sql`select first_login from sessions`)[0].first_login).toBe(true);
+    // The same session, but not the one the link opened (a stolen cookie, an older session): refused.
+    await sql`update sessions set first_login = false`;
+    const stolen = await call("PUT", "/api/account", { newPassword: "a-fresh-password-1" }, cookie);
+    expect(stolen.status).toBe(400);
+    expect(stolen.json.error).toMatch(/Forgot password/);
+    // The link's own session, but a day later: refused too.
+    await sql`update sessions set first_login = true, created_at = now() - interval '25 hours'`;
+    expect((await call("PUT", "/api/account", { newPassword: "a-fresh-password-1" }, cookie)).status).toBe(400);
+    expect((await sql`select password_unset from users`)[0].password_unset).toBe(true);
+    // Within the day, in the link's session: allowed.
+    await sql`update sessions set created_at = now()`;
+    expect((await call("PUT", "/api/account", { newPassword: "a-fresh-password-1" }, cookie)).status).toBe(200);
+    expect((await call("POST", "/api/login", { email: OWNER, password: "a-fresh-password-1" })).status).toBe(200);
+    // A normal sign-in session is never first_login.
+    expect((await sql`select count(*)::int as n from sessions where first_login`)[0].n).toBe(1);
+  });
+}, 120_000);
+
+test("a wrong sign-in link from one address doesn't lock out the owner coming from another; malformed tokens don't count", async () => {
+  await withServer(installed, async ({ call }) => {
+    const bad = TOKEN.slice(0, -1) + "x";
+    const attacker = { "x-forwarded-for": "203.0.113.9" };
+    for (let i = 0; i < 12; i++) await call("POST", "/api/welcome", { token: i % 2 ? bad : "short" }, "", attacker);
+    // Short ones never counted; only the 6 well-formed wrong ones did: not locked yet.
+    expect((await call("POST", "/api/welcome", { token: bad }, "", attacker)).status).toBe(401);
+    for (let i = 0; i < 6; i++) await call("POST", "/api/welcome", { token: bad }, "", attacker);
+    expect((await call("POST", "/api/welcome", { token: bad }, "", attacker)).status).toBe(429);
+    // The owner, from their own address, is unaffected.
+    const ok = await call("POST", "/api/welcome", { token: TOKEN }, "", { "x-forwarded-for": "198.51.100.7" });
+    expect(ok.status).toBe(200);
+  });
+}, 120_000);
+
+test("the owner of a single-agency copy can use Helper (the install marks them platform admin too)", async () => {
+  await withServer(installed, async ({ call, sql }) => {
+    const { cookie } = await call("POST", "/api/welcome", { token: TOKEN });
+    expect((await sql`select platform_admin from users`)[0].platform_admin).toBe(true);
+    const r = await call("POST", "/api/helper/chat", { messages: [{ role: "user", content: "hi" }], route: "/admin" }, cookie);
+    expect(r.status).toBe(200); // no AI key here, so Helper says where to add one; the point is it is not a 403
+    expect(r.json.needsKey).toBe(true);
+  });
+}, 120_000);
+
+test("voice samples are rate limited per person, with a plain message", async () => {
+  await withServer(installed, async ({ call }) => {
+    const { cookie } = await call("POST", "/api/welcome", { token: TOKEN });
+    // The owner is signed in; a sample is rate limited per person, with a plain message.
+    let last = 200;
+    for (let i = 0; i < 45; i++) last = (await call("GET", "/api/voices/preview?voice=nope", undefined, cookie)).status;
+    expect(last).toBe(429);
   });
 }, 120_000);

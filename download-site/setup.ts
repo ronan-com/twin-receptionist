@@ -10,7 +10,7 @@ import { CONFIG, PACKAGES_DIR, RAILWAY, currentPackage, db, listPackages, now, s
 import {
   DEFAULT_REGION, DEFAULT_SIZE, ProviderError, cfCanEdit, cfEnsure, cfFindZone, cfRecords, cfZone, checkCloudflare,
   checkDigitalOcean, checkGoogle, checkMicrosoft, checkRailway, checkResend, checkOpenRouter, checkSmtp, checkTelnyx, checkTwilio, checkVapi, listTelnyxNumbers, doApi, lookup, normalizeDomain,
-  RAILWAY_API, RAILWAY_TOKEN_MSG, railway, railwayUpload, recordLive, resendDomain, resendSend, resendSendingKey, resendStatus, resendVerify, smtpSend, smtpUrl,
+  RAILWAY_API, RAILWAY_TOKEN_MSG, publicSmtpAddress, railway, railwayUpload, recordLive, resendDomain, resendSend, resendSendingKey, resendStatus, resendVerify, smtpSend, smtpUrl,
 } from "./providers";
 import {
   STEPS, OPTIONAL_HUB, isOptional, buyerByAttemptToken, buyerByDropletToken, deleteAllSecrets, getSecret, getSetup, hasSecret, logAppend, logBytes,
@@ -542,12 +542,15 @@ export const actions: Record<string, Action> = {
     if (!isEmail(address)) return err("Enter the address emails come from.", f);
     const wait = checkLimit(b); if (wait) return tooMany(wait);
     const url = smtpUrl(host, port, user, pass);
-    const r = await checkSmtp(url);
+    // The server's address is looked up once, must be a public one, and is the one connected to (no private or cloud-metadata addresses).
+    const where = CONFIG.mockResend && host === "127.0.0.1" ? { ok: true as const, ip: "" } : await publicSmtpAddress(host);
+    if (!where.ok) return err(where.message, { ...f, pass: "" });
+    const r = await checkSmtp(url, where.ip || undefined);
     if (!r.ok) return err(r.message, { ...f, pass: "" });
     putSecret(b.id, "smtp_password", pass);
     const s = getSetup(b.id);
     const from = `${s.brand!.productName} <${address}>`;
-    const sent = allow(`testmail:${b.id}`, CONFIG.testEmailsPerHour, 60 * MIN) ? null : await smtpSend(url, from, s.brand!.ownerEmail, s.brand!.productName);
+    const sent = allow(`testmail:${b.id}`, CONFIG.testEmailsPerHour, 60 * MIN) ? null : await smtpSend(url, from, s.brand!.ownerEmail, s.brand!.productName, where.ip || undefined);
     updateSetup(b.id, (s) => {
       s.email = { mode: "smtp", address, from, smtp: { host, port, user }, checked: true, confirmed: true, testSentTo: sent?.ok ? s.brand!.ownerEmail : undefined };
       nextStep(b, s, "email");
@@ -874,6 +877,7 @@ export function startTicker() {
   t.unref?.();
   // A setup nobody has touched for SECRETS_IDLE_DAYS (14) loses its stored keys; they paste them again if they come back.
   const purge = () => {
+    dropExpiredFirstLogins();
     for (const id of staleSecretBuyers(CONFIG.secretsIdleDays)) {
       if (busy.has(id)) continue;
       const n = deleteAllSecrets(id);
@@ -958,6 +962,15 @@ export function firstRunSettings(id: number, s: SetupData): Record<string, strin
   }
   return { OWNER_NAME: s.brand!.ownerName || ownerNameOf(s.brand!.ownerEmail), AGENCY_NAME: s.brand!.productName, FIRST_LOGIN_TOKEN: token };
 }
+/** The one-time owner sign-in token is not kept past its 24 hours: it is dropped from every stored setup that holds an old one. Returns how many. */
+export function dropExpiredFirstLogins(at = Date.now()): number {
+  let n = 0;
+  for (const { buyerId, s } of activeSetups()) {
+    if (s.firstLogin && at - Date.parse(s.firstLogin.at) >= FIRST_LOGIN_HOURS_MS) { updateSetup(buyerId, (x) => { delete x.firstLogin; }); n++; }
+  }
+  return n;
+}
+const FIRST_LOGIN_HOURS_MS = 24 * 3_600_000;
 /** The done screen's "Open your dashboard" target: the one-time sign-in link while it is fresh, else the plain address. */
 export function dashboardLink(s: SetupData, base: string): string {
   return firstLoginFresh(s) ? `${base.replace(/\/+$/, "")}/welcome?t=${encodeURIComponent(s.firstLogin!.token)}` : base;
@@ -1167,9 +1180,13 @@ export async function checkEmailDns(id: number, force: boolean) {
 async function sendTest(id: number) {
   const s = getSetup(id);
   const to = s.brand!.ownerEmail;
-  const r = s.email!.mode === "resend"
-    ? await resendSend(getSecret(id, "resend_key")!, s.email!.from!, to, s.brand!.productName)
-    : await smtpSend(smtpUrl(s.email!.smtp!.host, s.email!.smtp!.port, s.email!.smtp!.user, getSecret(id, "smtp_password")!), s.email!.from!, to, s.brand!.productName);
+  let r: { ok: boolean; message: string };
+  if (s.email!.mode === "resend") r = await resendSend(getSecret(id, "resend_key")!, s.email!.from!, to, s.brand!.productName);
+  else {
+    const host = s.email!.smtp!.host;
+    const where = CONFIG.mockResend && host === "127.0.0.1" ? { ok: true as const, ip: "" } : await publicSmtpAddress(host);
+    r = where.ok ? await smtpSend(smtpUrl(host, s.email!.smtp!.port, s.email!.smtp!.user, getSecret(id, "smtp_password")!), s.email!.from!, to, s.brand!.productName, where.ip || undefined) : where;
+  }
   if (r.ok) updateSetup(id, (s) => { s.email!.testSentTo = to; });
   return r;
 }

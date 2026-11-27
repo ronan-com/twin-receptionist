@@ -1,7 +1,7 @@
 // The checks for ops.test.ts.
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { createHash } from "node:crypto";
-import { copyFileSync, mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 
@@ -45,7 +45,13 @@ const live = (name: string) => {
 };
 
 // ---- a published release: a bundle with the app's source inside ----
-const SRC = new Uint8Array(6000).map((_, i) => (i * 13) % 251);
+// (a real tar.gz: both the update bundle and the source download list its files before serving it)
+const srcDir = join(dir, "src-1.2.3");
+mkdirSync(srcDir, { recursive: true });
+writeFileSync(join(srcDir, "package.json"), "{}");
+writeFileSync(join(srcDir, "pad.bin"), crypto.getRandomValues(new Uint8Array(6000)));
+if (Bun.spawnSync(["tar", "-czf", join(dir, "src-1.2.3.tgz"), "-C", srcDir, "."]).exitCode !== 0) throw new Error("tar failed");
+const SRC = new Uint8Array(readFileSync(join(dir, "src-1.2.3.tgz")));
 const SRC_SHA = createHash("sha256").update(SRC).digest("hex");
 {
   const work = join(dir, "work");
@@ -79,6 +85,10 @@ describe("releases", () => {
     expect(ok(7, "1.2.4", q.get("exp")!, q.get("sig")!)).toBe(false); // another version
     expect(ok(7, "1.2.3", String(Number(q.get("exp")) + 3600), q.get("sig")!)).toBe(false); // longer life
     expect(ok(7, "1.2.3", q.get("exp")!, q.get("sig")!.slice(0, -1) + (q.get("sig")!.endsWith("A") ? "B" : "A"))).toBe(false);
+    expect(rel.bundleSignatureOk(7, "1.2.3", q.get("exp")!, q.get("sig")!, at, "source")).toBe(false); // a bundle address isn't a source address
+    const src = new URL(rel.signBundleUrl(7, "1.2.3", at, "source").url).searchParams;
+    expect(rel.bundleSignatureOk(7, "1.2.3", src.get("exp")!, src.get("sig")!, at, "source")).toBe(true);
+    expect(ok(7, "1.2.3", src.get("exp")!, src.get("sig")!)).toBe(false); // and a source address isn't a bundle address
     expect(ok(7, "1.2.3", q.get("exp")!, "short")).toBe(false);
     expect(ok(7, "1.2.3", "abc", q.get("sig")!)).toBe(false);
     expect(ok(7, "1.2.3", q.get("exp")!, q.get("sig")!, at + 11 * 60_000)).toBe(false); // expired
@@ -525,6 +535,8 @@ describe("source download", () => {
   test("what counts as a secret", () => {
     expect(rel.secretNamesIn(["./package.json", "./server/index.ts", "./.env.example", "./deploy/Dockerfile", "./src/env.ts"])).toEqual([]);
     expect(rel.secretNamesIn(["./.env", "./a/.env.local", "./keys/server.pem", "./.secrets/x", "./secrets.env", "./id_rsa", "./x/private.key", "./.npmrc"]).length).toBe(8);
+    expect(rel.secretNamesIn(["./prod.env", "./.netrc", "./home/.pgpass", "./.aws/credentials", "./.git/config", "./data/app.sqlite", "./x.db", "./release.jks", "./service-account-prod.json", "./gcp/service_account.json", "./api.token", "./old/backup.tgz", "./a.zip", "./b.tar.gz", "./b.gz", "./.ssh/id_ed25519"]).length).toBe(16);
+    expect(rel.secretNamesIn(["./.env.example", "./.github/workflows/x.yml", "./.gitignore", "./src/lib/db.ts", "./token.ts", "./docs/tokens.md", "./src/service-accounts.ts"])).toEqual([]);
   });
 
   test("the app asks with its sync token for the version it runs; the signed link serves a clean source, only that version, only once signed", async () => {
@@ -557,7 +569,7 @@ describe("source download", () => {
         const x = new URL(j.url); mut(x.searchParams);
         expect((await fetch(x)).status).toBe(403);
       }
-      expect((await fetch(rel.signBundleUrl(b.id, "9.0.0", Date.now() - 11 * 60_000).url.replace("/bundle/", "/source/"))).status).toBe(403);
+      expect((await fetch(rel.signBundleUrl(b.id, "9.0.0", Date.now() - 11 * 60_000, "source").url.replace("/bundle/", "/source/"))).status).toBe(403);
       expect(c.pathname).toBe("/api/releases/source/9.0.0");
     } finally { cleanup("9.0.0"); }
   });
@@ -566,11 +578,18 @@ describe("source download", () => {
     publish("9.0.1", { "package.json": "{}", ".env": "TELNYX_API_KEY=KEYsecret\n", "server/a.ts": "x" });
     try {
       const { b } = live("Src Leak");
-      const r = await fetch(rel.signBundleUrl(b.id, "9.0.1").url.replace("/bundle/", "/source/"));
+      const r = await fetch(rel.signBundleUrl(b.id, "9.0.1", Date.now(), "source").url.replace("/bundle/", "/source/"));
       expect(r.status).toBe(503);
       const text = await r.text();
       expect(text).not.toContain("KEYsecret");
       expect(text).toMatch(/can't be offered/);
+      // The update bundle (the current release) gets the same check.
+      const u = await fetch(rel.signBundleUrl(b.id, "9.0.1").url);
+      expect(u.status).toBe(503);
+      expect(await u.text()).not.toContain("KEYsecret");
+      // A source address is no use as a bundle address, and the other way round.
+      expect((await fetch(rel.signBundleUrl(b.id, "9.0.1", Date.now(), "source").url)).status).toBe(403);
+      expect((await fetch(rel.signBundleUrl(b.id, "9.0.1").url.replace("/bundle/", "/source/"))).status).toBe(403);
     } finally { cleanup("9.0.1"); }
   });
 

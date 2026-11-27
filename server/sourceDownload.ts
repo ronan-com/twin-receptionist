@@ -1,9 +1,9 @@
-import { AuthError, requireRole, type Ctx } from "./accounts";
+import { AuthError, requireRole, singleAgency, type Ctx } from "./accounts";
 import { currentVersion } from "./autoUpdate";
 import { ValidationError } from "./prompt";
 
 // Settings, "Your source code": the owner downloads the full source of the exact version this agency runs.
-//   GET /api/source-download   owner or admin  { version, url }  the page then opens `url`
+//   GET /api/source-download   the owner of a single-agency copy  { version, url }  the page then opens `url`
 // SOURCE_DOWNLOAD_URL (a template with {version}, e.g. a GitHub release) wins when set. Otherwise the setup site
 // is asked, with this agency's own sync token, for a short-lived signed link to that version (the same kind of
 // address the app's updates use). The site only offers a bundle that holds no keys or settings files.
@@ -36,9 +36,11 @@ export async function sourceDownloadUrl(env: Record<string, string | undefined> 
   return { version, url: body.url };
 }
 
-export async function sourceDownloadRoute(method: string, ctx: Ctx): Promise<Response> {
+export async function sourceDownloadRoute(method: string, ctx: Ctx, single: boolean = singleAgency()): Promise<Response> {
   if (method !== "GET") return new Response(JSON.stringify({ error: "Not found" }), { status: 404, headers: { "Content-Type": "application/json" } });
   if (ctx.viewing) throw new AuthError("You're viewing as someone else. The source is the owner's to download.", 403);
-  requireRole(ctx, "admin");
+  // The source and the sync token belong to the agency that owns the copy: not a platform install, and not an admin.
+  if (!single) throw new AuthError("The source download is only for agencies running their own copy.", 403);
+  requireRole(ctx, "owner");
   return new Response(JSON.stringify(await sourceDownloadUrl()), { headers: { "Content-Type": "application/json" } });
 }

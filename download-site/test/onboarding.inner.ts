@@ -54,8 +54,8 @@ describe("OAuth: PKCE and state", () => {
       expect(u.pathname).toBe(`/__mock/oauth/${p}/authorize`);
       expect(u.searchParams.get("code_challenge_method")).toBe("S256");
       expect(u.searchParams.get("code_challenge")).toMatch(/^[A-Za-z0-9_-]{43}$/);
-      expect(u.searchParams.get(p === "openrouter" ? "callback_url" : "redirect_uri")).toBe(`http://localhost:4500/oauth/${p}/callback`);
       const state = u.searchParams.get("state")!;
+      expect(u.searchParams.get(p === "openrouter" ? "callback_url" : "redirect_uri")).toBe(`http://localhost:4500/oauth/${p}/callback${p === "openrouter" ? `?s=${state}` : ""}`);
       expect(state.length).toBeGreaterThanOrEqual(40);
       expect(seen.has(state)).toBe(false); seen.add(state);
       expect(url).not.toMatch(/verifier/i);
@@ -97,7 +97,11 @@ describe("OAuth: PKCE and state", () => {
     const c1 = await start("openrouter");
     expect(oauth.consumeState("openrouter", "", "someone-elses-browser-cookie-0123")).toMatchObject({ ok: false, reason: "bad-state" }); // another browser
     expect(oauth.consumeState("openrouter", "", "")).toMatchObject({ ok: false, reason: "bad-state" }); // no cookie at all
+    const first = oauth.consumeState("openrouter", "", c1);
+    expect(first).toMatchObject({ ok: true, buyerId: b.id });
+    // Not used up by looking it up: only after a good exchange (a failed one can be tried again).
     expect(oauth.consumeState("openrouter", "", c1)).toMatchObject({ ok: true, buyerId: b.id });
+    oauth.markStateUsed((first as any).key);
     expect(oauth.consumeState("openrouter", "", c1)).toMatchObject({ ok: false, reason: "bad-state" }); // used up
     const c2 = await start("openrouter");
     expect(oauth.consumeState("openrouter", "", c2, Date.now() + 11 * 60_000)).toMatchObject({ ok: false, reason: "expired" });
@@ -109,6 +113,27 @@ describe("OAuth: PKCE and state", () => {
     const newest = await oauth.oauthStart(b.id, "openrouter");
     const cookieN = newest.cookie.match(/^ob=([^;]+)/)![1];
     expect(oauth.consumeState("openrouter", "", cookieN)).toMatchObject({ ok: true, buyerId: b.id });
+  });
+
+  test("OpenRouter's callback carries our state in its own address (?s=) and is matched exactly, not by cookie", async () => {
+    const b = newBuyer("sinurl");
+    const mk = async () => {
+      const { url, cookie } = await oauth.oauthStart(b.id, "openrouter");
+      const cb = new URL(new URL(url).searchParams.get("callback_url")!);
+      return { s: cb.searchParams.get("s")!, state: new URL(url).searchParams.get("state")!, browser: cookie.match(/^ob=([^;]+)/)![1], cb };
+    };
+    const one = await mk();
+    expect(one.cb.pathname).toBe("/oauth/openrouter/callback");
+    expect(one.s).toBe(one.state);
+    // A second sign-in started in the same browser: the FIRST one's own state still finds the first one (the cookie would pick the newest).
+    const two = await mk();
+    const hit = oauth.consumeState("openrouter", one.s, one.browser) as any;
+    expect(hit).toMatchObject({ ok: true, buyerId: b.id });
+    expect(hit.key).toBeUndefined();
+    expect(oauth.consumeState("openrouter", one.s, one.browser)).toMatchObject({ ok: false, reason: "used" });
+    // A wrong or foreign state is refused even with a good cookie; it does not fall back to the cookie.
+    expect(oauth.consumeState("openrouter", "x".repeat(43), two.browser)).toMatchObject({ ok: false, reason: "bad-state" });
+    expect(oauth.consumeState("openrouter", two.s, "someone-elses-browser-cookie-0123")).toMatchObject({ ok: false, reason: "browser" });
   });
 
   test("the code is swapped with the verifier; OpenRouter gives a key, Railway a refreshable token; a bad code is an error", async () => {

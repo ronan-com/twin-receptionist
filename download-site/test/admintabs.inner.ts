@@ -24,7 +24,7 @@ const post = (path: string, form: Record<string, string> = {}) =>
   fetch(`${SITE}${path}`, { method: "POST", redirect: "manual", headers: { cookie, origin: SITE, "content-type": "application/x-www-form-urlencoded" }, body: new URLSearchParams({ t: csrf, ...form }) });
 const A = addBuyer("Tabs Agency", "tabs@example.com");
 const B = addBuyer("Failed Agency", "failed@example.com");
-updateSetup(A.id, (s) => { s.phase = "done"; s.step = "done"; s.brand = { productName: "Tabs AI", ownerEmail: "o@example.com", ownPhoneAccount: true } as any; });
+updateSetup(A.id, (s) => { s.phase = "done"; s.step = "done"; s.brand = { productName: "Tabs AI", ownerEmail: "o@example.com", ownPhoneAccount: true } as any; s.resultUrl = "https://tabs.up.railway.app"; s.tempUrl = "https://tabs.up.railway.app"; s.firstLogin = { token: "SECRETTOKEN".repeat(4), at: new Date().toISOString() }; });
 updateSetup(B.id, (s) => { s.phase = "failed"; s.step = "install"; s.error = "boom"; });
 
 beforeAll(async () => {
@@ -94,6 +94,11 @@ describe("agency tabs", () => {
     const h = await (await get(`/admin/b/${A.id}?tab=support`)).text();
     // not synced yet (installed with no heartbeat): the tab explains instead of showing dead buttons
     expect(h).toMatch(/installed before syncing existed|Sync now/);
+  });
+  test("the read-only setup view never shows the owner's one-time sign-in token", async () => {
+    const h = await (await get(`/admin/b/${A.id}/setup`)).text();
+    expect(h).not.toContain("SECRETTOKEN");
+    expect(h).not.toContain("/welcome?t=");
   });
   test("a failed agency shows Reset in its danger zone; the read-only setup view and the actions still work", async () => {
     expect(await (await get(`/admin/b/${B.id}?tab=settings`)).text()).toContain(`action="/admin/b/${B.id}/reset"`);

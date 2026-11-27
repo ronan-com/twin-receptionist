@@ -19,6 +19,7 @@ import {
 } from "./store";
 import { USER_DATA_LIMIT, buildEnv, buildUserData } from "./userdata";
 import { SYNC_URL, latestSnapshot, newSyncToken } from "./sync";
+import { brokerOn } from "./broker";
 import { appSource } from "./releases";
 import { createProjectToken, RailwayError } from "./railwayUp";
 import { railwayToken, telnyxKeyFrom, type OAuthProvider, type Tokens } from "./oauth";
@@ -970,7 +971,7 @@ export function phoneSettings(id: number, s: SetupData): Record<string, string> 
  */
 function supportSettings(id: number): Record<string, string> {
   const { token, callToken } = newSyncToken(id);
-  return { SUPPORT_SYNC_URL: SYNC_URL(), SUPPORT_SYNC_TOKEN: token, SUPPORT_CALL_TOKEN: callToken, SUPPORT_SELLER_NAME: CONFIG.sellerName, APP_VERSION: currentPackage()?.version || "" };
+  return { SUPPORT_SYNC_URL: SYNC_URL(), SUPPORT_SYNC_TOKEN: token, SUPPORT_CALL_TOKEN: callToken, SUPPORT_SELLER_NAME: CONFIG.sellerName, APP_VERSION: currentPackage()?.version || "", ...(brokerOn() ? { OAUTH_BROKER: "1" } : {}) };
 }
 
 export function buildSettings(id: number, s: SetupData): string {

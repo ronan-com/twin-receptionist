@@ -2,7 +2,8 @@ import type { PlatformServiceState, PlatformSettings, PlatformTestResult } from 
 import { AuthError, singleAgency, type Ctx } from "./accounts";
 import { audit } from "./audit";
 import { testTransport } from "./mailer";
-import { mailboxSignInAllowed, redirectBase, redirectUri, requestedScopes, type OAuthProvider } from "./oauth";
+import { mailboxSignInAllowed, redirectBase, redirectUri, requestedScopes, usesSharedApp, type OAuthProvider } from "./oauth";
+import { brokerConfig, brokerStatus } from "./broker";
 import { countCheck } from "./phoneAccount";
 import { UI_PRODUCT } from "./product";
 import {
@@ -119,6 +120,7 @@ export async function platformSettings(ctx: Ctx): Promise<PlatformSettings> {
   const m = oauthClient("microsoft");
   const base = redirectBase();
   const mailbox = await mailboxSignInAllowed();
+  await brokerStatus();
   return {
     mail: {
       ...serviceState("mail", mail.source, envServer("SMTP_URL", "MAIL_FROM"), last4OfSmtp(mail.smtpUrl)),
@@ -133,6 +135,8 @@ export async function platformSettings(ctx: Ctx): Promise<PlatformSettings> {
       scopes: await requestedScopes("microsoft"),
       mailboxSignIn: mailbox.microsoft,
     },
+    // The setup site's shared Google / Microsoft app (server/broker.ts): in use for a provider with no app of its own saved.
+    shared: { configured: brokerConfig() !== null, google: usesSharedApp("google", "calendar"), microsoft: usesSharedApp("microsoft", "calendar") },
     publicBase: base,
     publicWarning: publicWarning(base),
     testTo: ctx.user.email,

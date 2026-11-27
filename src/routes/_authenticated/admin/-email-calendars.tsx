@@ -269,6 +269,12 @@ function OAuthCard({ s, provider }: { s: PlatformSettings; provider: "google" | 
     <div data-card={provider} data-state={st.state}>
       <Panel title={<CardTitle icon={CalendarCheck}>{p.title}</CardTitle>} description={st.mailboxSignIn ? p.mailSub : p.sub} actions={<StateBadge st={st} />}>
         <div className="space-y-3">
+          {s.shared[provider] ? (
+            <Notice tone="info">
+              This is already working without an app of your own: {p.title} sign-in goes through the shared connection from your setup provider. Only save keys below
+              if you would rather use your own app. Saving your own keys switches this provider over to them.
+            </Notice>
+          ) : null}
           <p className="max-w-[680px] text-[12.5px] leading-5 text-ink-muted">
             {p.how} <ConsoleLink href={p.link}>{p.linkText}</ConsoleLink>
           </p>

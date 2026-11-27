@@ -988,6 +988,8 @@ export type PlatformSettings = {
   // it is also offered for mailboxes (MAILBOX_SIGNIN), not just calendars.
   google: PlatformServiceState & { clientId: string; redirectUri: string; scopes: string[]; mailboxSignIn: boolean };
   microsoft: PlatformServiceState & { clientId: string; redirectUri: string; scopes: string[]; mailboxSignIn: boolean };
+  // The setup site's shared Google / Microsoft sign-in (OAUTH_BROKER): configured here, and in use for a provider with no app of its own.
+  shared: { configured: boolean; google: boolean; microsoft: boolean };
   // The public address the redirect URIs are built from, and a warning when it
   // won't work with the providers (not https, or a local address).
   publicBase: string;

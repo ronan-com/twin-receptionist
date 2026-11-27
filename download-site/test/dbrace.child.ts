@@ -4,3 +4,4 @@ const { ticketTables } = await import("../tickets");
 db(); ticketTables();
 const cols = (db().query("PRAGMA table_info(buyers)").all() as { name: string }[]).map((c) => c.name);
 console.log("OPENED " + ["demo", "style", "source_link", "invited_at"].every((c) => cols.includes(c)));
+export {};

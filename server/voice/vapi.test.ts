@@ -82,14 +82,51 @@ describe("script and voice", () => {
     expect(map.toVapiScript("{{twin_open_now}}", false)).toBe("no");
   });
 
-  test("the voice picker ids map to Vapi voices, and a Telnyx leftover falls back to an Australian one", () => {
+  test("the voice picker ids map to Vapi voices, and a Telnyx leftover falls back to the default", () => {
     expect(map.vapiVoice("azure:en-AU-WilliamNeural")).toEqual({ provider: "azure", voiceId: "en-AU-WilliamNeural" });
+    // Voices no longer listed keep working for the receptionists that have them.
+    expect(map.vapiVoice("azure:en-AU-CarlyNeural")).toEqual({ provider: "azure", voiceId: "en-AU-CarlyNeural" });
     expect(map.vapiVoice("vapi:Elliot")).toEqual({ provider: "vapi", voiceId: "Elliot" });
     expect(map.vapiVoice("11labs:21m00Tcm4TlvDq8ikWAM")).toEqual({ provider: "11labs", voiceId: "21m00Tcm4TlvDq8ikWAM" });
-    expect(map.vapiVoice("some-telnyx-uuid")).toEqual({ provider: "azure", voiceId: "en-AU-NatashaNeural" });
+    expect(map.vapiVoice("some-telnyx-uuid")).toEqual({ provider: "11labs", voiceId: "IKne3meq5aSn9XLyUdCD" });
+  });
+
+  test("the voice list: 12 to 20 curated voices, ElevenLabs first, each with name, gender, accent, maker, description and a clip", () => {
     const list = map.vapiVoiceList();
-    expect(list[0].recommended).toBe(true);
+    expect(list.length).toBeGreaterThanOrEqual(12);
+    expect(list.length).toBeLessThanOrEqual(20);
     expect(new Set(list.map((v) => v.id)).size).toBe(list.length);
+    // The default for new Vapi receptionists: a natural ElevenLabs voice with an Australian accent.
+    expect(list[0]).toMatchObject({ id: map.DEFAULT_VAPI_VOICE.id, maker: "ElevenLabs", accent: "Australian", recommended: true });
+    expect(map.DEFAULT_VAPI_VOICE.provider).toBe("11labs");
+    for (const v of list) {
+      expect(v.id).toMatch(/^(11labs|vapi|azure):[\w.-]+$/);
+      expect(v.name.length).toBeGreaterThan(1);
+      expect(["female", "male"]).toContain(v.gender);
+      expect(v.accent).toBeTruthy();
+      expect(["ElevenLabs", "Vapi", "Azure"]).toContain(v.maker!);
+      expect(v.label.length).toBeGreaterThan(5);
+      expect(v.previewUrl).toBe(map.previewPath(v.id.split(":")[0], v.id.split(":")[1]));
+    }
+    const makers = new Set(list.map((v) => v.maker));
+    expect([...makers].sort()).toEqual(["Azure", "ElevenLabs", "Vapi"]);
+    // Australian, British and American; women and men.
+    for (const accent of ["Australian", "British", "American"]) expect(list.some((v) => v.accent === accent)).toBe(true);
+    for (const accent of ["Australian", "British", "American"]) for (const g of ["female", "male"]) expect(list.some((v) => v.accent === accent && v.gender === g)).toBe(true);
+  });
+
+  test("every listed voice has its preview clip under public/voice-previews (a real mp3, not an error page)", async () => {
+    const { existsSync, readFileSync, statSync } = await import("node:fs");
+    const { join } = await import("node:path");
+    const root = join(import.meta.dir, "../../public");
+    for (const v of map.vapiVoiceList()) {
+      const file = join(root, v.previewUrl!);
+      expect(existsSync(file)).toBe(true);
+      expect(statSync(file).size).toBeGreaterThan(8_000);
+      const head = readFileSync(file).subarray(0, 3);
+      // ID3 tag, or an MPEG frame sync.
+      expect(head.toString("latin1") === "ID3" || (head[0] === 0xff && (head[1] & 0xe0) === 0xe0)).toBe(true);
+    }
   });
 });
 
@@ -103,15 +140,47 @@ describe("assistant body", () => {
     expect(body.model.messages).toHaveLength(1);
     expect(body.model.messages[0].role).toBe("system");
     expect(body.model.messages[0].content).toContain("base script.");
-    expect(body.voice).toEqual({ provider: "azure", voiceId: "en-AU-NatashaNeural" });
+    expect(body.voice).toEqual({ provider: "azure", voiceId: "en-AU-NatashaNeural", chunkPlan: { enabled: true, minCharacters: 10 } });
     expect(body.model.tools[0]).toEqual({ type: "endCall" });
-    expect(body.transcriber).toEqual({ provider: "deepgram", model: "nova-3", language: "en-AU" });
+    expect(body.transcriber).toEqual({ provider: "deepgram", model: "nova-3", language: "en-AU", endpointing: 150 });
     expect(body.serverMessages).toEqual(["end-of-call-report"]);
     expect(body.server.url).toBe(`${BASE}/hooks/vapi/${client.id}`);
     expect(body.server.headers["X-Vapi-Secret"]).toBe(map.eventsSecret(client.id));
     // Recording is off until the agency turns it on.
     expect(body.artifactPlan).toEqual({ recordingEnabled: false });
     expect(body.maxDurationSeconds).toBe(1800);
+  });
+
+  test("the fast settings: quick model, ElevenLabs flash, Deepgram endpointing, brisk turn-taking, speaks first", () => {
+    const body: any = map.vapiAssistantBody(build({ voiceId: "11labs:Xb7hH8MSUJpSbSDYk0k2" }));
+    expect(body.firstMessageMode).toBe("assistant-speaks-first");
+    expect(body.model).toMatchObject({ provider: "openai", model: "gpt-4.1-mini", temperature: 0.4, maxTokens: 250 });
+    expect(body.voice).toEqual({
+      provider: "11labs",
+      voiceId: "Xb7hH8MSUJpSbSDYk0k2",
+      model: "eleven_flash_v2_5",
+      optimizeStreamingLatency: 3,
+      stability: 0.5,
+      similarityBoost: 0.75,
+      chunkPlan: { enabled: true, minCharacters: 10 },
+    });
+    expect(body.transcriber).toEqual({ provider: "deepgram", model: "nova-3", language: "en-AU", endpointing: 150 });
+    expect(body.startSpeakingPlan).toEqual({ waitSeconds: 0.2, smartEndpointingPlan: { provider: "livekit", waitFunction: "200 + 1000 * x" } });
+    expect(body.stopSpeakingPlan).toEqual({ numWords: 0, voiceSeconds: 0.2, backoffSeconds: 1 });
+    expect(body.backgroundSound).toBe("off");
+    // No blocking webhooks: only the end-of-call report (after the call), never assistant-request.
+    expect(body.serverMessages).toEqual(["end-of-call-report"]);
+    // Vapi's own voice: no ElevenLabs fields.
+    expect(map.vapiAssistantBody(build({ voiceId: "vapi:Clara" })).voice).toEqual({ provider: "vapi", voiceId: "Clara", chunkPlan: { enabled: true, minCharacters: 10 } });
+    // Several languages: LiveKit's turn model is English only, so transcription endpointing.
+    const multi: any = map.vapiAssistantBody(build({ language: "multi" }));
+    expect(multi.startSpeakingPlan.smartEndpointingPlan).toBeUndefined();
+    expect(multi.startSpeakingPlan.transcriptionEndpointingPlan).toEqual({ onPunctuationSeconds: 0.1, onNoPunctuationSeconds: 1.0, onNumberSeconds: 0.5 });
+  });
+
+  test("a new receptionist's default voice goes out as ElevenLabs Charlie with the fast settings", () => {
+    const body: any = map.vapiAssistantBody(build({ voiceId: map.DEFAULT_VAPI_VOICE.id }));
+    expect(body.voice).toMatchObject({ provider: "11labs", voiceId: "IKne3meq5aSn9XLyUdCD", model: "eleven_flash_v2_5" });
   });
 
   test("names stay within Vapi's 40 characters", () => {
@@ -124,7 +193,9 @@ describe("assistant body", () => {
     const fns = body.model.tools.filter((t: any) => t.type === "function");
     expect(fns.map((t: any) => t.function.name)).toEqual(BOOKING_TOOL_DEFS.map((d) => d.name));
     const book = fns.find((t: any) => t.function.name === "book_appointment");
-    expect(book.server).toEqual({ url: `${BASE}/hooks/${client.id}/vapi/book`, timeoutSeconds: 10, headers: { "X-Twin-Key": "tok-booking-123" } });
+    expect(book.server).toEqual({ url: `${BASE}/hooks/${client.id}/vapi/book`, timeoutSeconds: 8, headers: { "X-Twin-Key": "tok-booking-123" } });
+    // A slow calendar gets a "just a moment" instead of dead air; a quick one gets nothing.
+    expect(book.messages).toEqual([{ type: "request-response-delayed", timingMilliseconds: 1500, content: "Just a moment, I'm checking that for you." }]);
     expect(book.function.parameters.required).toEqual(["start", "name", "phone", "service", "channel"]);
   });
 

@@ -69,6 +69,12 @@ export interface VoiceProvider {
     buy(client: Business, input: unknown): Promise<NumberOrder>;
     /** Brings a number the agency already owns elsewhere and points it at the receptionist. */
     attach(client: Business, input: unknown): Promise<NumberOrder>;
+    /**
+     * Before the receptionist moves to the other engine: takes its numbers off this assistant
+     * so nothing is left pointing at an assistant about to be deleted. The numbers stay on
+     * the account they're on (Telnyx, Twilio). Returns the numbers that were taken off.
+     */
+    detachAll(client: Business): Promise<string[]>;
   };
 
   /** What the browser test call needs. */

@@ -55,6 +55,26 @@ function assistantFields(s: Settings, instructions: string) {
   };
 }
 
+// ---- Voice previews ----------------------------------------------------------------------
+// The Play button in the voice pickers: a short line in the voice, made by Telnyx's text-to-speech
+// the first time someone plays it and kept in memory after (a few KB each, a few dozen voices).
+
+export const PREVIEW_LINE = "Hi, thanks for calling. You've reached the front desk. How can I help you today?";
+const previews = new Map<string, Buffer>();
+
+/** An mp3 of `PREVIEW_LINE` in a Telnyx voice (ids like "Telnyx.Ultra.<uuid>"). */
+export async function telnyxVoicePreview(voiceId: string): Promise<Buffer> {
+  if (!/^Telnyx\.[A-Za-z0-9_.-]{2,100}$/.test(voiceId)) throw new ValidationError("Unknown voice.");
+  const hit = previews.get(voiceId);
+  if (hit) return hit;
+  const res = await telnyx<{ base64_audio?: string }>("POST", "/text-to-speech/speech", { text: PREVIEW_LINE, voice: voiceId, language: "en-AU", output_type: "base64_output" });
+  if (!res?.base64_audio) throw new TelnyxError(502, "The phone service didn't return the preview.");
+  const audio = Buffer.from(res.base64_audio, "base64");
+  if (previews.size > 200) previews.clear();
+  previews.set(voiceId, audio);
+  return audio;
+}
+
 export const telnyxProvider: VoiceProvider = {
   id: "telnyx",
   label: "Telnyx",
@@ -164,6 +184,9 @@ export const telnyxProvider: VoiceProvider = {
         label: v.label ?? "",
         gender: v.gender ?? "",
         recommended: RECOMMENDED.includes(v.name),
+        accent: "Australian",
+        maker: "Telnyx",
+        previewUrl: `/api/voices/preview?voice=${encodeURIComponent(v.id)}`,
       });
     }
     voices.sort(
@@ -195,6 +218,12 @@ export const telnyxProvider: VoiceProvider = {
     },
     async attach(): Promise<NumberOrder> {
       throw new ValidationError("With Telnyx, numbers are bought here. To bring a number from elsewhere, use Vapi.");
+    },
+    async detachAll(client) {
+      // The numbers stay on the agency's Telnyx account. Once this receptionist is off Telnyx its
+      // voice app is no longer one of ours, so they show under "numbers you already own", ready
+      // to attach to a Telnyx receptionist.
+      return (await connectedNumbers(await voiceAppFor(client.assistantId)).catch(() => [])).map((n) => n.phoneNumber);
     },
   },
 

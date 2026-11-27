@@ -54,7 +54,7 @@ export function BuyNumber({ clientId, timezone, onBought }: { clientId: string; 
       <Button type="button" size="sm" variant="outline" className="h-8 w-full text-[12.5px]" onClick={() => setOpen(true)} data-action="buy-number">
         <Phone /> Add a number
       </Button>
-      <p className="mt-1.5 text-[11.5px] text-ink-muted">Buy one (charged to your Telnyx account each month) or use one you already own there.</p>
+      <p className="mt-1.5 text-[11.5px] text-ink-muted">This receptionist runs on Telnyx, so it takes a Telnyx number: buy one (charged to your Telnyx account each month) or use one you already own there.</p>
 
       <Dialog
         open={open}
@@ -83,11 +83,11 @@ export function BuyNumber({ clientId, timezone, onBought }: { clientId: string; 
             </TabsList>
             <TabsContent value="twilio" className="mt-3">
               <Notice tone="info" title="Twilio numbers use the Vapi backup option">
-                This receptionist runs on Telnyx (recommended), so it keeps a Telnyx number. To answer a Twilio number, switch your voice engine to Vapi under{" "}
+                This receptionist runs on Telnyx (recommended), so it answers Telnyx numbers only. To answer a Twilio number, use Move to Vapi on this receptionist, or make a new receptionist on Vapi (connect Vapi under{" "}
                 <Link to="/admin/connections" className="font-medium text-indigo hover:underline">
-                  Connections, Other options (backup)
+                  Connections
                 </Link>
-                .
+                ).
               </Notice>
             </TabsContent>
             <TabsContent value="own" className="mt-3">

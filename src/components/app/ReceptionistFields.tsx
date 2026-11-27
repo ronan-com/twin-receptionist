@@ -4,6 +4,7 @@ import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { DAY_KEYS, DAY_LABELS, type BusinessHours, type Voice } from "@/lib/app/types";
 import { cn } from "@/lib/utils";
+import { VoicePreviewButton } from "./VoicePreview";
 
 // Receptionist form pieces shared by the receptionist page and the onboarding wizard.
 
@@ -46,6 +47,7 @@ export function VoicePicker({ voices, value, onChange, disabled, loading }: { vo
               </span>
               <span className="mt-0.5 block text-[12px] text-ink-muted">{[v.accent, v.style].filter(Boolean).join(" · ")}</span>
             </span>
+            <VoicePreviewButton id={v.id} url={v.preview_url} name={v.display_name.split(" - ")[0]} className="self-center" />
           </div>
         );
       })}

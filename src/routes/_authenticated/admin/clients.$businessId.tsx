@@ -3,7 +3,7 @@ import { useState } from "react";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { ArrowLeft, Eye, Pause, Pencil, Phone, Play, Plus, Share2, Trash2, UserMinus, X } from "lucide-react";
+import { ArrowLeft, ArrowRightLeft, Eye, Pause, Pencil, Phone, Play, Plus, RefreshCw, Share2, Trash2, UserMinus, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -15,7 +15,7 @@ import { AppointmentBadge, CallStatusBadge, DemoBadge, LeadStageBadge, OutcomeBa
 import { Field } from "@/components/app/forms";
 import { DeleteDialog, DeletedDialog, type DeletedReport } from "@/components/app/DeleteDialog";
 import { fmtDate, fmtDuration, fmtNumber, fmtPhone, fmtRelative, fmtSmartDate, humanize } from "@/lib/app/format";
-import { brandApi, companyApi, platformApi, requestNumberFor, resolveIncident, setBusinessStatus, type CompanyDetail, type CompanyReceptionist, type ConsoleCall } from "@/lib/api/console";
+import { applyVapiVoiceSettings, brandApi, companyApi, getVoiceEngines, moveReceptionistEngine, platformApi, requestNumberFor, resolveIncident, setBusinessStatus, type CompanyDetail, type CompanyReceptionist, type ConsoleCall } from "@/lib/api/console";
 import { describeHours, INDUSTRIES, industry as industryPreset, type IndustryKey } from "@/lib/shared";
 import type { AppointmentStatus, LeadStage } from "@/lib/app/types";
 import { AutomationChips, AutomationIcon, CallSheet, LinkBox, READ_ONLY_HINT, useConsole } from "./-shared";
@@ -655,6 +655,35 @@ function ReceptionistCard({
     onError: (e: Error) => toast.error("Couldn't request a number", { description: e.message }),
   });
   const who = r.business_name || companyName;
+  // An agency with both engines connected can move a receptionist between them.
+  const enginesQ = useQuery({ queryKey: ["console", "voice-engines"], queryFn: getVoiceEngines, staleTime: 5 * 60_000, enabled: canManage && !readOnly && !platform });
+  const engineLabel = r.provider === "vapi" ? "Vapi" : "Telnyx";
+  const otherEngine = r.provider === "vapi" ? "telnyx" : "vapi";
+  const otherLabel = otherEngine === "vapi" ? "Vapi" : "Telnyx";
+  const canMove = Boolean(enginesQ.data?.engines.find((e) => e.id === otherEngine)?.connected);
+  const [moving, setMoving] = useState(false);
+  const move = useMutation({
+    mutationFn: () => moveReceptionistEngine(r.id, otherEngine),
+    onSuccess: async (res) => {
+      setMoving(false);
+      toast.success(`${r.name} now runs on ${otherLabel}`, {
+        description: res.detached.length
+          ? `${res.detached.map(fmtPhone).join(", ")} no longer rings it (${otherLabel} can't answer ${engineLabel === "Vapi" ? "a Twilio" : "a Telnyx"} number). Add a ${otherLabel === "Vapi" ? "Twilio" : "Telnyx"} number below.`
+          : `Add a ${otherLabel === "Vapi" ? "Twilio" : "Telnyx"} number below when you're ready.`,
+        duration: 12_000,
+      });
+      await onChanged();
+    },
+    onError: (e: Error) => toast.error(`Couldn't move it to ${otherLabel}`, { description: e.message }),
+  });
+  const applyVoice = useMutation({
+    mutationFn: () => applyVapiVoiceSettings(r.id),
+    onSuccess: async () => {
+      toast.success("Voice settings applied", { description: "It now uses the faster voice setup: quicker replies and turn-taking." });
+      await onChanged();
+    },
+    onError: (e: Error) => toast.error("Couldn't apply the voice settings", { description: e.message }),
+  });
   // An agency owner or admin on its own phone account sees each number as Telnyx reports it (approval status, disconnect).
   const showOwnNumbers = !readOnly && ownPhone && canManage && r.provider !== "vapi";
   const plainNumbers = r.numbers.length ? (
@@ -680,9 +709,10 @@ function ReceptionistCard({
           <StatusBadge tone={paused ? "muted" : "success"} dot>{paused ? "Paused" : "Active"}</StatusBadge>
           {r.onboarding_pending ? <StatusBadge tone="warning">Waiting for client</StatusBadge> : null}
           {r.demo_assistant ? <DemoBadge /> : null}
+          <span data-engine={r.provider}><StatusBadge tone="muted">{engineLabel}</StatusBadge></span>
         </span>
       }
-      description={`Answers for ${who}${s.voice ? ` · ${s.voice.split(" - ")[0]} voice` : ""}`}
+      description={`Answers for ${who}${s.voice ? ` · ${s.voice.split(" - ")[0]} voice` : ""} · ${engineLabel} · ${r.number_source ?? (r.numbers.length ? `${engineLabel === "Vapi" ? "Twilio" : "Telnyx"} number` : "No number")}`}
       actions={
         <div className="flex flex-wrap gap-1.5">
           {ownOrg ? (
@@ -706,9 +736,51 @@ function ReceptionistCard({
               </Button>
             )
           ) : null}
+          {canManage && !readOnly && r.provider === "vapi" ? (
+            <Button variant="ghost" size="sm" className="h-7 text-[12px]" onClick={() => applyVoice.mutate()} disabled={applyVoice.isPending} data-action="apply-voice-settings" title="Push the faster voice setup (model, voice and turn-taking) to this receptionist">
+              <RefreshCw className={`mr-1 h-3.5 w-3.5 ${applyVoice.isPending ? "animate-spin" : ""}`} /> Apply new voice settings
+            </Button>
+          ) : null}
+          {canManage && !readOnly && canMove ? (
+            <Button variant="ghost" size="sm" className="h-7 text-[12px]" onClick={() => setMoving(true)} data-action={`move-to-${otherEngine}`}>
+              <ArrowRightLeft className="mr-1 h-3.5 w-3.5" /> Move to {otherLabel}
+            </Button>
+          ) : null}
         </div>
       }
     >
+      <AlertDialog open={moving} onOpenChange={(o) => !move.isPending && setMoving(o)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Move {r.name} to {otherLabel}?</AlertDialogTitle>
+            <AlertDialogDescription asChild>
+              <div className="space-y-2 text-[13px]">
+                <p>It's set up again on {otherLabel} with everything it has now: its script, business details, knowledge, booking, call handling and the closest {otherLabel} voice. Then the {engineLabel} one is removed.</p>
+                {r.numbers.length ? (
+                  <p data-warning="numbers">
+                    <strong>Its number{r.numbers.length > 1 ? "s" : ""} ({r.numbers.map((n) => n.friendly_name).join(", ")}) will stop ringing it.</strong> {otherLabel} can't answer {engineLabel === "Vapi" ? "a Twilio" : "a Telnyx"} number. The number stays on your {engineLabel === "Vapi" ? "Twilio" : "Telnyx"} account; add a {otherLabel === "Vapi" ? "Twilio" : "Telnyx"} number here afterwards.
+                  </p>
+                ) : (
+                  <p>It has no number yet. Add a {otherLabel === "Vapi" ? "Twilio" : "Telnyx"} number afterwards.</p>
+                )}
+              </div>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={move.isPending}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(e) => {
+                e.preventDefault();
+                move.mutate();
+              }}
+              disabled={move.isPending}
+              data-action="confirm-move-engine"
+            >
+              {move.isPending ? "Moving…" : `Move to ${otherLabel}`}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
       <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,300px)]" data-receptionist={r.id}>
         <div className="min-w-0 space-y-3">
           <ul className="divide-y divide-hairline rounded-[6px] border border-hairline" data-list="automations">

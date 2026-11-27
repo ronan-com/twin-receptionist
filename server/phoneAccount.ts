@@ -85,8 +85,8 @@ export function countCheck(orgId: string): void {
   checks.set(orgId, [...recent, now]);
 }
 
-async function modeOf(orgId: string) {
-  const provider = await providerOfOrg(orgId);
+async function modeOf(orgId: string, engine?: VoiceProviderId) {
+  const provider = engine ?? (await providerOfOrg(orgId));
   const [o] = await sql`select telnyx_key, telnyx_key_last4, telnyx_key_at, vapi_key, vapi_key_last4, vapi_public_key, vapi_key_at, platform_telnyx from orgs where id = ${orgId}`;
   const mode: PhoneAccount["mode"] = await accountMode(orgId, provider);
   return { mode, row: o, provider };
@@ -94,9 +94,9 @@ async function modeOf(orgId: string) {
 
 const NAME: Record<VoiceProviderId, string> = { telnyx: "Telnyx", vapi: "Vapi" };
 
-/** Refuses when the agency has no phone account yet (its own or the platform's). */
-export async function requirePhoneAccount(orgId: string): Promise<void> {
-  const { mode, provider } = await modeOf(orgId);
+/** Refuses when the agency has no phone account yet (its own or the platform's) for its engine, or for `engine`. */
+export async function requirePhoneAccount(orgId: string, engine?: VoiceProviderId): Promise<void> {
+  const { mode, provider } = await modeOf(orgId, engine);
   if (mode === "none") {
     throw new ValidationError(
       singleAgency()

@@ -143,6 +143,9 @@ export type BookingState = {
 
 export type VoiceProviderId = "telnyx" | "vapi";
 
+/** Where a receptionist's number comes from: bought on Telnyx, on Twilio (Vapi answers it), or Vapi's free US numbers. */
+export type NumberSource = "telnyx" | "twilio" | "vapi";
+
 export type Business = {
   id: string;
   assistantId: string;
@@ -153,8 +156,11 @@ export type Business = {
   connect?: { tokenHash: string; expiresAt: string; createdAt: string };
   // Numbers Telnyx reports as connected, refreshed whenever the phone number card loads.
   phoneNumbers?: string[];
+  // Where each attached number came from (recorded when it's attached; older numbers have none).
+  numberSources?: Record<string, NumberSource>;
   // The voice engine this receptionist's assistant lives on. Missing means Telnyx (every
-  // receptionist made before Vapi was added). Set when it is made, from its agency's choice.
+  // receptionist made before Vapi was added). Set when it is made (the agency's choice, or the
+  // wizard's Voice engine pick), and changed by "Move to Telnyx/Vapi".
   voiceProvider?: VoiceProviderId;
   // Made from the console's "send the client an onboarding link": "pending" until the
   // client finishes setting it up in their workspace, then "done".
@@ -169,6 +175,12 @@ export type Voice = {
   label: string;
   gender: string;
   recommended: boolean;
+  /** "Australian", "British", "American"... (Telnyx's are all Australian, so it's left out there). */
+  accent?: string;
+  /** Who makes the voice: "ElevenLabs", "Vapi", "Azure" (Vapi engine only). */
+  maker?: string;
+  /** A short clip of the voice, served from /voice-previews/ (Vapi engine voices). */
+  previewUrl?: string;
 };
 
 export type CallSummary = {
@@ -306,6 +318,8 @@ export type NumberSupport = {
   // Whether a Twilio number can answer this receptionist (Vapi only).
   twilio?: boolean;
   note: string;
+  /** Which numbers fit this receptionist's engine, and why (shown in the Add-a-number dialog). */
+  rule?: string;
 };
 
 export type NumberState = {

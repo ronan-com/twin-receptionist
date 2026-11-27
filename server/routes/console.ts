@@ -12,6 +12,7 @@ import { ValidationError } from "../prompt";
 import { demoCallDetail, isDemo } from "../sandbox";
 import { runAsOrg } from "../telnyx";
 import { providerOfClient } from "../voice/config";
+import { numberSourceLabel } from "../voice/engines";
 import { voiceFor } from "../voice";
 import { json, readBody, type RouteArgs } from "./http";
 import { manageDeps } from "./manage";
@@ -144,6 +145,8 @@ function agentRow(c: ClientRow) {
     voice: s.voiceName ? { id: s.voiceId ?? "", display_name: s.voiceName, provider: providerOfClient(c.data) } : null,
     language: "en-AU",
     provider: providerOfClient(c.data),
+    // "Telnyx number", "Twilio number" or "No number", for the receptionist card.
+    number_source: numberSourceLabel(c.data),
     provider_agent_id: c.data.assistantId,
     demo_assistant: isDemo(c.data.assistantId ?? ""),
     llm_model: MODEL,

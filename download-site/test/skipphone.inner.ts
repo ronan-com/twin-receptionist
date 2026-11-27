@@ -48,7 +48,7 @@ describe("skip the phone step", () => {
     expect(html(b, "phones")).toContain('action="/setup/' + b.code + '/a/phones-skip"');
     // Secondary: a small text link under the options, not a button in the bar.
     expect(html(b, "phones")).toMatch(/<div class="skip-phones"><form[^>]*phones-skip"><input[\s\S]*?<button class="linkbtn"/);
-    expect(html(b, "phones").indexOf("Or use Vapi (Twilio optional)")).toBeLessThan(html(b, "phones").indexOf("data-skip-phones"));
+    expect(html(b, "phones").indexOf("Option B: Vapi")).toBeLessThan(html(b, "phones").indexOf("data-skip-phones"));
     expect(html(b, "vapi")).toContain("Skip for now — connect it later in your dashboard");
   });
 

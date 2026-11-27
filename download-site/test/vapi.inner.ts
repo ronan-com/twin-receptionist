@@ -169,9 +169,9 @@ describe("Telnyx first, Vapi and Twilio as backup options", () => {
     const b = await buyer("j");
     const html = (view: string) => wizardPage(b, getSetup(b.id), b.code, "sid", view as any);
     const phones = html("phones");
-    expect(phones).toContain("Telnyx <span class=\"tag\">Recommended</span>");
-    expect(phones).toContain("Or use Vapi (Twilio optional)");
-    expect(phones.indexOf("Telnyx API key")).toBeLessThan(phones.indexOf("Or use Vapi (Twilio optional)"));
+    expect(phones).toContain("Option A: Telnyx <span class=\"tag\">Recommended</span>");
+    expect(phones).toContain("Option B: Vapi");
+    expect(phones.indexOf("Telnyx API key")).toBeLessThan(phones.indexOf("Option B: Vapi"));
     expect(phones).not.toContain('name="provider"');
     updateSetup(b.id, (s) => { s.phones = { confirmed: true, provider: "telnyx" }; s.step = "extras"; });
     const extras = html("extras");

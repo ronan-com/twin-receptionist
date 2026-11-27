@@ -247,14 +247,14 @@ function vapiTwilio(c: Ctx): string {
   const on = !!c.s.vapi?.confirmed && !!c.s.twilio?.confirmed;
   const fl = c.flash?.form || {};
   return `<section class="phone-alt" data-option="vapi-twilio">
-  <h3 class="extras-head">Or use Vapi (Twilio optional)</h3>
-  <p class="hint">Vapi runs the receptionists' voice. Twilio is optional: add it now or later for Australian phone numbers and texts. Leave the Twilio boxes empty to use Vapi on its own.</p>
+  <h3 class="extras-head">Option B: Vapi <span class="tag">Twilio optional</span></h3>
+  <p class="hint">Vapi runs the receptionists' voice. That's all you need. <b>Twilio is optional</b>: add it (Option C, Vapi + Twilio) for Australian phone numbers and texts, now or later. Leave the two Twilio boxes empty to use Vapi on its own.</p>
   ${on ? notice("ok", `Vapi connected (${esc(secretHint(c.b.id, "vapi_key") || "Vapi")})${c.s.twilio?.confirmed ? `, Twilio ${esc(c.s.twilio.sid || "")}` : ", no Twilio yet"}. Your receptionists run on Vapi. ${mini(c, "phones-vapi-remove", "Use Telnyx instead", "linkbtn")}`) : ""}
   <form id="vapitwilio" method="post" action="${base(c)}/a/phones-vapi">${hidden(c)}
   <div class="two"><div>${secretIn("vapiKey", "Private key", secretHint(c.b.id, "vapi_key"), "Vapi private API key")}</div>
   <div><label class="f" for="vapiPublic">Vapi public key</label><input id="vapiPublic" name="vapiPublic" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" maxlength="300" placeholder="Public key (used by the browser test call)" value="${esc(fl.vapiPublic ?? "")}"></div></div>
-  <div class="two"><div><label class="f" for="twilioSid">Twilio Account SID</label><input id="twilioSid" name="twilioSid" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" maxlength="60" placeholder="AC..." value="${esc(fl.twilioSid ?? c.s.twilio?.sid ?? "")}"></div>
-  <div>${secretIn("twilioToken", "Auth Token", secretHint(c.b.id, "twilio_token"), "Twilio Auth Token")}</div></div>
+  <div class="two"><div><label class="f" for="twilioSid">Twilio Account SID <span class="tag">Optional</span></label><input id="twilioSid" name="twilioSid" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" maxlength="60" placeholder="AC..." value="${esc(fl.twilioSid ?? c.s.twilio?.sid ?? "")}"></div>
+  <div>${secretIn("twilioToken", "Auth Token", secretHint(c.b.id, "twilio_token"), "Twilio Auth Token (optional)")}</div></div>
   ${showMeHow(["vapi-account", "twilio-account"])}
   <p><button class="btn o" type="submit" form="vapitwilio" data-action="phones-vapi">Check and use Vapi ${icon("right")}</button></p>
   </form></section>`;
@@ -262,9 +262,9 @@ function vapiTwilio(c: Ctx): string {
 
 function phones(c: Ctx) {
   const saved = secretHint(c.b.id, "telnyx_key");
-  return `${head(c, "Connect your phone account", "Your clients' receptionists answer calls on your own phone account. Telnyx is the recommended one: buy Australian numbers inside the app, and texting after calls works.")}
+  return `${head(c, "Connect your voice provider", "Pick one so your receptionists can start talking. Option A (Telnyx) is recommended; Option B (Vapi) also works, with Twilio optional for numbers and texts. You can also skip and connect it later.")}
 <div class="body">${mainForm(c, "phones", `
-  <h3>Telnyx <span class="tag">Recommended</span></h3>
+  <h3>Option A: Telnyx <span class="tag">Recommended</span></h3>
   ${secretIn("key", "KEY...", saved, "Telnyx API key")}
   ${notice("warn", "A new Telnyx account is a trial: callers can't get through until it's upgraded and has credit.")}
   ${RAILWAY ? `<p class="hint">Still waiting for Telnyx to approve your account? That can take a few hours to two days. Skip this for now: your agency installs and opens as normal, and you paste the key later in your dashboard under <b>Connections</b>.</p>` : ""}
@@ -288,7 +288,7 @@ ${nav(c, `${mini(c, "vapi-skip", "Skip", "linkbtn")}${primary("Check and continu
 function twilio(c: Ctx) {
   return `${head(c, "Connect Twilio numbers", "A backup option. Buy Australian numbers on your own Twilio account, or use ones you already have, and send follow-up texts from them. It works with the Vapi backup option. You can also add it later under Connections.")}
 <div class="body">${mainForm(c, "twilio", `
-  <label class="f" for="twilioSid">Twilio Account SID</label><input id="twilioSid" name="twilioSid" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" maxlength="60" placeholder="AC..." value="${val(c, "twilioSid", c.s.twilio?.sid || c.s.phones?.twilioSid || "")}">
+  <label class="f" for="twilioSid">Twilio Account SID <span class="tag">Optional</span></label><input id="twilioSid" name="twilioSid" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" maxlength="60" placeholder="AC..." value="${val(c, "twilioSid", c.s.twilio?.sid || c.s.phones?.twilioSid || "")}">
   ${secretIn("twilioToken", "Auth Token", secretHint(c.b.id, "twilio_token"), "Twilio Auth Token")}`)}</div>
 ${nav(c, `${mini(c, "twilio-skip", "Skip", "linkbtn")}${primary("Check and continue")}`)}`;
 }

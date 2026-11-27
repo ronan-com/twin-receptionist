@@ -86,22 +86,26 @@ interface PanelHelpers { hiddenT: (sid: string) => string; copyBtn: (v: string) 
  *  each with on/off, the address with Copy, and "Make a new link". */
 export function linksPanel(sid: string, h: PanelHelpers): string {
   const T = h.hiddenT(sid);
-  const row = (style: Style, title: string, note: string) => {
-    const l = listLinks().find((x) => x.style === style);
-    const url = l ? linkUrl(l) : "";
-    return `<div class="linkblock" data-style="${style}">
-<div class="titlerow"><b>${esc(title)}</b> ${l && l.enabled ? `<span class="pill live">On</span>` : `<span class="pill">Off</span>`} ${l ? `<span class="hint">${l.started} started</span>` : ""}
-<form method="post" action="/admin/links/${l ? `${l.id}/toggle` : `new-${style}`}">${T}<button class="btn ${l && l.enabled ? "o" : "p"}" type="submit">${l && l.enabled ? "Turn off" : "Turn on"}</button></form></div>
-<p class="hint">${esc(note)}</p>
-${l && l.enabled ? `<div class="linkrow"><code id="${style === "neutral" ? "neutral-link" : "generic-link"}">${esc(url)}</code>${h.copyBtn(url)}</div>
-<form method="post" action="/admin/links/${l.id}/rotate">${T}<button class="btn o" type="submit" data-confirm="Make a new link? The old one stops working straight away. People who already started keep their own private links.">Make a new link</button></form>` : ""}
+  const links = listLinks();
+  const rows = links.map((l) => {
+    const url = linkUrl(l);
+    const name = l.label || (l.style === "neutral" ? "Generic link" : `${CONFIG.productName} link`);
+    return `<div class="linkblock" data-style="${l.style}" data-link="${l.id}">
+<div class="titlerow"><b>${esc(name)}</b> <span class="pill">${l.style === "neutral" ? "Generic" : "Branded"}</span> ${l.enabled ? `<span class="pill live">On</span>` : `<span class="pill">Off</span>`} <span class="hint">${l.started} started</span>
+<form method="post" action="/admin/links/${l.id}/toggle">${T}<button class="btn ${l.enabled ? "o" : "p"}" type="submit">${l.enabled ? "Turn off" : "Turn on"}</button></form></div>
+${l.enabled ? `<div class="linkrow"><code${l.style === "neutral" && l.id === links.find((x) => x.style === "neutral")?.id ? ' id="neutral-link"' : ""}>${esc(url)}</code>${h.copyBtn(url)}</div>
+<form method="post" action="/admin/links/${l.id}/rotate">${T}<button class="btn o" type="submit" data-confirm="Make a new address for this link? Its old address stops working straight away. Other links are not affected. People who already started keep their own private links.">New address for this link</button></form>` : ""}
 </div>`;
-  };
+  }).join("\n");
   return `<section class="card" id="onboarding-link">
 <h2>Onboarding links</h2>
-<p class="lead">Reusable addresses anyone can open to start their own onboarding; each person then gets their own private setup link. Or leave them off and send a private link per person (Add an agency, below).</p>
-${row("neutral", "Generic onboarding link (default)", "No Chloe name or logo anywhere. Use this one unless you want the Chloe look.")}
-${row("branded", "Chloe-branded onboarding link", `Shows the ${CONFIG.productName} name and look.`)}
+<p class="lead">Reusable addresses anyone can open to start their own onboarding; each person then gets their own private setup link. Make as many as you like (one per post, list or partner); they all work at the same time. For one known agency, use Add an agency below instead.</p>
+${rows || '<p class="hint">No links yet.</p>'}
+<form method="post" action="/admin/links/add" class="linkadd">${T}
+<label>Label <input name="label" maxlength="60" placeholder="e.g. Facebook post, Jesse's list"></label>
+<label>Style <select name="style"><option value="neutral" selected>Generic (no Chloe branding)</option><option value="branded">${esc(CONFIG.productName)} branded</option></select></label>
+<button class="btn p" type="submit">Add a link</button>
+</form>
 </section>`;
 }
 

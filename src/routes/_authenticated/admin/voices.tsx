@@ -1,6 +1,8 @@
 import { useMemo, useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
+import { toast } from "sonner";
+import { Button } from "@/components/ui/button";
 import { AudioLines, Search } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
@@ -9,9 +11,10 @@ import { DataTable, TableToolbar, type Column } from "@/components/app/DataTable
 import { StatusBadge } from "@/components/app/StatusBadge";
 import { fmtNumber, titleCase } from "@/lib/app/format";
 import { adminVoicesQuery } from "@/lib/app/queries";
-import type { AdminVoiceRow } from "@/lib/api/console";
+import { applyVapiVoiceSettingsAll, type AdminVoiceRow } from "@/lib/api/console";
 import { useConsole } from "./-shared";
 import { PRODUCT } from "@/lib/app/product";
+import { VoicePreviewButton } from "@/components/app/VoicePreview";
 
 export const Route = createFileRoute("/_authenticated/admin/voices")({
   head: () => ({ meta: [{ title: `Voices — ${PRODUCT} admin` }] }),
@@ -29,12 +32,28 @@ function AdminVoicesPage() {
     return (q.data ?? []).filter((v) => {
       if (inUseOnly && v.agents.length === 0) return false;
       if (!s) return true;
-      return [v.display_name, v.description, v.gender].some((x) => x?.toLowerCase().includes(s));
+      return [v.display_name, v.description, v.gender, v.accent, v.maker].some((x) => x?.toLowerCase().includes(s));
     });
   }, [q.data, search, inUseOnly]);
 
   const all = q.data ?? [];
+  // Vapi receptionists made before the faster voice setup pick it up on their next save, or all at once here.
+  const vapiInUse = all.some((v) => v.provider === "vapi" && v.agents.length > 0);
+  const apply = useMutation({
+    mutationFn: applyVapiVoiceSettingsAll,
+    onSuccess: (r) =>
+      r.failed.length
+        ? toast.warning(`Updated ${r.updated}; ${r.failed.length} couldn't be updated`, { description: r.failed.join("; ") })
+        : toast.success(`Updated ${r.updated} Vapi receptionist${r.updated === 1 ? "" : "s"}`, { description: "They now use the faster voice setup." }),
+    onError: (e: Error) => toast.error("Couldn't apply the voice settings", { description: e.message }),
+  });
   const columns: Column<AdminVoiceRow>[] = [
+    {
+      key: "play",
+      header: "",
+      className: "w-10",
+      cell: (v) => <VoicePreviewButton id={v.id} url={v.preview_url} name={v.display_name.split(" - ")[0]} />,
+    },
     {
       key: "name",
       header: "Voice",
@@ -49,7 +68,7 @@ function AdminVoicesPage() {
     },
     { key: "gender", header: "Gender", hideBelow: "sm", cell: (v) => <span className="text-ink-muted">{titleCase(v.gender) || "—"}</span> },
     { key: "accent", header: "Accent", hideBelow: "md", cell: (v) => <span className="text-ink-muted">{v.accent} · {v.language}</span> },
-    { key: "provider", header: "Provider", hideBelow: "lg", cell: (v) => <span className="text-ink-muted">{v.provider === "vapi" ? (v.id.startsWith("azure:") ? "Vapi (Azure)" : "Vapi") : "Telnyx"}</span> },
+    { key: "provider", header: "Provider", hideBelow: "lg", cell: (v) => <span className="text-ink-muted">{v.provider === "vapi" ? (v.maker && v.maker !== "Vapi" ? `Vapi (${v.maker})` : "Vapi") : "Telnyx"}</span> },
     {
       key: "used",
       header: "Used by",
@@ -67,7 +86,15 @@ function AdminVoicesPage() {
 
   return (
     <div className="space-y-5" data-page="admin-voices">
-      <PageHeader eyebrow={platform ? "Platform console" : "Agency console"} title="Voices" description="Voices come from your voice engine: Telnyx's Australian catalogue, or Vapi's (Australian voices from Azure, plus Vapi's own). Every voice here can be picked for any receptionist." />
+      <PageHeader eyebrow={platform ? "Platform console" : "Agency console"} title="Voices" description="Voices come from your voice engine: Telnyx's Australian catalogue, or Vapi's (ElevenLabs voices, Australian Azure voices and Vapi's own quick voices). Press play to hear one."
+        actions={
+          vapiInUse && !platform ? (
+            <Button variant="outline" size="sm" onClick={() => apply.mutate()} disabled={apply.isPending} data-action="apply-voice-settings-all">
+              {apply.isPending ? "Applying…" : "Apply new voice settings to Vapi receptionists"}
+            </Button>
+          ) : null
+        }
+      />
 
       <MetricGrid cols={3}>
         <MetricCard label="Voices" value={fmtNumber(all.length)} icon={AudioLines} loading={q.isPending} />
@@ -89,7 +116,6 @@ function AdminVoicesPage() {
         </TableToolbar>
         <DataTable columns={columns} rows={rows} rowKey={(v) => v.id} loading={q.isPending} empty={{ title: "No voices", icon: AudioLines }} />
       </Panel>
-      <p className="text-[11.5px] text-ink-muted">Previews aren't available here: make a test call from a receptionist to hear its voice.</p>
     </div>
   );
 }

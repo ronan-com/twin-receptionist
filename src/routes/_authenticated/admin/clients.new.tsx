@@ -12,7 +12,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { PageHeader, Panel, Notice, ErrorState } from "@/components/app/primitives";
 import { Field } from "@/components/app/forms";
 import { cn } from "@/lib/utils";
-import { companyApi, createReceptionist, getVoices } from "@/lib/api/console";
+import { companyApi, createReceptionist, getVoiceEngines, getVoices } from "@/lib/api/console";
+import { VoicePreviewButton } from "@/components/app/VoicePreview";
+import type { Voice as EngineVoice } from "@/lib/shared";
 import { saveAutomations } from "@/lib/api/automations";
 import { createKnowledge } from "@/lib/api/manage";
 import {
@@ -113,12 +115,18 @@ function NewReceptionistWizard() {
     );
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [chosen?.id]);
-  const voicesQ = useQuery({ queryKey: ["console", "voices-raw"], queryFn: getVoices, staleTime: 5 * 60_000 });
+  // An agency with both Telnyx and Vapi connected picks the engine per receptionist (Telnyx recommended).
+  const enginesQ = useQuery({ queryKey: ["console", "voice-engines"], queryFn: getVoiceEngines, staleTime: 5 * 60_000 });
+  const connectedEngines = (enginesQ.data?.engines ?? []).filter((e) => e.connected);
+  const bothEngines = connectedEngines.length > 1;
+  const [engineChoice, setEngineChoice] = useState<"telnyx" | "vapi" | null>(null);
+  const engine = engineChoice ?? enginesQ.data?.default ?? null;
+  const voicesQ = useQuery({ queryKey: ["console", "voices-raw", bothEngines ? engine : "default"], queryFn: () => getVoices(bothEngines && engine ? engine : undefined), staleTime: 5 * 60_000, enabled: !enginesQ.isPending });
   const voices = voicesQ.data ?? [];
 
-  // Preselect the first recommended voice so the default can just be accepted.
+  // Preselect the first recommended voice so the default can just be accepted (again after an engine change).
   useEffect(() => {
-    if (voices[0]) setSettings((s) => (s.voiceId ? s : { ...s, voiceId: voices[0].id, voiceName: voices[0].name }));
+    if (voices[0]) setSettings((s) => (s.voiceId && voices.some((v) => v.id === s.voiceId) ? s : { ...s, voiceId: voices[0].id, voiceName: voices[0].name }));
   }, [voices]);
 
   const patch = (p: Partial<Settings>) => {
@@ -167,7 +175,8 @@ function NewReceptionistWizard() {
       // The detailed profile goes with the settings; its FAQs become knowledge items below.
       const { faqs = [], ...profileRest } = cleanProfile(profileOf(settings));
       const { profile: _drop, ...plain } = settings;
-      const created = await createReceptionist(Object.keys(profileRest).length ? ({ ...plain, profile: profileRest } as Settings) : plain);
+      const withEngine = bothEngines && engine ? { ...plain, engine } : plain;
+      const created = await createReceptionist(Object.keys(profileRest).length ? ({ ...withEngine, profile: profileRest } as Settings) : withEngine);
       await companyApi.attach(target, created.id);
       // The receptionist exists now: a problem below is reported, not a reason to stop.
       const missed: string[] = [];
@@ -267,7 +276,7 @@ function NewReceptionistWizard() {
             </>
           ) : null}
           {step === 3 ? (
-            voicesQ.error ? <ErrorState message={(voicesQ.error as Error).message} onRetry={() => void voicesQ.refetch()} /> : <VoiceStep value={settings} onChange={patch} voices={voices} loading={voicesQ.isPending} />
+            voicesQ.error ? <ErrorState message={(voicesQ.error as Error).message} onRetry={() => void voicesQ.refetch()} /> : <VoiceStep value={settings} onChange={patch} voices={voices} loading={voicesQ.isPending} engines={bothEngines ? connectedEngines : []} engine={engine} onEngine={setEngineChoice} />
           ) : null}
           {step === 4 ? <UrgentStep value={settings} onChange={patch} urgent={urgent} onUrgent={(p) => { setError(""); setUrgent((u) => ({ ...u, ...p })); }} /> : null}
           {step === REVIEW ? (
@@ -286,6 +295,7 @@ function NewReceptionistWizard() {
                 {settings.closures?.trim() ? <span className="block text-ink-muted">Closures: {settings.closures}</span> : null}
               </ReviewRow>
               <ReviewRow label="Callers can ask for">{settings.services.join(", ")}</ReviewRow>
+              {bothEngines && engine ? <ReviewRow label="Voice engine">{engine === "vapi" ? "Vapi" : "Telnyx"}</ReviewRow> : null}
               <ReviewRow label="Voice">
                 {settings.voiceName.split(" - ")[0]}
                 <span className="text-ink-muted"> · {settings.tone === "friendly" ? "Friendly" : "Professional"}</span>
@@ -600,17 +610,45 @@ function UrgentStep({ value, onChange, urgent, onUrgent }: StepProps & { urgent:
   );
 }
 
-function VoiceStep({ value, onChange, voices, loading }: StepProps & { voices: { id: string; name: string; gender: string; recommended: boolean }[]; loading: boolean }) {
+type EngineOption = { id: "telnyx" | "vapi"; label: string; recommended: boolean };
+
+function VoiceStep({ value, onChange, voices, loading, engines, engine, onEngine }: StepProps & { voices: EngineVoice[]; loading: boolean; engines: EngineOption[]; engine: "telnyx" | "vapi" | null; onEngine: (e: "telnyx" | "vapi") => void }) {
   const [showAll, setShowAll] = useState(false);
   const recommended = voices.filter((v) => v.recommended);
   const chosenHidden = !showAll && value.voiceId && !recommended.some((v) => v.id === value.voiceId);
   const list = showAll || chosenHidden || recommended.length === 0 ? voices : recommended;
+  const allAustralian = voices.every((v) => !v.accent || v.accent === "Australian");
+  const pick = (v: EngineVoice) => onChange({ voiceId: v.id, voiceName: v.name });
   return (
     <>
       <div>
         <h2 className="text-[15px] font-semibold text-ink">Voice</h2>
-        <p className="text-[12.5px] text-ink-muted">All of these are Australian voices.</p>
+        <p className="text-[12.5px] text-ink-muted">{allAustralian ? "All of these are Australian voices." : "Australian, British and American voices."} Press play to hear one.</p>
       </div>
+      {engines.length > 1 ? (
+        <div className="grid gap-1.5" data-field="voice-engine">
+          <span id="w-engine" className="text-[12.5px] font-medium text-ink">Voice engine</span>
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2" role="radiogroup" aria-labelledby="w-engine">
+            {engines.map((e) => (
+              <button
+                key={e.id}
+                type="button"
+                role="radio"
+                aria-checked={engine === e.id}
+                data-engine={e.id}
+                onClick={() => onEngine(e.id)}
+                className={cn("rounded-[6px] border px-3 py-2 text-left", engine === e.id ? "border-indigo bg-[#efeeff]" : "border-hairline bg-white hover:bg-canvas-2")}
+              >
+                <span className="block text-[13px] font-medium text-ink">
+                  {e.label}
+                  {e.recommended ? <span className="ml-1.5 text-[11px] font-normal text-indigo">Recommended</span> : null}
+                </span>
+                <span className="block text-[11.5px] text-ink-muted">{e.id === "telnyx" ? "Australian voices, Telnyx numbers, texts built in" : "ElevenLabs voices, answers Twilio numbers"}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      ) : null}
       <div className="grid gap-4 sm:grid-cols-2">
         <Field label="Receptionist's name" htmlFor="w-rname" hint="Optional.">
           <Input id="w-rname" maxLength={30} placeholder="e.g. Grace" value={value.receptionistName} onChange={(e) => onChange({ receptionistName: e.target.value })} />
@@ -636,30 +674,39 @@ function VoiceStep({ value, onChange, voices, loading }: StepProps & { voices: {
       <div className="grid gap-1.5">
         <span id="w-voice" className="text-[12.5px] font-medium text-ink">Voice</span>
         {loading ? (
-          <p className="text-[12.5px] text-ink-muted">Loading Australian voices…</p>
+          <p className="text-[12.5px] text-ink-muted">Loading voices…</p>
         ) : (
-          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2" role="radiogroup" aria-labelledby="w-voice">
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2" role="radiogroup" aria-labelledby="w-voice" data-list="voices">
             {list.map((v) => (
-              <button
+              <div
                 key={v.id}
-                type="button"
                 role="radio"
+                tabIndex={0}
                 aria-checked={value.voiceId === v.id}
-                onClick={() => onChange({ voiceId: v.id, voiceName: v.name })}
-                className={cn("rounded-[6px] border px-3 py-2 text-left", value.voiceId === v.id ? "border-indigo bg-[#efeeff]" : "border-hairline bg-white hover:bg-canvas-2")}
+                data-voice-option={v.id}
+                onClick={() => pick(v)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault();
+                    pick(v);
+                  }
+                }}
+                className={cn("flex cursor-pointer items-center gap-2.5 rounded-[6px] border px-3 py-2 text-left outline-none focus-visible:ring-2 focus-visible:ring-indigo", value.voiceId === v.id ? "border-indigo bg-[#efeeff]" : "border-hairline bg-white hover:bg-canvas-2")}
               >
-                <span className="block text-[13px] font-medium text-ink">{v.name.split(" - ")[0]}</span>
-                <span className="block truncate text-[11.5px] text-ink-muted">
-                  {v.gender}
-                  {v.name.includes(" - ") ? ` · ${v.name.split(" - ")[1]}` : ""}
+                <VoicePreviewButton id={v.id} url={v.previewUrl} name={v.name.split(" - ")[0]} />
+                <span className="min-w-0 flex-1">
+                  <span className="block text-[13px] font-medium text-ink">{v.name.split(" - ")[0]}</span>
+                  <span className="block truncate text-[11.5px] text-ink-muted">
+                    {[v.gender, allAustralian ? "" : v.accent, v.name.includes(" - ") ? v.name.split(" - ")[1] : v.label, v.maker && v.maker !== "Telnyx" ? v.maker : ""].filter(Boolean).join(" · ")}
+                  </span>
                 </span>
-              </button>
+              </div>
             ))}
           </div>
         )}
         {voices.length > recommended.length && recommended.length > 0 ? (
           <button type="button" className="justify-self-start text-[12.5px] text-indigo hover:underline" onClick={() => setShowAll(!showAll)}>
-            {showAll ? "Show fewer voices" : `Show all ${voices.length} Australian voices`}
+            {showAll ? "Show fewer voices" : `Show all ${voices.length} ${allAustralian ? "Australian " : ""}voices`}
           </button>
         ) : null}
       </div>

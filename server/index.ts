@@ -98,8 +98,10 @@ import { platformSettingsRoutes } from "./platformSettingsApi";
 import type { BookingProvider, BookingState } from "../src/lib/shared";
 import { connectNumberForTexts, enableTexting, sendTestText, textingState } from "./texting";
 import { BOOKING_TOOL_DEFS } from "./booking";
-import { VapiError, installProvider, ownKeyInstall, providerOfClient } from "./voice/config";
-import { voiceFor, voiceForOrg } from "./voice";
+import { VapiError, asProvider, connectedEngines, installProvider, ownKeyInstall, providerOfClient, providerOfOrg } from "./voice/config";
+import { providerById, voiceFor, voiceForOrg } from "./voice";
+import { telnyxVoicePreview } from "./voice/telnyx";
+import { ENGINE_LABEL, NUMBER_RULE, closestVoice, numberFits, pickEngine, sourceOfAttach } from "./voice/engines";
 import type { VoiceProvider } from "./voice/provider";
 import { toolAllowed } from "./voice/tools";
 import { startVapiHours } from "./voice/vapiHours";
@@ -109,9 +111,22 @@ import { vapiEvents, vapiToolHook } from "./voice/vapiWebhook";
 installLogCapture();
 
 const PORT = Number(process.env.API_PORT ?? 8791);
-// The voices on offer: the agency's voice engine's list (Telnyx's Australian voices, or Vapi's).
-async function loadVoices(): Promise<Voice[]> {
+// The voices on offer: the agency's voice engine's list (Telnyx's Australian voices, or Vapi's),
+// or a named engine's (the wizard's Voice engine choice, when the agency has both).
+async function loadVoices(engine?: string | null): Promise<Voice[]> {
+  if (engine === "telnyx" || engine === "vapi") return providerById(engine).voices();
   return (await voiceForOrg()).voices();
+}
+
+/** The engines an agency can pick from in the new-receptionist wizard (both, when it has both connected). */
+async function voiceEngines(orgId: string) {
+  const connected = await connectedEngines(orgId);
+  const fallback = await providerOfOrg(orgId);
+  return {
+    engines: (["telnyx", "vapi"] as const).map((id) => ({ id, label: ENGINE_LABEL[id], connected: connected.includes(id), recommended: id === "telnyx" })),
+    // Telnyx is recommended when both are there; otherwise the one the agency has.
+    default: connected.length > 1 ? "telnyx" : pickEngine(null, connected, fallback),
+  };
 }
 
 async function voiceNames(provider: VoiceProvider): Promise<Map<string, string>> {
@@ -273,9 +288,11 @@ async function hook(req: Request, clientId: string, action: string): Promise<Res
 // and the first recommended voice. With the fake provider key of the local tests,
 // the receptionist is a demo one (no provider calls).
 async function createClient(orgId: string, input: unknown, opts: { quick?: boolean } = {}): Promise<Business> {
+  const asked = (input as { engine?: unknown } | null)?.engine;
+  // The wizard's Voice engine pick (an agency with both connected); else the agency's engine.
+  const provider = asked === "telnyx" || asked === "vapi" ? providerById(pickEngine(asked, await connectedEngines(orgId), await providerOfOrg(orgId))) : await voiceForOrg(orgId);
   // An agency that must bring its own phone account connects it first (Setup).
-  await requirePhoneAccount(orgId);
-  const provider = await voiceForOrg(orgId);
+  await requirePhoneAccount(orgId, provider.id);
   const voices = await voiceNames(provider);
   const src = { ...((input ?? {}) as Record<string, unknown>) };
   if (opts.quick) {
@@ -288,7 +305,7 @@ async function createClient(orgId: string, input: unknown, opts: { quick?: boole
   if (fakeProvider()) {
     const now = new Date().toISOString();
     const id = crypto.randomUUID();
-    const demo: Business = { id, assistantId: `demo-${id}`, settings, instructions, createdAt: now, updatedAt: now };
+    const demo: Business = { id, assistantId: `demo-${id}`, settings, instructions, ...(provider.id === "vapi" ? { voiceProvider: "vapi" as const } : {}), createdAt: now, updatedAt: now };
     await insertClient(orgId, demo);
     return demo;
   }
@@ -319,11 +336,66 @@ async function updateClient(existing: Business, input: unknown): Promise<Busines
   return client;
 }
 
+/**
+ * Moves a receptionist to the other voice engine: makes a new assistant there with everything
+ * it has (profile, script and knowledge, booking tools, automations, the closest voice), switches
+ * the receptionist over, then takes its numbers off the old assistant and deletes it. Numbers
+ * don't move (a Telnyx number can't answer a Vapi receptionist, a Twilio one can't answer a
+ * Telnyx one): they stay on their account, and the reply lists them so the screen can ask for
+ * a compatible number. Nothing is changed if the new assistant can't be made.
+ */
+async function moveEngine(ctx: Ctx, orgId: string, client: Business, to: VoiceProvider["id"]): Promise<{ client: Business; detached: string[] }> {
+  requireRole(ctx, "admin");
+  const from = providerOfClient(client);
+  if (from === to) throw new ValidationError(`${client.settings.businessName} already runs on ${ENGINE_LABEL[to]}.`);
+  pickEngine(to, await connectedEngines(orgId), await providerOfOrg(orgId));
+  await requirePhoneAccount(orgId, to);
+  const target = providerById(to);
+  const demo = isDemo(client.assistantId);
+
+  const [oldVoices, newVoices] = await Promise.all([voiceFor(client).voices().catch(() => [] as Voice[]), target.voices()]);
+  const current = oldVoices.find((v) => v.id === client.settings.voiceId) ?? { name: client.settings.voiceName };
+  const voice = closestVoice(current, newVoices);
+  const settings = voice ? { ...client.settings, voiceId: voice.id, voiceName: voice.name } : client.settings;
+  const instructions = await instructionsFor(client, settings);
+
+  const assistantId = demo ? client.assistantId : await target.createAssistant(settings, instructions, client.id);
+  const { voiceProvider: _old, numberSources: _src, ...rest } = client;
+  const moved: Business = { ...rest, assistantId, settings, instructions, phoneNumbers: [], ...(to === "vapi" ? { voiceProvider: "vapi" as const } : {}), updatedAt: new Date().toISOString() };
+  if (!demo) {
+    try {
+      // Booking tools and automations (recording, transfer, hours greeting, language, limits).
+      const allowed = BOOKING_TOOL_DEFS.map((d) => d.name).filter((n) => toolAllowed(settings, n));
+      await target.syncAssistant(moved, instructions, allowed);
+      await target.applyAutomations(moved);
+    } catch (err) {
+      await target.deleteAssistant(moved).catch(() => {});
+      throw err;
+    }
+  }
+  await saveClient(moved);
+
+  // The old assistant: numbers off it first, then it goes. A failure here is logged, not
+  // thrown: the receptionist already runs on the new engine.
+  let detached = client.phoneNumbers ?? [];
+  if (!demo) {
+    const old = providerById(from);
+    detached = await old.numbers.detachAll(client).catch((err) => {
+      console.error(`[move ${client.id}] couldn't take numbers off the old assistant:`, (err as Error).message);
+      return client.phoneNumbers ?? [];
+    });
+    await old.deleteAssistant(client).catch((err) => console.error(`[move ${client.id}] couldn't delete the old assistant:`, (err as Error).message));
+  }
+  await audit(ctx, "receptionist.move_engine", { from, to, voice: settings.voiceName, numbers: detached.join(", ") }, { clientId: client.id });
+  return { client: moved, detached };
+}
+
 async function numberState(ctx: Ctx, client: Business): Promise<NumberState> {
   // The demo receptionist never asks the carrier.
   if (isDemo(client.assistantId)) {
     const recorded = (client.phoneNumbers ?? []).map((n) => ({ id: n, phoneNumber: n, status: "active", type: typeOfNumber(n) }));
-    return { numbers: recorded, pending: [], balance: null, canBuy: await canBuyNumbers(ctx), canUseOwn: await canUseOwnNumbers(ctx), requests: await requestsForClient(client.id) };
+    const engine = voiceFor(client);
+    return { provider: engine.id, support: { ...engine.numbers.support(), rule: NUMBER_RULE[engine.id] }, numbers: recorded, pending: [], balance: null, canBuy: await canBuyNumbers(ctx), canUseOwn: await canUseOwnNumbers(ctx), requests: await requestsForClient(client.id) };
   }
   const engine = voiceFor(client);
   const { numbers, pending, balance } = await engine.numbers.state(ctx, client);
@@ -332,7 +404,7 @@ async function numberState(ctx: Ctx, client: Business): Promise<NumberState> {
   if (JSON.stringify(current) !== JSON.stringify(client.phoneNumbers ?? [])) {
     await saveClient({ ...client, phoneNumbers: current });
   }
-  return { provider: engine.id, support: engine.numbers.support(), numbers, pending, balance, canBuy: await canBuyNumbers(ctx), canUseOwn: engine.id === "telnyx" && (await canUseOwnNumbers(ctx)), requests: await requestsForClient(client.id) };
+  return { provider: engine.id, support: { ...engine.numbers.support(), rule: NUMBER_RULE[engine.id] }, numbers, pending, balance, canBuy: await canBuyNumbers(ctx), canUseOwn: engine.id === "telnyx" && (await canUseOwnNumbers(ctx)), requests: await requestsForClient(client.id) };
 }
 
 // Numbers on the agency's own Telnyx account that none of its receptionists answers.
@@ -916,7 +988,22 @@ async function route(req: Request, server?: { requestIP(r: Request): { address: 
     }
   }
 
-  if (path === "/api/voices" && method === "GET") return json({ voices: await loadVoices() });
+  if (path === "/api/voices" && method === "GET") return json({ voices: await loadVoices(url.searchParams.get("engine")) });
+  if (path === "/api/voice-engines" && method === "GET") return json(await voiceEngines(orgId));
+  // Every Vapi receptionist of this agency picks up the current fast setup in one go.
+  if (path === "/api/voice-engines/vapi/apply" && method === "POST") {
+    requireRole(ctx, "admin");
+    const list = (await listClients(orgId)).filter((c) => providerOfClient(c) === "vapi");
+    const failed: string[] = [];
+    for (const c of list) await syncAssistant(c).catch((err) => failed.push(`${c.settings.businessName}: ${(err as Error).message}`));
+    await audit(ctx, "receptionist.voice_settings", { engine: "vapi", count: list.length, failed: failed.length });
+    return json({ updated: list.length - failed.length, failed });
+  }
+  // A voice's Play button (Telnyx voices; the Vapi engine's clips are static files in /voice-previews).
+  if (path === "/api/voices/preview" && method === "GET") {
+    const audio = await telnyxVoicePreview(url.searchParams.get("voice") ?? "");
+    return new Response(new Blob([new Uint8Array(audio)], { type: "audio/mpeg" }), { headers: { "Content-Type": "audio/mpeg", "Cache-Control": "private, max-age=86400" } });
+  }
 
   // What the browser test call needs: Telnyx's agent id, or Vapi's public key and assistant id.
   const webCall = path.match(/^\/api\/clients\/([a-f0-9-]{36})\/web-call$/);
@@ -936,7 +1023,10 @@ async function route(req: Request, server?: { requestIP(r: Request): { address: 
     const { country, type } = searchFor(url.searchParams.get("country"), url.searchParams.get("type"));
     // Local test servers with a pretend phone account: sample numbers, nothing asked of Telnyx.
     if (await pretendAccount(orgId)) return json({ numbers: sampleNumbers(type, country) });
-    return json({ numbers: await (await voiceForOrg(orgId)).numbers.search(type, country) });
+    // Only Telnyx sells numbers here (Vapi receptionists take Twilio numbers), so an agency with
+    // Telnyx connected searches Telnyx whatever its default engine.
+    const seller = (await connectedEngines(orgId)).includes("telnyx") ? providerById("telnyx") : await voiceForOrg(orgId);
+    return json({ numbers: await seller.numbers.search(type, country) });
   }
 
   // Numbers the agency already owns on its Telnyx account (not answering for any receptionist yet).
@@ -981,7 +1071,7 @@ async function route(req: Request, server?: { requestIP(r: Request): { address: 
   }
 
   const match = path.match(
-    /^\/api\/clients\/([a-f0-9-]{36})(\/calls(?:\/([^/]+)\/messages)?|\/numbers|\/numbers\/(?:owned|attach|detach)|\/number-requests|\/email|\/email\/check|\/texting|\/texting\/numbers|\/texting\/test|\/simulator\/texts|\/simulator\/texts\/send|\/simulator\/email|\/booking|\/booking\/test|\/booking\/events\/[a-f0-9-]{36}|\/calendar|\/calendar\/signin\/(?:google|microsoft)|\/connect-link)?$/,
+    /^\/api\/clients\/([a-f0-9-]{36})(\/calls(?:\/([^/]+)\/messages)?|\/numbers|\/numbers\/(?:owned|attach|detach)|\/number-requests|\/email|\/email\/check|\/texting|\/texting\/numbers|\/texting\/test|\/simulator\/texts|\/simulator\/texts\/send|\/simulator\/email|\/booking|\/booking\/test|\/booking\/events\/[a-f0-9-]{36}|\/calendar|\/calendar\/signin\/(?:google|microsoft)|\/connect-link|\/engine|\/voice-settings)?$/,
   );
   if (match) {
     // Another organisation's receptionist looks exactly like one that doesn't exist.
@@ -1080,6 +1170,23 @@ async function route(req: Request, server?: { requestIP(r: Request): { address: 
         // Doesn't ask the carrier: the request is saved either way.
         return json({ requests: await requestsForClient(client.id) }, 201);
       }
+    } else if (match[2] === "/voice-settings") {
+      // "Apply new voice settings": pushes the current fast Vapi setup (model, voice, turn-taking)
+      // to this receptionist's assistant. Saving the receptionist does the same.
+      if (method === "POST") {
+        requireRole(ctx, "admin");
+        if (providerOfClient(client) !== "vapi") throw new ValidationError("This receptionist runs on Telnyx: its voice settings are already current.");
+        const next = await syncAssistant(client);
+        await audit(ctx, "receptionist.voice_settings", { engine: "vapi" }, { clientId: client.id });
+        return json({ ok: true, applied: !isDemo(client.assistantId), client: next });
+      }
+    } else if (match[2] === "/engine") {
+      // "Move to Telnyx" / "Move to Vapi": recreate this receptionist on the other engine.
+      if (method === "POST") {
+        const to = asProvider((await body(req))?.to);
+        const result = await moveEngine(ctx, orgId, client, to);
+        return json({ client: result.client, detached: result.detached, ...(await numberState(ctx, result.client).catch(() => ({}))) });
+      }
     } else if (match[2] === "/numbers/owned") {
       if (method === "GET") return json({ numbers: await ownedNumbers(ctx, orgId) });
     } else if (match[2] === "/numbers/attach" || match[2] === "/numbers/detach") {
@@ -1094,7 +1201,8 @@ async function route(req: Request, server?: { requestIP(r: Request): { address: 
         // agency's owners and admins whatever the phone account behind the voice engine is.
         const fromTwilio = typeof input?.source === "string" && input.source.startsWith("twilio") && !input.accountSid && !input.apiKeySid;
         if (fromTwilio) {
-          if (!isDemo(client.assistantId) && providerOfClient(client) !== "vapi") throw new ValidationError("Twilio numbers work with the Vapi voice engine. This receptionist runs on Telnyx.");
+          // Numbers match the engine (an agency may run both): Twilio numbers go on Vapi receptionists.
+          if (!numberFits(client, "twilio")) throw new ValidationError("Twilio numbers work with the Vapi voice engine. This receptionist runs on Telnyx: give it a Telnyx number, or use Move to Vapi.");
           if (!(await canUseTwilio(ctx))) throw new AuthError("Connect your Twilio account under Connections first. Owners and admins can do that.", 403);
         } else if (!(await canBuyNumbers(ctx))) throw new AuthError("Request a number and we'll set it up.", 403);
         requireRole(ctx, "admin");
@@ -1105,7 +1213,7 @@ async function route(req: Request, server?: { requestIP(r: Request): { address: 
           checkBuyable(number);
           // A number the agency already has costs nothing new; a purchase needs its confirmation.
           if (input.source !== "twilio" && picked.confirm !== true) throw new ValidationError("Confirm the purchase first.");
-          const withNumber = { ...client, phoneNumbers: [...new Set([...(client.phoneNumbers ?? []), number])], updatedAt: new Date().toISOString() };
+          const withNumber = { ...client, phoneNumbers: [...new Set([...(client.phoneNumbers ?? []), number])], numberSources: { ...client.numberSources, [number]: sourceOfAttach(providerOfClient(client), input) }, updatedAt: new Date().toISOString() };
           await saveClient(withNumber);
           if (singleAgency()) await settleRequests(client.id, number);
           await audit(ctx, "number.buy", { number, demo: true }, { clientId: client.id });
@@ -1115,7 +1223,11 @@ async function route(req: Request, server?: { requestIP(r: Request): { address: 
         const order = await (voiceFor(client).id === "vapi" ? voiceFor(client).numbers.attach(client, input) : voiceFor(client).numbers.buy(client, input));
         await audit(ctx, "number.buy", { number: order.phoneNumbers[0] ?? "" }, { clientId: client.id });
         if (singleAgency() && order.phoneNumbers[0]) await settleRequests(client.id, order.phoneNumbers[0]);
-        const state = await numberState(ctx, client);
+        // Where each number came from, for the receptionist card ("Twilio number", "Telnyx number").
+        const source = sourceOfAttach(providerOfClient(client), input);
+        const withSources = { ...client, numberSources: { ...client.numberSources, ...Object.fromEntries(order.phoneNumbers.map((n) => [n, source])) } };
+        await saveClient(withSources);
+        const state = await numberState(ctx, withSources);
         // A mobile that's live straight away also takes texts. Others can be added from the texts card.
         // (Texting is Telnyx's: a Vapi receptionist has none.)
         if (order.status === "success" && voiceFor(client).id === "telnyx") {

@@ -39,7 +39,7 @@ export type ManageDeps = {
   setUpBooking: (client: Business, input: unknown) => Promise<Business>;
   changeBooking: (client: Business, input: unknown) => Promise<Business>;
   removeBooking: (client: Business) => Promise<Business>;
-  loadVoices: () => Promise<Voice[]>;
+  loadVoices: (engine?: string | null) => Promise<Voice[]>;
   nextOpenDate: (client: Business) => string;
 };
 
@@ -75,21 +75,22 @@ function answeredVoice(v: Voice) {
     description: v.label || null,
     style: v.label || null,
     gender: v.gender || null,
-    accent: "Australian",
+    accent: v.accent ?? "Australian",
     language: "en-AU",
-    provider: "telnyx" as const,
+    provider: v.id.includes(":") ? ("vapi" as const) : ("telnyx" as const),
     status: "active",
     client_visible: true,
-    preview_url: null,
+    preview_url: v.previewUrl ?? null,
     recommended: v.recommended,
     created_at: "",
     updated_at: "",
   };
 }
 
-async function voicesSafe(): Promise<Voice[]> {
+// The voices of the engine this receptionist runs on (an agency may mix Telnyx and Vapi).
+async function voicesSafe(c?: Business): Promise<Voice[]> {
   try {
-    return await need().loadVoices();
+    return await need().loadVoices(c ? providerOfClient(c) : null);
   } catch (err) {
     console.error("[manage voices]", (err as Error).message);
     return [];
@@ -114,7 +115,7 @@ export async function pauseStateOf(c: Business, orgSuspended: boolean): Promise<
 async function answeredAgent(c: Business, orgSuspended: boolean, voices?: Voice[]) {
   const s = c.settings;
   const pause = await pauseStateOf(c, orgSuspended);
-  const list = voices ?? (await voicesSafe());
+  const list = voices ?? (await voicesSafe(c));
   const v = list.find((x) => x.id === s.voiceId);
   const live = bookingLive(c);
   const now = iso(c.updatedAt);
@@ -675,7 +676,7 @@ export async function manageRoutes(args: ClientRouteArgs): Promise<Response | nu
     await audit(ctx, pause ? "receptionist.paused" : "receptionist.resumed", { summary: pause ? "Receptionist paused" : "Receptionist resumed" }, where);
     return json({ agent: await answeredAgent(next, paused), applied: !isDemo(next.assistantId), demo: isDemo(next.assistantId), warning });
   }
-  if (rest === "/voices" && method === "GET") return json({ voices: (await voicesSafe()).map(answeredVoice) });
+  if (rest === "/voices" && method === "GET") return json({ voices: (await voicesSafe(client)).map(answeredVoice) });
 
   // ---- Call handling (S4, S4c) ----
   if (rest === "/phone-numbers" && method === "GET") return json({ numbers: await answeredNumbers(client) });

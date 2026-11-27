@@ -8,8 +8,9 @@ import { unseal } from "../secrets";
 //    VAPI_PUBLIC_KEY are the install's own keys (the platform's), like TELNYX_API_KEY.
 //  - Per agency: orgs.voice_provider overrides the install default. An agency that brings
 //    its own account stores its keys like the Telnyx one (private key sealed, orgs.vapi_key).
-//  - Per receptionist: Business.voiceProvider is where its assistant was made. It never
-//    changes, so switching an agency's engine leaves its existing receptionists working.
+//  - Per receptionist: Business.voiceProvider is where its assistant was made. Switching an
+//    agency's default leaves its existing receptionists working; an agency with both engines
+//    connected picks one per receptionist, and "Move to Telnyx/Vapi" moves one (server/index.ts).
 
 export const PROVIDERS: VoiceProviderId[] = ["telnyx", "vapi"];
 
@@ -75,6 +76,16 @@ export async function vapiCredsFor(orgId: string | null): Promise<VapiCreds> {
   if (!creds) throw new VapiError(400, "This account has no Vapi account connected yet. Connect one in Setup, or contact the platform team.");
   cache.set(orgId, { creds, at: Date.now() });
   return creds;
+}
+
+/**
+ * The engines an agency can make receptionists on right now: each one it has a phone account
+ * for (its own key or the platform's). An agency with both mixes them per receptionist.
+ */
+export async function connectedEngines(orgId: string): Promise<VoiceProviderId[]> {
+  const out: VoiceProviderId[] = [];
+  for (const p of PROVIDERS) if ((await accountMode(orgId, p)) !== "none") out.push(p);
+  return out;
 }
 
 /** Which kind of phone account an agency has for an engine: its own key, the platform's, or none. */

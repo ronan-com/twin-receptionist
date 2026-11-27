@@ -243,6 +243,17 @@ export const vapiProvider: VoiceProvider = {
       throw new ValidationError("Vapi doesn't sell Australian numbers. Bring a number from Twilio or Telnyx instead.");
     },
     attach: attachNumber,
+    async detachAll(client) {
+      const list = await vapi<any[]>("GET", "/phone-number?limit=100");
+      const mine = (Array.isArray(list) ? list : []).filter((n) => n.assistantId === client.assistantId);
+      for (const n of mine) {
+        // An imported Twilio/Telnyx number: removing the import leaves it on that account, ready to
+        // attach elsewhere. A free Vapi number would be released by a delete, so it's only unassigned.
+        if (n.provider === "vapi") await vapi("PATCH", `/phone-number/${n.id}`, { assistantId: null });
+        else await vapi("DELETE", `/phone-number/${n.id}`);
+      }
+      return mine.map((n) => String(n.number ?? n.sipUri ?? "")).filter(Boolean);
+    },
   },
 
   async webCall(assistantId) {

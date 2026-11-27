@@ -60,6 +60,8 @@ export type AdminAgentRow = {
   voice: { id: string; display_name: string; provider: string } | null;
   language: string;
   provider: "telnyx" | "vapi";
+  /** "Telnyx number", "Twilio number" or "No number". */
+  number_source?: string;
   provider_agent_id: string;
   demo_assistant: boolean;
   llm_model: string;
@@ -199,6 +201,8 @@ export type AdminVoiceRow = {
   accent: string;
   language: string;
   provider: string;
+  maker: string;
+  preview_url: string | null;
   recommended: boolean;
   agents: { id: string; name: string; business: BizRef }[];
 };
@@ -253,10 +257,12 @@ export async function getAdminVoices(): Promise<AdminVoiceRow[]> {
     display_name: v.name,
     description: v.label,
     gender: v.gender,
-    // Vapi voice ids look like "azure:en-AU-NatashaNeural"; Telnyx's are plain ids.
-    accent: v.id.includes(":") && !v.id.startsWith("azure:") ? "Various" : "Australian",
+    // Vapi voice ids look like "11labs:<id>" and carry their accent; Telnyx's are all Australian.
+    accent: v.accent ?? "Australian",
     language: "en-AU",
     provider: v.id.includes(":") ? "vapi" : "telnyx",
+    maker: v.maker ?? (v.id.includes(":") ? "Vapi" : "Telnyx"),
+    preview_url: v.previewUrl ?? null,
     recommended: v.recommended,
     agents: agents.filter((a) => a.voice_id === v.id || (!a.voice_id && a.voice?.display_name === v.name)).map((a) => ({ id: a.id, name: a.name, business: a.business })),
   }));
@@ -401,8 +407,18 @@ export const grantPlatformAdmin = (email: string) => api.post<{ admins: Internal
 export const revokePlatformAdmin = (userId: string) => api.del<{ admins: InternalAdminRow[] }>(`/api/console/platform-admins/${userId}`);
 
 /** New receptionist (the setup wizard): the existing POST /api/clients. */
-export const createReceptionist = async (settings: Settings & { defaultVoice?: boolean }) => (await api.post<{ client: { id: string } }>("/api/clients", settings)).client;
-export const getVoices = async () => (await api.get<{ voices: TwinVoice[] }>("/api/voices")).voices;
+export const createReceptionist = async (settings: Settings & { defaultVoice?: boolean; engine?: "telnyx" | "vapi" }) => (await api.post<{ client: { id: string } }>("/api/clients", settings)).client;
+export const getVoices = async (engine?: "telnyx" | "vapi") => (await api.get<{ voices: TwinVoice[] }>(`/api/voices${engine ? `?engine=${engine}` : ""}`)).voices;
+
+export type VoiceEngineChoice = { engines: { id: "telnyx" | "vapi"; label: string; connected: boolean; recommended: boolean }[]; default: "telnyx" | "vapi" };
+/** The engines this agency can make receptionists on (the wizard asks when it has both). */
+export const getVoiceEngines = () => api.get<VoiceEngineChoice>("/api/voice-engines");
+/** Pushes the current fast Vapi voice setup to one receptionist. */
+export const applyVapiVoiceSettings = (clientId: string) => api.post<{ ok: true; applied: boolean }>(`/api/clients/${clientId}/voice-settings`, {});
+/** The same for every Vapi receptionist of the agency. */
+export const applyVapiVoiceSettingsAll = () => api.post<{ updated: number; failed: string[] }>("/api/voice-engines/vapi/apply", {});
+/** Moves a receptionist to the other engine; `detached` are the numbers it no longer answers. */
+export const moveReceptionistEngine = (clientId: string, to: "telnyx" | "vapi") => api.post<{ client: { id: string }; detached: string[] }>(`/api/clients/${clientId}/engine`, { to });
 
 // ---- The platform team's existing routes (/api/admin/*) ----
 

@@ -35,6 +35,7 @@ import { wizardPage } from "./wizard";
 import { deleteTickets, fileOf, navLinkHtml, replyToTicket, setTicketStatus, ticketById, ticketViewHtml, ticketsListHtml, type Status as TicketStatus } from "./tickets";
 import { assistPanel, assistRoute, isInstalling, statusJson } from "./assist-web";
 import { removeHost } from "./hosts";
+import { createLink, linksPanel, rotateLink, toggleLink, listLinks } from "./genericlink";
 
 // ---------------- settings ----------------
 const ADMIN_EMAILS = (process.env.ADMIN_EMAILS || "").split(",").map((s) => s.trim().toLowerCase()).filter(Boolean);
@@ -240,6 +241,7 @@ function listPage(sid: string, email: string, q: string, filter: string, flash =
 ${DEMO_READY ? `<form method="post" action="/admin/demo" target="_blank">${hiddenT(sid)}<button class="btn o" type="submit" title="Makes a test agency with pretend accounts and opens their setup in a new tab">Start a test run</button></form>` : ""}</div>
 </section>` : "";
   return page("Agencies", `${flash}
+${linksPanel(sid, { hiddenT, copyBtn })}
 <section class="card">
 <div class="titlerow"><h1>Agencies</h1></div>
 <p class="lead">${all.length} agenc${all.length === 1 ? "y" : "ies"}. ${counts.live} live, ${counts.installing} installing, ${counts.failed} failed. ${syncing} syncing now.</p>
@@ -394,6 +396,7 @@ const flashOf = (url: URL) => {
   const msgs: Record<string, [string, string]> = {
     revoked: ["ok", "Link turned off."], restored: ["ok", "Link turned back on."], reset: ["ok", "Setup wiped. Their link starts from the beginning."],
     deleted: ["ok", "Agency deleted."],
+    "link-on": ["ok", "The generic onboarding link is on."], "link-off": ["ok", "The generic onboarding link is off."], "link-rotated": ["ok", "Made a new link. The old one no longer works."],
     "sync-ok": ["ok", "Synced: their app answered with its latest numbers."],
     "sync-off": ["info", "They've turned sharing off, so their app sends us nothing."],
     "sync-no-app": ["err", "We don't have this app's address, or it was installed before syncing existed."],
@@ -492,6 +495,20 @@ export async function adminRoute(req: Request, url: URL, c: AdminCtx): Promise<R
     const b = addBuyer(`Test ${stamp}`, `demo-${randomBytes(3).toString("hex")}@example.com`, true);
     console.log(`[admin] ${sess.email} started demo buyer ${b.id}`);
     return c.redirect(`/setup/${b.code}`);
+  }
+
+  // The generic onboarding link (genericlink.ts): turn it on/off, make a new address.
+  m = path.match(/^\/admin\/links\/(new|\d{1,9}\/(?:toggle|rotate))$/);
+  if (m && method === "POST") {
+    const [what, act] = m[1].split("/");
+    if (what === "new") {
+      const l = listLinks()[0] ?? createLink(sess.email, "", "branded", "");
+      if (l && !l.enabled) toggleLink(sess.email, l.id);
+      return c.redirect("/admin?m=link-on");
+    }
+    const id = Number(what);
+    if (act === "toggle") { const on = toggleLink(sess.email, id); return c.redirect(on == null ? "/admin?m=bad" : on ? "/admin?m=link-on" : "/admin?m=link-off"); }
+    return c.redirect(rotateLink(sess.email, id) ? "/admin?m=link-rotated" : "/admin?m=bad");
   }
 
   if (path === "/admin/buyers" && method === "POST") {

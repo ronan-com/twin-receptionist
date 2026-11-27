@@ -1,6 +1,7 @@
 // The hosted site: one small Bun process + SQLite. Pages are rendered in pages.ts and
 // wizard.ts; static files come from a fixed in-memory list (no URL path reaches the disk).
 //   GET  /                          overview + "Open my setup" box
+//   GET/POST /start/<code>          a generic onboarding link: name + email, then their own private /setup/<code> (genericlink.ts)
 //   POST /go                        code box -> /setup/<code>
 //   GET  /setup/<code>[?step=x]     the buyer's setup wizard (the old /download/<code> redirects here)
 //   GET  /setup/<code>/status       JSON for live progress (wizard.js)
@@ -27,6 +28,7 @@ import { actions, allow, appUrlOf, canView, firstOpen, pBundle, pExit, pLog, pNe
 import { STEPS, csrfOk, getSetup, logRead, newSessionId, siteKey, updateSetup, type StepId } from "./store";
 import { statusRev, wizardPage } from "./wizard";
 import { adminRoute } from "./admin-web";
+import { inactivePage, startRoute } from "./genericlink";
 import { ticketsApi } from "./tickets";
 import { MAX_SYNC_BODY, bearerOf, buyerBySyncToken, ownerResetLink, receive } from "./sync";
 import { appSource, bundleSignatureOk, latestRelease, signBundleUrl } from "./releases";
@@ -271,6 +273,14 @@ async function handle(req: Request, srv: Bun.Server<unknown>): Promise<Response>
     const retry = allow(`bad:${ip}`, CONFIG.lookupsPerMinute, 60_000);
     return retry ? tooMany(retry) : respond("stop\n", 404, { "Content-Type": "text/plain" });
   }
+
+  // ---- a generic onboarding link: anyone with it can start their own agency (genericlink.ts) ----
+  const sm = path.match(/^\/start\/([^/]*)\/?$/);
+  if (sm) {
+    if (!isGet && method !== "POST") return respond("no\n", 405, { Allow: "GET, POST" });
+    return startRoute(req, sm[1], { ip, sameOrigin, readForm, html, redirect, secure: SECURE });
+  }
+  if (path === "/start" || path.startsWith("/start/")) return html(inactivePage(), 404);
 
   if (path === "/go") {
     if (method !== "POST") return redirect("/#code");

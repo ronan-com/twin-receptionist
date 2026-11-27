@@ -124,7 +124,13 @@ export interface Buyer {
   last_download_at: string | null;
   /** 1 = a demo buyer: pretend accounts, no provider is ever called for them. */
   demo: number;
+  /** "branded" (our name and wording, the default) or "neutral" (nothing of ours shows; for links shared under someone else's name). */
+  style: Style;
+  /** The generic onboarding link (genericlink.ts) this agency started from, or null for a private link made by our admin. */
+  source_link: number | null;
 }
+export type Style = "branded" | "neutral";
+export const asStyle = (v: unknown): Style => (v === "neutral" ? "neutral" : "branded");
 export interface Pkg {
   id: number;
   version: string;
@@ -244,6 +250,23 @@ export function db(): Database {
   if (!(d.query("PRAGMA table_info(buyers)").all() as { name: string }[]).some((c) => c.name === "demo")) d.exec("ALTER TABLE buyers ADD COLUMN demo INTEGER NOT NULL DEFAULT 0");
   // Same for release notes (the live database has no notes column on packages).
   if (!(d.query("PRAGMA table_info(packages)").all() as { name: string }[]).some((c) => c.name === "notes")) d.exec("ALTER TABLE packages ADD COLUMN notes TEXT");
+  // Onboarding links (genericlink.ts): which look a buyer gets, and which generic link they started from.
+  if (!(d.query("PRAGMA table_info(buyers)").all() as { name: string }[]).some((c) => c.name === "style")) d.exec("ALTER TABLE buyers ADD COLUMN style TEXT NOT NULL DEFAULT 'branded'");
+  if (!(d.query("PRAGMA table_info(buyers)").all() as { name: string }[]).some((c) => c.name === "source_link")) d.exec("ALTER TABLE buyers ADD COLUMN source_link INTEGER");
+  d.exec(`
+    CREATE TABLE IF NOT EXISTS generic_links (
+      id INTEGER PRIMARY KEY,
+      code TEXT NOT NULL UNIQUE,
+      code_hash BLOB NOT NULL UNIQUE,
+      label TEXT NOT NULL DEFAULT '',
+      style TEXT NOT NULL DEFAULT 'branded',
+      enabled INTEGER NOT NULL DEFAULT 1,
+      cap INTEGER,
+      started INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL,
+      rotated_at TEXT
+    );
+  `);
   _db = d;
   return d;
 }
@@ -262,9 +285,9 @@ export function findBuyer(code: string): Buyer | null {
   return row && same ? row : null;
 }
 
-export function addBuyer(name: string, email: string, demo = false): Buyer {
+export function addBuyer(name: string, email: string, demo = false, opts: { style?: Style; sourceLink?: number } = {}): Buyer {
   const code = newCode();
-  db().query("INSERT INTO buyers (code, code_hash, name, email, created_at, demo) VALUES (?, ?, ?, ?, ?, ?)").run(code, hashCode(code), name, email, now(), demo ? 1 : 0);
+  db().query("INSERT INTO buyers (code, code_hash, name, email, created_at, demo, style, source_link) VALUES (?, ?, ?, ?, ?, ?, ?, ?)").run(code, hashCode(code), name, email, now(), demo ? 1 : 0, asStyle(opts.style), opts.sourceLink ?? null);
   return findBuyer(code)!;
 }
 

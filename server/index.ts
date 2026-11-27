@@ -46,6 +46,9 @@ import { audit } from "./audit";
 import { supportSeller } from "./supportAccess";
 import { describeChange, readOnlyView, supportMayChange } from "./supportChanges";
 import { startSupportSync, supportPublicRoutes, supportSettingsRoute } from "./supportSync";
+import { startTicketSync, ticketRoutes } from "./tickets";
+import { startAutoUpdate, updatesRoute } from "./autoUpdate";
+import { installLogCapture } from "./problems";
 import { OTHER_BRAND, UI_PRODUCT, brandedIndex } from "./product";
 import { agencySnapshot, consoleRoutes, isClientPaused } from "./routes/console";
 import { assistantRoute } from "./assistant";
@@ -101,12 +104,12 @@ import { toolAllowed } from "./voice/tools";
 import { startVapiHours } from "./voice/vapiHours";
 import { vapiEvents, vapiToolHook } from "./voice/vapiWebhook";
 
-const PORT = Number(process.env.API_PORT ?? 8791);
-// The voices on offer: the agency's voice engine's list (Telnyx's Australian voices, or Vapi's).
-async function loadVoices(): Promise<Voice[]> {
 // The last 200 log lines (scrubbed) and a problem list for the support heartbeat (server/problems.ts).
 installLogCapture();
 
+const PORT = Number(process.env.API_PORT ?? 8791);
+// The voices on offer: the agency's voice engine's list (Telnyx's Australian voices, or Vapi's).
+async function loadVoices(): Promise<Voice[]> {
   return (await voiceForOrg()).voices();
 }
 
@@ -588,6 +591,10 @@ async function route(req: Request, server?: { requestIP(r: Request): { address: 
   }
   // Settings, "Support": the owner's switches for sharing stats and Support access.
   if (path === "/api/support/settings") return supportSettingsRoute(req, method, ctx);
+  // The help menu's "Contact support": requests to the setup provider, or from a business to its agency (server/tickets.ts).
+  if (path === "/api/tickets" || path.startsWith("/api/tickets/")) return (await ticketRoutes({ req, url, path, method, ctx, orgId: ctx.org?.id ?? "", appUrl: appUrl(req) })) ?? json({ error: "Not found" }, 404);
+  // Settings, "Updates": the owner's automatic-updates switch (server/autoUpdate.ts).
+  if (path === "/api/updates/settings" || path === "/api/updates/check") return updatesRoute(req, method, path, ctx);
 
   // The Answered workspace: the businesses this person works with, in Answered's shapes.
   if (path === "/api/session/businesses" && method === "GET") return json(await workspaceBusinesses(ctx));
@@ -1173,6 +1180,9 @@ startAutomations();
 startVapiHours();
 // Health and usage counts to the setup provider, unless the owner turned it off (server/supportSync.ts).
 startSupportSync();
+startTicketSync();
+// The owner's automatic updates, with this agency's own Railway project token (server/autoUpdate.ts).
+startAutoUpdate();
 
 // Check every connected mailbox once a minute. One at a time, so a slow mail
 // server can't pile up connections.

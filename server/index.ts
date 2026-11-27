@@ -76,7 +76,7 @@ import { createRequest, declineRequest, listRequests, markDone, pendingCount, pe
 import { createAgency, exitView, inviteAgencyOwner, viewAs, isSuspended, listAgencies, telnyxSettings, updateAgency } from "./agencies";
 import { canBuyNumbers, canUseOwnNumbers, canUseTwilio, connectPhoneAccount, connectTwilio, disconnectPhoneAccount, disconnectTwilio, phoneAccount, pretendAccount, requirePhoneAccount, testPhoneKeys, testTwilio, twilioAccount } from "./phoneAccount";
 import { availableTwilioNumbers, isTestTwilio, requireTwilio, twilioNumbersFor, twilioRegulatory } from "./twilio";
-import { previewEmail, sendSimText, startTextSim } from "./simulator";
+import { previewEmail, sendOwnSimText, sendSimText, startOwnTextSim, startTextSim } from "./simulator";
 import {
   connectFromLink,
   connectInfo,
@@ -1249,13 +1249,14 @@ async function route(req: Request, server?: { requestIP(r: Request): { address: 
           throw err;
         }
       }
-    } else if ((match[2] === "/simulator/texts" || match[2] === "/simulator/texts/send" || match[2] === "/texting/test") && providerOfClient(client) === "vapi") {
-      // The text simulator and test texts run on Telnyx's chat and messaging.
+    } else if (match[2] === "/texting/test" && providerOfClient(client) === "vapi") {
+      // A test text goes out through Telnyx messaging.
       throw new ValidationError("Telnyx texting isn't used with Vapi. Follow-up texts go out from a Twilio number instead.");
     } else if (match[2] === "/simulator/texts") {
-      if (method === "POST") return json(await startTextSim(client));
+      // Vapi receptionists are answered by our own text AI, so the practice chat uses that; Telnyx ones use Telnyx's chat.
+      if (method === "POST") return json(providerOfClient(client) === "vapi" ? await startOwnTextSim(client) : await startTextSim(client));
     } else if (match[2] === "/simulator/texts/send") {
-      if (method === "POST") return json(await sendSimText(client, await req.json()));
+      if (method === "POST") return json(providerOfClient(client) === "vapi" ? await sendOwnSimText(client, orgId, await req.json()) : await sendSimText(client, await req.json()));
     } else if (match[2] === "/simulator/email") {
       if (method === "POST") return json(await previewEmail(client, await req.json()));
     } else if (match[2] === "/texting/test") {

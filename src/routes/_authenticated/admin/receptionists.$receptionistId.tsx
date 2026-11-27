@@ -43,15 +43,32 @@ export const Route = createFileRoute("/_authenticated/admin/receptionists/$recep
   component: ReceptionistEditor,
 });
 
-/** Points the workspace at this receptionist, so the editors below read and save the right one. */
+/** Points the workspace at this receptionist, so the editors below read and save the right one. If that doesn't happen (the list failed to load, or the view is another agency's), say so instead of waiting forever. */
 function Scope({ id, children }: { id: string; children: ReactNode }) {
   const ws = useWorkspace();
+  const [slow, setSlow] = useState(false);
   useEffect(() => {
     if (ws.businessId !== id) ws.setBusinessId(id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id, ws.businessId]);
-  if (ws.businessId !== id) return <PageSkeleton metrics={0} rows={4} />;
-  return <>{children}</>;
+  const ready = ws.businessId === id;
+  useEffect(() => {
+    if (ready) return setSlow(false);
+    const t = setTimeout(() => setSlow(true), 8000);
+    return () => clearTimeout(t);
+  }, [ready, id]);
+  if (ready) return <>{children}</>;
+  if (slow || ws.error)
+    return (
+      <ErrorState
+        message={ws.error || "Couldn't open this receptionist's settings."}
+        onRetry={() => {
+          setSlow(false);
+          void ws.refresh().then(() => ws.setBusinessId(id));
+        }}
+      />
+    );
+  return <PageSkeleton metrics={0} rows={4} />;
 }
 
 function ReceptionistEditor() {

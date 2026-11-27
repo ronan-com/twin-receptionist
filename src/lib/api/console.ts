@@ -183,6 +183,8 @@ export type AdminOverviewCounts = {
   providerErrors: number;
   pendingNumberRequests: number;
   calls30d: number;
+  /** Connected email inboxes. */
+  inboxes?: number;
   /** Platform view only. */
   agencies?: number;
 };
@@ -223,6 +225,9 @@ export type ConsoleNumberRequestRow = AdminNumberRequest & { resolvedAt?: string
 
 export const getAdminOverviewCounts = () => api.get<AdminOverviewCounts>("/api/console/overview");
 export const getConsoleCalls = async (range: ResolvedRange) => (await api.get<{ calls: ConsoleCall[] }>(`/api/console/calls${rangeQs(range)}`)).calls;
+/** The bell's light feed: calls and texts since a moment ago (not the whole list). */
+export type RecentCall = { id: string; business_id: string; channel: string; from_number: string | null; started_at: string; business_name: string };
+export const getRecentCalls = (since: string) => api.get<{ now: string; calls: RecentCall[] }>(`/api/console/calls/recent?since=${encodeURIComponent(since)}`);
 export const getConsoleCallDetail = async (id: string) => (await api.get<{ call: ConsoleCallDetail }>(`/api/console/calls/${id}`)).call;
 export const getAdminAppointmentsLeads = (range: ResolvedRange) => api.get<AdminAppointmentsLeads>(`/api/console/bookings-leads${rangeQs(range)}`);
 export const getAdminRecentActivity = () => api.get<AdminRecentActivity>("/api/console/activity");

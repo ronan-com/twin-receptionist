@@ -5,7 +5,7 @@ import { toast } from "sonner";
 import { sessionQuery } from "@/lib/app/workspace";
 
 // An owner the install made signed in with a one-time link and has no password yet. Say so once
-// (a small pop-up, not a banner) and point at Settings. Shown once per browser, then left alone.
+// (a small pop-up) and point at Settings > Account; Settings keeps a banner up until a password is set.
 const SEEN = "nudge.password";
 
 export function PasswordNudge() {
@@ -23,7 +23,7 @@ export function PasswordNudge() {
     toast("Choose a password", {
       description: "You signed in with a one-time link. Set a password so you can sign in next time.",
       duration: 15_000,
-      action: { label: "Set password", onClick: () => void navigate({ to: "/admin/settings" }) },
+      action: { label: "Set password", onClick: () => void navigate({ to: "/admin/settings", search: { tab: "account" } }) },
     });
   }, [needs, navigate]);
   return null;

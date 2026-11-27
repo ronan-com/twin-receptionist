@@ -1,10 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { getConsoleCalls, type ConsoleCall } from "@/lib/api/console";
-import { rangeKey } from "@/lib/app/queries";
+import { getRecentCalls } from "@/lib/api/console";
 import { fmtPhone } from "@/lib/app/format";
-import type { ResolvedRange } from "@/lib/app/date-range";
 import { armSounds, playSound } from "@/lib/app/sounds";
 import { useProviderWarnings, warningInfo } from "./ProviderWarnings";
 
@@ -25,36 +23,40 @@ export type AlertItem = {
   kind?: "call" | "message" | "warning" | "info";
 };
 
-const isVoice = (c: ConsoleCall) => c.channel === "call" || c.channel === "web";
+const isVoiceChannel = (channel: string) => channel === "call" || channel === "web";
 const shown = new Set<string>();
 
-/** Provider warnings and new calls and messages as bell items; also pops each new one up once and plays its sound. */
-export function useLiveAlerts(range: ResolvedRange | null, enabled: boolean): AlertItem[] {
+/**
+ * Provider warnings and new calls and messages as bell items; also pops each new one up once and plays its sound.
+ * New = started after this page opened (the feed is asked for "since" the server's last answer, so changing the
+ * date range or midnight never makes old calls look new). It asks the light /calls/recent feed, not the full list.
+ */
+export function useLiveAlerts(enabled: boolean): AlertItem[] {
   useEffect(() => armSounds(), []);
   const warnings = useProviderWarnings(enabled);
-  const callsQ = useQuery({
-    queryKey: ["console", "calls", range ? rangeKey(range) : "none"],
-    queryFn: () => getConsoleCalls(range!),
-    enabled: enabled && !!range,
+  const since = useRef<string>(new Date().toISOString());
+  const seen = useRef<Set<string>>(new Set());
+  const [events, setEvents] = useState<AlertItem[]>([]);
+  const feed = useQuery({
+    queryKey: ["console", "calls", "recent"],
+    queryFn: async () => {
+      const r = await getRecentCalls(since.current);
+      since.current = r.now;
+      return r;
+    },
+    enabled,
     refetchInterval: 30_000,
     retry: false,
+    gcTime: 0,
   });
-  const seen = useRef<Set<string> | null>(null);
-  const [events, setEvents] = useState<AlertItem[]>([]);
 
   useEffect(() => {
-    const calls = callsQ.data;
-    if (!calls) return;
-    if (!seen.current) {
-      seen.current = new Set(calls.map((c) => c.id));
-      return;
-    }
-    const fresh = calls.filter((c) => !seen.current!.has(c.id));
+    const fresh = (feed.data?.calls ?? []).filter((c) => !seen.current.has(c.id));
     if (!fresh.length) return;
     for (const c of fresh) seen.current.add(c.id);
     const items: AlertItem[] = fresh.slice(0, 5).map((c) => {
-      const voice = isVoice(c);
-      const who = c.business?.name ?? "A client";
+      const voice = isVoiceChannel(c.channel);
+      const who = c.business_name || "A client";
       const from = fmtPhone(c.from_number) || (voice ? "a caller" : "a customer");
       return { id: `ev-${c.id}`, kind: voice ? "call" : "message", tone: "info", title: voice ? `New call for ${who}` : `New message for ${who}`, description: `From ${from}`, to: "/admin/calls", at: Date.now() };
     });
@@ -62,7 +64,7 @@ export function useLiveAlerts(range: ResolvedRange | null, enabled: boolean): Al
     const first = items[0];
     toast(first.title, { id: first.id, description: items.length > 1 ? `${first.description} and ${items.length - 1} more` : first.description, duration: 6000, className: "alert-toast" });
     playSound(first.kind === "call" ? "call" : "message");
-  }, [callsQ.data]);
+  }, [feed.data]);
 
   const warn = useMemo<AlertItem[]>(
     () =>

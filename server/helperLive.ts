@@ -62,7 +62,7 @@ export function helperDeps(ctx: Ctx, f: Fns): HelperDeps {
           created = await f.updateClient(created, created.settings);
         }
         await audit(ctx, "receptionist.create", { business: a.businessName, summary: `Helper made a receptionist for ${a.businessName}` }, { clientId: created.id });
-        return { id: created.id, businessName: created.settings.businessName, clientPage: `/admin/clients/${companyId}` };
+        return { id: created.id, businessName: created.settings.businessName, clientPage: `/admin/receptionists/${created.id}` };
       } catch (err) {
         if (madeCompany) await sql`delete from companies where id = ${companyId} and not exists (select 1 from clients where company_id = ${companyId})`.catch(() => {});
         throw err;

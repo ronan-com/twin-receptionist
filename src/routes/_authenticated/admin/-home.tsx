@@ -1,15 +1,16 @@
 import { useMemo } from "react";
 import { Link } from "@tanstack/react-router";
-import { useQueries, useQuery } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { AlertTriangle, Bot, Building2, CalendarCheck, CheckCircle2, ChevronRight, Mail, MessageSquareText, PhoneCall, Plus, ServerCrash, Mic } from "lucide-react";
 import { NeedsPhone } from "@/components/app/PhoneGate";
 import { Button } from "@/components/ui/button";
-import { EmptyState, InitialsAvatar, MetricCard, MetricGrid, Panel } from "@/components/app/primitives";
+import { EmptyState, ErrorState, InitialsAvatar, MetricCard, MetricGrid, Panel } from "@/components/app/primitives";
 import { StatusBadge } from "@/components/app/StatusBadge";
 import { GetStartedChecklist } from "@/components/onboarding/Checklist";
 import { adminAgentsQuery, adminOverviewCountsQuery, rangeKey } from "@/lib/app/queries";
 import { companyApi, getAdminRecentActivity, getAdminAppointmentsLeads, getConsoleCalls } from "@/lib/api/console";
-import { getEmail } from "@/lib/api/manage";
+import { resolveRange } from "@/lib/app/date-range";
+import { isInRange } from "@/lib/app/metrics";
 import { fmtNumber, fmtRelative } from "@/lib/app/format";
 import { nicheIcon } from "@/lib/app/niche-icons";
 import { useProviderWarnings, warningInfo } from "@/components/app/ProviderWarnings";
@@ -17,11 +18,6 @@ import { useConsole } from "./-shared";
 
 // Home: a quick look at everything. Today's numbers, what needs a look, receptionists, clients and what just happened.
 
-const sameDay = (iso: string | null | undefined) => {
-  if (!iso) return false;
-  const d = new Date(iso), n = new Date();
-  return d.getFullYear() === n.getFullYear() && d.getMonth() === n.getMonth() && d.getDate() === n.getDate();
-};
 const hello = () => {
   const h = new Date().getHours();
   return h < 12 ? "Good morning" : h < 18 ? "Good afternoon" : "Good evening";
@@ -29,7 +25,8 @@ const hello = () => {
 
 export function Home() {
   const { ws, platform, readOnly, orgName } = useConsole();
-  const range = ws.range;
+  // Today's numbers are always today, whatever date range is picked at the top.
+  const range = useMemo(() => resolveRange("today", ws.range.timezone), [ws.range.timezone]);
   const callsQ = useQuery({ queryKey: ["console", "calls", rangeKey(range)], queryFn: () => getConsoleCalls(range), refetchInterval: 30_000 });
   const alQ = useQuery({ queryKey: ["console", "bookings-leads", rangeKey(range)], queryFn: () => getAdminAppointmentsLeads(range) });
   const countsQ = useQuery(adminOverviewCountsQuery());
@@ -39,14 +36,14 @@ export function Home() {
   const warnings = useProviderWarnings(!readOnly);
 
   const agents = (agentsQ.data ?? []).filter((a) => !a.business?.is_demo);
-  const emailQs = useQueries({ queries: agents.slice(0, 20).map((a) => ({ queryKey: ["email", a.id], queryFn: () => getEmail(a.id), retry: false, staleTime: 60_000, enabled: !a.demo_assistant })) });
-  const inboxes = emailQs.filter((q) => q.data?.connected).length;
+  const inboxes = countsQ.data?.inboxes ?? 0;
 
   const calls = callsQ.data ?? [];
-  const today = calls.filter((c) => sameDay(c.started_at));
+  const today = calls.filter((c) => isInRange(c.started_at, range.from, range.to));
+  const bad = (q: { isError: boolean }) => q.isError;
   const voice = today.filter((c) => c.channel === "call" || c.channel === "web");
   const msgs = today.filter((c) => c.channel && c.channel !== "call" && c.channel !== "web");
-  const bookings = (alQ.data?.appointments ?? []).filter((a) => sameDay(a.created_at) && a.status !== "cancelled").length;
+  const bookings = (alQ.data?.appointments ?? []).filter((a) => isInRange(a.created_at, range.from, range.to) && a.status !== "cancelled").length;
   const failed = today.filter((c) => c.status === "failed").length;
   const c = countsQ.data;
   const noNumber = agents.filter((a) => a.routing_status !== "routed");
@@ -93,14 +90,15 @@ export function Home() {
       {!platform && !readOnly ? <GetStartedChecklist /> : null}
 
       <MetricGrid cols={4}>
-        <MetricCard label="Calls today" value={fmtNumber(voice.length)} icon={PhoneCall} hue="indigo" loading={callsQ.isPending} hint="Voice agent" />
-        <MetricCard label="Messages today" value={fmtNumber(msgs.length)} icon={MessageSquareText} hue="cyan" loading={callsQ.isPending} hint="Message agent" />
-        <MetricCard label="Inboxes on" value={fmtNumber(inboxes)} icon={Mail} hue="magenta" loading={agentsQ.isPending} hint="Email agent" />
-        <MetricCard label="Bookings today" value={fmtNumber(bookings)} icon={CalendarCheck} hue="green" loading={alQ.isPending} />
+        <MetricCard label="Calls today" value={bad(callsQ) ? "–" : fmtNumber(voice.length)} icon={PhoneCall} hue="indigo" loading={callsQ.isPending} hint={bad(callsQ) ? "Couldn't load" : "Voice agent"} />
+        <MetricCard label="Messages today" value={bad(callsQ) ? "–" : fmtNumber(msgs.length)} icon={MessageSquareText} hue="cyan" loading={callsQ.isPending} hint={bad(callsQ) ? "Couldn't load" : "Message agent"} />
+        <MetricCard label="Inboxes on" value={bad(countsQ) ? "–" : fmtNumber(inboxes)} icon={Mail} hue="magenta" loading={countsQ.isPending} hint={bad(countsQ) ? "Couldn't load" : "Email agent"} />
+        <MetricCard label="Bookings today" value={bad(alQ) ? "–" : fmtNumber(bookings)} icon={CalendarCheck} hue="green" loading={alQ.isPending} hint={bad(alQ) ? "Couldn't load" : undefined} />
       </MetricGrid>
 
       <Panel title="Needs a look">
-        {attention.length === 0 ? (
+        {countsQ.isError || callsQ.isError ? <div className="mb-3"><ErrorState message="Some of this couldn't load." onRetry={() => { void countsQ.refetch(); void callsQ.refetch(); }} /></div> : null}
+        {attention.length === 0 && !countsQ.isError && !callsQ.isError ? (
           <div className="flex items-center gap-2.5 text-[13.5px] text-ink"><span data-hue="green" className="hue-icon flex h-8 w-8 items-center justify-center rounded-full"><CheckCircle2 className="h-4 w-4" /></span> All good.</div>
         ) : (
           <ul className="space-y-1.5">
@@ -119,11 +117,11 @@ export function Home() {
 
       <div className="grid gap-5 lg:grid-cols-2">
         <Panel title="Receptionists" padded={false} actions={<Button asChild variant="ghost" size="sm" className="h-7 text-[12px]"><Link to="/admin/receptionists">All</Link></Button>}>
-          {agentsQ.isPending ? <div className="p-4 text-[13px] text-ink-muted">…</div> : agents.length === 0 ? (
+          {agentsQ.isPending ? <div className="p-4 text-[13px] text-ink-muted">…</div> : agentsQ.isError ? <div className="p-3"><ErrorState message="Couldn't load receptionists." onRetry={() => void agentsQ.refetch()} /></div> : agents.length === 0 ? (
             <EmptyState compact icon={Bot} title="No receptionists yet" action={<Button asChild size="sm"><Link to="/admin/receptionists/new">New receptionist</Link></Button>} />
           ) : (
             <ul className="divide-y divide-hairline" data-list="home-receptionists">
-              {agents.slice(0, 6).map((a, i) => (
+              {agents.slice(0, 6).map((a) => (
                 <li key={a.id}>
                   <Link to="/admin/receptionists/$receptionistId" params={{ receptionistId: a.id }} search={{ tab: "voice" }} className="row-hover flex items-center gap-3 px-4 py-2.5">
                     <InitialsAvatar name={a.name} size={32} />
@@ -134,7 +132,7 @@ export function Home() {
                     <span className="flex items-center gap-1" aria-label="Voice, messages, email">
                       <Mic className={a.routing_status === "routed" ? "h-3.5 w-3.5 text-[var(--green)]" : "h-3.5 w-3.5 text-ink-muted/50"} />
                       <MessageSquareText className="h-3.5 w-3.5 text-ink-muted" />
-                      <Mail className={emailQs[i]?.data?.connected ? "h-3.5 w-3.5 text-[var(--green)]" : "h-3.5 w-3.5 text-ink-muted/50"} />
+                      <Mail className="h-3.5 w-3.5 text-ink-muted" />
                     </span>
                     <StatusBadge tone={a.status === "active" ? "success" : "muted"} dot>{a.status === "active" ? "On" : "Paused"}</StatusBadge>
                   </Link>
@@ -145,7 +143,7 @@ export function Home() {
         </Panel>
 
         <Panel title="Clients" padded={false} actions={<Button asChild variant="ghost" size="sm" className="h-7 text-[12px]"><Link to="/admin/clients">All</Link></Button>}>
-          {clientsQ.isPending ? <div className="p-4 text-[13px] text-ink-muted">…</div> : clients.length === 0 ? (
+          {clientsQ.isPending ? <div className="p-4 text-[13px] text-ink-muted">…</div> : clientsQ.isError ? <div className="p-3"><ErrorState message="Couldn't load clients." onRetry={() => void clientsQ.refetch()} /></div> : clients.length === 0 ? (
             <EmptyState compact icon={Building2} title="No clients yet" action={<Button asChild size="sm"><Link to="/admin/clients" search={{ add: "1" } as never}>Add a client</Link></Button>} />
           ) : (
             <ul className="divide-y divide-hairline" data-list="home-clients">
@@ -167,7 +165,9 @@ export function Home() {
       </div>
 
       <Panel title="Just happened" padded={false} actions={<Button asChild variant="ghost" size="sm" className="h-7 text-[12px]"><Link to="/admin/calls">Calls</Link></Button>}>
-        {recent.length === 0 && today.length === 0 ? (
+        {callsQ.isError && activityQ.isError ? (
+          <div className="p-3"><ErrorState message="Couldn't load recent activity." onRetry={() => { void callsQ.refetch(); void activityQ.refetch(); }} /></div>
+        ) : recent.length === 0 && today.length === 0 ? (
           <EmptyState compact icon={PhoneCall} title="Nothing yet" />
         ) : (
           <ul className="divide-y divide-hairline">

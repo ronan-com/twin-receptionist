@@ -371,6 +371,19 @@ async function runDeploy(d: any, body: Uint8Array) {
   }
 }
 
+// A variable change without skipDeploys restarts the app on its last image with the new variables, like Railway does.
+async function restartApp(p: any, app: any) {
+  const net = `wiz-test-rail-net-${tag(p.id)}`, img = `wiz-test-rail-img-${tag(p.id)}`;
+  if ((await sh(["docker", "image", "inspect", img])).code !== 0) return; // never deployed
+  const env = resolveVars(p, app);
+  const envFile = join(RAIL_TMP, `restart-${rid("r")}.env`);
+  await Bun.write(envFile, Object.entries(env).map(([k, v]) => `${k}=${v.replace(/[\r\n]/g, " ")}`).join("\n") + "\n");
+  await sh(["docker", "rm", "-f", app.container]);
+  await sh(["docker", "run", "-d", "--name", app.container, "--network", net, "--label", "wiz-test=1", "--label", `wiz-test-port=${BASE}`, ...NO_REAL_PROVIDERS, "--env-file", envFile, ...(app.port ? ["-p", `127.0.0.1:${app.port}:${env.PORT || 8791}`] : []), img]);
+  rmSync(envFile, { force: true });
+  log(`railway: restarted ${app.container} with new variables`);
+}
+
 Bun.serve({
   port: P.rail, hostname: "127.0.0.1", maxRequestBodySize: 200 * 1024 * 1024,
   async fetch(req) {
@@ -437,7 +450,12 @@ Bun.serve({
       return json(200, { data: { serviceCreate: { id } } });
     }
     if (has("volumeCreate")) { const [, s] = findService(input.serviceId); if (!s) return gqlErr("Service not found"); s.volume = input.mountPath; return json(200, { data: { volumeCreate: { id: rid("vol") } } }); }
-    if (has("variableCollectionUpsert")) { const [, s] = findService(input.serviceId); if (!s) return gqlErr("Service not found"); Object.assign(s.variables, input.variables || {}); return json(200, { data: { variableCollectionUpsert: true } }); }
+    if (has("variableCollectionUpsert")) {
+      const [p0, s] = findService(input.serviceId); if (!s) return gqlErr("Service not found");
+      Object.assign(s.variables, input.variables || {});
+      if (!input.skipDeploys && s.name === "app" && p0) void restartApp(p0, s);
+      return json(200, { data: { variableCollectionUpsert: true } });
+    }
     if (has("serviceInstanceUpdate")) { const [, s] = findService(variables.serviceId); if (!s) return gqlErr("Service not found"); Object.assign(s.settings, variables.input || {}); return json(200, { data: { serviceInstanceUpdate: true } }); }
     if (has("serviceDomainCreate")) {
       const [, s] = findService(input.serviceId); if (!s) return gqlErr("Service not found");
@@ -445,6 +463,14 @@ Bun.serve({
       if (!s.port) return gqlErr("mock: no free app port (MOCK_APP_PORTS)");
       s.domain = `localhost:${s.port}`;
       return json(200, { data: { serviceDomainCreate: { id: rid("sd"), domain: s.domain } } });
+    }
+    if (has("domains")) {
+      const p = rProjects.get(variables.p); if (!p) return gqlErr("Project not found");
+      return json(200, { data: { domains: { customDomains: p.customDomains.filter((c: any) => c.serviceId === variables.s).map((c: any) => ({ id: c.id, domain: c.domain })) } } });
+    }
+    if (has("customDomainDelete")) {
+      for (const p of rProjects.values()) { const i = p.customDomains.findIndex((c: any) => c.id === variables.id); if (i >= 0) { p.customDomains.splice(i, 1); return json(200, { data: { customDomainDelete: true } }); } }
+      return gqlErr("Custom domain not found");
     }
     if (has("customDomainCreate")) {
       const p = rProjects.get(input.projectId); if (!p) return gqlErr("Project not found");

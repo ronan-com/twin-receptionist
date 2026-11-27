@@ -1624,15 +1624,17 @@ export async function domainAnswers(host: string, records: DnsRecord[]): Promise
   if (CONFIG.mockRailway) return records.length > 0 && records.every((r) => r.ok);
   return fetch(`https://${host}/api/health`, { signal: AbortSignal.timeout(8000), redirect: "manual" }).then((r) => r.ok).catch(() => false);
 }
-async function tickDomainWatch(id: number) {
+/** Swappable in tests (the address can't resolve there). */
+export const domainWatch = { answers: domainAnswers, recordLive };
+export async function tickDomainWatch(id: number) {
   const s = getSetup(id);
   if (s.phase !== "done" || !s.domainPending || !s.domain?.host) return;
   if (!due(`dw:${id}`, fast ? 1500 : 30_000)) return;
   const zone = zoneOf(s);
   const recs = (s.finishRecords || []).map((r) => ({ ...r }));
-  for (const r of recs) { const live = await recordLive(r, zone).catch(() => ({ ok: false, seen: "" } as any)); r.ok = !!live.ok; r.seen = live.seen; }
+  for (const r of recs) { const live = await domainWatch.recordLive(r, zone).catch(() => ({ ok: false, seen: "" } as any)); r.ok = !!live.ok; r.seen = live.seen; }
   const host = hostOf(s);
-  const up = await domainAnswers(host, recs);
+  const up = await domainWatch.answers(host, recs);
   updateSetup(id, (s) => {
     if (!up) { s.finishRecords = recs; return; }
     s.domainPending = false; s.finishRecords = undefined; s.resultUrl = `https://${host}`;

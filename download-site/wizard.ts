@@ -667,8 +667,56 @@ function sourceLink(c: Ctx): string {
   return c.s.attemptVersion ? ` <a class="btn o" href="${base(c)}/source" data-action="download-source">Download your full source code</a>` : "";
 }
 
+/** The Done screen's own-address card: add one, or change it. The form is the next screen (domainAddScreen). */
+function domainCard(c: Ctx): string {
+  const s = c.s;
+  if (s.update?.phase === "running") return "";
+  const host = hostOf(s);
+  if (!host) return `<div class="xcard"><div class="xh">${plogo("domain")}<b>Your own web address</b></div><p>Use app.yourbusiness.com instead of the Railway address.</p><div class="xa">${mini(c, "domain-add-open", "Add your own domain", "btn o")}</div></div>`;
+  return `<p class="hint">Your web address: <b>${esc(host)}</b> · ${mini(c, "domain-add-open", "Change domain", "linkbtn")}</p>`;
+}
+
+/** Add or change the address after the install: the form, the work, or it stopped (nothing changed). */
+function domainAddScreen(c: Ctx): string {
+  const s = c.s, d = s.domainAdd!;
+  if (d.phase === "ask") {
+    const saved = secretHint(c.b.id, "railway_token");
+    return `${head(c, hostOf(s) ? "Change your web address" : "Add your own web address", `${P(c)} will open at <b>app.</b>your domain. Your agency keeps working at its Railway address while this is set up.`)}
+<div class="body">${mainForm(c, "domain-add-start", `
+  <label class="f" for="domain">Your domain</label>
+  <input id="domain" name="domain" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" maxlength="253" placeholder="yourbusiness.com" value="${esc(c.flash?.form?.domain ?? "")}">
+  <p class="hint">Your dashboard will be at <b id="pv">app.${esc(c.flash?.form?.domain || "your-domain")}</b>.</p>
+  ${secretIn("token", "Paste your Railway token", saved, "Railway account token")}
+  <p class="hint">The same kind of token as when you set up (Account Settings, Tokens, <b>No workspace</b>). We use it for this change only, then delete it.</p>
+  ${showMeHow(["railway-token"])}`)}</div>
+${nav(c, `${mini(c, "domain-add-cancel", "Not now", "btn o")}${primary("Check and connect")}`, { back: false })}`;
+  }
+  const bad = d.phase === "failed";
+  const stages = [...(d.from ? [`Taking ${d.from} off your agency`] : []), `Connecting ${d.host}`, "Pointing your agency at its new address", "Restarting your agency"];
+  const at = (d.from && d.removedOld ? 1 : 0) + (d.customDomainId ? 1 : 0) + (d.varsSet ? 1 : 0);
+  const list = `<ul class="stages">${stages.map((t, i) => {
+    const cls = i < at ? "ok" : i === at ? (bad ? "bad" : "run") : "";
+    return `<li class="${cls}"><i>${cls === "ok" ? icon("check") : cls === "bad" ? icon("x") : ""}</i>${esc(t)}</li>`;
+  }).join("")}</ul>`;
+  const { text, next } = logRead(c.b.id);
+  const log = `<details class="log"><summary>Show details</summary><pre id="log" data-next="${next}">${esc(text.slice(-60000))}</pre></details>`;
+  if (bad) {
+    return `${head(c, "The change stopped", "")}
+${notice("err", esc((d.error || "Something went wrong.").replace(/^./, (x) => x.toUpperCase())))}
+${notice("ok", "Nothing was lost. Your agency keeps working at its current address.")}
+${list}${log}
+${nav(c, `${mini(c, "domain-add-cancel", "Not now", "btn o")}${mini(c, "domain-add-retry", `Try again ${icon("right")}`, "btn p")}`, { back: false })}`;
+  }
+  return `${head(c, `Connecting ${esc(d.host || "")}`, "Your agency keeps working while this runs. You can close this page; your link picks up where you left off.")}
+${list}
+<p class="status"><span class="spin"></span>${d.varsSet ? "Restarting your agency. A minute or so." : "Setting things up on Railway."}</p>
+${log}
+${nav(c, "", { back: false })}`;
+}
+
 function doneRailway(c: Ctx) {
   if (c.s.update && c.s.update.phase !== "done") return updateScreen(c);
+  if (c.s.domainAdd) return domainAddScreen(c);
   if (isDemo(c.b)) {
     return `${head(c, "Your agency is live", `${P(c)} is ready. This test uses a temporary address instead of your own domain.`)}
 <div class="live"><div class="dot">● Live</div><p class="hint">Next: create your password and your branded dashboard opens.</p></div>
@@ -686,6 +734,7 @@ ${nav(c, `<a class="btn p" href="${base(c)}/open">Open your dashboard ${icon("ex
 ${pending ? `<p class="hint">Your temporary address. <b>${esc(hostOf(s))}</b> starts working by itself once the records below are in.</p>` : ""}
 <p class="hint">Your owner account (<b>${esc(s.brand?.ownerEmail || "your owner email")}</b>) is ready. Open your dashboard below to get in. You can choose a password in Settings.</p></div>
 ${updateBanner(c)}
+${domainCard(c)}
 ${phoneSkipped(s) ? phoneLaterNote(c) : ""}
 ${dnsCheck(s) ? `<div class="checks">${dnsCheck(s)}</div>` : ""}
 ${pending && s.finishRecords?.length ? `<div class="recbox"><b>Records for ${esc(hostOf(s))}</b>${recordTable(s.finishRecords, true)}</div>` : ""}
@@ -698,14 +747,14 @@ const SCREENS: Record<StepId, (c: Ctx) => string> = { welcome, brand, railway: r
 
 export function statusRev(c: { b: Buyer; s: SetupData }): string {
   const s = c.s;
-  const bits = [s.step, s.phase, (s.progress || []).length, s.error, s.domain?.cf?.status, s.domain?.cf?.canEdit,
+  const bits = [s.domainAdd?.phase, s.domainAdd?.customDomainId ? 1 : 0, s.domainAdd?.varsSet ? 1 : 0, s.domainAdd?.removedOld ? 1 : 0, s.domainPending ? 1 : 0, ...(s.finishRecords || []).map((r) => `${r.ok ? 1 : 0}${r.seen || ""}`), s.resultUrl, s.step, s.phase, (s.progress || []).length, s.error, s.domain?.cf?.status, s.domain?.cf?.canEdit,
     s.email?.resend?.status, s.email?.testSentTo, ...(s.email?.resend?.records || []).map((r) => (r.ok ? 1 : 0)), s.email?.resend?.dmarc?.ok ? 1 : 0, s.attempt,
     s.rw?.projectId ? 1 : 0, s.rw?.pgVolume ? 1 : 0, s.update?.phase, s.update?.deployStatus, s.update?.appId ? 1 : 0, s.update?.varsSet ? 1 : 0, s.update?.deploymentId, s.rw?.deploymentId, s.rw?.deployStatus, s.rw?.certStatus, s.rw?.healthy ? 1 : 0, ...(s.rw?.records || []).map((r) => `${r.ok ? 1 : 0}${r.seen || ""}`), ...(s.email?.resend?.records || []).map((r) => r.seen || "")];
   return Bun.hash(JSON.stringify(bits)).toString(36);
 }
 const isLive = (c: Ctx) =>
   (c.view === "install" && ["creating", "deploying", "domain"].includes(c.s.phase)) ||
-  (c.view === "done" && c.s.update?.phase === "running") ||
+  (c.view === "done" && (c.s.update?.phase === "running" || c.s.domainAdd?.phase === "running" || !!c.s.domainPending)) ||
   (c.view === "domain" && c.s.domain?.mode === "manual" && !!c.s.domain.host && c.s.email?.resend?.status !== "verified" && !!c.s.email?.resend?.records?.length) ||
   (c.view === "domain" && !!c.s.domain?.cf?.zoneId && !!c.s.domain.cf.status && c.s.domain.cf.status !== "active") ||
   (c.view === "email" && !!c.s.email?.resend?.domainId && c.s.email.resend.status !== "verified");

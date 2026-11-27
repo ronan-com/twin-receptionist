@@ -62,12 +62,14 @@ bash src/deploy/aws/ensure-ondemand-tls.sh
 # Route the address through the main Caddy (https certificate is automatic).
 sed "s/__DOMAIN__/$DOMAIN/" src/deploy/aws/setupsite.caddy.tmpl > /opt/twin/sites/setupsite.caddy
 # setup.chloeeai.co keeps serving the APIs installed agencies call (sync, tickets, releases). It is also the owner's
-# master admin address (ADMIN_DOMAIN): /admin and its assets are served there directly. Every other page forwards to
-# the generic $DOMAIN, which is what buyer setup links use. To move admin later, change ADMIN_DOMAIN's default here.
-ADMIN_DOMAIN=${7:-setup.chloeeai.co}
+# master admin address (ADMIN_DOMAIN): /admin and its assets are served there directly. Every other page there goes to /admin;
+# on other hosts it forwards to the generic $DOMAIN, which is what buyer setup links use. To move admin later, change ADMIN_DOMAIN's default here.
+ADMIN_DOMAIN=${7:-setup.sageai.agency}
 ADMIN_PATHS="/admin /admin/* /styles.css /favicon.svg /admin-live.js /tickets.css /wizard.css /wizard.js /chat.css /chat.js /fonts/*"
-site_block() { # <host> <paths served here>
-  printf '\n%s {\n\t@own path %s\n\thandle @own {\n\t\treverse_proxy setup-site:4500\n\t}\n\thandle {\n\t\tredir https://%s{uri} 308\n\t}\n}\n' "$1" "$2" "$DOMAIN"
+site_block() { # <host> <paths served here> [redirect target for everything else, default: the generic $DOMAIN]
+  local to=$3
+  [ -n "$to" ] || to="https://$DOMAIN{uri} 308"
+  printf '\n%s {\n\t@own path %s\n\thandle @own {\n\t\treverse_proxy setup-site:4500\n\t}\n\thandle {\n\t\tredir %s\n\t}\n}\n' "$1" "$2" "$to"
 }
 if [ "$DOMAIN" != "setup.chloeeai.co" ]; then
   if [ "$ADMIN_DOMAIN" = "setup.chloeeai.co" ]; then
@@ -77,7 +79,7 @@ if [ "$DOMAIN" != "setup.chloeeai.co" ]; then
   fi
 fi
 if [ "$ADMIN_DOMAIN" != "$DOMAIN" ] && [ "$ADMIN_DOMAIN" != "setup.chloeeai.co" ]; then
-  site_block "$ADMIN_DOMAIN" "$ADMIN_PATHS" >> /opt/twin/sites/setupsite.caddy
+  site_block "$ADMIN_DOMAIN" "$ADMIN_PATHS" "https://$ADMIN_DOMAIN/admin 302" >> /opt/twin/sites/setupsite.caddy
 fi
 docker exec twin-caddy-1 caddy reload --config /etc/caddy/Caddyfile --adapter caddyfile
 

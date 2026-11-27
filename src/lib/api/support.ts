@@ -19,6 +19,8 @@ export const updatesApi = {
   get: () => api.get<UpdatesStatus>("/api/updates/settings"),
   save: (change: UpdatesChange) => api.put<UpdatesStatus>("/api/updates/settings", change),
   check: () => api.post<CheckResult>("/api/updates/check", {}),
+  /** A link to the full source of the version this agency runs (server/sourceDownload.ts). */
+  source: () => api.get<{ version: string; url: string }>("/api/source-download"),
 };
 
 // Settings, "Backups" (server/backup.ts).

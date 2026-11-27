@@ -34,6 +34,14 @@ export function UpdatesSection() {
     },
     onError: (e: Error) => toast.error(e.message),
   });
+  const source = useMutation({
+    mutationFn: () => updatesApi.source(),
+    onSuccess: (r) => {
+      window.location.assign(r.url);
+      toast.success(`Downloading the source of version ${r.version}`);
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
   if (q.error) return <ErrorState message={(q.error as Error).message} onRetry={() => void q.refetch()} />;
   if (!q.data) return <div className="panel p-4 text-[12.5px] text-ink-muted">Loading…</div>;
   const u = q.data;
@@ -81,6 +89,11 @@ export function UpdatesSection() {
             </div>
           </div>
         )}
+      </Panel>
+      <Panel title="Your source code" description="The full source of the exact version this agency runs. It's yours to keep. It holds no keys or settings.">
+        <Button variant="outline" size="sm" className="h-8 text-[12.5px]" disabled={!canChange || source.isPending} onClick={() => source.mutate()} data-action="download-source">
+          {source.isPending ? "Getting the link…" : `Download your full source code${u.version ? ` (version ${u.version})` : ""}`}
+        </Button>
       </Panel>
     </div>
   );

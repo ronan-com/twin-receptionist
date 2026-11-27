@@ -502,3 +502,89 @@ describe("the admin pages", () => {
     expect((await fetch(`${SITE}/admin/problems`, { redirect: "manual" })).status).not.toBe(200); // signed out: no
   });
 });
+
+// ---- "Download your full source code": the source of the version an agency runs, with no keys in it ----
+describe("source download", () => {
+  const publish = (version: string, files: Record<string, string>) => {
+    const w = join(dir, `src-${version}`);
+    mkdirSync(w, { recursive: true });
+    // A real source is far bigger than a thousand bytes (the app refuses smaller ones as damaged).
+    writeFileSync(join(w, "pad.bin"), crypto.getRandomValues(new Uint8Array(4000)));
+    for (const [name, text] of Object.entries(files)) { mkdirSync(join(w, name, ".."), { recursive: true }); writeFileSync(join(w, name), text); }
+    const appSrc = `app-src-${version}.tgz`;
+    if (Bun.spawnSync(["tar", "-czf", join(dir, appSrc), "-C", w, "."]).exitCode !== 0) throw new Error("tar failed");
+    const work = join(dir, `bundle-${version}`);
+    mkdirSync(work, { recursive: true });
+    copyFileSync(join(dir, appSrc), join(work, "app-src.tgz"));
+    const file = `agency-server-${version}.tgz`;
+    if (Bun.spawnSync(["tar", "-czf", file, "-C", work, "./app-src.tgz"], { cwd: PACKAGES_DIR }).exitCode !== 0) throw new Error("tar failed");
+    recordPackage({ version, file, size: 1, sha256: "x" });
+  };
+  const cleanup = (...versions: string[]) => { for (const v of versions) db().query("DELETE FROM packages WHERE version = ?").run(v); };
+
+  test("what counts as a secret", () => {
+    expect(rel.secretNamesIn(["./package.json", "./server/index.ts", "./.env.example", "./deploy/Dockerfile", "./src/env.ts"])).toEqual([]);
+    expect(rel.secretNamesIn(["./.env", "./a/.env.local", "./keys/server.pem", "./.secrets/x", "./secrets.env", "./id_rsa", "./x/private.key", "./.npmrc"]).length).toBe(8);
+  });
+
+  test("the app asks with its sync token for the version it runs; the signed link serves a clean source, only that version, only once signed", async () => {
+    publish("9.0.0", { "package.json": '{"name":"app","version":"9.0.0"}', "server/index.ts": "export {}\n", ".env.example": "X=\n" });
+    try {
+      const { b, token } = live("Src Buyer");
+      const ask = (t: string | null, v = "9.0.0") => fetch(`${SITE}/api/releases/source-link?version=${v}`, { headers: t ? { authorization: `Bearer ${t}` } : {} });
+      expect((await ask(null)).status).toBe(401);
+      expect((await ask(sync.callToken(b.id))).status).toBe(401);
+      expect((await ask(token, "0.0.1")).status).toBe(404);
+      expect((await ask(token, "../x")).status).toBe(404);
+      const res = await ask(token);
+      expect(res.status).toBe(200);
+      const j: any = await res.json();
+      expect(j.version).toBe("9.0.0");
+      expect(j.url.startsWith(`${SITE}/api/releases/source/9.0.0?`)).toBe(true);
+      expect(j.url).not.toContain(token);
+      const dl = await fetch(j.url);
+      if (dl.status !== 200) throw new Error(`${dl.status} ${await dl.text()}`);
+      expect(dl.headers.get("content-disposition")).toContain("source-9.0.0.tar.gz");
+      const out = join(dir, "got-9.0.0.tgz");
+      writeFileSync(out, new Uint8Array(await dl.arrayBuffer()));
+      const list = Bun.spawnSync(["tar", "-tzf", out]).stdout.toString();
+      expect(list).toContain("package.json");
+      expect(list).toContain("server/index.ts");
+      expect(list).not.toMatch(/(^|\/)\.env$/m);
+      // A changed signature, no signature, an old signature, another buyer's: all refused.
+      const c = new URL(j.url);
+      for (const mut of [(q: URLSearchParams) => q.set("sig", "A".repeat(43)), (q: URLSearchParams) => q.delete("sig"), (q: URLSearchParams) => q.set("b", String(b.id + 1))]) {
+        const x = new URL(j.url); mut(x.searchParams);
+        expect((await fetch(x)).status).toBe(403);
+      }
+      expect((await fetch(rel.signBundleUrl(b.id, "9.0.0", Date.now() - 11 * 60_000).url.replace("/bundle/", "/source/"))).status).toBe(403);
+      expect(c.pathname).toBe("/api/releases/source/9.0.0");
+    } finally { cleanup("9.0.0"); }
+  });
+
+  test("a bundle that holds a settings file or key is never served", async () => {
+    publish("9.0.1", { "package.json": "{}", ".env": "TELNYX_API_KEY=KEYsecret\n", "server/a.ts": "x" });
+    try {
+      const { b } = live("Src Leak");
+      const r = await fetch(rel.signBundleUrl(b.id, "9.0.1").url.replace("/bundle/", "/source/"));
+      expect(r.status).toBe(503);
+      const text = await r.text();
+      expect(text).not.toContain("KEYsecret");
+      expect(text).toMatch(/can't be offered/);
+    } finally { cleanup("9.0.1"); }
+  });
+
+  test("the Done screen's button goes to the source of the version that agency installed (the setup code is the login)", async () => {
+    publish("9.0.2", { "package.json": "{}" });
+    try {
+      const { b } = live("Src Done");
+      updateSetup(b.id, (s) => { s.attemptVersion = "9.0.2"; });
+      const r = await fetch(`${SITE}/setup/${b.code}/source`, { redirect: "manual" });
+      expect([302, 303]).toContain(r.status);
+      expect(r.headers.get("location")).toContain("/api/releases/source/9.0.2?");
+      expect((await fetch(`${SITE}/setup/${b.code.slice(0, -1)}x/source`, { redirect: "manual" })).status).toBeGreaterThanOrEqual(400);
+      updateSetup(b.id, (s) => { s.attemptVersion = "0.0.1"; });
+      expect((await fetch(`${SITE}/setup/${b.code}/source`, { redirect: "manual" })).status).toBe(404);
+    } finally { cleanup("9.0.2"); }
+  });
+});

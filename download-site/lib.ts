@@ -23,6 +23,8 @@ export const CONFIG = {
   siteUrl,
   // The address new servers use to download the app and report progress. Normally SITE_URL.
   provisionUrl: env("PROVISION_URL", siteUrl).replace(/\/+$/, ""),
+  // Where "Download your full source code" points, with {version} filled in (e.g. a GitHub release). Empty: our own signed download.
+  sourceDownloadUrl: env("SOURCE_DOWNLOAD_URL", ""),
   host: env("HOST", "127.0.0.1"),
   port: int("PORT", 4500),
   // Test mode only: a second address to listen on (the fake droplets' network gateway).

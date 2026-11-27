@@ -56,6 +56,10 @@ describe("first run", () => {
     // The address shown on screen is still the plain one, with no token in it.
     expect(doneHtml(b)).toContain('class="url" href="https://acme.up.railway.app"');
     expect(doneHtml(b)).not.toContain("Set up your agency");
+    // The source download button appears once we know the installed version, and points at our route for this buyer.
+    expect(doneHtml(b)).not.toContain("download-source");
+    updateSetup(b.id, (s) => { s.attemptVersion = "1.0.21"; });
+    expect(doneHtml(b)).toContain(`href="/setup/${b.code}/source" data-action="download-source">Download your full source code`);
     updateSetup(b.id, (s) => { s.firstLogin!.at = new Date(Date.now() - 24 * 3_600_000).toISOString(); });
     expect(firstLoginFresh(getSetup(b.id))).toBe(false);
     expect(doneHtml(b)).not.toContain("/welcome?t=");

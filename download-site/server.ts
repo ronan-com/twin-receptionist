@@ -34,7 +34,7 @@ import { inactivePage, startRoute } from "./genericlink";
 import { ticketsApi } from "./tickets";
 import { brokerApi } from "./broker";
 import { MAX_SYNC_BODY, bearerOf, buyerBySyncToken, ownerResetLink, receive } from "./sync";
-import { appSource, bundleSignatureOk, latestRelease, signBundleUrl } from "./releases";
+import { appSource, bundleSignatureOk, latestRelease, packageOf, signBundleUrl, sourceDownload, sourceUrlFor } from "./releases";
 import { startAlerts } from "./alerts";
 import { DEMO, DEMO_KEY, DemoOffline, demoBuyer, demoDashboard } from "./demo";
 import { serveOwnHost, tlsAllowedResponse } from "./hosts";
@@ -240,6 +240,16 @@ async function handle(req: Request, srv: Bun.Server<unknown>): Promise<Response>
     return redirect(after.step !== before ? `/setup/${b.code}` : back, clear);
   }
 
+  // ---- the Done screen's "Download your full source code": the source of the version this buyer's agency runs ----
+  const srcm = isGet && path.match(/^\/setup\/([^/]*)\/source$/);
+  if (srcm && CODE_RE.test(srcm[1])) {
+    const r = lookupBuyer(srcm[1], ip);
+    if (r.error) return r.error;
+    const v = getSetup(r.buyer!.id).attemptVersion || "";
+    if (!v || !packageOf(v)) return html(notFoundPage(), 404);
+    return redirect(sourceUrlFor(r.buyer!.id, v));
+  }
+
   // ---- team demo: a fresh start link, and the door into the real dashboard ----
   if (DEMO && isGet && DEMO_KEY && path === `/demo/${DEMO_KEY}`) return redirect(`/setup/${demoBuyer()}`);
   // The door into the demo dashboard: the global team demo, or a demo buyer once their install has finished.
@@ -283,7 +293,7 @@ async function handle(req: Request, srv: Bun.Server<unknown>): Promise<Response>
   if (path === "/api/tickets" || path === "/api/tickets/updates") { const r = (await ticketsApi(req, url, ip))!; return respond(r.body, r.status, Object.fromEntries(r.headers)); }
 
   // ---- an app updating itself (the buyer's Settings, "Updates"): what's newest, and the bundle by a signed address ----
-  if (path === "/api/releases/latest" || path.startsWith("/api/releases/bundle/")) {
+  if (path === "/api/releases/latest" || path.startsWith("/api/releases/bundle/") || path === "/api/releases/source-link" || path.startsWith("/api/releases/source/")) {
     const json = (o: unknown, status = 200, h: Record<string, string> = {}) => respond(JSON.stringify(o), status, { "Content-Type": "application/json", "Cache-Control": "no-store", ...h });
     if (!isGet) return json({ error: "GET only" }, 405, { Allow: "GET" });
     if (path === "/api/releases/latest") {
@@ -298,6 +308,36 @@ async function handle(req: Request, srv: Bun.Server<unknown>): Promise<Response>
       if (!rel) return json({ error: "no release" }, 404);
       const signed = signBundleUrl(buyerId, rel.version);
       return json({ version: rel.version, notes: rel.notes, sha256: rel.sha256, size: rel.size, bundleUrl: signed.url, expiresAt: signed.expiresAt });
+    }
+    // "Download your full source code" from the app's Settings: the app asks (with its sync token) for a link to the
+    // source of the version it runs. The link is the same short-lived signed address as an update's.
+    if (path === "/api/releases/source-link") {
+      const buyerId = buyerBySyncToken(bearerOf(req));
+      if (buyerId == null) {
+        const retry = allow(`relbad:${ip}`, 30, 10 * 60_000);
+        return retry ? json({ error: "too many tries" }, 429, { "Retry-After": String(retry) }) : json({ error: "unauthorised" }, 401);
+      }
+      const retry = allow(`rel:${buyerId}`, 30, 60 * 60_000);
+      if (retry) return json({ error: "too many requests" }, 429, { "Retry-After": String(retry) });
+      const v = (url.searchParams.get("version") || "").slice(0, 40);
+      if (!/^[A-Za-z0-9._+-]{1,40}$/.test(v) || !packageOf(v)) return json({ error: "not available" }, 404);
+      return json({ version: v, url: sourceUrlFor(buyerId, v) });
+    }
+    const sm = path.match(/^\/api\/releases\/source\/([A-Za-z0-9._+-]{1,40})$/);
+    if (sm) {
+      const sBuyer = Number(url.searchParams.get("b"));
+      const retry = allow(`relbundle:${ip}`, 20, 60 * 60_000);
+      if (retry) return json({ error: "too many requests" }, 429, { "Retry-After": String(retry) });
+      if (!Number.isInteger(sBuyer) || !bundleSignatureOk(sBuyer, sm[1], url.searchParams.get("exp") || "", url.searchParams.get("sig") || "")) return json({ error: "expired or invalid" }, 403);
+      const sb = db().query("SELECT revoked_at FROM buyers WHERE id = ?").get(sBuyer) as { revoked_at: string | null } | null;
+      if (!sb || sb.revoked_at || !packageOf(sm[1])) return json({ error: "not found" }, 404);
+      try {
+        const src = await sourceDownload(sm[1]);
+        console.log(`[release] buyer ${sBuyer} downloaded the source of ${sm[1]}`);
+        return respond(src.bytes, 200, { "Content-Type": "application/gzip", "Cache-Control": "no-store", "Content-Disposition": `attachment; filename="${src.filename}"` });
+      } catch (e) {
+        return json({ error: (e as Error).message }, 503);
+      }
     }
     const bm = path.match(/^\/api\/releases\/bundle\/([A-Za-z0-9._+-]{1,40})$/);
     const buyerId = Number(url.searchParams.get("b"));

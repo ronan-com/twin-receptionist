@@ -8,15 +8,18 @@
 import { createHash, createHmac, timingSafeEqual } from "node:crypto";
 import { existsSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { CONFIG, PACKAGES_DIR, currentPackage } from "./lib";
+import { CONFIG, PACKAGES_DIR, currentPackage, listPackages } from "./lib";
 import { ProviderError } from "./providers";
 import { siteKey } from "./store";
 
 export const BUNDLE_TTL_SECONDS = 600;
 
+/** A published bundle by version (the newest when none is given). Null when we don't hold it. */
+export const packageOf = (version?: string) => (version ? listPackages().find((p) => p.version === version && p.file.endsWith(".tgz")) ?? null : currentPackage());
+
 /** The app's source (.tar.gz), taken out of the published bundle once and kept next to it. */
-export async function appSource(): Promise<Uint8Array> {
-  const pkg = currentPackage();
+export async function appSource(version?: string): Promise<Uint8Array> {
+  const pkg = packageOf(version);
   if (!pkg) throw new ProviderError("The app isn't ready to install yet. Please try again later or contact support.");
   const bundle = join(PACKAGES_DIR, pkg.file);
   const cached = bundle.replace(/\.tgz$/, ".app-src.tgz");
@@ -27,6 +30,33 @@ export async function appSource(): Promise<Uint8Array> {
     writeFileSync(cached, out, { mode: 0o600 });
   }
   return new Uint8Array(readFileSync(cached));
+}
+
+/** File names that must never ship in a source download: settings with keys, private keys, key stores. */
+const SECRET_NAME = /(^|\/)(\.env(\.(?!example$)[^/]*)?|secrets?\.env|\.secrets?|\.npmrc|id_(rsa|ed25519|ecdsa)|[^/]*\.(pem|key|p12|pfx)|credentials\.json)(\/|$)/i;
+export const secretNamesIn = (names: string[]) => names.filter((n) => SECRET_NAME.test(n.replace(/^\.\//, "")));
+
+/** The source download for one version: the app's source, refused if its file list holds anything that looks like a secret. */
+export async function sourceDownload(version: string): Promise<{ bytes: Uint8Array; filename: string }> {
+  const bytes = await appSource(version);
+  const p = Bun.spawn(["tar", "-tzf", "-"], { stdin: "pipe", stdout: "pipe", stderr: "pipe" });
+  p.stdin.write(bytes);
+  await p.stdin.end();
+  const names = (await new Response(p.stdout).text()).split("\n").filter(Boolean);
+  if ((await p.exited) !== 0 || !names.length) { console.error(`[release] source ${version}: tar said: ${(await new Response(p.stderr).text()).slice(0, 200)}`); throw new ProviderError("The source bundle is damaged. Contact support."); }
+  const bad = secretNamesIn(names);
+  if (bad.length) { console.error(`[release] source ${version} refused: holds ${bad.slice(0, 3).join(", ")}`); throw new ProviderError("This version's source can't be offered right now. Contact support."); }
+  return { bytes, filename: `source-${version}.tar.gz` };
+}
+
+/**
+ * Where a buyer downloads the source of the version they run. SOURCE_DOWNLOAD_URL (with {version}) overrides it,
+ * for when releases live on GitHub; otherwise our own short-lived signed address.
+ */
+export function sourceUrlFor(buyerId: number, version: string): string {
+  const template = CONFIG.sourceDownloadUrl;
+  if (template) return template.replaceAll("{version}", encodeURIComponent(version));
+  return signBundleUrl(buyerId, version).url.replace("/api/releases/bundle/", "/api/releases/source/");
 }
 
 const shaCache = new Map<string, { mtime: number; sha: string }>();

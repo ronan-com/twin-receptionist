@@ -67,6 +67,7 @@ import { workspaceMoreRoutes } from "./routes/workspaceMore";
 import { pipedreamConsoleRoutes } from "./routes/apps";
 import type { ClientAccess, RouteArgs } from "./routes/http";
 import { withinSeconds } from "./timeout";
+import { sourceDownloadRoute } from "./sourceDownload";
 import { changeBrand, installLook, ownBrand, serveAsset, uploadAsset } from "./brand";
 import { accessibleClients, customerClientId, setFollowUpStage, customersFor, inviteCustomer, removeCustomer, revokeCustomerInvite } from "./customers";
 import { createRequest, declineRequest, listRequests, markDone, pendingCount, pendingRequest, requestsForClient, settleRequests } from "./numberRequests";
@@ -708,6 +709,8 @@ async function route(req: Request, server?: { requestIP(r: Request): { address: 
   if (path === "/api/tickets" || path.startsWith("/api/tickets/")) return (await ticketRoutes({ req, url, path, method, ctx, orgId: ctx.org?.id ?? "", appUrl: appUrl(req) })) ?? json({ error: "Not found" }, 404);
   // Settings, "Updates": the owner's automatic-updates switch (server/autoUpdate.ts).
   if (path === "/api/updates/settings" || path === "/api/updates/check") return updatesRoute(req, method, path, ctx);
+  // Settings, "Your source code": a link to the full source of the version this agency runs (server/sourceDownload.ts).
+  if (path === "/api/source-download") return sourceDownloadRoute(method, ctx);
   // Settings, "Backups": the daily backup, the off-site copy and how long transcripts are kept (server/backup.ts).
   if (path === "/api/backups" || path.startsWith("/api/backups/")) return backupsRoute(req, method, path, ctx);
 

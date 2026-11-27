@@ -599,7 +599,7 @@ function done(c: Ctx) {
 ${lockedOut(c)}
 ${notice("info", `We've deleted every key you gave us${s.assist?.keepDns ? " except the DNS access noted above" : ""}. We have no login to your server or accounts. Your agency shares health and usage counts and a short, masked list of recent problems with us (never calls or customer details). Sharing and Support access (which lets us sign in and, unless you say no, fix things for you, but never see your keys, billing or owner account) are both on by default so we can help you fast. You can switch each one off in your dashboard, under Settings: Support. Automatic updates are not available on a DigitalOcean server yet.`)}
 <details class="log"><summary>Show details</summary><pre id="log" data-next="${next}">${esc(text.slice(-60000))}</pre></details>
-${nav(c, `<a class="btn p" href="${esc(dashboardLink(s, url))}" target="_blank" rel="noopener noreferrer">Open your dashboard ${icon("ext")}</a>`, { back: false })}`;
+${nav(c, `<a class="btn p" href="${esc(dashboardLink(s, url))}" target="_blank" rel="noopener noreferrer">Open your dashboard ${icon("ext")}</a>${sourceLink(c)}`, { back: false })}`;
 }
 
 /** Done screen: for owners with no email set up (or who simply forgot). Asks their agency for a one-time reset link; the answer comes back on screen only. */
@@ -707,6 +707,11 @@ function dnsCheck(s: SetupData): string {
   return todo("dns", `Delete your ${name}. <a href="${href}" target="_blank" rel="noopener noreferrer">Open ${m === "godaddy" ? "GoDaddy" : "Cloudflare"}</a>`);
 }
 
+/** The Done screen's "Download your full source code": the version this agency runs (nothing when we don't know it). */
+function sourceLink(c: Ctx): string {
+  return c.s.attemptVersion ? ` <a class="btn o" href="${base(c)}/source" data-action="download-source">Download your full source code</a>` : "";
+}
+
 function doneRailway(c: Ctx) {
   if (c.s.update && c.s.update.phase !== "done") return updateScreen(c);
   if (isDemo(c.b)) {
@@ -740,7 +745,7 @@ ${laterCards(c, shown)}
 <p class="hint tip">Tip: turn on auto top-up at Railway, Telnyx and OpenRouter.</p>
 ${notice("info", `We deleted the keys you gave us${s.assist?.keepDns ? " except the DNS access noted above" : ""} and have no login to your accounts. Your agency shares health counts with us (never calls or customer details). Switch it off in Settings, Support.`)}
 <details class="log"><summary>Show details</summary><pre id="log" data-next="${next}">${esc(text.slice(-60000))}</pre></details>
-${nav(c, `<a class="btn p" href="${esc(dashboardLink(s, shown))}" target="_blank" rel="noopener noreferrer">Open your dashboard ${icon("ext")}</a>`, { back: false })}`;
+${nav(c, `<a class="btn p" href="${esc(dashboardLink(s, shown))}" target="_blank" rel="noopener noreferrer">Open your dashboard ${icon("ext")}</a>${sourceLink(c)}`, { back: false })}`;
 }
 
 const SCREENS: Record<StepId, (c: Ctx) => string> = { welcome, brand, railway: railwayStep, domain: domainStep, server, phones, ai: aiStep, email, calendars, extras, vapi, twilio, install, done };

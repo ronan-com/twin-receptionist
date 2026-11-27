@@ -185,9 +185,9 @@ export async function installFor(b: Buyer, admin: string): Promise<Out> {
 const SITE_SMTP = () => (process.env.SITE_SMTP_URL || "").trim();
 const SITE_FROM = () => (process.env.SITE_MAIL_FROM || "").trim();
 export const mailConfigured = () => !!SITE_SMTP() && !!SITE_FROM();
-/** The sign-off and wording follow the agency's style: a neutral agency never sees our product or company name. */
-export const signOff = (b: Pick<Buyer, "style">) => (b.style === "neutral" ? "" : CONFIG.sellerName);
-export const styled = (b: Pick<Buyer, "style">, text: string) => (b.style === "neutral" ? unbrand(text) : text);
+/** Emails are generic: no sign-off, and our product and company names are taken out of the text. */
+export const signOff = (_b?: unknown) => "";
+export const styled = (_b: unknown, text: string) => unbrand(text);
 /** Sends one plain-text email from our site. null = sent; otherwise a sentence for the admin. */
 export async function siteMail(b: Pick<Buyer, "id" | "style">, to: string, subject: string, text: string): Promise<string | null> {
   if (!mailConfigured()) return "Email isn't set up on the setup site — copy and send it yourself.";
@@ -263,7 +263,7 @@ export function setupInviteEmail(b: Buyer, st: InviteState): { subject: string; 
   const todo = st.left.length ? `What's left for you: ${st.left.join(", ")}.` : "Everything's filled in; open the link to see where it's up to.";
   const sign = signOff(b) ? `\n\n${signOff(b)}` : "";
   return {
-    subject: b.style === "neutral" ? "Your private setup link" : `Your private ${CONFIG.productName} setup link`,
+    subject: "Your private setup link",
     text: `Hi ${first},\n\nYour AI receptionist agency is being set up. ${did}${todo}\n\nOpen your private setup link to carry on:\n\n${st.link}\n\nIt's just for you, so please don't share it. You can close it and come back whenever you like.${sign}`,
   };
 }

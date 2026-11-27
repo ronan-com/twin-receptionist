@@ -24,7 +24,7 @@ export const DEMO_KEY = process.env.DEMO_KEY || "";
 
 export function demoBuyer(): string {
   const id = randomBytes(3).toString("hex");
-  return addBuyer(`Team test ${id}`, `team-${id}@example.com`, false, { style: "branded" }).code;
+  return addBuyer(`Team test ${id}`, `team-${id}@example.com`, false, { style: "neutral" }).code;
 }
 
 /** Pretend account details, already filled in so a tester only presses Continue. */

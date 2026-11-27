@@ -7,10 +7,9 @@ import { chatBubble, chatHead, type ChatMount } from "./chat";
 export const esc = (s: unknown) =>
   String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
 
-const P = () => esc(CONFIG.productName);
-const S = () => esc(CONFIG.sellerName);
+// The public pages are generic: no product or company name anywhere.
 const support = () =>
-  CONFIG.supportEmail ? `<a href="mailto:${esc(CONFIG.supportEmail)}">${esc(CONFIG.supportEmail)}</a>` : `${S()} (reply to your purchase email)`;
+  CONFIG.supportEmail ? `<a href="mailto:${esc(CONFIG.supportEmail)}">${esc(CONFIG.supportEmail)}</a>` : `the person who sent you your setup link`;
 
 export function layout(title: string, body: string, opts: { active?: "home" | "guide"; wizard?: boolean; js?: boolean; chat?: ChatMount; refresh?: number } = {}) {
   return `<!doctype html>
@@ -29,12 +28,12 @@ ${opts.refresh ? `<noscript><meta http-equiv="refresh" content="${opts.refresh}"
 </head>
 <body>
 <header class="top"><div class="wrap top-in">
-  <a class="brand" href="/"><span class="logo" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18"><path fill="currentColor" d="M6.6 10.8a15.1 15.1 0 0 0 6.6 6.6l2.2-2.2c.3-.3.7-.4 1-.2 1.1.4 2.3.6 3.6.6.6 0 1 .4 1 1V20c0 .6-.4 1-1 1A17 17 0 0 1 3 4c0-.6.4-1 1-1h3.5c.6 0 1 .4 1 1 0 1.3.2 2.5.6 3.6.1.3 0 .7-.2 1z"/></svg></span><span><b>${P()}</b><small>by ${S()}</small></span></a>
+  <a class="brand" href="/"><span class="logo" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18"><path fill="currentColor" d="M6.6 10.8a15.1 15.1 0 0 0 6.6 6.6l2.2-2.2c.3-.3.7-.4 1-.2 1.1.4 2.3.6 3.6.6.6 0 1 .4 1 1V20c0 .6-.4 1-1 1A17 17 0 0 1 3 4c0-.6.4-1 1-1h3.5c.6 0 1 .4 1 1 0 1.3.2 2.5.6 3.6.1.3 0 .7-.2 1z"/></svg></span><span><b>AI agency setup</b></span></a>
   <nav class="nav"><a href="/"${opts.active === "home" ? ' aria-current="page"' : ""}>Overview</a><a href="/guide"${opts.active === "guide" ? ' aria-current="page"' : ""} ${opts.wizard ? 'target="_blank" rel="noopener"' : ""}>Guide</a></nav>
 </div></header>
 <main class="wrap">${body}</main>
 ${opts.chat ? chatBubble(opts.chat) : ""}
-<footer class="foot"><div class="wrap">&copy; ${new Date().getFullYear()} ${S()}. Your own AI receptionist agency, on your own accounts. Questions: ${support()}</div></footer>
+<footer class="foot"><div class="wrap">Your own AI receptionist agency, on your own accounts. Questions: ${support()}</div></footer>
 </body>
 </html>`;
 }
@@ -79,7 +78,7 @@ export function homePage(error = "", value = "") {
 <section class="hero">
   <p class="eyebrow">Your agency, packaged</p>
   <h1>Your own AI receptionist agency, under your brand</h1>
-  <p class="lead">A guided setup page builds your agency in <b>your</b> ${RAILWAY ? "Railway account, with <b>your</b> Telnyx phone account. Email and your own domain are optional extras you can add now or later" : "DigitalOcean account, on <b>your</b> domain, with <b>your</b> phone and email accounts"}. You sell AI receptionists to your clients. Nothing to download, and ${S()} has no login to your accounts.</p>
+  <p class="lead">A guided setup page builds your agency in <b>your</b> ${RAILWAY ? "Railway account, with <b>your</b> Telnyx phone account. Email and your own domain are optional extras you can add now or later" : "DigitalOcean account, on <b>your</b> domain, with <b>your</b> phone and email accounts"}. You sell AI receptionists to your clients. Nothing to download, and we have no login to your accounts.</p>
   <div class="row"><a class="btn" href="#code">Open my setup</a><a class="btn ghost" href="/guide">Read the guide</a></div>
 </section>
 <section>
@@ -96,7 +95,7 @@ ${codeBox(error, value)}
 }
 
 export function messagePage(status: number, title: string, text: string, withCodeBox = false) {
-  return layout(`${title} · ${CONFIG.productName}`, `
+  return layout(`${title} · AI agency setup`, `
 <section class="hero small"><p class="eyebrow">Error ${status}</p><h1>${esc(title)}</h1><p class="lead">${text}</p>
 <div class="row"><a class="btn ghost" href="/">Back to the overview</a></div></section>
 ${withCodeBox ? codeBox() : ""}`);
@@ -126,7 +125,7 @@ export function guidePage() {
   ];
   const known = new Set(["cloudflare-domain", "registrar-nameservers", "cloudflare-token", "registrar-dns-records", "digitalocean-token", "railway-token", "telnyx-account", "telnyx-api-key", "vapi-account", "twilio-account", "resend", "google-oauth", "microsoft-oauth"]);
   const extra = allHowTos().filter((h) => !known.has(h.id) && !h.placeholder);
-  return layout(`Buyer guide · ${CONFIG.productName}`, `
+  return layout(`Buyer guide · AI agency setup`, `
 <section class="hero small">
   <p class="eyebrow">Buyer guide</p>
   <h1>Setting up your AI receptionist agency</h1>
@@ -258,12 +257,12 @@ ${ul([
     RAILWAY ? "<b>Telnyx</b>, and any <b>domain, Resend or Google or Microsoft keys</b> you add, are yours, billed to you by each provider." : "<b>Your domain, Telnyx, Resend</b> and any <b>Google or Microsoft keys</b> are yours, billed to you by each provider.",
     `<b>Your data</b> (your clients, their receptionists, calls and settings) lives only on your ${RAILWAY ? "Railway project" : "server"}.`,
   ])}
-<p>${S()} has <b>no login to your accounts</b>. While you set up, your keys are stored encrypted; once the install succeeds we delete every one of them. We never hold a key or password to your ${RAILWAY ? "Railway project" : "server"}.</p>
+<p>We have <b>no login to your accounts</b>. While you set up, your keys are stored encrypted; once the install succeeds we delete every one of them. We never hold a key or password to your ${RAILWAY ? "Railway project" : "server"}.</p>
 <h3>What your agency shares with us, and what it doesn't</h3>
 ${ul([
     "<b>Health and usage stats: on by default, and you can switch it off.</b> Every 15 minutes your agency sends us its version and address, whether it's healthy, counts (clients, receptionists, phone numbers, calls over the last 24 hours, 7 and 30 days, bookings, errors), when the last call came in, your brand name and logo address, and yes or no for email, your own domain and AI help. It never sends caller names or numbers, messages, transcripts, recordings, customer details, passwords or keys. Switch it off in your dashboard: <b>Settings</b>, then <b>Support</b>. When it's off, nothing is sent.",
-    "<b>Support access: on by default for a new agency, so we can help you fast. You can switch it off.</b> In <b>Settings</b>, then <b>Support</b>, " + S() + " can sign in to your dashboard through a link that works once, for 60 seconds. While <b>Support can make changes</b> is on (it is, by default) they can fix things for you: receptionists, automations, phone numbers, knowledge, clients and settings. They can never see or change your keys or connection secrets or your billing, change your owner account or password, delete your agency or export your data. Every sign-in and every change is recorded in your audit log (marked <b>By support</b>) and shown in Settings. Switch changes off and they can only look; switch access off and any open support session ends straight away.",
-    "<b>Recent problems: part of the stats, on by default.</b> The same heartbeat carries a short list of what went wrong in the last 24 hours (a kind such as <i>texts that didn't send</i>, a one-line description with numbers, emails, links and anything in quotes masked, and how many times). It never carries names, messages or what a caller said. When Support access is on, " + S() + " can also fetch the last 200 lines your agency logged, masked the same way. We're alerted if your agency goes quiet or a new kind of problem appears.",
+    "<b>Support access: on by default for a new agency, so we can help you fast. You can switch it off.</b> In <b>Settings</b>, then <b>Support</b>, we can sign in to your dashboard through a link that works once, for 60 seconds. While <b>Support can make changes</b> is on (it is, by default) they can fix things for you: receptionists, automations, phone numbers, knowledge, clients and settings. They can never see or change your keys or connection secrets or your billing, change your owner account or password, delete your agency or export your data. Every sign-in and every change is recorded in your audit log (marked <b>By support</b>) and shown in Settings. Switch changes off and they can only look; switch access off and any open support session ends straight away.",
+    "<b>Recent problems: part of the stats, on by default.</b> The same heartbeat carries a short list of what went wrong in the last 24 hours (a kind such as <i>texts that didn't send</i>, a one-line description with numbers, emails, links and anything in quotes masked, and how many times). It never carries names, messages or what a caller said. When Support access is on, we can also fetch the last 200 lines your agency logged, masked the same way. We're alerted if your agency goes quiet or a new kind of problem appears.",
     "<b>Automatic updates: on by default.</b> In <b>Settings</b>, then <b>Updates</b>, your agency updates itself overnight (2 to 4am your time) or as soon as a version is available, inside your own Railway project, with a token that only works for that one project. A version that fails to build never replaces the one running. Switch it off and you update by pressing <b>Update your agency</b> on your setup link, as before.",
     "Agencies installed before this existed share nothing and can't be signed in to.",
   ])}`)}

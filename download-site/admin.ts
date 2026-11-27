@@ -144,7 +144,7 @@ switch (cmd) {
     const names = list.stdout.toString().split("\n").map((n) => n.replace(/^\.\//, ""));
     if (list.exitCode !== 0 || !names.includes("install.sh") || !names.includes("app-src.tgz")) die(`${basename(src)} doesn't have install.sh and app-src.tgz at the top. Use deploy/selfhost/out/selfhost-bundle.tgz.`);
     if (db().query("SELECT 1 FROM packages WHERE version = ?").get(version)) die(`Version ${version} is already published. Use a new version number.`);
-    const file = `${slug(CONFIG.productName)}-server-${version}.tgz`;
+    const file = `agency-server-${version}.tgz`;
     const dest = join(PACKAGES_DIR, file);
     const tmp = `${dest}.part`;
     copyFileSync(src, tmp);

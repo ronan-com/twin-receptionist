@@ -124,16 +124,17 @@ export interface Buyer {
   last_download_at: string | null;
   /** 1 = a demo buyer: pretend accounts, no provider is ever called for them. */
   demo: number;
-  /** "branded" (our name and wording, the default) or "neutral" (nothing of ours shows; for links shared under someone else's name). */
+  /** Always "neutral": the setup site is generic and shows nobody's name but the buyer's own. (Older rows may hold "branded"; they are rewritten at startup and render the same.) */
   style: Style;
   /** The generic onboarding link (genericlink.ts) this agency started from, or null for a private link made by our admin. */
   source_link: number | null;
   /** When we last emailed them their invite (setup link or dashboard login) from the agency page, or null. */
   invited_at: string | null;
 }
-export type Style = "branded" | "neutral";
-export const asStyle = (v: unknown): Style => (v === "neutral" ? "neutral" : "branded");
-/** Takes our names out of text for a neutral agency (emails, prompts): PRODUCT_NAME and SELLER_NAME never show. */
+/** Generic is the only style. The column stays so stored buyers keep working; any stored value renders generic. */
+export type Style = "neutral";
+export const asStyle = (_v?: unknown): Style => "neutral";
+/** Takes any product or seller name out of text (emails, prompts): PRODUCT_NAME and SELLER_NAME never show to a buyer. */
 export function unbrand(text: string): string {
   let t = text;
   for (const [name, instead] of [[CONFIG.sellerName, "your provider"], [CONFIG.productName, "your AI receptionist agency"]] as const) {
@@ -261,7 +262,7 @@ export function db(): Database {
   // Same for release notes (the live database has no notes column on packages).
   if (!(d.query("PRAGMA table_info(packages)").all() as { name: string }[]).some((c) => c.name === "notes")) d.exec("ALTER TABLE packages ADD COLUMN notes TEXT");
   // Onboarding links (genericlink.ts): which look a buyer gets, and which generic link they started from.
-  if (!(d.query("PRAGMA table_info(buyers)").all() as { name: string }[]).some((c) => c.name === "style")) d.exec("ALTER TABLE buyers ADD COLUMN style TEXT NOT NULL DEFAULT 'branded'");
+  if (!(d.query("PRAGMA table_info(buyers)").all() as { name: string }[]).some((c) => c.name === "style")) d.exec("ALTER TABLE buyers ADD COLUMN style TEXT NOT NULL DEFAULT 'neutral'");
   if (!(d.query("PRAGMA table_info(buyers)").all() as { name: string }[]).some((c) => c.name === "source_link")) d.exec("ALTER TABLE buyers ADD COLUMN source_link INTEGER");
   // "Invite them" on the agency page: when we emailed them. Existing agencies start as not invited.
   if (!(d.query("PRAGMA table_info(buyers)").all() as { name: string }[]).some((c) => c.name === "invited_at")) d.exec("ALTER TABLE buyers ADD COLUMN invited_at TEXT");
@@ -271,7 +272,7 @@ export function db(): Database {
       code TEXT NOT NULL UNIQUE,
       code_hash BLOB NOT NULL UNIQUE,
       label TEXT NOT NULL DEFAULT '',
-      style TEXT NOT NULL DEFAULT 'branded',
+      style TEXT NOT NULL DEFAULT 'neutral',
       enabled INTEGER NOT NULL DEFAULT 1,
       cap INTEGER,
       started INTEGER NOT NULL DEFAULT 0,
@@ -279,6 +280,9 @@ export function db(): Database {
       rotated_at TEXT
     );
   `);
+  // Generic is the only style now: anything stored as "branded" renders (and is kept) as generic.
+  d.exec("UPDATE buyers SET style = 'neutral' WHERE style <> 'neutral'");
+  d.exec("UPDATE generic_links SET style = 'neutral' WHERE style <> 'neutral'");
   _db = d;
   return d;
 }
@@ -297,10 +301,10 @@ export function findBuyer(code: string): Buyer | null {
   return row && same ? row : null;
 }
 
-/** New agencies are neutral (no name of ours anywhere) unless told otherwise; test runs keep our branded look. */
+/** Every agency is generic: no name of ours anywhere. */
 export function addBuyer(name: string, email: string, demo = false, opts: { style?: Style; sourceLink?: number } = {}): Buyer {
   const code = newCode();
-  const style: Style = opts.style ? asStyle(opts.style) : demo ? "branded" : "neutral";
+  const style: Style = asStyle(opts.style);
   db().query("INSERT INTO buyers (code, code_hash, name, email, created_at, demo, style, source_link) VALUES (?, ?, ?, ?, ?, ?, ?, ?)").run(code, hashCode(code), name, email, now(), demo ? 1 : 0, style, opts.sourceLink ?? null);
   return findBuyer(code)!;
 }

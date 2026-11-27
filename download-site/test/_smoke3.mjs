@@ -9,7 +9,7 @@ const shot = async (name) => { n++; await p.screenshot({ path: `${out}/n${n}-${n
 const sub = async () => { await Promise.all([p.waitForNavigation({ waitUntil: "load" }), p.click("button[form=main]")]); };
 const note = async () => (await p.$eval(".notice", e => e.textContent).catch(() => "")).trim();
 await p.goto(link); await shot("welcome"); await sub();
-await p.type("#productName", "Chloe"); await shot("brand"); await sub();
+await p.type("#productName", "Acme AI"); await shot("brand"); await sub();
 await p.type("#domain", "beta-reception.test"); await shot("domain"); 
 await p.type("#token", "mock-cf-token-ok"); await sub(); console.log("domain->", await p.$eval("h1", e => e.textContent), await note());
 await shot("server"); await p.type("#token", "mock-do-token-readonly"); await sub(); console.log("ro:", await note()); await shot("server-error");

@@ -25,6 +25,8 @@ import {
   signOut,
   signUp,
   signupOpen,
+  bootstrapOwner,
+  firstLogin,
   singleAgency,
   switchOrg,
   team,
@@ -64,7 +66,8 @@ import { workspaceRoutes } from "./routes/workspace";
 import { workspaceMoreRoutes } from "./routes/workspaceMore";
 import { pipedreamConsoleRoutes } from "./routes/apps";
 import type { ClientAccess, RouteArgs } from "./routes/http";
-import { changeBrand, ownBrand, serveAsset, uploadAsset } from "./brand";
+import { withinSeconds } from "./timeout";
+import { changeBrand, installLook, ownBrand, serveAsset, uploadAsset } from "./brand";
 import { accessibleClients, customerClientId, setFollowUpStage, customersFor, inviteCustomer, removeCustomer, revokeCustomerInvite } from "./customers";
 import { createRequest, declineRequest, listRequests, markDone, pendingCount, pendingRequest, requestsForClient, settleRequests } from "./numberRequests";
 import { createAgency, exitView, inviteAgencyOwner, viewAs, isSuspended, listAgencies, telnyxSettings, updateAgency } from "./agencies";
@@ -626,11 +629,14 @@ async function route(req: Request, server?: { requestIP(r: Request): { address: 
     const ctx = await sessionFrom(req);
     if (ctx) return json({ signedIn: true, ...(await account(ctx)) });
     const { open, firstRun } = await signupOpen();
-    return json({ signedIn: false, signupOpen: open, firstRun, singleAgency: singleAgency() });
+    // `look` is the install's colours and light/dark default, for the sign-in page before anyone is signed in.
+    return json({ signedIn: false, signupOpen: open, firstRun, singleAgency: singleAgency(), look: installLook() });
   }
   // Self-serve sign-up for agencies and businesses (the Answered build).
   if (path.startsWith("/api/signup/")) return (await signupRoutes(req, path, { createClient }, server)) ?? json({ error: "Not found" }, 404);
   if (path === "/api/signup" && method === "POST") return withCookie({ ok: true }, sessionCookie(req, await signUp(await body(req))), 201);
+  // The one-time link from the setup wizard's done screen: signs the owner in once (server/accounts.ts firstLogin).
+  if (path === "/api/welcome" && method === "POST") return withCookie({ ok: true }, sessionCookie(req, await firstLogin(await body(req))));
   if (path === "/api/login" && method === "POST") return withCookie({ ok: true }, sessionCookie(req, await signIn(await body(req))));
   if (path === "/api/logout" && method === "POST") {
     await signOut(await sessionFrom(req));
@@ -986,6 +992,25 @@ async function route(req: Request, server?: { requestIP(r: Request): { address: 
     if (portal[3]) return json(await callDetail(client, portal[3]));
     return json({ upcoming: await upcomingEvents(client.id), requests: await requestsFor(client.id) });
   }
+  // A voice's Play button (Telnyx voices; the Vapi engine's clips are static files in /voice-previews). Anyone signed
+  // in can play a sample, business users too (they pick their receptionist's voice), so this sits before the
+  // business-user gate below. Failures are plain JSON errors: the page reads them and says what went wrong.
+  if (path === "/api/voices/preview" && method === "GET") {
+    const clip = await telnyxVoicePreview(url.searchParams.get("voice") ?? "");
+    return new Response(new Blob([new Uint8Array(clip.body)], { type: clip.type }), { headers: { "Content-Type": clip.type, "Cache-Control": "private, max-age=86400" } });
+  }
+
+  // What the browser test call needs: Telnyx's agent id, or Vapi's public key and assistant id. Checked against
+  // the phone service first (see each engine's webCall), and never allowed to hang: a clear answer within 12 seconds.
+  // Before the business-user gate too: a business tests its own receptionist (access is checked by clientAccessFor).
+  const webCall = path.match(/^\/api\/clients\/([a-f0-9-]{36})\/web-call$/);
+  if (webCall && method === "GET") {
+    const found = await clientAccessFor(ctx, orgId, webCall[1]);
+    if (!found) return json({ error: "That business isn't shared with you." }, 404);
+    if (found.orgId !== orgId) enterOrg(found.orgId);
+    return json(await withinSeconds(12, "The phone service took too long to answer. Try the test call again in a moment.", () => voiceFor(found.client).webCall(found.client.assistantId)));
+  }
+
   if (ctx.role === "customer") return json({ error: "Not allowed." }, 403);
 
   // Logo and background: for this team's own screens...
@@ -1058,20 +1083,6 @@ async function route(req: Request, server?: { requestIP(r: Request): { address: 
     for (const c of list) await syncAssistant(c).catch((err) => failed.push(`${c.settings.businessName}: ${(err as Error).message}`));
     await audit(ctx, "receptionist.voice_settings", { engine: "vapi", count: list.length, failed: failed.length });
     return json({ updated: list.length - failed.length, failed });
-  }
-  // A voice's Play button (Telnyx voices; the Vapi engine's clips are static files in /voice-previews).
-  if (path === "/api/voices/preview" && method === "GET") {
-    const audio = await telnyxVoicePreview(url.searchParams.get("voice") ?? "");
-    return new Response(new Blob([new Uint8Array(audio)], { type: "audio/mpeg" }), { headers: { "Content-Type": "audio/mpeg", "Cache-Control": "private, max-age=86400" } });
-  }
-
-  // What the browser test call needs: Telnyx's agent id, or Vapi's public key and assistant id.
-  const webCall = path.match(/^\/api\/clients\/([a-f0-9-]{36})\/web-call$/);
-  if (webCall && method === "GET") {
-    const found = await clientAccessFor(ctx, orgId, webCall[1]);
-    if (!found) return json({ error: "That business isn't shared with you." }, 404);
-    if (found.orgId !== orgId) enterOrg(found.orgId);
-    return json(await voiceFor(found.client).webCall(found.client.assistantId));
   }
 
   if (path === "/api/public-url" && method === "GET") return json({ url: publicUrl() });
@@ -1310,6 +1321,7 @@ async function route(req: Request, server?: { requestIP(r: Request): { address: 
 }
 
 await migrate();
+await bootstrapOwner().catch((err) => console.error("[first run] couldn't make the owner account:", err));
 await loadPublicUrl();
 await loadPlatformSettings();
 // The receptionists' booking tools call PUBLIC_URL. If it changed since the last

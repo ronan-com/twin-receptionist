@@ -296,6 +296,8 @@ function AccountSection() {
   const [name, setName] = useState(ws.session?.user.name ?? "");
   const [current, setCurrent] = useState("");
   const [next, setNext] = useState("");
+  // The owner the install made signed in with a one-time link: no password yet, so no current one to ask for.
+  const noPassword = Boolean(ws.session?.needsPassword);
   const save = useMutation({
     mutationFn: () => teamApi.updateAccount({ name: name.trim(), ...(next ? { currentPassword: current, newPassword: next } : {}) }),
     onSuccess: async () => {
@@ -319,16 +321,18 @@ function AccountSection() {
           <Input id="acc-name" value={name} onChange={(e) => setName(e.target.value)} maxLength={80} className="h-9" disabled={readOnly} />
         </Field>
         <div className="grid gap-3 sm:grid-cols-2">
-          <Field label="Current password" htmlFor="acc-cur">
-            <Input id="acc-cur" type="password" autoComplete="current-password" value={current} onChange={(e) => setCurrent(e.target.value)} className="h-9" disabled={readOnly} />
-          </Field>
-          <Field label="New password" htmlFor="acc-new" hint="At least 10 characters. Leave blank to keep it.">
+          {noPassword ? null : (
+            <Field label="Current password" htmlFor="acc-cur">
+              <Input id="acc-cur" type="password" autoComplete="current-password" value={current} onChange={(e) => setCurrent(e.target.value)} className="h-9" disabled={readOnly} />
+            </Field>
+          )}
+          <Field label={noPassword ? "Choose a password" : "New password"} htmlFor="acc-new" hint={noPassword ? "You signed in with a one-time link. Choose a password (at least 10 characters) so you can sign in next time." : "At least 10 characters. Leave blank to keep it."}>
             <Input id="acc-new" type="password" autoComplete="new-password" value={next} onChange={(e) => setNext(e.target.value)} className="h-9" disabled={readOnly} />
           </Field>
         </div>
         {!readOnly ? (
           <div>
-            <Button type="submit" size="sm" disabled={save.isPending}>{save.isPending ? "Saving…" : "Save"}</Button>
+            <Button type="submit" size="sm" disabled={save.isPending}>{save.isPending ? "Saving…" : noPassword && next ? "Set password" : "Save"}</Button>
           </div>
         ) : null}
       </form>

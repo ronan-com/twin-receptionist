@@ -13,7 +13,7 @@ export class ApiError extends Error {
 }
 
 // Pages that are fine to show signed out: a 401 there is just an answer.
-const PUBLIC_PATHS = [/^\/$/, /^\/login/, /^\/signup/, /^\/reset/, /^\/invite\//, /^\/connect\//, /^\/guide/];
+const PUBLIC_PATHS = [/^\/$/, /^\/login/, /^\/signup/, /^\/welcome/, /^\/reset/, /^\/invite\//, /^\/connect\//, /^\/guide/];
 
 function goToLogin() {
   if (typeof window === "undefined") return;

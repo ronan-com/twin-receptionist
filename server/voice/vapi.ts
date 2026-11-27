@@ -4,6 +4,7 @@ import { publicUrl } from "../booking";
 import { sql } from "../db";
 import { greetingOf, ValidationError } from "../prompt";
 import { UI_PRODUCT } from "../product";
+import { fakeProvider } from "../sandbox";
 import { currentOrg } from "../telnyx";
 import { VapiError, vapiCredsFor } from "./config";
 import { buyTwilioNumber, ownedTwilioNumbers, parseTwilioInput, pointTextsAtUs, releaseTexts, requireTwilio, twilioCredsFor, type TwilioCreds } from "../twilio";
@@ -273,6 +274,13 @@ export const vapiProvider: VoiceProvider = {
   async webCall(assistantId) {
     const { publicKey } = await vapiCredsFor(currentOrg());
     if (!publicKey) throw new ValidationError("Add your Vapi public key in Connections to use the test call.");
+    // The assistant has to exist on Vapi, or the browser call would wait for nothing.
+    if (!fakeProvider()) {
+      await vapi("GET", `/assistant/${encodeURIComponent(assistantId)}`).catch((err) => {
+        if (err instanceof VapiError && err.status === 404) throw new ValidationError("This receptionist isn't set up on Vapi yet. Save it once, then try the test call again.");
+        // Anything else (a slow or unreachable Vapi): let the browser try; it will report what Vapi says.
+      });
+    }
     return { provider: "vapi", assistantId, publicKey };
   },
 };

@@ -9,6 +9,10 @@ import { api } from "@/lib/api/base";
 
 type Phase = "idle" | "connecting" | "live" | "failed";
 
+// A call that hasn't started by then is reported, never left "connecting".
+const CONNECT_LIMIT_MS = 20_000;
+const timeoutAfter = (ms: number, message: string) => new Promise<never>((_, reject) => window.setTimeout(() => reject(new Error(message)), ms));
+
 // The SDK is loaded when someone asks for a call (or hovers the button), not with the page.
 const loadSdk = () => import("@vapi-ai/web");
 
@@ -26,11 +30,18 @@ export function VapiTestCall({ assistantId, clientId, big = false }: { assistant
     setError("");
     setPhase("connecting");
     try {
-      const [{ default: Vapi }, cfg] = await Promise.all([loadSdk(), api.get<{ provider: string; publicKey?: string; assistantId: string }>(`/api/clients/${clientId}/web-call`)]);
+      const [{ default: Vapi }, cfg] = await Promise.race([
+        Promise.all([loadSdk(), api.get<{ provider: string; publicKey?: string; assistantId: string }>(`/api/clients/${clientId}/web-call`)]),
+        timeoutAfter(CONNECT_LIMIT_MS, "The test call took too long to get ready. Check your connection and try again."),
+      ]);
       if (cfg.provider !== "vapi" || !cfg.publicKey) throw new Error("Add your Vapi public key in Connections to use the test call.");
       const vapi = new Vapi(cfg.publicKey);
       call.current = vapi;
-      vapi.on("call-start", () => setPhase("live"));
+      let started = false;
+      vapi.on("call-start", () => {
+        started = true;
+        setPhase("live");
+      });
       vapi.on("call-end", () => {
         call.current = null;
         setMuted(false);
@@ -42,6 +53,14 @@ export function VapiTestCall({ assistantId, clientId, big = false }: { assistant
         setPhase("failed");
         void vapi.stop();
       });
+      // If the call has not started in time, stop it and say so (mic blocked, Vapi unreachable).
+      window.setTimeout(() => {
+        if (started || call.current !== vapi) return;
+        call.current = null;
+        void vapi.stop();
+        setError("The call didn't connect. Check that your microphone is allowed and your connection is working, then try again.");
+        setPhase("failed");
+      }, CONNECT_LIMIT_MS);
       await vapi.start(cfg.assistantId || assistantId);
     } catch (err) {
       call.current = null;

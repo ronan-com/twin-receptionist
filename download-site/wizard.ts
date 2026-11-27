@@ -9,7 +9,7 @@ import { howTo } from "./content";
 import { chatBubble, chatHead } from "./chat";
 import { oauthEnabled, type OAuthProvider } from "./oauth";
 import { brokerOn, offered } from "./broker";
-import { PHONE_LATER, agencyUrl, canView, firstOpen, hostOf, locked, oauthRedirect, phoneSkipped, stepDone, updateInfo, webUrl, zoneOf } from "./setup";
+import { PHONE_LATER, agencyUrl, canView, dashboardLink, firstOpen, hostOf, locked, oauthRedirect, phoneSkipped, stepDone, updateInfo, webUrl, zoneOf } from "./setup";
 import { detailOf, hasAssist, helpedStep, stepRows, type AssistId } from "./assist";
 import { personHelpHtml } from "./wizhelp";
 import { DEFAULT_REGION, DEFAULT_SIZE, RAILWAY_PLAN_UNKNOWN_MSG, RAILWAY_TRIAL_MSG } from "./providers";
@@ -589,7 +589,7 @@ function done(c: Ctx) {
   const { text, next } = logRead(c.b.id);
   return `${head(c, "Your agency is live", `${P(c)} is running on your own server. Everything here is yours.`)}
 <div class="live"><div class="dot">● Live</div><a class="url" href="${esc(url)}" target="_blank" rel="noopener noreferrer">${esc(url)}</a>
-<p class="hint"><b>First time in:</b> you'll see <b>Set up your agency</b>. Use <b>${esc(s.brand?.ownerEmail || "your owner email")}</b> and pick a password. Only that address can create the first account.</p></div>
+<p class="hint">Your owner account (<b>${esc(s.brand?.ownerEmail || "your owner email")}</b>) is ready. Open your dashboard below to get in. You can choose a password in Settings.</p></div>
 <div class="checks"><b>Before you go</b>
   ${todo("do", `Delete your DigitalOcean token. <a href="https://cloud.digitalocean.com/account/api/tokens" target="_blank" rel="noopener noreferrer">Open DigitalOcean</a>`)}
   ${s.domain?.mode === "cloudflare" ? todo("cf", `Delete your Cloudflare token. <a href="https://dash.cloudflare.com/profile/api-tokens" target="_blank" rel="noopener noreferrer">Open Cloudflare</a>`) : ""}
@@ -599,7 +599,7 @@ function done(c: Ctx) {
 ${lockedOut(c)}
 ${notice("info", `We've deleted every key you gave us${s.assist?.keepDns ? " except the DNS access noted above" : ""}. We have no login to your server or accounts. Your agency shares health and usage counts and a short, masked list of recent problems with us (never calls or customer details). Sharing and Support access (which lets us sign in and, unless you say no, fix things for you, but never see your keys, billing or owner account) are both on by default so we can help you fast. You can switch each one off in your dashboard, under Settings: Support. Automatic updates are not available on a DigitalOcean server yet.`)}
 <details class="log"><summary>Show details</summary><pre id="log" data-next="${next}">${esc(text.slice(-60000))}</pre></details>
-${nav(c, `<a class="btn p" href="${esc(url)}" target="_blank" rel="noopener noreferrer">Open your dashboard ${icon("ext")}</a>`, { back: false })}`;
+${nav(c, `<a class="btn p" href="${esc(dashboardLink(s, url))}" target="_blank" rel="noopener noreferrer">Open your dashboard ${icon("ext")}</a>`, { back: false })}`;
 }
 
 /** Done screen: for owners with no email set up (or who simply forgot). Asks their agency for a one-time reset link; the answer comes back on screen only. */
@@ -726,7 +726,7 @@ ${nav(c, `<a class="btn p" href="${base(c)}/open">Open your dashboard ${icon("ex
   return `${head(c, "Your agency is live", "")}
 <div class="live"><div class="dot">● Live</div><a class="url" href="${esc(shown)}" target="_blank" rel="noopener noreferrer">${esc(shown)}</a>
 ${pending ? `<p class="hint">Your temporary address. <b>${esc(hostOf(s))}</b> starts working by itself once the records below are in.</p>` : !own ? `<p class="hint">This is your agency's address from Railway. Bookmark it. You can add your own domain later.</p>` : temp ? `<p class="hint">Also at your Railway address: <a href="${esc(temp)}" target="_blank" rel="noopener noreferrer">${esc(temp.replace(/^https?:\/\//, ""))}</a></p>` : ""}
-<p class="hint">Open it and sign up as <b>${esc(s.brand?.ownerEmail || "your owner email")}</b>. Only that address can.</p></div>
+<p class="hint">Your owner account (<b>${esc(s.brand?.ownerEmail || "your owner email")}</b>) is ready. Open your dashboard below to get in. You can choose a password in Settings.</p></div>
 ${updateBanner(c)}
 ${phoneSkipped(s) ? phoneLaterNote(c) : ""}
 ${pending && s.finishRecords?.length ? `<div class="recbox"><b>Records for ${esc(hostOf(s))}</b>${recordTable(s.finishRecords, true)}</div>` : ""}
@@ -740,7 +740,7 @@ ${laterCards(c, shown)}
 <p class="hint tip">Tip: turn on auto top-up at Railway, Telnyx and OpenRouter.</p>
 ${notice("info", `We deleted the keys you gave us${s.assist?.keepDns ? " except the DNS access noted above" : ""} and have no login to your accounts. Your agency shares health counts with us (never calls or customer details). Switch it off in Settings, Support.`)}
 <details class="log"><summary>Show details</summary><pre id="log" data-next="${next}">${esc(text.slice(-60000))}</pre></details>
-${nav(c, `<a class="btn p" href="${esc(shown)}" target="_blank" rel="noopener noreferrer">Open your dashboard ${icon("ext")}</a>`, { back: false })}`;
+${nav(c, `<a class="btn p" href="${esc(dashboardLink(s, shown))}" target="_blank" rel="noopener noreferrer">Open your dashboard ${icon("ext")}</a>`, { back: false })}`;
 }
 
 const SCREENS: Record<StepId, (c: Ctx) => string> = { welcome, brand, railway: railwayStep, domain: domainStep, server, phones, ai: aiStep, email, calendars, extras, vapi, twilio, install, done };

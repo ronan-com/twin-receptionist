@@ -6,7 +6,8 @@ import { api } from "./base";
 
 export type SignedIn = { signedIn: true } & Account;
 // singleAgency (SINGLE_AGENCY=1): one agency per server, so only its first account signs itself up.
-export type SignedOut = { signedIn: false; signupOpen: boolean; firstRun: boolean; singleAgency?: boolean };
+// look: the install's colours and light/dark default (BRAND_COLOURS, THEME), for pages shown before sign-in.
+export type SignedOut = { signedIn: false; signupOpen: boolean; firstRun: boolean; singleAgency?: boolean; look?: { colours: string[]; theme: "light" | "dark" | "" } };
 export type Session = SignedIn | SignedOut;
 
 export type AgencySignup = { name: string; email: string; password: string; agencyName: string };
@@ -23,6 +24,8 @@ export type BusinessSignup = {
 export const authApi = {
   session: () => api.get<Session>("/api/session", { allow401: true }),
   signIn: (email: string, password: string) => api.post<{ ok: true }>("/api/login", { email, password }, { allow401: true }),
+  /** The one-time link from the setup wizard's done screen (/welcome?t=...). */
+  welcome: (token: string) => api.post<{ ok: true }>("/api/welcome", { token }, { allow401: true }),
   signOut: () => api.post<{ ok: true }>("/api/logout", {}, { allow401: true }),
   signupAgency: (input: AgencySignup) => api.post<{ ok: true; home: "/admin" | "/app" }>("/api/signup/agency", input, { allow401: true }),
   signupBusiness: (input: BusinessSignup) => api.post<{ ok: true; home: "/admin" | "/app" }>("/api/signup/business", input, { allow401: true }),

@@ -32,6 +32,33 @@ const raw = async (s: Scope): Promise<Record<string, string>> => {
 };
 
 const url = (id?: string) => (id ? `/brand/${id}` : "");
+
+/** "#abc", "abc123" or "#AABBCC" as "#aabbcc", or "" when it isn't a colour. */
+function hexOf(v: string): string {
+  const m = /^#?([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.exec(v.trim());
+  if (!m) return "";
+  const h = m[1].length === 3 ? [...m[1]].map((c) => c + c).join("") : m[1];
+  return `#${h.toLowerCase()}`;
+}
+/** Up to three colours from a comma list ("#aabbcc,#112233"), bad entries dropped. */
+export const coloursOf = (list: string | string[] | undefined | null): string[] =>
+  (Array.isArray(list) ? list : String(list ?? "").split(","))
+    .map((c) => hexOf(String(c)))
+    .filter(Boolean)
+    .slice(0, 3);
+export const themeOf = (v: unknown): "light" | "dark" | "" => {
+  const t = String(v ?? "").trim().toLowerCase();
+  return t === "light" || t === "dark" ? t : "";
+};
+/**
+ * What the install chose in the setup wizard: BRAND_COLOURS (1 to 3, comma separated; else the older
+ * BRAND_COLOUR) and THEME=light|dark. The agency's default until the owner picks their own in Settings.
+ */
+export const installLook = (): { colours: string[]; theme: "light" | "dark" | "" } => ({
+  colours: coloursOf(process.env.BRAND_COLOURS).length ? coloursOf(process.env.BRAND_COLOURS) : coloursOf(process.env.BRAND_COLOUR),
+  theme: themeOf(process.env.THEME),
+});
+
 const asBrand = (b: Record<string, string>): Brand => ({
   logo: url(b.logo),
   bgColor: b.bgColor ?? "",
@@ -40,6 +67,8 @@ const asBrand = (b: Record<string, string>): Brand => ({
   accentColor: b.accentColor ?? "",
   sidebarColor: b.sidebarColor ?? "",
   lockClient: b.clientLock === "1",
+  colours: coloursOf(b.colours),
+  theme: themeOf(b.theme),
 });
 
 // True when the agency has locked branding for a business: on its company (all of its
@@ -63,7 +92,10 @@ export async function resolveBrand(orgId: string, clientId: string | null = null
   const [co] = clientId ? await sql`select company_id from clients where id = ${clientId} and org_id = ${orgId}` : [];
   const m = co?.company_id ? await raw({ orgId, clientId: null, companyId: co.company_id }) : {};
   const pick = (k: string) => c[k] || m[k] || o[k];
-  return asBrand(Object.fromEntries(["logo", "bgImage", ...COLOURS].map((k) => [k, pick(k)])) as Record<string, string>);
+  const brand = asBrand(Object.fromEntries(["logo", "bgImage", "colours", "theme", ...COLOURS].map((k) => [k, pick(k)])) as Record<string, string>);
+  // Nothing chosen yet: the look the install was given.
+  const look = installLook();
+  return { ...brand, colours: brand.colours?.length ? brand.colours : look.colours, theme: brand.theme || look.theme };
 }
 
 async function patch(s: Scope, change: Record<string, string | null>): Promise<void> {
@@ -113,6 +145,16 @@ async function saveBrand(s: Scope, input: any): Promise<void> {
     if (c !== "" && !/^#[0-9a-fA-F]{6}$/.test(c)) throw new ValidationError("Pick a colour.");
     await patch(s, { [k]: c.toLowerCase() });
   }
+  if (input?.colours !== undefined) {
+    const list = Array.isArray(input.colours) ? input.colours : String(input.colours).split(",");
+    const clean = coloursOf(list);
+    if (clean.length !== list.filter((c: unknown) => String(c).trim() !== "").length) throw new ValidationError("Pick a colour.");
+    await patch(s, { colours: clean.join(",") });
+  }
+  if (input?.theme !== undefined) {
+    if (input.theme !== "" && !themeOf(input.theme)) throw new ValidationError("Choose light or dark.");
+    await patch(s, { theme: themeOf(input.theme) });
+  }
   // Only the agency's editors reach here (a business user's request has this removed first, see manage.ts).
   if (typeof input?.lockClient === "boolean") await patch(s, { clientLock: input.lockClient ? "1" : null });
   if (input?.removeLogo === true) {
@@ -125,13 +167,14 @@ async function saveBrand(s: Scope, input: any): Promise<void> {
   }
 }
 
-// A new install (SINGLE_AGENCY) can carry the agency's logo and colour from the setup wizard as
-// BRAND_LOGO_PNG (the PNG, base64) and BRAND_COLOUR (#rrggbb). They are applied once, when the
+// A new install (SINGLE_AGENCY) can carry the agency's logo, colours and look from the setup wizard as
+// BRAND_LOGO_PNG (the PNG, base64), BRAND_COLOURS (1 to 3 of #rrggbb, comma separated; BRAND_COLOUR is the older single one) and THEME. They are applied once, when the
 // owner's account (and agency) is first created, and never again: after that the owner's own
 // changes in Settings are the only truth, even though the variables stay set.
 export async function applyInstallBrand(orgId: string): Promise<void> {
   const logo = (process.env.BRAND_LOGO_PNG ?? "").trim();
-  const colour = (process.env.BRAND_COLOUR ?? "").trim();
+  const look = installLook();
+  const colour = look.colours[0] ?? "";
   const scope: Scope = { orgId, clientId: null };
   if (logo) {
     try {
@@ -142,11 +185,12 @@ export async function applyInstallBrand(orgId: string): Promise<void> {
   }
   if (colour) {
     try {
-      await saveBrand(scope, { primaryColor: colour, accentColor: colour });
+      await saveBrand(scope, { primaryColor: colour, accentColor: look.colours[1] ?? colour, colours: look.colours });
     } catch (e) {
       console.error("[install brand] colour not applied:", (e as Error).message);
     }
   }
+  if (look.theme) await saveBrand(scope, { theme: look.theme }).catch((e) => console.error("[install brand] theme not applied:", (e as Error).message));
 }
 
 // Public: the asset id is a random UUID and logos aren't secret.

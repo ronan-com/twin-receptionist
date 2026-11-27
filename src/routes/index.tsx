@@ -1,5 +1,7 @@
 import { createFileRoute, Link, redirect } from "@tanstack/react-router";
 import { OTHER_BRAND, PRODUCT } from "@/lib/app/product";
+import { homeOf } from "@/lib/api/auth";
+import { sessionQuery } from "@/lib/app/workspace";
 import { AnimatePresence, motion, useReducedMotion, useScroll, useTransform } from "motion/react";
 import { useEffect, useRef, useState } from "react";
 
@@ -38,8 +40,12 @@ import tradesImg from "@/assets/industries/trades.jpg";
 export const Route = createFileRoute("/")({
   // The marketing page is Answered's own. A copy sold under another name has its
   // public site elsewhere, so "/" goes straight to sign-in.
-  beforeLoad: () => {
+  // A single-agency install (every buyer's own copy) has no public marketing page at all: signed out goes to
+  // sign-in, signed in goes to the dashboard, whatever the copy is called.
+  beforeLoad: async ({ context }) => {
     if (OTHER_BRAND) throw redirect({ to: "/login", replace: true });
+    const s = await context.queryClient.ensureQueryData(sessionQuery()).catch(() => null);
+    if (s?.singleAgency) throw redirect({ to: s.signedIn ? homeOf(s) : "/login", replace: true });
   },
   head: () => ({ meta: [{ title: `${PRODUCT} — The AI Receptionist` }] }),
   component: Index,

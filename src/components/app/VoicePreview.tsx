@@ -1,5 +1,6 @@
 import { useEffect, useSyncExternalStore } from "react";
 import { Loader2, Play, Square } from "lucide-react";
+import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 
 // The Play button on every voice in the pickers (wizard, receptionist page, Voices). One clip
@@ -25,6 +26,25 @@ export function stopVoicePreview() {
   if (state.id) set({ id: null, loading: false });
 }
 
+// Telnyx makes a clip on first play, which can take a few seconds. Past this, say so instead of spinning.
+const LOAD_LIMIT_MS = 25_000;
+
+/** Says why a sample didn't play: the server's own message when it sent one (no phone key, Telnyx refused), else a plain line. */
+async function explainFailure(url: string): Promise<string> {
+  try {
+    const res = await fetch(url, { credentials: "same-origin" });
+    if (!res.ok) {
+      const data = await res.json().catch(() => null);
+      if (data && typeof data.error === "string") return data.error;
+      if (res.status === 404) return "This voice sample isn't available.";
+      if (res.status === 401) return "Sign in again to play samples.";
+    }
+  } catch {
+    return "Can't reach the server. Check your connection and try again.";
+  }
+  return "This sample couldn't play. Try again, or pick the voice and test it with a call.";
+}
+
 export function playVoicePreview(id: string, url: string) {
   if (state.id === id) return stopVoicePreview();
   stopVoicePreview();
@@ -32,12 +52,23 @@ export function playVoicePreview(id: string, url: string) {
   audio = a;
   set({ id, loading: true });
   const done = () => {
+    window.clearTimeout(slow);
     if (audio === a) stopVoicePreview();
   };
-  a.addEventListener("playing", () => audio === a && set({ id, loading: false }));
+  const fail = () => {
+    const mine = audio === a;
+    done();
+    if (mine) void explainFailure(url).then((m) => toast.error(m));
+  };
+  const slow = window.setTimeout(() => {
+    if (audio !== a || state.loading === false) return;
+    stopVoicePreview();
+    toast.error("The sample is taking too long to load. Try again in a moment.");
+  }, LOAD_LIMIT_MS);
+  a.addEventListener("playing", () => audio === a && (window.clearTimeout(slow), set({ id, loading: false })));
   a.addEventListener("ended", done);
-  a.addEventListener("error", done);
-  a.play().catch(done);
+  a.addEventListener("error", fail);
+  a.play().catch((err) => (err?.name === "AbortError" ? done() : fail()));
 }
 
 function usePreviewState(): State {

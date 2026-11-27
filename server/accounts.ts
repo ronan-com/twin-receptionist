@@ -1,4 +1,4 @@
-import { createHash, randomBytes } from "node:crypto";
+import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import type { Account, OrgRole, TeamState } from "../src/lib/shared";
 import { clientAccessOf, consoleOf } from "./answered";
 import { assistantConfigured, canUseAssistant } from "./assistant";
@@ -233,8 +233,11 @@ export async function account(ctx: Ctx): Promise<Account> {
     telnyx = await accountMode(ctx.org.id, await providerOfOrg(ctx.org.id));
   }
   const consoleKind = consoleOf(ctx);
+  const [pw] = await sql`select password_unset from users where id = ${ctx.user.id}`;
   return {
     user: ctx.user,
+    // An owner the install made, who hasn't chosen a password yet (Settings asks for no current password).
+    ...(pw?.password_unset ? { needsPassword: true } : {}),
     org: ctx.org,
     role: ctx.role,
     orgs: orgs.map((o: any) => ({ id: o.id, name: o.name, role: o.role })),
@@ -304,6 +307,75 @@ export async function signUp(input: any): Promise<string> {
   return startSession(userId, orgId);
 }
 
+// ---- First run: the owner is made at start-up, from what the buyer gave the setup wizard ----
+
+export const FIRST_LOGIN_HOURS = 24;
+
+/**
+ * A fresh SINGLE_AGENCY copy that the installer configured (FIRST_ADMIN_EMAIL plus OWNER_NAME, AGENCY_NAME
+ * or FIRST_LOGIN_TOKEN) gets its owner account on first start, so nobody sees a "create your account" form.
+ * The owner has no password yet. FIRST_LOGIN_TOKEN (made by the installer, shown only as the done screen's
+ * button) is stored hashed with a 24 hour expiry and works once (see firstLogin). A copy that already has
+ * any account, or one the installer did not configure, is left exactly as it was (the old sign-up form).
+ */
+export async function bootstrapOwner(): Promise<"created" | "skipped"> {
+  await sql`delete from first_logins where expires_at < now()`;
+  if (!singleAgency()) return "skipped";
+  const emailRaw = (process.env.FIRST_ADMIN_EMAIL ?? "").trim();
+  const ownerName = textOf(process.env.OWNER_NAME, 80);
+  const agencyName = textOf(process.env.AGENCY_NAME, 80);
+  const token = (process.env.FIRST_LOGIN_TOKEN ?? "").trim();
+  if (!emailRaw || !(ownerName || agencyName || token)) return "skipped";
+  const email = emailOf(emailRaw);
+  const userId = crypto.randomUUID();
+  const orgId = crypto.randomUUID();
+  // Nobody can sign in with this: it is replaced when the owner chooses a password.
+  const passwordHash = await hashPassword(randomBytes(32).toString("base64url"));
+  let made = false;
+  await sql.begin(async (tx) => {
+    await tx`select pg_advisory_xact_lock(727274002)`;
+    const [{ n }] = await tx`select count(*)::int as n from users`;
+    if (n > 0) return;
+    await tx`insert into orgs (id, name, platform_telnyx) values (${orgId}, ${agencyName || UI_PRODUCT}, true)`;
+    await tx`insert into users (id, email, name, password_hash, platform_admin, password_unset) values (${userId}, ${email}, ${ownerName || email.split("@")[0]}, ${passwordHash}, true, true)`;
+    await tx`insert into memberships (org_id, user_id, role) values (${orgId}, ${userId}, 'owner')`;
+    if (token.length >= 32) {
+      await tx`insert into first_logins (token_hash, user_id, expires_at) values (${hashToken(token)}, ${userId}, ${new Date(Date.now() + FIRST_LOGIN_HOURS * 3_600_000)})`;
+    }
+    made = true;
+  });
+  if (!made) return "skipped";
+  await importLegacyData(orgId).catch((err) => console.error("[legacy import]", err));
+  await applyInstallBrand(orgId);
+  console.log(`[first run] owner account made for ${email}`);
+  return "created";
+}
+
+/**
+ * The one-time sign-in link (/welcome?t=...). The token is compared by its hash in constant time, deleted
+ * the moment it matches (so it works once, even if two requests race), and refused after 24 hours.
+ */
+export async function firstLogin(input: any): Promise<string> {
+  const refuse = () => {
+    recentFailures("welcome").push(Date.now());
+    return new AuthError("This sign-in link has already been used or has expired. Sign in with your email, or choose \"Forgot password\".", 401);
+  };
+  if (recentFailures("welcome").length >= 10) throw new AuthError("Too many tries. Wait 15 minutes, then sign in with your email.", 429);
+  const token = String(input?.token ?? "").slice(0, 200);
+  if (token.length < 32) throw refuse();
+  const given = Buffer.from(hashToken(token), "hex");
+  const rows = await sql`select token_hash, user_id, expires_at from first_logins`;
+  let hit: { token_hash: string; user_id: string; expires_at: Date } | null = null;
+  for (const r of rows as any[]) {
+    const stored = Buffer.from(String(r.token_hash), "hex");
+    if (stored.length === given.length && timingSafeEqual(stored, given)) hit = r;
+  }
+  if (!hit) throw refuse();
+  const [burned] = await sql`delete from first_logins where token_hash = ${hit.token_hash} returning user_id`;
+  if (!burned || new Date(hit.expires_at).getTime() < Date.now()) throw refuse();
+  return startSession(hit.user_id, null);
+}
+
 const loginFailures = new Map<string, number[]>();
 // Checked when an email isn't found, so a wrong email takes as long as a wrong password.
 const DUMMY_HASH = await hashPassword("not-a-real-password-just-for-timing");
@@ -365,12 +437,13 @@ export async function renameOrg(ctx: Ctx, input: any): Promise<void> {
 export async function updateProfile(ctx: Ctx, input: any): Promise<void> {
   if (input?.name !== undefined) await sql`update users set name = ${textOf(input.name, 80)} where id = ${ctx.user.id}`;
   if (input?.newPassword !== undefined) {
-    const [u] = await sql`select password_hash from users where id = ${ctx.user.id}`;
-    if (!(await Bun.password.verify(String(input?.currentPassword ?? ""), u.password_hash))) {
+    const [u] = await sql`select password_hash, password_unset from users where id = ${ctx.user.id}`;
+    // An owner made by the install has no password yet, so there is no current one to ask for.
+    if (!u.password_unset && !(await Bun.password.verify(String(input?.currentPassword ?? ""), u.password_hash))) {
       throw new ValidationError("Your current password isn't right.");
     }
     const hash = await hashPassword(passwordOf(input.newPassword));
-    await sql`update users set password_hash = ${hash} where id = ${ctx.user.id}`;
+    await sql`update users set password_hash = ${hash}, password_unset = false where id = ${ctx.user.id}`;
     // Sign out everywhere else.
     await sql`delete from sessions where user_id = ${ctx.user.id} and token_hash <> ${ctx.tokenHash}`;
   }
@@ -627,7 +700,7 @@ export async function resetPassword(token: string, input: any): Promise<string> 
   const hash = await hashPassword(passwordOf(input?.password));
   const [r] = await sql`delete from password_resets where token_hash = ${hashToken(token)} returning user_id, expires_at`;
   if (!r || new Date(r.expires_at).getTime() < Date.now()) throw new ValidationError("This reset link has expired. Ask for a new one.");
-  await sql`update users set password_hash = ${hash} where id = ${r.user_id}`;
+  await sql`update users set password_hash = ${hash}, password_unset = false where id = ${r.user_id}`;
   // Anyone signed in with the old password is signed out.
   await sql`delete from sessions where user_id = ${r.user_id}`;
   return startSession(r.user_id, null);

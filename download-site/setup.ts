@@ -932,6 +932,33 @@ async function tickZone(id: number) {
   }
 }
 
+/** "jane.smith@x.com" -> "Jane Smith": the name the app gives the owner it creates (the wizard doesn't ask for one). */
+export function ownerNameOf(email: string): string {
+  const local = email.split("@")[0].replace(/[._+-]+/g, " ").trim();
+  return local.replace(/\b\p{L}/gu, (c) => c.toUpperCase()).slice(0, 80) || "Owner";
+}
+/** How long the done screen offers the one-time sign-in link (the app accepts it for 24 hours after it starts). */
+export const FIRST_LOGIN_MS = 23 * 3_600_000;
+export const firstLoginFresh = (s: SetupData) => !!s.firstLogin && Date.now() - Date.parse(s.firstLogin.at) < FIRST_LOGIN_MS;
+/**
+ * The app makes the owner on first start from these (OWNER_NAME, AGENCY_NAME, FIRST_ADMIN_EMAIL), so the buyer never
+ * sees a create-account form, and FIRST_LOGIN_TOKEN is the one-time link behind the done screen's button. The token
+ * is made once per install and kept with the setup (not a provider key: it works once and runs out in 24 hours).
+ */
+export function firstRunSettings(id: number, s: SetupData): Record<string, string> {
+  let token = getSetup(id).firstLogin?.token;
+  if (!token || !firstLoginFresh(getSetup(id))) {
+    token = randomBytes(32).toString("base64url");
+    const t = token;
+    updateSetup(id, (x) => { x.firstLogin = { token: t, at: now() }; });
+  }
+  return { OWNER_NAME: ownerNameOf(s.brand!.ownerEmail), AGENCY_NAME: s.brand!.productName, FIRST_LOGIN_TOKEN: token };
+}
+/** The done screen's "Open your dashboard" target: the one-time sign-in link while it is fresh, else the plain address. */
+export function dashboardLink(s: SetupData, base: string): string {
+  return firstLoginFresh(s) ? `${base.replace(/\/+$/, "")}/welcome?t=${encodeURIComponent(s.firstLogin!.token)}` : base;
+}
+
 /** The logo and colour from the Brand step. The app applies them once, when the owner first signs up. */
 function brandSettings(s: SetupData): Record<string, string> {
   const v: Record<string, string> = {};
@@ -986,6 +1013,7 @@ export function buildSettings(id: number, s: SetupData): string {
     PRODUCT_NAME: s.brand!.productName,
     DOMAIN: hostOf(s),
     FIRST_ADMIN_EMAIL: s.brand!.ownerEmail,
+    ...firstRunSettings(id, s),
     ...phoneSettings(id, s),
     ...brandSettings(s),
     ...supportSettings(id),
@@ -1211,7 +1239,7 @@ export function pExit(atok: string, code: number): Response {
 }
 
 /** Success: forget every secret, keep only what the buyer's Done page and our records need. */
-function finish(id: number, url: string) {
+export function finish(id: number, url: string) {
   const removed = deleteAllSecrets(id);
   setDropletToken(id, null);
   setAttemptToken(id, null);
@@ -1227,7 +1255,7 @@ function finish(id: number, url: string) {
     skipped: s.skipped, extrasDone: s.extrasDone,
     assist: s.assist ? { steps: s.assist.steps, keepDns: s.assist.keepDns, dnsBy: s.assist.dnsBy, installBy: s.assist.installBy, openrouter: s.assist.openrouter } : undefined,
     dropletId: s.dropletId, ip: s.ip, attempt: s.attempt, attemptVersion: s.attemptVersion,
-    serverCreatedAt: s.serverCreatedAt, installedAt: now(), purgedAt: now(), resultUrl: url, sshKeyAdded: s.sshKeyAdded,
+    serverCreatedAt: s.serverCreatedAt, installedAt: now(), purgedAt: now(), resultUrl: url, sshKeyAdded: s.sshKeyAdded, firstLogin: s.firstLogin,
     railway: s.railway ? { workspaceName: s.railway.workspaceName, confirmed: true } : undefined,
     rw: s.rw ? { projectId: s.rw.projectId, serviceDomain: s.rw.serviceDomain, certStatus: s.rw.certStatus, domainOk: s.rw.domainOk } : undefined,
     tempUrl: s.rw?.serviceDomain ? webUrl(s.rw.serviceDomain) : undefined,
@@ -1402,6 +1430,7 @@ export async function railwayVars(id: number, s: SetupData, token: string): Prom
     // Their own domain if they added one; otherwise Railway's own https address, which works straight away.
     PUBLIC_URL: hostOf(s) ? `https://${hostOf(s)}` : webUrl(s.rw?.serviceDomain),
     FIRST_ADMIN_EMAIL: s.brand!.ownerEmail,
+    ...firstRunSettings(id, s),
     ...phoneSettings(id, s),
     SMTP_URL: smtp,
     MAIL_FROM: s.email?.from || "",

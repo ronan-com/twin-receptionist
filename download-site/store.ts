@@ -225,6 +225,8 @@ export interface SetupData {
   installStep?: string; // "4/10 Keeping the database password..."
   error?: string;
   resultUrl?: string;
+  /** The one-time sign-in link's token (the app keeps only its hash). Shown only as the done screen's button, for 23 hours. */
+  firstLogin?: { token: string; at: string };
   tempUrl?: string; // Railway's own https://<x>.up.railway.app address
   domainPending?: boolean; // finished before app.<domain> was ready
   finishRecords?: DnsRecord[]; // kept for the Done page when the domain was still pending

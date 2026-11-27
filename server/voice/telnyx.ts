@@ -61,19 +61,51 @@ function assistantFields(s: Settings, instructions: string) {
 // the first time someone plays it and kept in memory after (a few KB each, a few dozen voices).
 
 export const PREVIEW_LINE = "Hi, thanks for calling. You've reached the front desk. How can I help you today?";
-const previews = new Map<string, Buffer>();
+const previews = new Map<string, { body: Buffer; type: string }>();
 
-/** An mp3 of `PREVIEW_LINE` in a Telnyx voice (ids like "Telnyx.Ultra.<uuid>"). */
-export async function telnyxVoicePreview(voiceId: string): Promise<Buffer> {
+/** The kind of audio these bytes are, from the bytes themselves (Telnyx's voices don't all return mp3). */
+export function sniffAudio(b: Uint8Array): "audio/mpeg" | "audio/wav" | "audio/ogg" | "audio/aac" | null {
+  const tag = (o: number, t: string) => b.length >= o + t.length && String.fromCharCode(...b.subarray(o, o + t.length)) === t;
+  if (tag(0, "ID3") || (b.length > 2 && b[0] === 0xff && (b[1] & 0xe0) === 0xe0 && (b[1] & 0x06) !== 0)) return "audio/mpeg";
+  if (tag(0, "RIFF") && tag(8, "WAVE")) return "audio/wav";
+  if (tag(0, "OggS")) return "audio/ogg";
+  if (b.length > 1 && b[0] === 0xff && (b[1] & 0xf6) === 0xf0) return "audio/aac";
+  return null;
+}
+
+/** Raw 24 kHz 16-bit mono PCM (what some Telnyx voices return) in a WAV header, so a browser can play it. */
+export function wavOfPcm(pcm: Uint8Array, rate = 24000): Buffer {
+  const head = Buffer.alloc(44);
+  head.write("RIFF", 0);
+  head.writeUInt32LE(36 + pcm.length, 4);
+  head.write("WAVEfmt ", 8);
+  head.writeUInt32LE(16, 16);
+  head.writeUInt16LE(1, 20);
+  head.writeUInt16LE(1, 22);
+  head.writeUInt32LE(rate, 24);
+  head.writeUInt32LE(rate * 2, 28);
+  head.writeUInt16LE(2, 32);
+  head.writeUInt16LE(16, 34);
+  head.write("data", 36);
+  head.writeUInt32LE(pcm.length, 40);
+  return Buffer.concat([head, pcm]);
+}
+
+/** A short clip of `PREVIEW_LINE` in a Telnyx voice (ids like "Telnyx.Ultra.<uuid>"), with its audio type. */
+export async function telnyxVoicePreview(voiceId: string): Promise<{ body: Buffer; type: string }> {
   if (!/^Telnyx\.[A-Za-z0-9_.-]{2,100}$/.test(voiceId)) throw new ValidationError("Unknown voice.");
   const hit = previews.get(voiceId);
   if (hit) return hit;
   const res = await telnyx<{ base64_audio?: string }>("POST", "/text-to-speech/speech", { text: PREVIEW_LINE, voice: voiceId, language: "en-AU", output_type: "base64_output" });
   if (!res?.base64_audio) throw new TelnyxError(502, "The phone service didn't return the preview.");
   const audio = Buffer.from(res.base64_audio, "base64");
+  if (audio.length < 200) throw new TelnyxError(502, "The phone service returned an empty preview. Try again in a moment.");
+  const type = sniffAudio(audio);
+  // Not a known audio file: Telnyx's raw output is 24 kHz 16-bit mono PCM.
+  const clip = type ? { body: audio, type } : { body: wavOfPcm(audio), type: "audio/wav" };
   if (previews.size > 200) previews.clear();
-  previews.set(voiceId, audio);
-  return audio;
+  previews.set(voiceId, clip);
+  return clip;
 }
 
 /**
@@ -266,6 +298,23 @@ export const telnyxProvider: VoiceProvider = {
   },
 
   async webCall(assistantId) {
+    // The browser widget needs the assistant to exist and to allow web calls. Check both here, so a problem is a
+    // clear message in seconds instead of a call button that never connects; and switch web calls on if they're off.
+    if (!fakeProvider()) {
+      let current: any;
+      try {
+        const res = await telnyx<any>("GET", `/ai/assistants/${assistantId}`);
+        current = (res?.data ?? res)?.telephony_settings ?? {};
+      } catch (err) {
+        if (err instanceof TelnyxError && err.status === 404) throw new ValidationError("This receptionist isn't set up on the phone service yet. Save it once, then try the test call again.");
+        throw err;
+      }
+      if (current.supports_unauthenticated_web_calls !== true) {
+        await telnyx("POST", `/ai/assistants/${assistantId}`, { telephony_settings: { ...current, supports_unauthenticated_web_calls: true } }).catch((err) => {
+          throw new ValidationError(`The test call can't start: the phone service wouldn't allow browser calls (${(err as Error).message}).`);
+        });
+      }
+    }
     return { provider: "telnyx", assistantId };
   },
 };

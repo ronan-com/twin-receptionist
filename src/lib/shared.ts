@@ -861,6 +861,10 @@ export type Brand = {
   sidebarColor?: string;
   /** Set by the agency: the business can't change its own branding. */
   lockClient?: boolean;
+  /** The agency's 1 to 3 brand colours (#rrggbb), main one first. The install's BRAND_COLOURS, then the owner's own choice. */
+  colours?: string[];
+  /** The agency's default look: "light" or "dark" ("" = not chosen). The install's THEME, then the owner's own choice. */
+  theme?: "light" | "dark" | "";
 };
 
 // `support` is set for a sign-in by the setup provider's support person (Settings, "Support"); `by` is who.
@@ -897,6 +901,8 @@ export type UpdatesStatus = {
 
 export type Account = {
   user: { id: string; email: string; name: string; platformAdmin: boolean };
+  /** The install made this owner and no password is set yet: Settings asks only for a new one. */
+  needsPassword?: boolean;
   org: { id: string; name: string } | null;
   role: OrgRole | null;
   orgs: { id: string; name: string; role: OrgRole }[];

@@ -128,9 +128,19 @@ export interface Buyer {
   style: Style;
   /** The generic onboarding link (genericlink.ts) this agency started from, or null for a private link made by our admin. */
   source_link: number | null;
+  /** When we last emailed them their invite (setup link or dashboard login) from the agency page, or null. */
+  invited_at: string | null;
 }
 export type Style = "branded" | "neutral";
 export const asStyle = (v: unknown): Style => (v === "neutral" ? "neutral" : "branded");
+/** Takes our names out of text for a neutral agency (emails, prompts): PRODUCT_NAME and SELLER_NAME never show. */
+export function unbrand(text: string): string {
+  let t = text;
+  for (const [name, instead] of [[CONFIG.sellerName, "your provider"], [CONFIG.productName, "your AI receptionist agency"]] as const) {
+    if (name && name.trim().length >= 3) t = t.split(name).join(instead);
+  }
+  return t;
+}
 export interface Pkg {
   id: number;
   version: string;
@@ -253,6 +263,8 @@ export function db(): Database {
   // Onboarding links (genericlink.ts): which look a buyer gets, and which generic link they started from.
   if (!(d.query("PRAGMA table_info(buyers)").all() as { name: string }[]).some((c) => c.name === "style")) d.exec("ALTER TABLE buyers ADD COLUMN style TEXT NOT NULL DEFAULT 'branded'");
   if (!(d.query("PRAGMA table_info(buyers)").all() as { name: string }[]).some((c) => c.name === "source_link")) d.exec("ALTER TABLE buyers ADD COLUMN source_link INTEGER");
+  // "Invite them" on the agency page: when we emailed them. Existing agencies start as not invited.
+  if (!(d.query("PRAGMA table_info(buyers)").all() as { name: string }[]).some((c) => c.name === "invited_at")) d.exec("ALTER TABLE buyers ADD COLUMN invited_at TEXT");
   d.exec(`
     CREATE TABLE IF NOT EXISTS generic_links (
       id INTEGER PRIMARY KEY,
@@ -285,11 +297,15 @@ export function findBuyer(code: string): Buyer | null {
   return row && same ? row : null;
 }
 
+/** New agencies are neutral (no name of ours anywhere) unless told otherwise; test runs keep our branded look. */
 export function addBuyer(name: string, email: string, demo = false, opts: { style?: Style; sourceLink?: number } = {}): Buyer {
   const code = newCode();
-  db().query("INSERT INTO buyers (code, code_hash, name, email, created_at, demo, style, source_link) VALUES (?, ?, ?, ?, ?, ?, ?, ?)").run(code, hashCode(code), name, email, now(), demo ? 1 : 0, asStyle(opts.style), opts.sourceLink ?? null);
+  const style: Style = opts.style ? asStyle(opts.style) : demo ? "branded" : "neutral";
+  db().query("INSERT INTO buyers (code, code_hash, name, email, created_at, demo, style, source_link) VALUES (?, ?, ?, ?, ?, ?, ?, ?)").run(code, hashCode(code), name, email, now(), demo ? 1 : 0, style, opts.sourceLink ?? null);
   return findBuyer(code)!;
 }
+export const setBuyerStyle = (id: number, style: Style) => db().query("UPDATE buyers SET style = ? WHERE id = ?").run(asStyle(style), id).changes;
+export const markInvited = (id: number) => db().query("UPDATE buyers SET invited_at = ? WHERE id = ?").run(now(), id).changes;
 
 export const listBuyers = () => db().query("SELECT * FROM buyers ORDER BY id").all() as Buyer[];
 export const revokeBuyer = (id: number) => db().query("UPDATE buyers SET revoked_at = ? WHERE id = ? AND revoked_at IS NULL").run(now(), id).changes;

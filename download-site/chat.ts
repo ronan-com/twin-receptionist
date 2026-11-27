@@ -6,7 +6,7 @@
 // this buyer is on (read here from their saved setup, never from the browser). What it is never told:
 // keys, tokens, the buyer's email, their setup code, or anything from the secrets vault. Their own typed
 // questions are scrubbed of anything key-shaped (and of any key we hold for them) before they leave.
-import { CONFIG, RAILWAY, type Buyer } from "./lib";
+import { CONFIG, RAILWAY, unbrand, type Buyer } from "./lib";
 import { allHowTos } from "./content";
 import { STEPS, redact, secretValues, type SetupData, type StepId } from "./store";
 import { stepDone } from "./setup";
@@ -92,7 +92,9 @@ function whereTheyAre(c: ChatContext): string {
 export function systemPrompt(c: ChatContext = {}): string {
   const guides = allHowTos().filter((h) => RAILWAY ? h.id !== "digitalocean-token" : true).map((h) => `### ${h.title}\n${h.md.trim()}`).join("\n\n");
   const order = STEPS.filter((id) => id !== "welcome").map((id, i) => `${i + 1}. ${STEP_NAMES[id]}`).join("\n");
-  return `You are the setup helper on the ${CONFIG.productName} setup site, made by ${CONFIG.sellerName}. You help non-technical agency owners finish the setup wizard.
+  // A neutral (Generic) agency never sees our product or company name, so the helper isn't told them.
+  const neutral = c.buyer?.style === "neutral";
+  const prompt = `You are the setup helper on ${neutral ? "this setup site" : `the ${CONFIG.productName} setup site, made by ${CONFIG.sellerName}`}. You help non-technical agency owners finish the setup wizard.${neutral ? "\nNever name the company or product behind this site; call it \"your agency\" or use the person's own brand name." : ""}
 
 How to answer:
 - Be warm, plain and short: under 120 words. No jargon.
@@ -114,6 +116,7 @@ ${whereTheyAre(c)}
 
 The guides:
 ${guides}`;
+  return neutral ? unbrand(prompt) : prompt;
 }
 
 // ---------------- the question ----------------
@@ -184,5 +187,6 @@ export async function chatReply(messages: ChatMessage[], c: ChatContext = {}): P
   const raw = json?.choices?.[0]?.message?.content;
   const text = (Array.isArray(raw) ? raw.map((p: any) => (typeof p === "string" ? p : p?.text || "")).join("") : typeof raw === "string" ? raw : "").trim();
   if (!text) return { ok: false, status: 502, error: "The help chat didn't have an answer. Try asking another way." };
-  return { ok: true, reply: scrub(text, id).slice(0, MAX_REPLY_CHARS) };
+  const reply = scrub(text, id).slice(0, MAX_REPLY_CHARS);
+  return { ok: true, reply: c.buyer?.style === "neutral" ? unbrand(reply) : reply };
 }

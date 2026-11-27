@@ -9,8 +9,8 @@ import { supportLog } from "./sync";
 import { cloudflareTokenLink } from "./dns";
 import { hostOfBuyer, hostRecord } from "./hosts";
 import {
-  ASSIST_STEPS, canInstall, checkDns, cloudflareCheck, dnsRows, dropDnsCreds, dropHost, fillStep, finishExtras, installFor, mailConfigured,
-  ownerLogin, setDomain, setOpenRouter, setupHost, stepRows, type DnsProvider, type Out,
+  ASSIST_STEPS, canInstall, checkDns, cloudflareCheck, dnsRows, dropDnsCreds, dropHost, fillStep, finishExtras, installFor, inviteState, mailConfigured,
+  markInvitedByHand, ownerLogin, sendInvite, setDomain, setOpenRouter, setupHost, stepRows, type DnsProvider, type Out,
 } from "./assist";
 
 export interface Helpers {
@@ -98,8 +98,7 @@ export function assistPanel(h: Helpers, sid: string, b: Buyer, s: SetupData): st
     if (s.phase === "done") {
       const url = appUrlOf(s);
       return `<p>${h.notice("ok", `Installed${s.assist?.installBy ? ` by ${esc(s.assist.installBy.by)}` : ""}. Live at <a href="${esc(url)}" target="_blank" rel="noopener noreferrer"><b>${esc(url)}</b></a> ${h.copyBtn(url)}${s.domainPending ? " (their own address starts working once its DNS records are in: use Check DNS above)" : ""}`)}</p>
-      <form method="post" action="/admin/b/${b.id}/assist/owner-login" class="sf">${h.hiddenT(sid)}<p class="hint">Makes the owner's way in: a one-time set-your-password link, or (if no owner account exists yet) the first-account page. Goes to <b>${esc(s.brand?.ownerEmail || b.email)}</b>.</p>
-      <div class="nav"><div class="right left">${mailConfigured() ? `<button class="btn p" type="submit" name="email" value="1">Email the owner their login</button>` : ""}<button class="btn ${mailConfigured() ? "o" : "p"}" type="submit" name="email" value="">Show me the link to send</button></div></div>${mailConfigured() ? "" : `<p class="hint">Our site has no outgoing email set up (SITE_SMTP_URL), so you'll copy the link and send it yourself.</p>`}</form>`;
+      <p class="hint">Send the owner their dashboard login from <a href="#invite">Invite them</a>, below.</p>`;
     }
     if (live) return `<p class="status"><span class="spin"></span>Installing: ${esc(s.installStep || s.progress?.[s.progress.length - 1] || s.phase)}. This page updates by itself; the log below streams.</p>`;
     if (s.phase === "failed" || s.phase === "create_failed") return `${h.notice("err", esc(s.error || "The install stopped."))}<form method="post" action="/admin/b/${b.id}/assist/install" class="sf">${h.hiddenT(sid)}<button class="btn p" type="submit">Try the install again</button></form>`;
@@ -135,6 +134,32 @@ ${live || s.phase === "failed" || s.phase === "create_failed" || (s.phase === "d
 <h3>Audit log</h3>
 ${auditHtml}
 </section>`;
+}
+
+/**
+ * The last card on the agency page: "Invite them". Live install -> their dashboard login; otherwise -> their setup link, with
+ * what we did and what's left. One send button (our site's email), the link with Copy, and when they were invited.
+ */
+export function inviteCard(h: Helpers, sid: string, b: Buyer, s: SetupData): string {
+  const flash = takeFlash(sid, -b.id);
+  const st = inviteState(b, s);
+  const sent = b.invited_at ? `<span class="pill live">Invited ${esc(h.when(b.invited_at))}</span>` : `<span class="pill not-started">Not invited yet</span>`;
+  const head = `<section class="card invite" id="invite"><div class="titlerow"><h2>Invite them</h2> ${sent}</div>
+${flash ? h.notice(flash.kind || (flash.ok ? "ok" : "err"), esc(flash.message)).replace('class="notice ', 'class="notice flash ') : ""}`;
+  if (b.demo === 1) return `${head}<p class="hint">A test run: nobody to invite.</p></section>`;
+  if (b.revoked_at) return `${head}<p class="hint">Their link is turned off. Turn it back on to invite them.</p></section>`;
+  const what = st.kind === "dashboard"
+    ? `<p class="lead"><b>Send their dashboard login.</b> Their agency is live, so they get their owner login: a one-time set-your-password link, or (if no owner account exists yet) their dashboard's first-account page, which only <b>${esc(st.to)}</b> can sign up on.</p>
+${st.link ? `<label class="f">Their dashboard</label><div class="linkrow"><code id="invite-link">${esc(st.link)}</code>${h.copyBtn(st.link)}</div>` : ""}`
+    : `<p class="lead"><b>Send their setup link.</b> Their install isn't finished, so they get their private setup link and carry on from there.</p>
+<div class="summary"><div><span>Done by us</span><b>${esc(st.done.join(", ") || "Nothing yet")}</b></div><div><span>Left for them</span><b>${esc(st.left.join(", ") || "Nothing: the install is running")}</b></div></div>
+<label class="f">Their setup link</label><div class="linkrow"><code id="invite-link">${esc(st.link)}</code>${h.copyBtn(st.link)}</div>`;
+  const mark = `<form method="post" action="/admin/b/${b.id}/assist/mark-invited" class="sf">${h.hiddenT(sid)}<button class="btn o" type="submit">I've sent it myself: mark as invited</button></form>`;
+  const send = mailConfigured()
+    ? `<form method="post" action="/admin/b/${b.id}/assist/invite" class="sf">${h.hiddenT(sid)}<div class="nav"><span></span><div class="right"><button class="btn p" type="submit" data-confirm="${esc(`Email ${st.to} now?`)}">Send invite email to ${esc(st.to)}</button></div></div></form>`
+    : `${h.notice("info", "Email isn't set up on the setup site — copy and send it yourself.")}
+${st.kind === "dashboard" ? `<form method="post" action="/admin/b/${b.id}/assist/owner-login" class="sf">${h.hiddenT(sid)}<button class="btn p" type="submit" name="email" value="">Get their one-time login link to send</button></form>` : ""}${mark}`;
+  return `${head}${what}${send}</section>`;
 }
 
 /** What /admin/b/<id>/status returns while an install runs: the same shape the wizard's live script reads. */
@@ -187,6 +212,18 @@ export async function assistRoute(what: string, b: Buyer, f: Record<string, stri
       const r = await checkDns(b);
       return c.json({ rows: r.rows, all: r.all, host: r.host?.ok ?? null, live: r.live ?? null });
     }
+    case "mark-invited": { setFlash(c.sid, -b.id, markInvitedByHand(b, c.email)); return c.redirect(`/admin/b/${b.id}#invite`); }
+    case "invite": {
+      const r = await sendInvite(b, c.email);
+      if (!r.ok) { setFlash(c.sid, -b.id, { ok: false, message: r.message, kind: "err" }); return c.redirect(`/admin/b/${b.id}#invite`); }
+      if (r.mailed) { setFlash(c.sid, -b.id, { ok: true, message: `Invite emailed to ${r.to}: ${r.kind === "dashboard" ? "their dashboard login" : "their setup link"}.`, kind: "ok" }); return c.redirect(`/admin/b/${b.id}#invite`); }
+      return c.html(c.h.page("Invite", `<section class="card narrow"><h1>${esc(b.name)}: invite</h1>
+${c.h.notice("err", esc(r.mailError || "The email didn't send."))}
+<p class="lead">${r.kind === "dashboard" ? `Their ${r.loginKind === "reset" ? `one-time login link (works once, runs out in ${r.minutes} minutes)` : "dashboard's first-account page"}` : "Their private setup link"}, to send to <b>${esc(r.to)}</b>:</p>
+<div class="linkrow"><code id="invite-link">${esc(r.link)}</code>${c.h.copyBtn(r.link)}</div>
+<form method="post" action="/admin/b/${b.id}/assist/mark-invited" class="sf">${c.h.hiddenT(c.sid)}<button class="btn o" type="submit">I've sent it myself: mark as invited</button></form>
+<p><a href="/admin/b/${b.id}#invite">← Back to ${esc(b.name)}</a></p></section>`, { sid: c.sid, email: c.email }));
+    }
     case "owner-login": {
       const r = await ownerLogin(b, c.email, bool(f.email));
       if (!r.ok) return back({ ok: false, message: r.message, kind: "err" });
@@ -197,7 +234,8 @@ export async function assistRoute(what: string, b: Buyer, f: Record<string, stri
 <p class="lead">${lead}</p>
 ${r.mailed ? c.h.notice("ok", `Emailed to ${esc(r.to)}.`) : r.mailError ? c.h.notice("err", esc(r.mailError)) : c.h.notice("info", "Copy the link and send it to them yourself. It isn't stored anywhere.")}
 <div class="linkrow"><code id="owner-link">${esc(r.url)}</code>${c.h.copyBtn(r.url)}</div>
-<p><a href="/admin/b/${b.id}">← Back to ${esc(b.name)}</a></p></section>`, { sid: c.sid, email: c.email }));
+${r.mailed ? "" : `<form method="post" action="/admin/b/${b.id}/assist/mark-invited" class="sf">${c.h.hiddenT(c.sid)}<button class="btn o" type="submit">I've sent it myself: mark as invited</button></form>`}
+<p><a href="/admin/b/${b.id}#invite">← Back to ${esc(b.name)}</a></p></section>`, { sid: c.sid, email: c.email }));
     }
   }
   return back({ ok: false, message: "That didn't work. Reload the page and try again.", kind: "err" });

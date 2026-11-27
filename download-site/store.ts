@@ -136,7 +136,9 @@ export interface SetupData {
   step: StepId;
   /** Set by nextStep(): where the buyer was just sent. The site uses it to redirect after a form (then clears it), so "Continue" always moves on, even from a step the buyer went Back to. */
   moved?: StepId;
-  brand?: { productName: string; ownerEmail: string; ownPhoneAccount: boolean ; logo?: string; /** The main brand colour (the first one). */ colour?: string; /** 1 to 3 brand colours, the first is the main one. */ colours?: string[]; /** The look of the dashboard to start with; the owner can switch it later in the dashboard. */ theme?: "light" | "dark" };
+  /** What our admin typed when making the agency (person's name, email, agency name): pre-fills the Brand step. The buyer can change all three. */
+  prefill?: { ownerName: string; ownerEmail: string; agencyName: string };
+  brand?: { productName: string; ownerEmail: string; /** The owner's real name, when known (else the app derives one from the email). */ ownerName?: string; ownPhoneAccount: boolean ; logo?: string; /** The main brand colour (the first one). */ colour?: string; /** 1 to 3 brand colours, the first is the main one. */ colours?: string[]; /** The look of the dashboard to start with; the owner can switch it later in the dashboard. */ theme?: "light" | "dark" };
   domain?: {
     mode: "cloudflare" | "godaddy" | "manual";
     zone?: string; // example.com

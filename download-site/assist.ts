@@ -251,15 +251,29 @@ export function inviteState(b: Buyer, s: SetupData): InviteState {
   if (s.phase === "idle" || s.phase === "failed" || s.phase === "create_failed") left.push("Install");
   return { kind: "setup", to: b.email, link, done, left };
 }
+/** The person's first name for the email: the name our admin typed when making the agency, else the agency's own name. */
+const firstNameOf = (b: Buyer, s: SetupData) => ((s.brand?.ownerName || s.prefill?.ownerName || "").trim().split(/\s+/)[0]) || b.name.split(/\s+/)[0] || b.name;
+/** The setup-link email: short, the private link, and what to have ready. No contact lines. Shown in the preview exactly as sent. */
 export function setupInviteEmail(b: Buyer, st: InviteState): { subject: string; text: string } {
-  const first = b.name.split(/\s+/)[0] || b.name;
-  const did = st.done.length ? `Already done for you: ${st.done.join(", ")}.\n\n` : "";
-  const todo = st.left.length ? `Left for you: ${st.left.join(", ")}.` : "Everything is filled in.";
+  const s = getSetup(b.id);
+  const first = firstNameOf(b, s);
+  const agency = s.brand?.productName || s.prefill?.agencyName || "";
+  const did = st.done.length ? `\nAlready done for you: ${st.done.join(", ")}.` : "";
+  const todo = st.done.length ? ` ${st.left.length ? `Left for you: ${st.left.join(", ")}.` : "Everything is filled in."}` : "";
+  const host = RAILWAY ? "A Railway account (Hobby plan, needs a card): your agency's server lives here." : "A DigitalOcean account with a payment method: your agency's server lives here.";
   const sign = signOff(b) ? `\n\n${signOff(b)}` : "";
   return {
     subject: "Your private setup link",
-    text: `Hi ${first},\n\nYour AI receptionist agency is ready to set up. ${did}${todo}\n\n${st.link}\n\nThis link is just for you. Close it and come back any time.${sign}`,
+    text: `Hi ${first},\n\n${agency ? `${agency} is ready to set up.` : "Your AI agency is ready to set up."} Here is your private link:\n\n${st.link}\n\nIt's just for you, so please don't share it. Setup takes about 10 minutes, and you can close it and come back any time.\n\nHave these ready:\n- ${host}\n- An OpenRouter account with a few dollars of credit: the AI that answers.\n- A Telnyx account with some credit, or a Vapi and Twilio account: your phone numbers and voice.${did}${todo}${sign}`,
   };
+}
+/** What "Email them the link" would send, for the preview page. Only for an agency that isn't live yet. */
+export function invitePreview(b: Buyer): { to: string; subject: string; text: string; link: string } | null {
+  const s = getSetup(b.id);
+  const st = inviteState(b, s);
+  if (st.kind !== "setup") return null;
+  const m = setupInviteEmail(b, st);
+  return { to: st.to, subject: m.subject, text: m.text, link: st.link };
 }
 export type InviteOut = { ok: true; kind: InviteState["kind"]; to: string; link: string; mailed: boolean; mailError?: string; minutes?: number; loginKind?: "reset" | "first" } | { ok: false; message: string };
 /**

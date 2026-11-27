@@ -168,10 +168,12 @@ function brand(c: Ctx) {
   const theme = br?.theme || "light";
   return `${head(c, "Your brand", "")}
 <div class="body">${mainForm(c, "brand", `
-  <label class="f" for="productName">Name</label>
-  <input id="productName" name="productName" maxlength="60" required value="${val(c, "productName", br?.productName || "")}" placeholder="Acme AI">
+  <label class="f" for="ownerName">Your name</label>
+  <input id="ownerName" name="ownerName" maxlength="80" required autocomplete="name" value="${val(c, "ownerName", br?.ownerName || c.s.prefill?.ownerName || "")}" placeholder="Dana Smith">
   <label class="f" for="ownerEmail">Your email</label>
-  <input id="ownerEmail" name="ownerEmail" type="email" maxlength="200" required autocomplete="email" value="${val(c, "ownerEmail", br?.ownerEmail || c.b.email)}">
+  <input id="ownerEmail" name="ownerEmail" type="email" maxlength="200" required autocomplete="email" value="${val(c, "ownerEmail", br?.ownerEmail || c.s.prefill?.ownerEmail || c.b.email)}">
+  <label class="f" for="productName">Agency name</label>
+  <input id="productName" name="productName" maxlength="60" required value="${val(c, "productName", br?.productName || c.s.prefill?.agencyName || "")}" placeholder="Acme AI">
   <label class="f" for="logoFile">Logo <span class="tag">Optional</span></label>
   <input id="logoFile" type="file" accept="image/png,image/jpeg,image/webp">
   <input type="hidden" id="logo" name="logo" value="${esc(br?.logo || "")}">

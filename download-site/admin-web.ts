@@ -25,15 +25,15 @@ import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 import { sendSiteMail, siteMailConfigured } from "./mailer";
 import { CONFIG, RAILWAY, addBuyer, currentPackage, humanSize, listPackages, db, markInvited, now, setupLink, sha256, unbrand, type Buyer } from "./lib";
 import { esc } from "./pages";
-import { welcomeEmail } from "./content";
 import { agencyUrl, allow, appUrlOf, stepDone, updateInfo } from "./setup";
 import { ago, hasSyncToken, allSnapshots, deleteSyncData, dot, fetchLogs, fetchClients, history, latestSnapshot, logSupport, pushPending, requestPush, seen, supportLog, syncNow, viewAsLink, type Stored } from "./sync";
 import { alertHistory } from "./alerts";
 import { DEMO_READY } from "./demo";
-import { ALL_SECRETS, STEPS, getSetup, logRead, resetSetup, secretHint, type SetupData } from "./store";
+import { ALL_SECRETS, STEPS, getSetup, logRead, resetSetup, secretHint, updateSetup, type SetupData } from "./store";
 import { wizardPage } from "./wizard";
 import { liveAlerts, needsHelp, openCount, deleteTickets, fileOf, replyToTicket, listTickets, STATUS_LABEL, setTicketStatus, ticketById, ticketViewHtml, ticketsListHtml, type Status as TicketStatus } from "./tickets";
 import { assistPanel, assistRoute, inviteCard, isInstalling, statusJson } from "./assist-web";
+import { invitePreview } from "./assist";
 import { removeHost } from "./hosts";
 import { createLink, rotateLink, toggleLink, listLinks } from "./genericlink";
 
@@ -128,20 +128,6 @@ function deleteBuyer(id: number) {
 
 // ---------------- welcome email ----------------
 export const welcomeConfigured = siteMailConfigured;
-async function sendWelcome(b: Buyer): Promise<string | null> {
-  const w = welcomeEmail();
-  if (!w) return "There's no welcome email text (handoff-content/welcome-email.md).";
-  const vars: Record<string, string> = { buyer_first_name: b.name.split(/\s+/)[0] || b.name, setup_link: setupLink(b.code), seller_name: "", support_email: CONFIG.supportEmail || SITE_FROM() };
-  // Emails are generic: no product or company name, whatever the template says.
-  const fill = (t: string) => unbrand(t.replace(/\{\{(\w+)\}\}/g, (_m, k) => vars[k] ?? ""));
-  let body = fill(w.body);
-  if (RAILWAY) body = body.replace(/A DigitalOcean account with a payment method/g, "A Railway account on the Hobby plan (it needs a card)");
-  const err = await sendSiteMail(b.email, fill(w.subject), body, { label: "Open your setup", url: setupLink(b.code) });
-  if (err) return "The welcome email didn't send. Copy the link and send it yourself.";
-  markInvited(b.id);
-  return null;
-}
-
 // ---------------- HTML ----------------
 const when = (iso?: string | null) => (iso ? new Date(iso).toISOString().slice(0, 16).replace("T", " ") : "");
 const pill = (st: Status) => `<span class="pill ${st.replace(/\s/g, "-")}">${st}</span>`;
@@ -303,15 +289,16 @@ function listPage(sid: string, email: string, q: string, filter: string, flash =
   <select name="status" aria-label="Only show this status"><option value="">All statuses</option>${STATUSES.map((s) => `<option value="${s}"${s === filter ? " selected" : ""}>${s} (${counts[s]})</option>`).join("")}</select>
   <button class="btn o" type="submit">Search</button>${q || filter ? ` <a class="hint" href="/admin">Clear</a>` : ""}
 </form>
-${shown.length ? `<div class="xscroll"><table class="records buyers"><thead><tr><th>Agency</th><th>Status</th><th>Live at</th><th>Sync</th><th>Version</th><th>Calls 7d</th><th>Last activity</th></tr></thead><tbody>${tr}</tbody></table></div>` : `<p class="hint">${all.length ? "No agencies match." : "No agencies yet. Add one below."}</p>`}
+${shown.length ? `<div class="xscroll"><table class="records buyers"><thead><tr><th>Agency</th><th>Status</th><th>Live at</th><th>Sync</th><th>Version</th><th>Calls 7d</th><th>Last activity</th></tr></thead><tbody>${tr}</tbody></table></div>` : `<p class="hint">${all.length ? "No agencies match." : "No agencies yet. Make one below."}</p>`}
 </section>
-<section class="card">
-<h2>Add an agency</h2>
+<section class="card" id="new-agency">
+<h2>New agency</h2>
+<p class="hint">Three details. We make their private setup link, then you choose to email it to them or copy it.</p>
 <form method="post" action="/admin/buyers" class="body">${hiddenT(sid)}
-  <div class="two"><div><label class="f" for="name">Name</label><input id="name" name="name" required maxlength="120"></div>
-  <div><label class="f" for="bemail">Email</label><input id="bemail" name="email" type="email" required maxlength="200"></div></div>
-  ${welcomeConfigured() ? `<label class="opt inline"><input type="checkbox" name="welcome" value="1"> <b>Email them now</b> <span class="hint">Off: nobody is emailed. Set things up for them first, then send the invite from their agency page.</span></label>` : `<p class="hint">Nobody is emailed. Set things up for them, then invite them from their agency page. (Set SITE_SMTP_URL and SITE_MAIL_FROM to email from here.)</p>`}
-  <div class="nav"><span></span><div class="right"><button class="btn p" type="submit">Add agency</button></div></div>
+  <div class="three"><div><label class="f" for="owner">Person's name</label><input id="owner" name="owner" required maxlength="80" autocomplete="off" placeholder="Dana Smith"></div>
+  <div><label class="f" for="bemail">Email</label><input id="bemail" name="email" type="email" required maxlength="200" autocomplete="off" placeholder="dana@example.com"></div>
+  <div><label class="f" for="name">Agency name</label><input id="name" name="name" required maxlength="120" autocomplete="off" placeholder="Acme AI"></div></div>
+  <div class="nav"><span></span><div class="right"><button class="btn p" type="submit">Create agency and link</button></div></div>
 </form>
 </section>
 ${testsSection(sid)}`, { sid, email });
@@ -397,7 +384,7 @@ function buyerPage(sid: string, email: string, b: Buyer, flash = "", tab: AgTab 
   const act = (what: string, label: string, cls: string, confirm = "") => `<form method="post" action="/admin/b/${b.id}/${what}">${hiddenT(sid)}<button class="${cls}" type="submit"${confirm ? ` data-confirm="${esc(confirm)}"` : ""}>${label}</button></form>`;
   const hostNote = RAILWAY ? "Their Railway project stays in their account." : "Their server stays in their DigitalOcean account.";
   const rowsHtml: [string, string][] = [
-    ["Email", esc(b.email)], ["Brand", esc(s.brand?.productName || "")], ["Owner email", esc(s.brand?.ownerEmail || "")],
+    ["Person", esc(s.brand?.ownerName || s.prefill?.ownerName || "")], ["Email", esc(b.email)], ["Brand", esc(s.brand?.productName || s.prefill?.agencyName || "")], ["Owner email", esc(s.brand?.ownerEmail || "")],
     ["Domain", esc(s.domain?.host || "")], ["Step", esc(s.phase === "done" ? "Done" : `${s.step}${s.phase !== "idle" ? ` (${s.phase})` : ""}`)],
     ["Live at", s.resultUrl ? `<a href="${esc(s.resultUrl)}" target="_blank" rel="noopener noreferrer">${esc(s.resultUrl)}</a>${s.domainPending && s.tempUrl ? ` · now at <a href="${esc(s.tempUrl)}" target="_blank" rel="noopener noreferrer">${esc(s.tempUrl)}</a>` : ""}` : ""],
     ["Created", esc(when(b.created_at))], ["Installed", esc(when(s.installedAt))], ["App version", versionCell(b, s)],
@@ -405,7 +392,8 @@ function buyerPage(sid: string, email: string, b: Buyer, flash = "", tab: AgTab 
   ];
   const help = needsHelp();
   const linkBlock = `<label class="f">Private setup link</label>
-<div class="linkrow"><code id="setup-link">${esc(link)}</code>${copyBtn(link)}</div>`;
+<div class="linkrow"><code id="setup-link">${esc(link)}</code>${copyBtn(link)}</div>
+${s.phase !== "done" && b.demo !== 1 && !b.revoked_at ? `<p><a class="btn o" href="/admin/b/${b.id}/email">Email them the link</a> <span class="hint">${b.invited_at ? `Last invited ${esc(when(b.invited_at))}.` : "Shows you the email first."}</span></p>` : ""}`;
   const hn = `/admin/b/${b.id}`;
   let content = "";
   if (tab === "overview") {
@@ -707,22 +695,19 @@ export async function adminRoute(req: Request, url: URL, c: AdminCtx): Promise<R
 
   if (path === "/admin/buyers" && method === "POST") {
     const name = String(f.name || "").trim().replace(/[\r\n]/g, " ").slice(0, 120);
+    const owner = String(f.owner || "").trim().replace(/[\r\n]/g, " ").slice(0, 80);
     const email = String(f.email || "").trim().toLowerCase().slice(0, 200);
-    if (!name || !/^[^\s@<>"]+@[^\s@<>"]+\.[^\s@<>"]+$/.test(email)) return c.html(listPage(sess.sid, sess.email, "", "", notice("err", "Give a name and a real email address.").replace('class="notice ', 'class="notice flash ')), 400);
+    if (!name || !/^[^\s@<>"]+@[^\s@<>"]+\.[^\s@<>"]+$/.test(email)) return c.html(listPage(sess.sid, sess.email, "", "", notice("err", "Give the agency name and a real email address.").replace('class="notice ', 'class="notice flash ')), 400);
     const b = addBuyer(name, email, false);
+    // The three details pre-fill the Brand step of their setup; the buyer can change all of them there.
+    updateSetup(b.id, (x) => { x.prefill = { ownerName: owner, ownerEmail: email, agencyName: name }; });
     console.log(`[admin] ${sess.email} added buyer ${b.id}`);
-    let mail = "";
-    if (f.welcome === "1" && welcomeConfigured()) {
-      const wait = allow(`welcome:${sess.email}`, 30, 60 * 60_000);
-      const errMail = wait ? "Too many welcome emails just now; send this one yourself." : await sendWelcome(b);
-      mail = errMail ? notice("err", esc(errMail)) : notice("ok", `Welcome email sent to ${esc(b.email)}.`);
-    }
     const link = setupLink(b.code);
     return c.html(page("Agency added", `<section class="card">
-<h1>${esc(b.name)} is added</h1><p class="lead">${mail ? "Their private setup link:" : `Nobody was emailed. Set up what you can for them on their agency page, then use <b>Invite them</b> at the bottom of it.`}</p>
+<h1>${esc(b.name)} is added</h1><p class="lead">Their private setup link is ready. Nobody has been emailed yet. Choose how to send it:</p>
 <div class="linkrow"><code id="new-link">${esc(link)}</code>${copyBtn(link)}</div>
-${mail}
-<div class="nav"><a class="btn g" href="/admin">← All agencies</a><div class="right"><a class="btn p" href="/admin/b/${b.id}">Open agency</a></div></div>
+<div class="nav"><a class="btn g" href="/admin">← All agencies</a><div class="right"><a class="btn p" href="/admin/b/${b.id}/email">Email them the link</a> <a class="btn o" href="/admin/b/${b.id}">Open agency</a></div></div>
+<p class="hint">"Email them the link" shows you the email first. Or press Copy above and send the link yourself.</p>
 </section>`, sess));
   }
 
@@ -766,12 +751,26 @@ ${mail}
     }
   }
 
-  m = path.match(/^\/admin\/b\/(\d{1,9})(?:\/(setup|revoke|restore|reset|delete|sync|view-as|push-update|logs|clients))?$/);
+  m = path.match(/^\/admin\/b\/(\d{1,9})(?:\/(setup|email|revoke|restore|reset|delete|sync|view-as|push-update|logs|clients))?$/);
   if (m) {
     const b = buyerById(Number(m[1]));
     if (!b) return c.html(page("Not found", `<section class="card narrow"><h1>No such agency</h1><p><a href="/admin">← All agencies</a></p></section>`), 404);
     const what = m[2];
     if (!what && method === "GET") return c.html(buyerPage(sess.sid, sess.email, b, flashOf(url), agTabOf(url.searchParams.get("tab"))));
+    if (what === "email" && method === "GET") {
+      // "Email them the link": the exact email, before anything is sent.
+      const pv = invitePreview(b);
+      if (!pv || b.revoked_at || b.demo === 1) return c.redirect(`/admin/b/${b.id}?tab=setup#invite`);
+      const can = siteMailConfigured();
+      return c.html(page("Email preview", `<section class="card">
+<h1>Email them the link</h1>
+<p class="lead">This is exactly what ${esc(pv.to)} would get, with an "Open your setup" button under it.</p>
+<div class="summary"><div><span>To</span><b>${esc(pv.to)}</b></div><div><span>Subject</span><b>${esc(pv.subject)}</b></div></div>
+<pre class="emailprev">${esc(pv.text)}</pre>
+${can ? `<form method="post" action="/admin/b/${b.id}/assist/invite" class="sf">${hiddenT(sess.sid)}<div class="nav"><a class="btn g" href="/admin/b/${b.id}">Not now</a><div class="right"><button class="btn p" type="submit">Send this email to ${esc(pv.to)}</button></div></div></form>` : notice("info", "Email isn't set up on this site (SITE_SMTP_URL and SITE_MAIL_FROM), so it can't be sent from here. Copy the link and send it yourself.")}
+<label class="f">Or copy the link</label><div class="linkrow"><code id="invite-link">${esc(pv.link)}</code>${copyBtn(pv.link)}</div>
+</section>`, sess));
+    }
     if (what === "setup" && method === "GET") {
       // Their wizard as they see it, with every form switched off and links kept inside /admin.
       const s = getSetup(b.id);

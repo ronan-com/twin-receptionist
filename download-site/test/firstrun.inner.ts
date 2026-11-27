@@ -43,6 +43,10 @@ describe("first run", () => {
     expect(vars.FIRST_ADMIN_EMAIL).toBe("jane.smith@acme.test");
     expect(vars.OWNER_NAME).toBe("Jane Smith");
     expect(vars.AGENCY_NAME).toBe("Acme Calls");
+    // With a real name given (the Brand step's "Your name"), the app gets that, not one made from the email.
+    updateSetup(b.id, (x) => { x.brand = { ...x.brand!, ownerName: "Janet Q. Smith" }; });
+    expect((await railwayVars(b.id, getSetup(b.id), "rail-token-0123456789")).OWNER_NAME).toBe("Janet Q. Smith");
+    updateSetup(b.id, (x) => { delete x.brand!.ownerName; });
     expect(vars.FIRST_LOGIN_TOKEN.length).toBeGreaterThanOrEqual(32);
     expect(vars.FIRST_LOGIN_TOKEN).toMatch(/^[A-Za-z0-9_-]+$/);
     // A retry of the install keeps the same token; another buyer gets a different one.

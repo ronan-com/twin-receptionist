@@ -524,7 +524,7 @@ function installRailway(c: Ctx) {
   if (s.phase === "idle") {
     const rows: [string, string][] = [
       ["Address", host ? esc(host) : "Your Railway address (ready as soon as it's built)"], ["Hosting", `Railway${s.railway?.workspaceName ? ` · ${esc(s.railway.workspaceName)}` : ""} · from US$5/mo`],
-      ["Phones", phonesSummary(c)], ["Email", s.email?.from ? esc(s.email.from) : "Add later"],
+      ["Phones", phonesSummary(c)], ["AI", secretHint(c.b.id, "openrouter_key") ? `OpenRouter ${esc(secretHint(c.b.id, "openrouter_key") || "")}` : "Add later"], ["Email", s.email?.from ? esc(s.email.from) : "Add later"],
       ...(host ? [["DNS", manual ? "You add two records" : "Handled by the wizard"] as [string, string]] : [["Own domain", "Add later"] as [string, string]]),
     ];
     return `${head(c, "Ready to install", `We'll set up ${P(c)} in your Railway account. You can close the page while it runs.`)}
@@ -549,7 +549,7 @@ ${nav(c, primary("Install"))}`;
   const del = rw.projectId ? mini(c, "server-delete", "Delete the project", "linkbtn", ` data-confirm="Delete this project (app and database) from your Railway account?"`) : "";
   if (bad) {
     return `${head(c, s.phase === "failed" ? "The install stopped" : "We couldn't set up Railway", "")}
-${notice("err", esc((s.error || "Something went wrong.").replace(/^./, (x) => x.toUpperCase())))}
+${notice("err", esc((s.error || "Something went wrong.").replace("press Check again", "press Try again").replace(/^./, (x) => x.toUpperCase())))}
 ${list}${log}
 ${nav(c, `${del}${mini(c, s.phase === "failed" ? "install-retry" : "install-start", `Try again ${icon("right")}`, "btn p")}`, { back: false })}`;
   }

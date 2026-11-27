@@ -331,14 +331,22 @@ ${x ? `<div class="counts">${([["Calls 24h", x.counts.calls24h], ["Calls 7d", x.
 /** Support: our four buttons, automatic updates, the problems they reported, and our side of the audit trail. */
 function supportSection(sid: string, b: Buyer, s: SetupData): string {
   if (!liveAgency(b, s)) return `<h2>Support tools</h2><p class="hint">Sync, View as, updates and logs appear once this agency is live.</p>`;
+  // Forgot their password, or never set one: a one-time link to choose it (the same one the Done screen's "Reset your owner password" makes).
+  const ownerLogin = `<h2>Owner login</h2>
+<p class="hint">The owner forgot their password, or never chose one? Send them a one-time link to set it. It works once and runs out in 15 minutes.</p>
+<div class="nav"><div class="right left">
+  <form method="post" action="/admin/b/${b.id}/assist/owner-login">${hiddenT(sid)}<button class="btn p" type="submit" name="email" value="1">Send owner their login</button></form>
+  <form method="post" action="/admin/b/${b.id}/assist/owner-login">${hiddenT(sid)}<button class="btn o" type="submit" name="email" value="">Show me the link</button></form>
+</div></div>
+`;
   const st = latestSnapshot(b.id);
   const act = (what: string, label: string, cls: string, extra = "") => `<form method="post" action="/admin/b/${b.id}/${what}">${hiddenT(sid)}<button class="${cls}" type="submit"${extra}>${label}</button></form>`;
-  if (!st && !hasSyncToken(b.id)) return `<h2>Support tools</h2><p class="hint">This agency was installed before syncing existed, so we can't reach its app from here.</p>`;
+  if (!st && !hasSyncToken(b.id)) return `${ownerLogin}<h2>Support tools</h2><p class="hint">This agency was installed before syncing existed, so we can't reach its app from here.</p>`;
   const x = st?.snap;
   const beats = history(b.id, 8);
   const accessOff = !!x && !x.support.access;
   const log = supportLog(b.id, 8);
-  return `<h2>Support tools</h2>
+  return `${ownerLogin}<h2>Support tools</h2>
 <div class="summary">
 <div><span>Support access</span><b>${!x ? "Unknown until we hear from them" : accessOff ? `<span class="pill failed">Off: the agency's choice</span>` : `<span class="pill live">On</span> ${x.support.accessUntil ? `until ${esc(when(x.support.accessUntil))} UTC` : "until they turn it off"}`}</b></div>
 <div><span>Automatic updates</span><b>${esc(autoState(st).text || "Unknown")}${x ? ` · ${x.support.edit ? "support can make changes" : "support is read-only"}` : ""}</b></div></div>

@@ -445,6 +445,10 @@ describe("the admin pages", () => {
   test("the buyer page: the Problems panel, auto-update state, and Push update now (only when it can work)", async () => {
     const a = await (await adminGet(`/admin/b/${ids.ok}?tab=support`)).text();
     expect(a).toContain("Problems (last 24 hours)");
+    // "Send owner their login" is on the Support tab of a live agency (email it, or show the link)
+    expect(a).toContain(`action="/admin/b/${ids.ok}/assist/owner-login"`);
+    expect(a).toContain("Send owner their login");
+    expect(a).toContain("Show me the link");
     expect(a).toContain("Text-back failed");
     expect(a).toContain("Telnyx answered 502");
     expect(a).toContain(`action="/admin/b/${ids.ok}/push-update"`);

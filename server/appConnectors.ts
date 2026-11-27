@@ -308,7 +308,18 @@ export function connector(provider: AppProvider, key: string, config: Record<str
 const NAMES: Record<AppProvider, string> = { servicem8: "ServiceM8", cliniko: "Cliniko", tradify: "Tradify", xero: "Xero" };
 const linkKey = (provider: string, phone: string) => `${provider}:${digits(phoneVariants(phone)[0] ?? phone)}`;
 
-async function record(clientId: string, provider: AppProvider, last: SyncState, links?: Record<string, Linked>) {
+// Apps sync in parallel and each result is a read-modify-write of the same setting, so writes for one business
+// queue up (otherwise one app's result overwrote another's).
+const recordQueue = new Map<string, Promise<unknown>>();
+function record(clientId: string, provider: AppProvider, last: SyncState, links?: Record<string, Linked>): Promise<void> {
+  const run = (recordQueue.get(clientId) ?? Promise.resolve()).catch(() => {}).then(() => recordNow(clientId, provider, last, links));
+  recordQueue.set(clientId, run);
+  const clear = () => { if (recordQueue.get(clientId) === run) recordQueue.delete(clientId); };
+  run.then(clear, clear);
+  return run;
+}
+
+async function recordNow(clientId: string, provider: AppProvider, last: SyncState, links?: Record<string, Linked>) {
   // Re-read just before writing so a key saved meanwhile isn't lost.
   const cur = ((await getSetting<Stored>(appsKey(clientId))) ?? {}) as Stored;
   if (!cur[provider]) return;

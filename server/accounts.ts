@@ -4,6 +4,7 @@ import { clientAccessOf, consoleOf } from "./answered";
 import { canUseAssistant } from "./assistant";
 import { applyInstallBrand, resolveBrand } from "./brand";
 import { audit } from "./audit";
+import { publicUrl } from "./booking";
 import { iso, sql } from "./db";
 import { purgeOrphanUsers } from "./deleteUsers";
 import { importLegacyData } from "./legacy";
@@ -73,8 +74,7 @@ export const hashPassword = (password: string) => Bun.password.hash(password, { 
 // ---- Base URL for links in emails ----
 
 export function appUrl(req: Request): string {
-  const fixed = (process.env.PUBLIC_URL ?? "").replace(/\/$/, "");
-  if (fixed) return fixed;
+  if (process.env.PUBLIC_URL) return publicUrl() || process.env.PUBLIC_URL.replace(/\/$/, "");
   // Development: the Vite page the person is using.
   const origin = req.headers.get("origin");
   return origin && /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin) ? origin : "http://localhost:5173";

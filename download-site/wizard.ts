@@ -690,7 +690,7 @@ ${nav(c, del, { back: false })}`;
   if (s.phase === "domain") {
     const temp = isDemo(c.b) ? `${base(c)}/open` : webUrl(rw.serviceDomain);
     return `${head(c, `${P(c)} is running`, `Use your temporary address now. ${esc(host)} starts working once its records are in.`)}
-<div class="live"><div class="dot">● Running</div><a class="url" href="${esc(temp)}" target="_blank" rel="noopener noreferrer">${esc(temp)}</a><p class="hint">Your temporary address. It keeps working after ${esc(host)} is ready.</p></div>
+<div class="live"><div class="dot">● Running</div><a class="url" href="${esc(isDemo(c.b) ? temp : dashboardLink(s, temp))}" target="_blank" rel="noopener noreferrer">${esc(temp)}</a><p class="hint">Your temporary address. It keeps working after ${esc(host)} is ready.</p></div>
 ${list}${recs}
 <p class="status"><span class="spin"></span>${rw.records?.every((r) => r.ok) ? "Railway is getting your security certificate. Usually a few minutes." : manual ? "Waiting for your records. Usually within 15 minutes." : "Waiting for DNS. Usually a minute or two."}</p>
 ${log}

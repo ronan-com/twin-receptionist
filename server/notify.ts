@@ -4,6 +4,7 @@ import { sendAccountEmail } from "./mailer";
 import { resolveBrand } from "./brand";
 import { orgOfClient } from "./store";
 import { isPublicHost } from "./net";
+import { publicUrl } from "./booking";
 import { ValidationError } from "./prompt";
 import { syncBooking, syncSummary, type SummaryPush } from "./appConnectors";
 
@@ -54,7 +55,7 @@ export async function brandedEmail(client: Business, to: string, subject: string
     const orgId = await orgOfClient(client.id);
     if (orgId) {
       const b = await resolveBrand(orgId, client.id);
-      const base = (process.env.PUBLIC_URL ?? "").replace(/\/$/, "");
+      const base = process.env.PUBLIC_URL ? publicUrl() || process.env.PUBLIC_URL.replace(/\/$/, "") : "";
       const colour = /^#[0-9a-f]{6}$/i.test(b.primaryColor ?? "") ? b.primaryColor! : "#111111";
       const logo = b.logo && base ? `<img src="${esc(base + b.logo)}" alt="" style="max-height:40px;max-width:200px;display:block;margin:0 0 10px">` : "";
       html = `<div style="font:15px/1.55 -apple-system,Segoe UI,Arial,sans-serif;color:#111;max-width:520px;margin:0 auto;padding:24px"><div style="border-top:4px solid ${colour};padding-top:16px">${logo}<div style="font-weight:600;color:${colour};margin-bottom:12px">${esc(client.settings.businessName)}</div>${lines.map((l) => (l ? `<p style="margin:0 0 8px;white-space:pre-wrap">${esc(l)}</p>` : "")).join("")}</div></div>`;

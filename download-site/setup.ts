@@ -1451,6 +1451,8 @@ export async function railwayVars(id: number, s: SetupData, token: string): Prom
     PRODUCT_NAME: s.brand!.productName,
     // Their own domain if they added one; otherwise Railway's own https address, which works straight away.
     PUBLIC_URL: hostOf(s) ? `https://${hostOf(s)}` : webUrl(s.rw?.serviceDomain),
+    // With their own domain: the Railway address that works from the start. The app uses it for phone/text hooks and email links until the domain answers.
+    ...(hostOf(s) && s.rw?.serviceDomain ? { FALLBACK_URL: webUrl(s.rw.serviceDomain) } : {}),
     FIRST_ADMIN_EMAIL: s.brand!.ownerEmail,
     ...firstRunSettings(id, s),
     ...phoneSettings(id, s),

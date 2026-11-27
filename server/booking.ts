@@ -23,8 +23,39 @@ const VALID_URL = /^https:\/\/[a-z0-9.-]+(:\d+)?$/i;
 const fixedUrl = (process.env.PUBLIC_URL ?? "").replace(/\/$/, "");
 let tunnelUrl = "";
 
+// A custom domain (PUBLIC_URL) only works once its DNS and certificate are live. Until then the app's own Railway
+// address (FALLBACK_URL, or the RAILWAY_PUBLIC_DOMAIN Railway sets) is the one that works, so phone and text hooks,
+// booking tools and email links use it; when the domain starts answering, they switch and everything is re-registered.
+const fallbackUrl = (() => {
+  const f = (process.env.FALLBACK_URL || (process.env.RAILWAY_PUBLIC_DOMAIN ? `https://${process.env.RAILWAY_PUBLIC_DOMAIN}` : "")).replace(/\/$/, "");
+  return VALID_URL.test(f) && f !== fixedUrl ? f : "";
+})();
+let fixedLive = !(fallbackUrl && VALID_URL.test(fixedUrl)); // true when there is nothing to wait for
+
+/** The address that works right now: the custom domain once it answers, else the Railway address. */
 export function publicUrl(): string {
-  return VALID_URL.test(fixedUrl) ? fixedUrl : tunnelUrl;
+  if (!VALID_URL.test(fixedUrl)) return tunnelUrl;
+  return fixedLive ? fixedUrl : fallbackUrl;
+}
+
+/** True while PUBLIC_URL (a custom domain) is set but not answering yet, so the Railway address is in use. */
+export const customDomainPending = () => !fixedLive;
+
+/** Does the custom domain answer as this app? */
+export async function probePublicUrl(timeoutMs = 6000): Promise<boolean> {
+  if (fixedLive) return true;
+  const ok = await fetch(`${fixedUrl}/api/health`, { signal: AbortSignal.timeout(timeoutMs), redirect: "manual" }).then((r) => r.ok).catch(() => false);
+  if (ok) fixedLive = true;
+  return ok;
+}
+
+/** While the custom domain isn't live: look every 30 seconds, and call onLive once when it starts answering. */
+export function watchPublicUrl(onLive: () => void, everyMs = 30_000): void {
+  if (fixedLive) return;
+  const t = setInterval(async () => {
+    if (await probePublicUrl()) { clearInterval(t); onLive(); }
+  }, everyMs);
+  (t as any).unref?.();
 }
 
 export async function loadPublicUrl(): Promise<void> {

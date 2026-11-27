@@ -93,6 +93,8 @@ import {
   bookingLive,
   callback,
   loadPublicUrl,
+  probePublicUrl,
+  watchPublicUrl,
   newToken,
   publicUrl,
   requestsFor,
@@ -1342,7 +1344,13 @@ await loadPublicUrl();
 await loadPlatformSettings();
 // The receptionists' booking tools call PUBLIC_URL. If it changed since the last
 // start (e.g. moving to the real domain), point Telnyx at the new address.
+// A custom domain that isn't live yet (DNS still pending) is not used: hooks point at the Railway address until it answers, then switch.
+await probePublicUrl().catch(() => false);
 if (process.env.PUBLIC_URL) syncAll().catch((err) => console.error("[startup sync]", err.message));
+watchPublicUrl(() => {
+  console.log("[public url] the custom domain answers now; re-registering hooks on it");
+  syncAll().catch((err) => console.error("[domain sync]", err.message));
+});
 
 const HOST = process.env.HOST ?? "127.0.0.1";
 

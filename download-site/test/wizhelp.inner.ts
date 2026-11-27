@@ -161,7 +161,7 @@ describe("the admin", () => {
     expect(view).toContain("do_token");
     expect(view).toContain("dana@acme.test");
     expect(view).toContain(`href="/admin/b/${acme.id}"`);
-    expect(view).toContain(`href="/admin/b/${acme.id}#assist"`);
+    expect(view).toContain(`href="/admin/b/${acme.id}?tab=setup#assist"`);
     expect(view).toContain("Set up for them");
     expect(view).not.toContain(TOKEN_VALUE);
   });

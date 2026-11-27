@@ -56,7 +56,7 @@ describe("top tabs", () => {
       const h = await r.text();
       expect(h).toContain('<nav class="atabs"');
       for (const t of ["Agencies", "Help tickets", "Alerts", "Releases", "Settings"]) expect(h).toContain(t);
-      expect(h).toMatch(new RegExp(`class="atab on" aria-current="page">${tab}`));
+      expect(h).toMatch(new RegExp(`class="atab t-\\w+ on" aria-current="page"><svg[^>]*>.*?</svg>${tab}`));
       expect(h).not.toMatch(/chloe/i);
     });
   }

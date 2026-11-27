@@ -285,14 +285,17 @@ const CSS = `<link rel="stylesheet" href="/tickets.css">`;
 export function ticketsListHtml(filter: Status | "all"): string {
   const counts = ticketCounts();
   const rows = listTickets(filter);
+  // "New" = open and nobody on our side has replied yet: these stand out and sit with the newest first.
+  const answered = new Set((db().query("SELECT DISTINCT ticket_id FROM ticket_messages WHERE author = 'support'").all() as { ticket_id: number }[]).map((r) => r.ticket_id));
+  const isNew = (r: TicketRow) => r.status === "open" && !answered.has(r.id);
+  rows.sort((a, b) => Number(isNew(b)) - Number(isNew(a)) || (a.last_at < b.last_at ? 1 : -1));
   const tab = (s: Status | "all", label: string, n: number) => `<a class="tab${s === filter ? " on" : ""}" href="/admin/tickets${s === "open" ? "" : `?status=${s}`}">${label} <span class="n">${n}</span></a>`;
   return `${CSS}<section class="card">
-<h1>Help tickets</h1>
-<p class="lead">Requests from agencies: from their own app (a reply shows up in their dashboard within a few minutes) and, marked <span class="pill in-setup">Setup</span>, from someone stuck in the setup wizard (a reply shows on their setup page).</p>
+<p class="lead">Requests from agencies: from their own app (a reply shows up in their dashboard within a few minutes) and, marked <span class="pill in-setup">Setup</span>, from someone who asked for a person in the setup wizard (a reply shows on their setup page). New ones are at the top.</p>
 <div class="tabs">${tab("open", "Open", counts.open)}${tab("waiting", "Waiting on agency", counts.waiting)}${tab("closed", "Closed", counts.closed)}${tab("all", "All", counts.open + counts.waiting + counts.closed)}</div>
-${rows.length ? `<div class="xscroll"><table class="records tickets"><thead><tr><th>Agency</th><th>Subject</th><th>From</th><th>Status</th><th>Age</th></tr></thead><tbody>${rows.map((r) => `<tr>
+${rows.length ? `<div class="xscroll"><table class="records tickets"><thead><tr><th>Agency</th><th>Subject</th><th>From</th><th>Status</th><th>Age</th></tr></thead><tbody>${rows.map((r) => `<tr${isNew(r) ? ' class="newrow"' : ""}>
 <td data-l="Agency"><a href="/admin/b/${r.buyer_id}"><b>${esc(r.agency)}</b></a></td>
-<td data-l="Subject"><a href="/admin/tickets/${r.id}">${esc(r.subject)}</a>${r.source === "wizard" ? ` <span class="pill in-setup" title="Asked for a person during setup">Setup</span>${wizardCtx(r).lastError ? `<br><span class="hint bad">${esc(wizardCtx(r).lastError!.slice(0, 140))}</span>` : ""}` : ""}</td>
+<td data-l="Subject">${isNew(r) ? `<span class="pill new">New</span> ` : ""}<a href="/admin/tickets/${r.id}">${esc(r.subject)}</a>${r.source === "wizard" ? ` <span class="pill in-setup" title="Asked for a person during setup">Setup${wizardCtx(r).stepLabel ? ` · ${esc(wizardCtx(r).stepLabel!)} step` : ""}</span>${wizardCtx(r).lastError ? `<br><span class="hint bad">${esc(wizardCtx(r).lastError!.slice(0, 140))}</span>` : ""}` : ""}</td>
 <td data-l="From">${esc(r.from_name)}</td>
 <td data-l="Status">${pill(r.status)}</td>
 <td data-l="Age" title="${esc(when(r.created_at))} UTC">${esc(ago(r.last_at))}</td></tr>`).join("")}</tbody></table></div>` : `<p class="hint">${filter === "open" ? "Nothing open. Nice." : "No tickets here."}</p>`}
@@ -315,7 +318,7 @@ ${flash}
 <div class="titlerow"><h1>${esc(t.subject)}</h1>${pill(t.status)}</div>
 <p class="lead">${buyer ? `<a href="/admin/b/${buyer.id}"><b>${esc(buyer.name)}</b></a>` : "A deleted agency"}${t.from_name ? ` · from ${esc(t.from_name)}` : ""} · opened ${esc(when(t.created_at))} UTC</p>
 <div class="summary">${ctxRows.filter(([, v]) => v).map(([k, v]) => `<div><span>${k}</span><b>${v}</b></div>`).join("")}</div>
-${buyer && wz ? `<div class="nav"><div class="right left"><a class="btn o" href="/admin/b/${buyer.id}">Agency page</a><a class="btn p" href="/admin/b/${buyer.id}#assist">Set up for them</a><a class="btn o" href="/admin/b/${buyer.id}/setup${wz.step ? `?step=${esc(wz.step)}` : ""}">See their step (read-only)</a></div></div>
+${buyer && wz ? `<div class="nav"><div class="right left"><a class="btn o" href="/admin/b/${buyer.id}">Agency page</a><a class="btn p" href="/admin/b/${buyer.id}?tab=setup#assist">Set up for them</a><a class="btn o" href="/admin/b/${buyer.id}/setup${wz.step ? `?step=${esc(wz.step)}` : ""}">See their step (read-only)</a></div></div>
 <p class="hint">Your reply shows on their setup page next time they load it. They asked from the setup wizard, so nothing is installed yet${wz.contactEmail ? `; you can also email them at ${esc(wz.contactEmail)}` : ""}.</p>` : ""}
 ${buyer && !wz ? `<p class="hint">On their agency page: <a href="/admin/b/${buyer.id}">health, problems and recent logs</a>, and "View as" while Support access is on (it is unless they switched it off).</p>` : ""}
 <div class="thread">${msgs.map((m) => `<div class="msg ${m.author}"><div class="who"><b>${m.author === "support" ? `You${m.author_name ? ` (${esc(m.author_name)})` : ""}` : esc(m.author_name || t.from_name || "Agency")}</b> <span class="hint">${esc(when(m.at))} UTC</span></div>

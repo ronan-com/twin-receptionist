@@ -9,7 +9,7 @@ test("sync: token auth, whitelist, rate limit, Sync now, View as, admin pages", 
   const p = Bun.spawn(["bun", "test", "./test/sync.inner.ts"], { cwd: join(import.meta.dir, ".."), stdout: "pipe", stderr: "pipe", env: { ...process.env, SYNC_INNER: "1" } });
   const [out, err, code] = await Promise.all([new Response(p.stdout).text(), new Response(p.stderr).text(), p.exited]);
   if (code !== 0) console.log((out + err).slice(-5000));
-  expect(out + err).toContain(" 14 pass");
+  expect(out + err).toContain(" 15 pass");
   expect(out + err).not.toMatch(/\b[1-9]\d* fail/);
   expect(code).toBe(0);
 }, 120_000);

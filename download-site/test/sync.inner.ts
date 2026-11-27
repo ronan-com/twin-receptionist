@@ -157,6 +157,20 @@ describe("calling the buyer's app", () => {
     expect(await sync.viewAsLink(b.id, APP, fake(200, { ok: true, url: `${APP}/api/support/in/${tok}" onclick="x` }))).toMatchObject({ ok: false });
     expect(await sync.viewAsLink(b.id, APP, fake(401, {}))).toMatchObject({ ok: false, reason: "refused" });
   });
+
+  test("View as a client: the businesses list (while access is on), and a link that carries the business id", async () => {
+    const b = addBuyer("Picker Buyer", "picker@example.com");
+    sync.newSyncToken(b.id);
+    const cid = "11111111-2222-4333-8444-555555555555";
+    const tok = "B".repeat(43);
+    const seenReq: any = {};
+    expect(await sync.fetchClients(b.id, APP, fake(200, { ok: true, clients: [{ id: cid, name: "Secret Plumbing" }, { id: "not-an-id", name: "x" }] }, seenReq))).toEqual({ ok: true, clients: [{ id: cid, name: "Secret Plumbing" }] });
+    expect(seenReq.url).toBe(`${APP}/api/support/clients`);
+    expect(await sync.fetchClients(b.id, APP, fake(403, { ok: false, error: "access_off" }))).toMatchObject({ ok: false, reason: "off" });
+    expect(await sync.fetchClients(b.id, APP, fake(404, {}))).toMatchObject({ ok: false, reason: "refused" });
+    expect(await sync.viewAsLink(b.id, APP, fake(200, { ok: true, url: `${APP}/api/support/in/${tok}` }), cid)).toEqual({ ok: true, url: `${APP}/api/support/in/${tok}?c=${cid}` });
+    expect(await sync.viewAsLink(b.id, APP, fake(200, { ok: true, url: `${APP}/api/support/in/${tok}` }), "junk")).toEqual({ ok: true, url: `${APP}/api/support/in/${tok}` });
+  });
 });
 
 // ---- the real server, and a pretend buyer's app ----

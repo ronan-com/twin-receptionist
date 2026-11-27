@@ -224,7 +224,7 @@ describe("the agencies list", () => {
     expect(html.slice(mainEnd)).toContain("Pretend Test Run");
     expect(html).toMatch(/<details>\s*<summary>Test runs \(1\)<\/summary>/);
     expect(html).not.toContain('name="kind"');
-    expect(html).toContain('aria-current="page">Agencies');
+    expect(html).toMatch(/aria-current="page"><svg[^>]*>.*?<\/svg>Agencies/);
     expect(html).not.toMatch(/>Buyers?</);
     // The aliases.
     expect((await fetch(`${SITE}/admin/agencies`, { headers: { cookie } })).status).toBe(200);

@@ -62,3 +62,24 @@ form.inl { margin-top: 10px; }
   .dz form .btn { width: 100%; }
   .atab { padding: 10px 10px; font-size: 14px; }
 }
+
+/* Round 2: a little colour. Each top tab has its own accent; icons are inline SVG. */
+.atab svg { color: var(--c, var(--muted)); flex: none; }
+.atab.t-agencies { --c: #4f46e5; } .atab.t-tickets { --c: #d97706; } .atab.t-alerts { --c: #e11d48; } .atab.t-releases { --c: #059669; } .atab.t-settings { --c: #475467; }
+.atab.on { color: var(--c); border-bottom-color: var(--c); }
+.atab.on .n { background: color-mix(in srgb, var(--c) 12%, #fff); color: var(--c); }
+/* New help tickets stand out. */
+.pill.new { background: #e11d48; color: #fff; }
+tr.newrow td { background: #fff7f7; }
+tr.newrow td:first-child { box-shadow: inset 3px 0 0 #e11d48; }
+/* "Set up for them": the first thing on the Setup steps tab. */
+.setupfor { border: 1px solid var(--indigo-line); background: var(--indigo-soft); }
+.setupfor.stuck { border-color: var(--amber-line); background: var(--amber-soft); }
+.sf-head { display: flex; gap: 14px; align-items: flex-start; }
+.sf-head h2 { margin: 0 0 2px; font-size: 18px; }
+.sf-head .hint { margin: 0; }
+.sf-ic { flex: none; width: 40px; height: 40px; border-radius: 12px; display: grid; place-items: center; background: var(--accent); color: #fff; }
+.sf-ic svg { width: 22px; height: 22px; }
+.setupfor.stuck .sf-ic { background: #d97706; }
+.counts div { border-top: 3px solid var(--indigo-line); }
+.dz b { display: flex; align-items: center; gap: 6px; }

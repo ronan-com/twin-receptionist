@@ -27,7 +27,7 @@ import { CONFIG, RAILWAY, addBuyer, currentPackage, humanSize, listPackages, db,
 import { esc } from "./pages";
 import { welcomeEmail } from "./content";
 import { agencyUrl, allow, appUrlOf, stepDone, updateInfo } from "./setup";
-import { ago, hasSyncToken, allSnapshots, deleteSyncData, dot, fetchLogs, history, latestSnapshot, logSupport, pushPending, requestPush, seen, supportLog, syncNow, viewAsLink, type Stored } from "./sync";
+import { ago, hasSyncToken, allSnapshots, deleteSyncData, dot, fetchLogs, fetchClients, history, latestSnapshot, logSupport, pushPending, requestPush, seen, supportLog, syncNow, viewAsLink, type Stored } from "./sync";
 import { alertHistory } from "./alerts";
 import { DEMO_READY } from "./demo";
 import { ALL_SECRETS, STEPS, getSetup, logRead, resetSetup, secretHint, type SetupData } from "./store";
@@ -152,13 +152,35 @@ function versionCell(b: Buyer, s: SetupData): string {
 }
 const invitedCell = (b: Buyer) => (b.invited_at ? `<span class="pill live">Invited ${esc(when(b.invited_at))}</span>` : `<span class="pill not-started">Not invited yet</span>`);
 const copyBtn = (v: string) => `<button type="button" class="copy" data-copy="${esc(v)}">Copy</button>`;
+/** Small line icons (inline SVG, so the strict CSP allows them). Colour comes from the tab's own class in admin.css. */
+const ICONS: Record<string, string> = {
+  users: '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>',
+  life: '<circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="4"/><path d="m4.93 4.93 4.24 4.24"/><path d="m14.83 9.17 4.24-4.24"/><path d="m14.83 14.83 4.24 4.24"/><path d="m9.17 14.83-4.24 4.24"/>',
+  bell: '<path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/>',
+  package: '<path d="m7.5 4.27 9 5.15"/><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="m3.3 7 8.7 5 8.7-5"/><path d="M12 22V12"/>',
+  sliders: '<line x1="21" x2="14" y1="4" y2="4"/><line x1="10" x2="3" y1="4" y2="4"/><line x1="21" x2="12" y1="12" y2="12"/><line x1="8" x2="3" y1="12" y2="12"/><line x1="21" x2="16" y1="20" y2="20"/><line x1="12" x2="3" y1="20" y2="20"/><line x1="14" x2="14" y1="2" y2="6"/><line x1="8" x2="8" y1="10" y2="14"/><line x1="16" x2="16" y1="18" y2="22"/>',
+  grid: '<rect width="7" height="9" x="3" y="3" rx="1"/><rect width="7" height="5" x="14" y="3" rx="1"/><rect width="7" height="9" x="14" y="12" rx="1"/><rect width="7" height="5" x="3" y="16" rx="1"/>',
+  steps: '<path d="m3 17 2 2 4-4"/><path d="m3 7 2 2 4-4"/><path d="M13 6h8"/><path d="M13 12h8"/><path d="M13 18h8"/>',
+  zap: '<path d="M4 14a1 1 0 0 1-.78-1.63l9.9-10.2a.5.5 0 0 1 .86.46l-1.92 6.02A1 1 0 0 0 13 10h7a1 1 0 0 1 .78 1.63l-9.9 10.2a.5.5 0 0 1-.86-.46l1.92-6.02A1 1 0 0 0 11 14z"/>',
+  alert: '<path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4"/><path d="M12 17h.01"/>',
+  eye: '<path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/>',
+  refresh: '<path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/>',
+  shield: '<path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/><path d="m9 12 2 2 4-4"/>',
+  check: '<circle cx="12" cy="12" r="10"/><path d="m9 12 2 2 4-4"/>',
+  clock: '<circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/>',
+  x: '<circle cx="12" cy="12" r="10"/><path d="m15 9-6 6"/><path d="m9 9 6 6"/>',
+  wifi: '<path d="M12 20h.01"/><path d="M2 8.82a15 15 0 0 1 20 0"/><path d="M5 12.86a10 10 0 0 1 14 0"/><path d="M8.5 16.43a5 5 0 0 1 7 0"/>',
+};
+const icon = (n: string) => `<svg class="i" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[n] || ""}</svg>`;
+
 type TopTab = "agencies" | "tickets" | "alerts" | "releases" | "settings";
 const recentAlerts = () => { const since = Date.now() - 24 * 3600_000; return alertHistory(200).filter((a) => Date.parse(a.at) >= since).length; };
 /** The top tabs: one link per section, each with its count. The two red badges keep the data-badge hooks admin-live.js updates. */
+const TAB_ICON: Record<TopTab, string> = { agencies: "users", tickets: "life", alerts: "bell", releases: "package", settings: "sliders" };
 function topTabs(active: TopTab): string {
   const help = needsHelp().size, open = openCount();
   const agencies = (db().query("SELECT COUNT(*) AS n FROM buyers WHERE demo IS NOT 1").get() as { n: number }).n;
-  const t = (key: TopTab, href: string, label: string, extra = "") => `<a href="${href}" class="atab${key === active ? " on" : ""}"${key === active ? ' aria-current="page"' : ""}>${label}${extra}</a>`;
+  const t = (key: TopTab, href: string, label: string, extra = "") => `<a href="${href}" class="atab t-${key}${key === active ? " on" : ""}"${key === active ? ' aria-current="page"' : ""}>${icon(TAB_ICON[key])}${label}${extra}</a>`;
   const n = (v: number) => ` <span class="n">${v}</span>`;
   return `<nav class="atabs" aria-label="Sections">${[
     t("agencies", "/admin", "Agencies", `${n(agencies)}${help ? ` <span class="badge" data-badge="help" title="${help} need${help === 1 ? "s" : ""} help with setup">${help}</span>` : ` <span class="badge" data-badge="help" hidden></span>`}`),
@@ -330,12 +352,15 @@ function supportSection(sid: string, b: Buyer, s: SetupData): string {
   const accessOff = !!x && !x.support.access;
   const log = supportLog(b.id, 8);
   return `<h2>Support tools</h2>
-<div class="summary"><div><span>Automatic updates</span><b>${esc(autoState(st).text || "Unknown")}${x ? ` · ${x.support.edit ? "support can make changes" : "support is read-only"}` : ""}</b></div></div>
+<div class="summary">
+<div><span>Support access</span><b>${!x ? "Unknown until we hear from them" : accessOff ? `<span class="pill failed">Off: the agency's choice</span>` : `<span class="pill live">On</span> ${x.support.accessUntil ? `until ${esc(when(x.support.accessUntil))} UTC` : "until they turn it off"}`}</b></div>
+<div><span>Automatic updates</span><b>${esc(autoState(st).text || "Unknown")}${x ? ` · ${x.support.edit ? "support can make changes" : "support is read-only"}` : ""}</b></div></div>
 <div class="nav"><div class="right left">
   ${act("sync", "Sync now", "btn o")}
   ${accessOff ? `<button class="btn o" type="button" disabled>View as</button>` : act("view-as", "View as", "btn p")}
   ${x && x.updates.available && x.updates.enabled ? (pushPending(b.id) ? `<button class="btn o" type="button" disabled title="They'll be asked on their next heartbeat (within 15 minutes)">Update requested</button>` : act("push-update", "Push update now", "btn o")) : `<button class="btn o" type="button" disabled title="${x ? (x.updates.available ? "The owner turned automatic updates off" : "This agency can't update itself: the agency presses Update on their setup link") : "Nothing heard yet"}">Push update now</button>`}
   ${accessOff ? `<button class="btn o" type="button" disabled>Fetch recent logs</button>` : act("logs", "Fetch recent logs", "btn o")}
+  ${accessOff ? `<button class="btn o" type="button" disabled>View as a client</button>` : act("clients", "View as a client", "btn o")}
 </div></div>
 ${accessOff ? `<p class="hint"><b>The agency has switched Support access off.</b> It's on by default; it's off now in their app (Settings, Support). Ask them to turn it back on, for 24 hours, 7 days or until they turn it off. "Sync now" refreshes this.</p>` : `<p class="hint">"View as" opens their dashboard as a support person, through a link that works once for 60 seconds: you can look, and ${x?.support.edit === false ? "can't make changes (the owner switched that off)" : "make changes unless the owner switches that off"}. Never their keys, billing or owner account. It only works while Support access is on, and their app records every sign-in and change in their audit log.</p>`}
 ${problemsPanel(b.id, st)}
@@ -395,9 +420,13 @@ ${b.revoked_at ? notice("info", `This link was turned off on ${esc(when(b.revoke
 ${healthOverview(b, s)}
 </section>`;
   } else if (tab === "setup") {
-    content = `<section class="card">
+    const stuck = help.has(b.id) || st === "failed";
+    content = `<section class="card setupfor${stuck ? " stuck" : ""}">
+<div class="sf-head"><span class="sf-ic">${icon("zap")}</span><div><h2>Set up for them</h2><p class="hint">${stuck ? "<b>They look stuck.</b> " : ""}Fill in their steps yourself, check their domain, or run the install. They're on <b>${esc(s.phase === "done" ? "Done" : s.step)}</b>${s.phase !== "idle" && s.phase !== "done" ? ` (${esc(s.phase)})` : ""}.</p></div></div>
+<div class="nav"><div class="right left"><a class="btn p" href="#assist">Jump to the forms</a><a class="btn o" href="${hn}/setup">Open their setup (read-only)</a></div></div>
+</section>
+<section class="card">
 <h2>Steps</h2><ul class="stages small">${steps}</ul>
-<p><a class="btn o" href="${hn}/setup">Open their setup (read-only)</a></p>
 <h2 class="sub">Keys we hold</h2>
 ${held.length ? `<ul class="keys">${held.map(([n, h]) => `<li><b>${esc(n)}</b> <code>${esc(h)}</code></li>`).join("")}</ul>` : `<p class="hint">${s.phase === "done" ? "None: every key was deleted when the install finished." : "None yet."}</p>`}
 ${assistPanel({ hiddenT, notice, copyBtn, when, page }, sid, b, s)}
@@ -737,7 +766,7 @@ ${mail}
     }
   }
 
-  m = path.match(/^\/admin\/b\/(\d{1,9})(?:\/(setup|revoke|restore|reset|delete|sync|view-as|push-update|logs))?$/);
+  m = path.match(/^\/admin\/b\/(\d{1,9})(?:\/(setup|revoke|restore|reset|delete|sync|view-as|push-update|logs|clients))?$/);
   if (m) {
     const b = buyerById(Number(m[1]));
     if (!b) return c.html(page("Not found", `<section class="card narrow"><h1>No such agency</h1><p><a href="/admin">← All agencies</a></p></section>`), 404);
@@ -785,6 +814,19 @@ ${mail}
 <p><a href="/admin/b/${b.id}">← Back to ${esc(b.name)}</a></p>
 </section>`, sess));
     }
+    if (what === "clients") {
+      const wait = allow(`support:${sess.email}`, 60, 60 * 60_000);
+      if (wait) return c.redirect(`/admin/b/${b.id}?tab=support&m=bad`);
+      const r = await fetchClients(b.id, appUrlOf(getSetup(b.id)));
+      logSupport(b.id, sess.email, "list-clients", r.ok ? `${r.clients.length} businesses` : `refused: ${r.reason}`);
+      if (!r.ok) return c.redirect(`/admin/b/${b.id}?tab=support&m=view-${r.reason}`);
+      return c.html(page("View as a client", `<section class="card">
+<h1>View as a client of ${esc(b.name)}</h1>
+<p class="lead">Their businesses, read live from their app (not kept here). "View as" opens that business's dashboard as a support person, through a link that works once for 60 seconds.</p>
+${r.clients.length ? `<div class="xscroll"><table class="records"><thead><tr><th>Business</th><th></th></tr></thead><tbody>${r.clients.map((cl) => `<tr><td data-l="Business">${esc(cl.name || "(no name yet)")}</td><td data-l=""><form method="post" action="/admin/b/${b.id}/view-as">${hiddenT(sess.sid)}<input type="hidden" name="client" value="${esc(cl.id)}"><button class="btn p" type="submit">View as</button></form></td></tr>`).join("")}</tbody></table></div>` : `<p class="hint">They have no businesses yet.</p>`}
+<p><a href="/admin/b/${b.id}?tab=support">← Back to ${esc(b.name)}</a></p>
+</section>`, sess));
+    }
     if (what === "sync" || what === "view-as") {
       const url = appUrlOf(getSetup(b.id));
       const wait = allow(`support:${sess.email}`, 60, 60 * 60_000);
@@ -794,12 +836,12 @@ ${mail}
         logSupport(b.id, sess.email, "sync-now", r.ok ? "ok" : r.reason);
         return c.redirect(`/admin/b/${b.id}?tab=support&m=${r.ok ? "sync-ok" : `sync-${r.reason}`}`);
       }
-      const r = await viewAsLink(b.id, url);
+      const r = await viewAsLink(b.id, url, fetch, String(f.client || ""));
       logSupport(b.id, sess.email, "view-as", r.ok ? "link issued" : `refused: ${r.reason}`);
       if (!r.ok) return c.redirect(`/admin/b/${b.id}?tab=support&m=view-${r.reason}`);
       // A page with a link, not a redirect: the site's form-action rule keeps forms from sending the browser elsewhere.
       return c.html(page("View as", `<section class="card narrow">
-<h1>Open ${esc(b.name)}'s dashboard</h1>
+<h1>Open ${esc(b.name)}'s dashboard${f.client ? " (one client)" : ""}</h1>
 <p class="lead">This link works once and runs out in 60 seconds. It opens their dashboard as a support person who can view and, if the agency allows changes (on unless they switched it off), edit. Never their keys, billing or owner account. Their app records the sign-in and every change in their audit log.</p>
 <p><a class="btn p" href="${esc(r.url)}" target="_blank" rel="noopener noreferrer">Open their dashboard</a></p>
 <p><a href="/admin/b/${b.id}">← Back to ${esc(b.name)}</a></p>

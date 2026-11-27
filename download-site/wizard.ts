@@ -6,12 +6,12 @@ import { CONFIG, RAILWAY, type Buyer, type Style } from "./lib";
 import { DEMO, demoSample, isDemo } from "./demo";
 import { esc } from "./pages";
 import { howTo } from "./content";
-import { chatBubble, chatHead } from "./chat";
+import { CHAT_MAX_MESSAGE, chatBubble, chatEnabled, chatHead } from "./chat";
 import { oauthEnabled, type OAuthProvider } from "./oauth";
 import { brokerOn, offered } from "./broker";
 import { PHONE_LATER, agencyUrl, canView, dashboardLink, firstOpen, hostOf, locked, oauthRedirect, phoneSkipped, stepDone, updateInfo, webUrl, zoneOf } from "./setup";
 import { detailOf, hasAssist, helpedStep, stepRows, type AssistId } from "./assist";
-import { personHelpHtml } from "./wizhelp";
+import { personFormHtml, personHelpHtml } from "./wizhelp";
 import { DEFAULT_REGION, DEFAULT_SIZE, RAILWAY_PLAN_UNKNOWN_MSG, RAILWAY_TRIAL_MSG } from "./providers";
 import { OPTIONAL_HUB, STEPS, csrfToken, isOptional, logRead, secretHint, type DnsRecord, type SetupData, type StepId } from "./store";
 
@@ -39,7 +39,32 @@ const I: Record<string, string> = {
   info: '<circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/>',
 };
 const icon = (n: string, cls = "i") => `<svg class="${cls}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${I[n]}</svg>`;
-const bars = `<svg viewBox="0 0 26 18" aria-hidden="true"><g fill="none" stroke-width="2.2" stroke-linecap="round"><path stroke="#635bff" d="M2 13v3"/><path stroke="#7c6bff" d="M6 10v6"/><path stroke="#a78bfa" d="M10 5v11"/><path stroke="#ff5caa" d="M14 2v14"/><path stroke="#ff7a59" d="M18 8v8"/><path stroke="#ffb03d" d="M22 12v4"/></g></svg>`;
+
+/**
+ * Provider logos: small simple marks drawn inline (no files, no hotlinks), in each provider's own colour. They are our own
+ * simplified drawings, not the providers' artwork; paths use presentation attributes only, so they are safe under the page's CSP.
+ */
+const svgOf = (inner: string) => `<svg viewBox="0 0 32 32" aria-hidden="true">${inner}</svg>`;
+const LOGO: Record<string, string> = {
+  // Telnyx: green tile, a rounded lowercase "t"
+  telnyx: svgOf('<rect width="32" height="32" rx="9" fill="#00c08b"/><path d="M13.2 7.5v12.2c0 2.2 1.5 3.6 3.6 3.6h2.4M8.8 12.4h10.4" stroke="#fff" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round" fill="none"/><circle cx="23.2" cy="9.2" r="1.9" fill="#0b3d2f"/>'),
+  // Vapi: near-black tile, a mint "V" inside a ring
+  vapi: svgOf('<rect width="32" height="32" rx="9" fill="#0b1512"/><circle cx="16" cy="16" r="10.4" stroke="#5dfeca" stroke-width="1.6" fill="none" opacity=".55"/><path d="M10.2 11.4l5.8 10.4 5.8-10.4" stroke="#5dfeca" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round" fill="none"/>'),
+  // OpenRouter: two crossing arrows
+  openrouter: svgOf('<rect width="32" height="32" rx="9" fill="#6366f1"/><path d="M6.5 11.2h5.4c4.4 0 5.2 9.6 9.6 9.6h3.2M6.5 20.8h5.4c4.4 0 5.2-9.6 9.6-9.6h3.2" stroke="#fff" stroke-width="2.4" stroke-linecap="round" fill="none"/><path d="M22.6 17.6l3.1 3.2-3.1 3.2M22.6 8l3.1 3.2-3.1 3.2" stroke="#fff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" fill="none"/>'),
+  // Railway: dark tile, curved rails with sleepers
+  railway: svgOf('<rect width="32" height="32" rx="9" fill="#13111c"/><path d="M6.5 19.5C7 12.3 12.2 7.2 19.5 6.7M10.3 25.4c.4-5.2 4.2-9.1 9.4-9.6M16.6 26.2c.3-2.7 2-4.5 4.7-4.9" stroke="#fff" stroke-width="2.4" stroke-linecap="round" fill="none"/><path d="M22.5 8.5l5 5M18.5 14.2l5.2 5.2" stroke="#a78bfa" stroke-width="2.4" stroke-linecap="round"/>'),
+  // Resend: black tile, an "R"
+  resend: svgOf('<rect width="32" height="32" rx="9" fill="#0a0a0a"/><path d="M11.2 24V8.4h6.2c3.3 0 5.2 1.7 5.2 4.3 0 2.6-1.9 4.3-5.2 4.3h-6.2M17 17l5.6 7" stroke="#fff" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round" fill="none"/>'),
+  // Twilio: red circle, ring and four dots
+  twilio: svgOf('<circle cx="16" cy="16" r="16" fill="#f22f46"/><circle cx="16" cy="16" r="8.6" fill="none" stroke="#fff" stroke-width="2.2"/><circle cx="12.7" cy="12.7" r="2" fill="#fff"/><circle cx="19.3" cy="12.7" r="2" fill="#fff"/><circle cx="12.7" cy="19.3" r="2" fill="#fff"/><circle cx="19.3" cy="19.3" r="2" fill="#fff"/>'),
+  domain: svgOf('<rect width="32" height="32" rx="9" fill="#0ea5e9"/><circle cx="16" cy="16" r="8" stroke="#fff" stroke-width="2.2" fill="none"/><path d="M8 16h16M16 8c3.2 2.6 3.2 13.4 0 16M16 8c-3.2 2.6-3.2 13.4 0 16" stroke="#fff" stroke-width="2" stroke-linecap="round" fill="none"/>'),
+};
+/** A provider's logo as a tile: "sm" inline, "big" at the top of a step. */
+const plogo = (p: string, size: "sm" | "big" | "rail" = "sm") => `<span class="pl ${size}">${LOGO[p] || ""}</span>`;
+/** The generic mark next to the agency name: the buyer's own logo once they've added one, else a plain neutral one. */
+const GENERIC_MARK = svgOf('<rect width="32" height="32" rx="9" fill="#101828"/><path d="M9 17v-2M13 20v-8M17 23V9M21 19v-6M25 17v-2" stroke="#fff" stroke-width="2.4" stroke-linecap="round" fill="none"/>');
+const markLogo = (logo?: string) => (logo && /^data:image\/png;base64,[A-Za-z0-9+/]+={0,2}$/.test(logo) ? `<img class="mlogo" src="${esc(logo)}" alt="" width="28" height="28">` : `<span class="mlogo">${GENERIC_MARK}</span>`);
 
 const META: Record<StepId, { title: string; short: string; icon: string; hue: string }> = {
   welcome: { title: "Welcome", short: "", icon: "sparkles", hue: "indigo" },
@@ -51,14 +76,25 @@ const META: Record<StepId, { title: string; short: string; icon: string; hue: st
   ai: { title: "AI", short: "OpenRouter", icon: "sparkles", hue: "indigo" },
   email: { title: "Email", short: "Optional", icon: "mail", hue: "green" },
   calendars: { title: "Calendars", short: "Optional", icon: "calendar", hue: "magenta" },
-  extras: { title: "Extras", short: "Optional, skip any", icon: "sparkles", hue: "cyan" },
+  extras: { title: "Connect more", short: "Optional", icon: "sparkles", hue: "cyan" },
   vapi: { title: "Vapi", short: "Backup option", icon: "phone", hue: "coral" },
-  twilio: { title: "Twilio", short: "Backup option", icon: "phone", hue: "coral" },
+  twilio: { title: "Twilio", short: "Optional", icon: "phone", hue: "coral" },
   install: { title: "Install", short: RAILWAY ? "About 10 min" : "About 15 min", icon: "rocket", hue: "violet" },
   done: { title: "Live", short: "", icon: "party", hue: "green" },
 };
 
-interface Ctx { b: Buyer; s: SetupData; code: string; sid: string; view: StepId; flash?: SetupData["flash"] }
+/** The colour key of a step (its provider's colour); the page's `acc-<key>` classes in wizard.css carry the actual colours. */
+function stepKey(s: SetupData, id: StepId, opt = ""): string {
+  if (id === "phones") return opt === "vapi" || (s.vapi?.confirmed && !s.phones?.confirmed) ? "vapi" : "telnyx";
+  return ({ welcome: "violet", brand: "pink", railway: "railway", ai: "openrouter", extras: "more", email: "resend", domain: "domain", calendars: "pink", twilio: "twilio", vapi: "vapi", server: "violet", install: "orange", done: "green" } as Record<string, string>)[id] || "violet";
+}
+/** The logo shown for a step in the step list: its provider's mark where it has one, else a coloured icon tile. */
+function stepMark(s: SetupData, id: StepId): string {
+  const logo = id === "phones" ? (stepKey(s, id) === "vapi" ? "vapi" : "telnyx") : ({ railway: "railway", ai: "openrouter", email: "resend", twilio: "twilio", domain: "domain", vapi: "vapi" } as Record<string, string>)[id];
+  return logo ? plogo(logo, "rail") : `<span class="pl rail tile">${icon(META[id].icon)}</span>`;
+}
+
+interface Ctx { b: Buyer; s: SetupData; code: string; sid: string; view: StepId; flash?: SetupData["flash"]; /** Voice step: which provider card was opened (?opt=telnyx|vapi). */ opt?: string }
 const base = (c: Ctx) => `/setup/${esc(c.code)}`;
 const hidden = (c: Ctx) => `<input type="hidden" name="t" value="${esc(csrfToken(c.sid, c.code))}"><input type="hidden" name="v" value="${c.view}">`;
 /** The step's main form. Its primary button lives in the nav, via form="main". */
@@ -93,10 +129,15 @@ function showMeHow(ids: string[]) {
   return `<details class="how" data-title="${esc(ids.length > 1 ? "Show me how" : howTo(ids[0]).title)}"><summary>Show me how</summary><div class="howbox">${parts}<p><a class="more-link" href="/guide#${esc(ids[0])}" target="_blank" rel="noopener">Open the full guide ${icon("ext")}</a></p></div></details>`;
 }
 
-function head(c: Ctx, title: string, lead: string) {
+function head(c: Ctx, title: string, lead: string, prov?: string) {
   const m = META[c.view];
-  return `<div class="ico ${m.hue}">${icon(m.icon)}</div><h1>${title}</h1>${lead ? `<p class="lead">${lead}</p>` : ""}`;
+  const mark = prov ? plogo(prov, "big") : `<span class="pl big tile">${icon(m.icon)}</span>`;
+  return `<div class="band">${mark}<div class="bt"><h1>${title}</h1>${lead ? `<p class="lead">${lead}</p>` : ""}</div></div>`;
 }
+/** The big button that opens the provider's own page where the key is made (new tab, so the wizard stays put). */
+const openBtn = (prov: string, href: string, label: string) => `<p><a class="btn p big prov" data-prov="${prov}" href="${esc(href)}" target="_blank" rel="noopener noreferrer">${plogo(prov)}<span>${label}</span>${icon("ext")}</a></p>`;
+/** Two or three short numbered steps (one line each). */
+const mini3 = (steps: string[]) => `<ol class="mini3">${steps.map((x) => `<li>${x}</li>`).join("")}</ol>`;
 function nav(c: Ctx, right: string, opts: { back?: boolean } = {}) {
   const i = STEPS.indexOf(c.view);
   // An optional step goes back to the extras screen; the others to the step before, skipping optional ones.
@@ -112,15 +153,20 @@ const P = (c: Ctx) => esc(c.s.brand?.productName || NEUTRAL);
 
 // ======================= screens =======================
 function welcome(c: Ctx) {
-  return `${head(c, "Set up your agency", RAILWAY ? "Four short steps. About 10 minutes." : "A few short steps. About 20 minutes.")}
-<ul class="needs"><li><b>${RAILWAY ? "Hosting" : "Server"}</b><span>${RAILWAY ? "Railway" : "DigitalOcean"}</span></li><li><b>Voice</b><span>Telnyx</span></li><li><b>AI</b><span>OpenRouter</span></li></ul>
-<p class="hint">Everything stays yours. Close the page any time: this link picks up where you left off.</p>
+  const rows = RAILWAY
+    ? `<li>${plogo("railway")}<b>Hosting</b><span>Railway</span></li><li>${plogo("telnyx")}<b>Voice</b><span>Telnyx or Vapi</span></li><li>${plogo("openrouter")}<b>AI</b><span>OpenRouter</span></li>`
+    : `<li><b>Server</b><span>DigitalOcean</span></li><li>${plogo("telnyx")}<b>Voice</b><span>Telnyx</span></li><li>${plogo("openrouter")}<b>AI</b><span>OpenRouter</span></li>`;
+  return `${head(c, "Set up your agency", RAILWAY ? "About 10 minutes. Close the page any time: your link remembers where you were." : "A few short steps. About 20 minutes.")}
+<ul class="needs">${rows}</ul>
+<p class="hint">Everything stays yours.</p>
 ${mainForm(c, "start", "")}
 ${nav(c, primary("Start"), { back: false })}`;
 }
 
 function brand(c: Ctx) {
   const br = c.s.brand;
+  const cols = br?.colours?.length ? br.colours : br?.colour ? [br.colour] : [];
+  const theme = br?.theme || "light";
   return `${head(c, "Your brand", "")}
 <div class="body">${mainForm(c, "brand", `
   <label class="f" for="productName">Name</label>
@@ -133,7 +179,15 @@ function brand(c: Ctx) {
   <input type="hidden" id="removeLogo" name="removeLogo" value="">
   <p class="hint" id="logoNote">${br?.logo ? "Logo added. Pick another to replace it." : ""}</p>
   <p class="logoRow"><img id="logoPreview" alt="Your logo" width="96"${br?.logo ? ` src="${esc(br.logo)}"` : " hidden"}> <button type="button" class="linkbtn" id="logoRemove"${br?.logo ? "" : " hidden"}>Remove logo</button></p>
-  <label class="f" for="colour">Colour</label><input id="colour" name="colour" type="color" value="${esc(br?.colour || "#4f46e5")}">`)}</div>
+  <label class="f" for="colour">Brand colours <span class="tag">1 to 3</span></label>
+  <div class="colours">
+    <label class="cpick" for="colour"><input id="colour" name="colour" type="color" value="${esc(cols[0] || "#4f46e5")}" aria-label="Main colour"><span>Main</span></label>
+    <label class="cpick" for="colour2"><input id="colour2" name="colour2" type="color" value="${esc(cols[1] || "#0ea5e9")}" aria-label="Second colour"><span class="ctick"><input type="checkbox" name="colour2on" value="1"${cols[1] ? " checked" : ""}> Second</span></label>
+    <label class="cpick" for="colour3"><input id="colour3" name="colour3" type="color" value="${esc(cols[2] || "#f59e0b")}" aria-label="Third colour"><span class="ctick"><input type="checkbox" name="colour3on" value="1"${cols[2] ? " checked" : ""}> Third</span></label>
+  </div>
+  <label class="f">Look</label>
+  <div class="choice looks"><label class="opt"><input type="radio" name="theme" value="light"${theme === "light" ? " checked" : ""}><b>Light</b></label><label class="opt"><input type="radio" name="theme" value="dark"${theme === "dark" ? " checked" : ""}><b>Dark</b></label></div>
+  <p class="hint">You can change the colours and the look later in your dashboard.</p>`)}</div>
 ${nav(c, primary("Continue"))}`;
 }
 
@@ -183,19 +237,27 @@ const okRow = (text: string) => `<div class="okrow">${icon("check")}<b>${text}</
 
 function railwayStep(c: Ctx) {
   const saved = secretHint(c.b.id, "railway_token");
+  // "Connected" is what's really stored: the saved flag AND the token itself (a purged or replaced one must not still say connected).
   const on = !!c.s.railway?.confirmed && hasS(c, "railway_token");
-  const form = `<form id="main" method="post" action="${base(c)}/a/railway">${hidden(c)}
-  ${secretIn("token", "Railway token", saved, "Railway token")}
-  <p class="hint">Create it with <b>No workspace</b>. Your Railway account needs the <b>Hobby plan</b>, US$5 a month with a card. Railway's free trial can set things up and try them, but it stops after 30 days or when its US$5 credit runs out; the Free plan can't run an agency.</p>
-  ${showMeHow(["railway-token"])}
-  <p><button class="btn o" type="submit">Check token</button></p></form>`;
-  return `${head(c, "Hosting", "Your agency runs on your own Railway account.")}
-<div class="body">${on ? okRow(`Railway connected${c.s.railway?.workspaceName ? ` · ${esc(c.s.railway.workspaceName)}` : ""}`) : ""}
-${on && c.s.railway?.trial ? notice("warn", `<b>You're on Railway's free trial.</b> ${esc(RAILWAY_TRIAL_MSG.replace(/^Your Railway account is on its free trial\. /, ""))} After upgrading, connect again here. Or continue to just try it.`) : ""}
-${on && c.s.railway?.planUnknown ? notice("warn", esc(RAILWAY_PLAN_UNKNOWN_MSG)) : ""}
-${oauthBtn(c, "railway", on ? "Login with Railway again" : "Login with Railway")}
-${pasteBox(c, "railway", form, !oauthEnabled("railway"))}</div>
-${nav(c, on ? mini(c, "railway-continue", `Continue ${icon("right")}`, "btn p") : "")}`;
+  const form = (id: string, button: string) => `<form id="${id}" method="post" action="${base(c)}/a/railway">${hidden(c)}
+  ${secretIn("token", "Paste your Railway token", saved, "Railway token")}
+  ${button}</form>`;
+  const create = `${openBtn("railway", "https://railway.com/account/tokens", "Open Railway and create your token")}
+${mini3(["Sign in to Railway.", "Name the token, leave <b>No workspace</b>, press <b>Create</b>.", "Copy the token and paste it below."])}`;
+  const plan = `<p class="hint">Needs the <b>Hobby plan</b> on Railway (US$5 a month, with a card). The free trial can set things up but stops after 30 days.</p>`;
+  const signIn = oauthEnabled("railway") ? `<p class="hint"><a data-oauth="railway" href="${base(c)}/oauth/railway">Or connect with your Railway sign-in</a></p>` : "";
+  if (on) {
+    return `${head(c, "Hosting", "", "railway")}
+<div class="body">${okRow(`Railway connected${c.s.railway?.workspaceName ? ` · ${esc(c.s.railway.workspaceName)}` : ""}`)}
+${c.s.railway?.trial ? notice("warn", `<b>You're on Railway's free trial.</b> ${esc(RAILWAY_TRIAL_MSG.replace(/^Your Railway account is on its free trial\. /, ""))} After upgrading, connect again here. Or continue to just try it.`) : ""}
+${c.s.railway?.planUnknown ? notice("warn", esc(RAILWAY_PLAN_UNKNOWN_MSG)) : ""}
+<details class="alt"${c.flash?.kind === "err" ? " open" : ""}><summary>Use a different token</summary>${create}${form("swap", `<p><button class="btn o" type="submit">Check token</button></p>`)}</details></div>
+${nav(c, mini(c, "railway-continue", `Continue ${icon("right")}`, "btn p"))}`;
+  }
+  return `${head(c, "Connect Railway", "Your agency runs in your own Railway account.", "railway")}
+<div class="body">${create}
+${form("main", `${plan}${showMeHow(["railway-token"])}`)}${signIn}</div>
+${nav(c, primary("Check and continue"))}`;
 }
 const hasS = (c: Ctx, n: Parameters<typeof secretHint>[1]) => !!secretHint(c.b.id, n) || c.b.demo === 1 || c.s.phase !== "idle";
 
@@ -302,9 +364,10 @@ ${nav(c, `${mini(c, "vapi-skip", "Skip", "linkbtn")}${primary("Check and continu
 }
 
 function twilio(c: Ctx) {
-  return `${head(c, "Connect Twilio numbers", "A backup option. Buy Australian numbers on your own Twilio account, or use ones you already have, and send follow-up texts from them. It works with the Vapi backup option. You can also add it later under Connections.")}
-<div class="body">${mainForm(c, "twilio", `
-  <label class="f" for="twilioSid">Twilio Account SID <span class="tag">Optional</span></label><input id="twilioSid" name="twilioSid" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" maxlength="60" placeholder="AC..." value="${val(c, "twilioSid", c.s.twilio?.sid || c.s.phones?.twilioSid || "")}">
+  return `${head(c, "Connect Twilio", RAILWAY ? "Australian numbers and follow-up texts, on your own Twilio account." : "A backup option. Buy Australian numbers on your own Twilio account, or use ones you already have, and send follow-up texts from them. It works with the Vapi backup option. You can also add it later under Connections.", RAILWAY ? "twilio" : undefined)}
+<div class="body">${RAILWAY ? `${openBtn("twilio", "https://console.twilio.com/", "Open Twilio and copy your two details")}
+${mini3(["Sign in to Twilio.", "On the Console home page, find <b>Account Info</b>.", "Copy the <b>Account SID</b> and <b>Auth Token</b> and paste them below."])}` : ""}${mainForm(c, "twilio", `
+  <label class="f" for="twilioSid">Twilio Account SID${RAILWAY ? "" : ` <span class="tag">Optional</span>`}</label><input id="twilioSid" name="twilioSid" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" maxlength="60" placeholder="AC..." value="${val(c, "twilioSid", c.s.twilio?.sid || c.s.phones?.twilioSid || "")}">
   ${secretIn("twilioToken", "Auth Token", secretHint(c.b.id, "twilio_token"), "Twilio Auth Token")}`)}</div>
 ${nav(c, `${mini(c, "twilio-skip", "Skip", "linkbtn")}${primary("Check and continue")}`)}`;
 }
@@ -408,23 +471,84 @@ ${nav(c, `<a class="btn o" href="${base(c)}?step=domain">Add my domain</a>${prim
 ${nav(c, `${mini(c, "cal-skip", "Skip for now")}${primary("Check and continue")}`)}`;
 }
 
-// ---------------- AI (OpenRouter) ----------------
-function aiStep(c: Ctx) {
-  const on = !!c.s.ai?.confirmed;
-  const form = `<form id="main" method="post" action="${base(c)}/a/ai">${hidden(c)}
-  ${secretIn("key", "sk-or-...", secretHint(c.b.id, "openrouter_key"), "OpenRouter key")}
-  ${showMeHow(["openrouter-key"])}
-  <p><button class="btn o" type="submit">Check key</button></p></form>`;
-  return `${head(c, "AI", "OpenRouter powers your receptionists' thinking.")}
-<div class="body">${on ? okRow("OpenRouter connected") : ""}
-${oauthBtn(c, "openrouter", on ? "Sign in with OpenRouter again" : "Sign in with OpenRouter")}
-${pasteBox(c, "openrouter", form, !oauthEnabled("openrouter"))}
-<p class="hint tip">Tip: turn on auto top-up at Railway, Telnyx and OpenRouter, so calls never stop.</p></div>
-${nav(c, on ? mini(c, "ai-continue", `Continue ${icon("right")}`, "btn p") : "")}`;
+/** Voice, Railway: Telnyx, Vapi or Skip. One provider card at a time, each with a button straight to where its key is made. */
+function phonesRailway(c: Ctx) {
+  const s = c.s;
+  const tel = !!s.phones?.confirmed && hasS(c, "telnyx_key");
+  const vap = !!s.vapi?.confirmed && hasS(c, "vapi_key");
+  if (tel || vap) {
+    const nums = s.phones?.numbers || [];
+    return `${head(c, "Voice", "", tel ? "telnyx" : "vapi")}
+<div class="body">${tel ? okRow(`Telnyx connected${s.phones?.balance ? ` · ${esc(s.phones.balance)}` : ""}`) : ""}${vap ? okRow("Vapi connected") : ""}
+${tel ? `<div class="nums"><h3>Your numbers</h3>${nums.length ? `<ul>${nums.map((n) => `<li>${esc(n)}</li>`).join("")}</ul>` : `<p class="hint">No numbers on this account yet. Add them later.</p>`}</div>` : ""}
+<p class="hint">${mini(c, "phones-reset", "Choose a different provider", "linkbtn")}</p></div>
+${nav(c, mini(c, "phones-continue", `Continue ${icon("right")}`, "btn p"))}`;
+  }
+  const opt = c.opt === "telnyx" || c.opt === "vapi" ? c.opt : "";
+  const optField = `<input type="hidden" name="opt" value="${opt}">`;
+  const swap = `<p class="hint"><a href="${base(c)}?step=phones">Choose a different provider</a></p>`;
+  if (opt === "telnyx") {
+    return `${head(c, "Connect Telnyx", "Telnyx carries your calls.", "telnyx")}
+<div class="body">${openBtn("telnyx", "https://portal.telnyx.com/#/app/api-keys", "Open Telnyx and create your key")}
+${mini3(["Sign in. The account must be upgraded and have credit.", "Press <b>Create API Key</b>.", "Copy the key (it starts with <code>KEY</code>) and paste it below."])}
+<form id="main" method="post" action="${base(c)}/a/phones">${hidden(c)}${optField}
+  ${secretIn("key", "KEY...", secretHint(c.b.id, "telnyx_key"), "Telnyx API key")}
+  ${showMeHow(["telnyx-account", "telnyx-api-key"])}</form>
+${swap}</div>
+${nav(c, primary("Check key"))}`;
+  }
+  if (opt === "vapi") {
+    return `${head(c, "Connect Vapi", "Vapi runs your receptionists' voices.", "vapi")}
+<div class="body">${openBtn("vapi", "https://dashboard.vapi.ai/org/api-keys", "Open Vapi and copy your two keys")}
+${mini3(["Sign in to Vapi and add some credit.", "Copy the <b>Private</b> key and the <b>Public</b> key.", "Paste both below."])}
+<form id="main" method="post" action="${base(c)}/a/phones-vapi">${hidden(c)}${optField}
+  ${secretIn("vapiKey", "Private key", secretHint(c.b.id, "vapi_key"), "Vapi private key")}
+  <label class="f" for="vapiPublic">Vapi public key</label><input id="vapiPublic" name="vapiPublic" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" maxlength="300" placeholder="Public key" value="${esc(c.flash?.form?.vapiPublic ?? "")}">
+  ${showMeHow(["vapi-account"])}</form>
+${swap}</div>
+${nav(c, primary("Check keys"))}`;
+  }
+  return `${head(c, "Voice", "Choose who carries your calls.")}
+<div class="body"><div class="vchoice">
+  <a class="vc telnyx" href="${base(c)}?step=phones&amp;opt=telnyx">${plogo("telnyx")}<span><b>Telnyx</b><small>Phone numbers and calls. Recommended.</small></span></a>
+  <a class="vc vapi" href="${base(c)}?step=phones&amp;opt=vapi">${plogo("vapi")}<span><b>Vapi</b><small>Use your own Vapi account.</small></span></a>
+  <form method="post" action="${base(c)}/a/phones-skip">${hidden(c)}<button class="vc skip" type="submit" data-skip-phones><span><b>Skip for now</b><small>Connect it later in your dashboard.</small></span></button></form>
+</div>
+${phoneSkipped(s) ? phoneLaterNote(c) : ""}</div>
+${nav(c, "")}`;
 }
 
-// ---------------- optional extras (Railway) ----------------
-/** What the buyer has added so far, for the extras screen and the Done screen. */
+// ---------------- AI (OpenRouter) ----------------
+function aiStep(c: Ctx) {
+  const hint = secretHint(c.b.id, "openrouter_key");
+  const on = !!c.s.ai?.confirmed && hasS(c, "openrouter_key");
+  const create = `${openBtn("openrouter", "https://openrouter.ai/settings/keys", "Open OpenRouter and create a key")}
+${mini3(["Sign in and add a few dollars of credit.", "Press <b>Create Key</b>.", "Copy the key (it starts with <code>sk-or-</code>) and paste it below."])}`;
+  const form = (id: string, button: string) => `<form id="${id}" method="post" action="${base(c)}/a/ai">${hidden(c)}
+  ${secretIn("key", "sk-or-...", hint, "OpenRouter key")}
+  ${showMeHow(["openrouter-key"])}${button}</form>`;
+  const tip = "";
+  if (on) {
+    return `${head(c, "AI", "", "openrouter")}
+<div class="body">${okRow(`OpenRouter connected${hint ? ` · ${esc(hint)}` : ""}`)}
+<details class="alt"${c.flash?.kind === "err" ? " open" : ""}><summary>Use a different key</summary>${oauthEnabled("openrouter") ? `<p><a class="btn o big oauth" data-oauth="openrouter" href="${base(c)}/oauth/openrouter">Sign in with OpenRouter again</a></p>` : ""}${create}${form("swap", `<p><button class="btn o" type="submit">Check key</button></p>`)}</details>
+${tip}</div>
+${nav(c, mini(c, "ai-continue", `Continue ${icon("right")}`, "btn p"))}`;
+  }
+  if (oauthEnabled("openrouter")) {
+    return `${head(c, "Connect OpenRouter", "It powers your receptionists' thinking.", "openrouter")}
+<div class="body"><p><a class="btn p big oauth prov" data-prov="openrouter" data-oauth="openrouter" href="${base(c)}/oauth/openrouter">${plogo("openrouter")}<span>Sign in with OpenRouter</span></a></p>
+<details class="alt"${c.flash?.kind === "err" ? " open" : ""}><summary>Or paste a key</summary>${create}${form("main", `<p><button class="btn o" type="submit">Check key</button></p>`)}</details>
+${tip}</div>
+${nav(c, "")}`;
+  }
+  return `${head(c, "Connect OpenRouter", "It powers your receptionists' thinking.", "openrouter")}
+<div class="body">${create}${form("main", "")}${tip}</div>
+${nav(c, primary("Check and continue"))}`;
+}
+
+// ---------------- Connect more (optional) ----------------
+/** What the buyer has added so far, for the Connect more screen and the Done screen. */
 const extrasState = (s: SetupData) => ({
   email: !!s.email?.confirmed,
   domain: !!s.domain?.host && !!s.domain.confirmed,
@@ -435,21 +559,21 @@ const extrasState = (s: SetupData) => ({
 
 function extras(c: Ctx) {
   const have = extrasState(c.s);
-  const card = (key: "email" | "domain" | "calendars", title: string, ico: string, text: string, step: StepId, skipAction: string) => {
+  const card = (key: "email" | "domain" | "calendars" | "twilio", logo: string, title: string, text: string, step: StepId, skipAction: string) => {
     const added = have[key];
-    return `<div class="xcard${added ? " added" : ""}"><div class="xh">${icon(ico)}<b>${title}</b><span class="tag">Optional</span></div><p>${text}</p>
+    return `<div class="xcard${added ? " added" : ""}" data-card="${key}"><div class="xh">${logo}<b>${title}</b></div><p>${text}</p>
   <div class="xa">${added ? `<span class="st f">${icon("check")} Added</span><a class="btn o" href="${base(c)}?step=${step}">Change</a>`
-      : `<a class="btn o" href="${base(c)}?step=${step}">Add now</a>${mini(c, skipAction, "Skip for now", "linkbtn")}${c.s.skipped?.[key] ? `<span class="st w">Skipped: add it later</span>` : ""}`}</div></div>`;
+      : `<a class="btn o" href="${base(c)}?step=${step}">Add</a>${c.s.skipped?.[key] ? `<span class="st w">Skipped: add it later</span>` : mini(c, skipAction, "Skip", "linkbtn")}`}</div></div>`;
   };
-  return `${head(c, "Optional extras", `You can install without any of these. ${P(c)} works as soon as it's installed, at the https address Railway gives it. Add any of these now, or later.`)}
+  return `${head(c, "Connect more", `All optional. ${P(c)} works without them: skip any now and add them later in your dashboard.`)}
 <div class="xcards">
-${card("email", "Your own email", "mail", "Invites and notices sent from your address through Resend. Without it, invite links show on screen for you to copy and send yourself.", "email", "email-skip")}
-${card("domain", "Your own web address", "globe", "Use app.yourbusiness.com instead of the Railway address. We add the records for you with Cloudflare, or show you each one.", "domain", "domain-skip")}
-${card("calendars", "Calendar booking", "calendar", "Let receptionists book into Google or Outlook calendars. Needs your own web address.", "calendars", "cal-skip")}
+${card("email", plogo("resend"), "Your own email", "Send invites and notices from your own address.", "email", "email-skip")}
+${card("domain", plogo("domain"), "Your own web address", "Use app.yourbusiness.com instead of the Railway address.", "domain", "domain-skip")}
+${card("calendars", `<span class="pl sm cal">${icon("calendar")}</span>`, "Calendars", "Let receptionists book into Google or Outlook calendars.", "calendars", "cal-skip")}
+${card("twilio", plogo("twilio"), "Twilio", "Australian numbers and follow-up texts, on your own Twilio account.", "twilio", "twilio-skip")}
 </div>
-${c.s.phones?.confirmed || c.s.vapi?.confirmed ? "" : phoneSkipped(c.s) ? phoneLaterNote(c) : `${notice("warn", `You haven't connected a phone account yet. <a href="${base(c)}?step=phones">Go back to Phones</a> and add your Telnyx key (or Vapi + Twilio), or skip it for now and connect it later in your dashboard.`)}${skipPhones(c)}`}
 ${mainForm(c, "extras-continue", "")}
-${nav(c, primary(have.email || have.domain || have.calendars || have.vapi || have.twilio ? "Continue to install" : "Skip all and continue"))}`;
+${nav(c, primary(have.email || have.domain || have.calendars || have.twilio ? "Continue to install" : "Skip all and continue"))}`;
 }
 
 // ---------------- install ----------------
@@ -526,7 +650,7 @@ function installRailway(c: Ctx) {
   if (s.phase === "idle") {
     const rows: [string, string][] = [
       ["Address", host ? esc(host) : "Your Railway address (ready as soon as it's built)"], ["Hosting", `Railway${s.railway?.workspaceName ? ` · ${esc(s.railway.workspaceName)}` : ""} · from US$5/mo`],
-      ["Phones", phonesSummary(c)], ["AI", secretHint(c.b.id, "openrouter_key") ? `OpenRouter ${esc(secretHint(c.b.id, "openrouter_key") || "")}` : "Add later"], ["Email", s.email?.from ? esc(s.email.from) : "Add later"],
+      ["Voice", phonesSummary(c)], ["AI", secretHint(c.b.id, "openrouter_key") ? `OpenRouter ${esc(secretHint(c.b.id, "openrouter_key") || "")}` : "Add later"], ["Email", s.email?.from ? esc(s.email.from) : "Add later"],
       ...(host ? [["DNS", manual ? "You add two records" : "Handled by the wizard"] as [string, string]] : [["Own domain", "Add later"] as [string, string]]),
     ];
     return `${head(c, "Ready to install", `We'll set up ${P(c)} in your Railway account. You can close the page while it runs.`)}
@@ -597,9 +721,8 @@ function done(c: Ctx) {
   ${note(s.sshKeyAdded ? `Log in to the server with your SSH key: <code>ssh root@${esc(s.ip || "")}</code>` : "Server login: DigitalOcean emailed you its root password, or use the droplet's Console.")}
 </div>
 ${lockedOut(c)}
-${notice("info", `We've deleted every key you gave us${s.assist?.keepDns ? " except the DNS access noted above" : ""}. We have no login to your server or accounts. Your agency shares health and usage counts and a short, masked list of recent problems with us (never calls or customer details). Sharing and Support access (which lets us sign in and, unless you say no, fix things for you, but never see your keys, billing or owner account) are both on by default so we can help you fast. You can switch each one off in your dashboard, under Settings: Support. Automatic updates are not available on a DigitalOcean server yet.`)}
 <details class="log"><summary>Show details</summary><pre id="log" data-next="${next}">${esc(text.slice(-60000))}</pre></details>
-${nav(c, `<a class="btn p" href="${esc(dashboardLink(s, url))}" target="_blank" rel="noopener noreferrer">Open your dashboard ${icon("ext")}</a>${sourceLink(c)}`, { back: false })}`;
+${nav(c, `<a class="btn p big" href="${esc(dashboardLink(s, url))}" target="_blank" rel="noopener noreferrer">Open your dashboard ${icon("ext")}</a>${sourceLink(c)}`, { back: false })}`;
 }
 
 /** Done screen: for owners with no email set up (or who simply forgot). Asks their agency for a one-time reset link; the answer comes back on screen only. */
@@ -607,35 +730,6 @@ function lockedOut(c: Ctx): string {
   return `<details class="lockedout"><summary>Locked out? Reset your owner password</summary>
 <p class="hint">If you can't sign in and the reset email never arrives (email may not be set up), press the button. Your agency gives us a one-time link to choose a new password for the owner account (<b>${esc(c.s.brand?.ownerEmail || "your owner email")}</b>). It works once and runs out in 15 minutes. Nobody else's password can be reset this way, and your agency records it in its audit log.</p>
 ${mini(c, "owner-reset", `Reset your owner password ${icon("right")}`, "btn o", " data-owner-reset")}</details>`;
-}
-
-/** Done screen: what's still optional, each as three short steps (their same setup link keeps showing this). */
-function laterCards(c: Ctx, url: string): string {
-  const s = c.s, have = extrasState(s);
-  const where = esc(url.replace(/^https?:\/\//, ""));
-  const cards: string[] = [];
-  const late = (ico: string, title: string, steps: string[], card = "") =>
-    `<div class="xcard late"${card ? ` data-card="${card}"` : ""}><div class="xh">${icon(ico)}<b>${title}</b></div><details><summary>How</summary><ol>${steps.map((x) => `<li>${x}</li>`).join("")}</ol></details></div>`;
-  if (phoneSkipped(s)) cards.push(late("phone", "Voice provider", [
-    "Open your dashboard, then <b>Connections</b>.",
-    "Press <b>Connect your key</b> and paste your Telnyx key.",
-  ], "phone-later"));
-  if (!have.domain) cards.push(late("globe", "Your own domain", [
-    `In Railway open the <b>app</b> service, then <b>Settings</b>, then <b>Networking</b>.`,
-    "Add <code>app.yourbusiness.com</code> and the records Railway shows.",
-    "Set <code>PUBLIC_URL</code> in <b>Variables</b> to the new address.",
-  ]));
-  if (!have.email) cards.push(late("mail", "Email sender", [
-    "Open your dashboard, then <b>Settings</b>, then <b>Email and calendars</b>.",
-    "Paste your mail server address and the From address.",
-    "Press <b>Send a test</b>.",
-  ]));
-  if (!have.calendars) cards.push(late("calendar", "Calendars", [
-    `Make a Google or Microsoft app. Redirect: <code>${esc(url)}/api/oauth/google/callback</code>.`,
-    "Open your dashboard, then <b>Settings</b>, then <b>Email and calendars</b>.",
-    "Paste the client ID and secret.",
-  ]));
-  return cards.length ? `<h3 class="extras-head">Later</h3><p class="hint">Your agency works now at ${where}. Add these when you like.</p><div class="xcards">${cards.join("")}</div>` : "";
 }
 
 // ---------------- Update your agency (after Done) ----------------
@@ -698,7 +792,7 @@ ${nav(c, "", { back: false })}`;
 const todo = (key: string, html: string) => `<div class="todo" data-todo="${key}"><button type="button" class="tick" role="checkbox" aria-checked="false" aria-label="Mark as done"></button><span>${html}</span></div>`;
 const note = (html: string) => `<div>${icon("info")}<span>${html}</span></div>`;
 
-/** The "Before you go" line about the DNS login used for the domain. */
+/** The one to-do left on the Done screen: the DNS login (Cloudflare / GoDaddy) given for the domain. */
 function dnsCheck(s: SetupData): string {
   const m = s.domain?.mode;
   if (m !== "cloudflare" && m !== "godaddy") return "";
@@ -723,32 +817,23 @@ ${nav(c, `<a class="btn p" href="${base(c)}/open">Open your dashboard ${icon("ex
   const s = c.s;
   const url = s.resultUrl || agencyUrl(s);
   const temp = s.tempUrl || "";
-  const own = !!hostOf(s);
   const pending = !!s.domainPending;
   const shown = pending && temp ? temp : url;
-  const have = extrasState(s);
   const { text, next } = logRead(c.b.id);
   return `${head(c, "Your agency is live", "")}
 <div class="live"><div class="dot">● Live</div><a class="url" href="${esc(shown)}" target="_blank" rel="noopener noreferrer">${esc(shown)}</a>
-${pending ? `<p class="hint">Your temporary address. <b>${esc(hostOf(s))}</b> starts working by itself once the records below are in.</p>` : !own ? `<p class="hint">This is your agency's address from Railway. Bookmark it. You can add your own domain later.</p>` : temp ? `<p class="hint">Also at your Railway address: <a href="${esc(temp)}" target="_blank" rel="noopener noreferrer">${esc(temp.replace(/^https?:\/\//, ""))}</a></p>` : ""}
+${pending ? `<p class="hint">Your temporary address. <b>${esc(hostOf(s))}</b> starts working by itself once the records below are in.</p>` : ""}
 <p class="hint">Your owner account (<b>${esc(s.brand?.ownerEmail || "your owner email")}</b>) is ready. Open your dashboard below to get in. You can choose a password in Settings.</p></div>
 ${updateBanner(c)}
 ${phoneSkipped(s) ? phoneLaterNote(c) : ""}
+${dnsCheck(s) ? `<div class="checks">${dnsCheck(s)}</div>` : ""}
 ${pending && s.finishRecords?.length ? `<div class="recbox"><b>Records for ${esc(hostOf(s))}</b>${recordTable(s.finishRecords, true)}</div>` : ""}
-<div class="checks"><b>Before you go</b>
-  ${todo("railway", `${s.railway?.via === "oauth" ? "Revoke our access in Railway." : "Delete your Railway token."} <a href="https://railway.com/account/tokens" target="_blank" rel="noopener noreferrer">Open Railway</a>`)}
-  ${dnsCheck(s)}
-  ${todo("backups", "Turn on backups for the database in Railway.")}
-</div>
 ${lockedOut(c)}
-${laterCards(c, shown)}
-<p class="hint tip">Tip: turn on auto top-up at Railway, Telnyx and OpenRouter.</p>
-${notice("info", `We deleted the keys you gave us${s.assist?.keepDns ? " except the DNS access noted above" : ""} and have no login to your accounts. Your agency shares health counts with us (never calls or customer details). Switch it off in Settings, Support.`)}
 <details class="log"><summary>Show details</summary><pre id="log" data-next="${next}">${esc(text.slice(-60000))}</pre></details>
-${nav(c, `<a class="btn p" href="${esc(dashboardLink(s, shown))}" target="_blank" rel="noopener noreferrer">Open your dashboard ${icon("ext")}</a>${sourceLink(c)}`, { back: false })}`;
+${nav(c, `<a class="btn p big" href="${esc(dashboardLink(s, shown))}" target="_blank" rel="noopener noreferrer">Open your dashboard ${icon("ext")}</a>${sourceLink(c)}`, { back: false })}`;
 }
 
-const SCREENS: Record<StepId, (c: Ctx) => string> = { welcome, brand, railway: railwayStep, domain: domainStep, server, phones, ai: aiStep, email, calendars, extras, vapi, twilio, install, done };
+const SCREENS: Record<StepId, (c: Ctx) => string> = { welcome, brand, railway: railwayStep, domain: domainStep, server, phones: RAILWAY ? phonesRailway : phones, ai: aiStep, email, calendars, extras, vapi, twilio, install, done };
 
 export function statusRev(c: { b: Buyer; s: SetupData }): string {
   const s = c.s;
@@ -764,16 +849,44 @@ const isLive = (c: Ctx) =>
   (c.view === "domain" && !!c.s.domain?.cf?.zoneId && !!c.s.domain.cf.status && c.s.domain.cf.status !== "active") ||
   (c.view === "email" && !!c.s.email?.resend?.domainId && c.s.email.resend.status !== "verified");
 
+
+// ---------------- the step helper (a friendly card on every step) ----------------
+/** What the helper says on each step (one or two short lines) and the questions it offers. The ask box uses the same help chat as the "Need help?" button. */
+const HELP: Record<string, { say: string; chips: string[] }> = {
+  welcome: { say: "Hi! I'll guide you through. It takes about 10 minutes. Press Start.", chips: ["What do I need?", "What will it cost?"] },
+  brand: { say: "Pick your name, colours and look. You can change them later.", chips: ["Can I change this later?", "What logo works best?"] },
+  railway: { say: "Open Railway, make a token, paste it here.", chips: ["Where do I find my Railway token?", "What is No workspace?", "What is the Hobby plan?"] },
+  phones: { say: "Telnyx is the easy pick. Vapi works too. Or skip and do it later.", chips: ["Telnyx or Vapi?", "Can I skip this?"] },
+  "phones:telnyx": { say: "Open Telnyx, create an API key, paste it here.", chips: ["How do I get my Telnyx key?", "Why upgrade my Telnyx account?"] },
+  "phones:vapi": { say: "Copy both keys from Vapi and paste them here.", chips: ["Which two Vapi keys?", "Where do I add Vapi credit?"] },
+  ai: { say: "Sign in with OpenRouter, or paste a key.", chips: ["What is OpenRouter?", "How much credit do I need?"] },
+  extras: { say: "All optional. Skip any and add them later.", chips: ["What does my own email do?", "Do I need my own domain?"] },
+  email: { say: "Paste a Resend key to send from your own address.", chips: ["How do I get a Resend key?", "Can I skip email?"] },
+  domain: { say: "Type your domain. We show you what to add.", chips: ["Do I need a domain?", "Where do I add the records?"] },
+  calendars: { say: "Connect Google or Outlook so receptionists can book.", chips: ["Do I need this now?", "Where do the keys come from?"] },
+  twilio: { say: "Paste your Twilio Account SID and Auth Token.", chips: ["Where are my Twilio details?", "Do I need Twilio?"] },
+  install: { say: "Press Install. It takes about 10 minutes, and you can close the page.", chips: ["How long does it take?", "What if it fails?"] },
+  done: { say: "You're live! Open your dashboard.", chips: ["What do I do first?"] },
+};
+const HELPER_FACE = `<svg viewBox="0 0 48 48" aria-hidden="true"><defs><linearGradient id="hg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#8b5cf6"/><stop offset="1" stop-color="#ec4899"/></linearGradient></defs><circle cx="24" cy="24" r="24" fill="url(#hg)"/><rect x="11" y="15" width="26" height="20" rx="8" fill="#fff"/><circle cx="19" cy="25" r="2.6" fill="#4c1d95"/><circle cx="29" cy="25" r="2.6" fill="#4c1d95"/><path d="M20 30.4c2.4 1.6 5.6 1.6 8 0" stroke="#4c1d95" stroke-width="1.8" stroke-linecap="round" fill="none"/><path d="M24 15v-4" stroke="#fff" stroke-width="2.4" stroke-linecap="round"/><circle cx="24" cy="9.6" r="2.4" fill="#fde68a"/></svg>`;
+function helperCard(c: Ctx): string {
+  const key = c.view === "phones" && (c.opt === "telnyx" || c.opt === "vapi") && !c.s.phones?.confirmed && !c.s.vapi?.confirmed ? `phones:${c.opt}` : c.view;
+  const h = HELP[key] || HELP[c.view] || HELP.welcome;
+  const on = chatEnabled();
+  return `<aside class="helper" id="helper" data-url="${base(c)}/chat" data-t="${esc(csrfToken(c.sid, c.code))}" data-view="${c.view}" data-max="${CHAT_MAX_MESSAGE}"><details open><summary><span class="hav">${HELPER_FACE}</span><span class="hname"><b>Setup helper</b><small>Here to help</small></span></summary>
+<div class="hbody"><p class="hsay">${esc(h.say)}</p>${on ? `<div class="hchips" hidden>${h.chips.map((q) => `<button type="button" class="hchip" data-q="${esc(q)}">${esc(q)}</button>`).join("")}</div><div class="hlog" aria-live="polite"></div>
+<form class="hform"><label class="chat-sr" for="hq">Ask the helper</label><textarea id="hq" rows="2" maxlength="${CHAT_MAX_MESSAGE}" placeholder="Ask me anything" autocomplete="off"></textarea><button type="submit" class="hsend">Ask</button></form>
+<p class="hnote">Please don't paste keys here.</p>` : ""}</div></details></aside>`;
+}
+
 /** The steps shown in the rail: optional ones only while you're on them (they hang off the extras step). */
 const railSteps = (view: StepId) => STEPS.filter((id) => !isOptional(id) || id === view);
 function rail(c: Ctx) {
-  return `<aside class="rail"><h2>Set up ${esc(c.s.brand?.productName || "your agency")}</h2><ol>${railSteps(c.view).map((id, i) => {
-    const m = META[id];
+  return `<aside class="rail"><h2>Set up ${esc(c.s.brand?.productName || "your agency")}</h2><ol>${railSteps(c.view).map((id) => {
     const isDone = stepDone(c.b, c.s, id) && id !== c.view && id !== "done";
     const can = canView(c.b, c.s, id) && id !== c.view && !(c.s.phase === "done" && id !== "done");
-    const by = id === "phones" && phoneSkipped(c.s) ? PHONE_LATER : isDone && helpedStep(c.s, id) ? "Done by your provider" : m.short;
-    const inner = `<b>${isDone ? icon("check") : i + 1}</b><span><span class="t">${m.title}</span><span class="s">${by}</span></span>`;
-    return `<li class="${id === c.view ? "on" : isDone ? "done" : ""}">${can ? `<a href="/setup/${esc(c.code)}?step=${id}">${inner}</a>` : `<span>${inner}</span>`}</li>`;
+    const inner = `<b class="ri">${stepMark(c.s, id)}${isDone ? `<i class="ck">${icon("check")}</i>` : ""}</b><span><span class="t">${META[id].title}</span></span>`;
+    return `<li class="acc-${stepKey(c.s, id, id === c.view ? c.opt : "")} ${id === c.view ? "on" : isDone ? "done" : ""}">${can ? `<a href="/setup/${esc(c.code)}?step=${id}">${inner}</a>` : `<span>${inner}</span>`}</li>`;
   }).join("")}</ol></aside>`;
 }
 
@@ -792,7 +905,7 @@ function helped(c: Ctx): string {
   const change = locked(c.s) ? "" : mini(c, "assist-release", "Change", "btn o", "", `<input type="hidden" name="step" value="${esc(id)}">`);
   return `${head(c, `${META[c.view].title}: set up by your provider`, "Your provider already did this step for you, so there's nothing to do here.")}
 <div class="summary"><div><span>Set up</span><b>${esc(detailOf(c.b, c.s, id)) || "Done"}</b></div>${who ? `<div><span>When</span><b>${esc(who.at.slice(0, 10))}</b></div>` : ""}</div>
-${notice("info", "Your keys for this step were checked and stored the same way yours would be, and they're deleted once your install is done.")}
+${notice("info", "Your keys for this step were checked and stored the same way yours would be.")}
 ${nav(c, `${change}<a class="btn p" href="${base(c)}?step=${next}">${next === "done" ? "See your agency" : "Continue"} ${icon("right")}</a>`)}`;
 }
 
@@ -820,11 +933,13 @@ function screenOf(c: Ctx): string {
  * The wizard page. It is generic: it never shows our name. The title and placeholders use "your agency" until the buyer
  * names their brand, and the /guide page it links to is generic too.
  */
-export function wizardPage(b: Buyer, s: SetupData, code: string, sid: string, view: StepId, flash?: SetupData["flash"]) {
-  return wizardHtml(b, s, code, sid, view, flash);
+export function wizardPage(b: Buyer, s: SetupData, code: string, sid: string, view: StepId, flash?: SetupData["flash"], opt = "") {
+  return wizardHtml(b, s, code, sid, view, flash, opt);
 }
-function wizardHtml(b: Buyer, s: SetupData, code: string, sid: string, view: StepId, flash?: SetupData["flash"]) {
-  const c: Ctx = { b, s, code, sid, view, flash };
+/** The colour a step takes (its provider's): buttons, the active step in the list and the progress bar pick it up. Everything else stays white. */
+function wizardHtml(b: Buyer, s: SetupData, code: string, sid: string, view: StepId, flash?: SetupData["flash"], opt = "") {
+  const c: Ctx = { b, s, code, sid, view, flash, opt };
+  const acc = stepKey(s, view, opt);
   const live = isLive(c);
   const mainSteps = STEPS.filter((id) => !isOptional(id));
   const i = isOptional(view) ? mainSteps.indexOf(OPTIONAL_HUB) : mainSteps.indexOf(view);
@@ -851,18 +966,19 @@ ${live ? `<noscript><meta http-equiv="refresh" content="8"></noscript>` : ""}
 </head>
 <body>
 <div class="ribbon" aria-hidden="true"></div>
-<header class="top"><a class="mark" href="/setup/${esc(code)}">${bars}<span>${esc(s.brand?.productName || "Your agency")}</span></a>
-<nav><a href="/guide" target="_blank" rel="noopener">Full guide</a>${CONFIG.supportEmail ? `<a href="mailto:${esc(CONFIG.supportEmail)}">Help</a>` : ""}</nav></header>
-<div class="shell wiz" data-status="/setup/${esc(code)}/status" data-rev="${statusRev(c)}"${live ? ' data-live="1"' : ""}>
+<header class="top"><a class="mark" href="/setup/${esc(code)}">${markLogo(s.brand?.logo)}<span>${esc(s.brand?.productName || "Your agency")}</span></a>
+<nav><a href="/guide" target="_blank" rel="noopener">Full guide</a><a href="#person">Talk to a person</a></nav></header>
+<div class="shell wiz acc-${acc}" data-status="/setup/${esc(code)}/status" data-rev="${statusRev(c)}"${live ? ' data-live="1"' : ""}>
 ${rail(c)}
 <main>
   <div class="phonebar"><div class="lab"><span>Step ${i + 1} of ${mainSteps.length}</span><b>${META[view].title}</b></div><progress class="bar" max="${mainSteps.length}" value="${i + 1}">${i + 1} of ${mainSteps.length}</progress></div>
   <section class="card step-${view}">${b.demo === 1 ? notice("info", "<b>Test run.</b> Every account here is pretend: press Continue on each step. Nothing real is connected.") : ""}${assistNote(c)}${lockNote}${(flLink ? fl + flLink + screenOf(c) : withFlash(screenOf(c), fl))}</section>
   ${personHelpHtml(b, s, code, hidden(c))}
-  <p class="foot">${icon("shield")} Your keys are stored encrypted and deleted once your install is done.</p>
+  <p class="foot">${icon("shield")} Your keys are stored encrypted.</p>
 </main>
+${helperCard(c)}
 </div>
-${chatBubble({ url: `/setup/${code}/chat`, t: csrfToken(sid, code), view })}
+${chatBubble({ url: `/setup/${code}/chat`, t: csrfToken(sid, code), view, person: personFormHtml(b, s, code, hidden(c), "chat") })}
 </body>
 </html>`;
 }
@@ -886,11 +1002,11 @@ export function startShell(_style: Style, title: string, inner: string): string 
 </head>
 <body>
 <div class="ribbon" aria-hidden="true"></div>
-<header class="top"><span class="mark"><span>Your AI receptionist agency</span></span>
+<header class="top"><span class="mark">${markLogo()}<span>Your AI receptionist agency</span></span>
 <nav>${CONFIG.supportEmail ? `<a href="mailto:${esc(CONFIG.supportEmail)}">Help</a>` : ""}</nav></header>
 <div class="shell wiz admshell"><main>
   <section class="card">${inner}</section>
-  <p class="foot">Your keys are stored encrypted and deleted once your install is done.</p>
+  <p class="foot">Your keys are stored encrypted.</p>
 </main></div>
 </body>
 </html>`;

@@ -99,8 +99,24 @@ export function wizardHelpRequest(b: Buyer, s: SetupData, f: Record<string, stri
 // ---------------- what the buyer sees (never our product name: "we" and "support" only) ----------------
 const when = (iso: string) => new Date(iso).toISOString().slice(0, 16).replace("T", " ") + " UTC";
 
+/** The ask-a-person form itself (fields: problem, contact, phone). `id` keeps the field ids unique when it appears twice on a page (the chat panel and the box at the bottom). */
+export function personFormHtml(b: Buyer, s: SetupData, code: string, hidden: string, id = "person"): string {
+  const t = wizardTicketOf(b.id);
+  const email = s.brand?.ownerEmail || b.email;
+  return `<form method="post" action="/setup/${esc(code)}/a/help-request" class="person-form">${hidden}
+  <p class="hint">Stuck? Tell us what's wrong and a real person will help. ${t && t.status !== "closed" ? "This adds to your open request." : "We'll see it straight away."}</p>
+  <label class="f" for="${id}-problem">What's the problem?</label>
+  <textarea id="${id}-problem" name="problem" rows="3" required maxlength="${MAX_PROBLEM}" placeholder="e.g. The Railway token keeps saying it's not valid"></textarea>
+  <label class="f" for="${id}-contact">Best way to reach you</label>
+  <input id="${id}-contact" name="contact" type="email" maxlength="200" autocomplete="email" value="${esc(email)}">
+  <input id="${id}-phone" name="phone" type="tel" maxlength="40" autocomplete="tel" placeholder="Phone (optional)" aria-label="Phone (optional)">
+  <p class="hint">Please don't paste keys or tokens here.</p>
+  <div class="nav"><span></span><div class="right"><button class="btn p" type="submit">Send to our team</button></div></div>
+</form>`;
+}
+
 /**
- * The "I need a person" box at the bottom of every step: a collapsed form (works without script), and their open
+ * The "Talk to a person" box at the bottom of every step: a collapsed form (works without script), and their open
  * request with our replies when there is one. `hidden` is the step's CSRF + view fields.
  */
 export function personHelpHtml(b: Buyer, s: SetupData, code: string, hidden: string): string {
@@ -110,18 +126,8 @@ export function personHelpHtml(b: Buyer, s: SetupData, code: string, hidden: str
   const thread = t ? `<div class="person-req" id="person-request"><div class="person-head"><b>Your help request</b> <span class="pill ${t.status === "closed" ? "live" : t.status === "waiting" ? "installing" : "in-setup"}">${t.status === "closed" ? "Closed" : t.status === "waiting" ? "We replied" : "We've got it"}</span></div>
 ${msgs.map((m) => `<div class="person-msg ${m.author === "support" ? "us" : "me"}"><div class="who"><b>${m.author === "support" ? esc(us) : "You"}</b> <span>${esc(when(m.at))}</span></div><div class="text">${esc(m.body)}</div></div>`).join("")}
 ${t.status === "open" ? `<p class="hint">We'll get back to you shortly. Our reply shows here when you reload the page.</p>` : ""}</div>` : "";
-  const email = s.brand?.ownerEmail || b.email;
-  return `<div class="person" id="person">${thread}<details class="person-ask"><summary>I need a person</summary>
-<form method="post" action="/setup/${esc(code)}/a/help-request" class="person-form">${hidden}
-  <p class="hint">Stuck? Tell us what's wrong and a real person will help. ${t && t.status !== "closed" ? "This adds to your open request." : "We'll see it straight away."}</p>
-  <label class="f" for="person-problem">What's the problem?</label>
-  <textarea id="person-problem" name="problem" rows="3" required maxlength="${MAX_PROBLEM}" placeholder="e.g. The Railway token keeps saying it's not valid"></textarea>
-  <label class="f" for="person-contact">Best way to reach you</label>
-  <input id="person-contact" name="contact" type="email" maxlength="200" autocomplete="email" value="${esc(email)}">
-  <input id="person-phone" name="phone" type="tel" maxlength="40" autocomplete="tel" placeholder="Phone (optional)" aria-label="Phone (optional)">
-  <p class="hint">Please don't paste keys or tokens here.</p>
-  <div class="nav"><span></span><div class="right"><button class="btn p" type="submit">Ask a person</button></div></div>
-</form></details></div>`;
+  // No button of its own: the header's "Talk to a person" (#person) and the help panel's tab open it. :target shows the form without script.
+  return `<div class="person" id="person">${thread}<div class="person-ask">${personFormHtml(b, s, code, hidden, "person")}</div></div>`;
 }
 
 /** For tests and the admin: the buyer-visible thread of a ticket. */

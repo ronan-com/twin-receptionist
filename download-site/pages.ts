@@ -103,6 +103,9 @@ ${withCodeBox ? codeBox() : ""}`);
 
 export const badCodePage = () =>
   messagePage(404, "That setup link isn't valid", `Check you copied the whole link from your purchase email. If it still doesn't work, contact ${support()}.`, true);
+/** A "Sign in with ..." came back that we can't match to a sign-in we started (another browser, or older than 10 minutes). Not a bad setup link. */
+export const oauthLostPage = () =>
+  messagePage(400, "That sign-in didn't finish", `It came back to a different browser, or took more than 10 minutes. Open your setup link again and try once more, or paste a key instead. If it keeps happening, contact ${support()}.`);
 export const revokedPage = () => messagePage(410, "This setup link has been turned off", `If you think that's a mistake, contact ${support()}.`);
 export const limitedPage = (retry: number) => messagePage(429, "Too many tries", `Please wait ${retry} seconds and try again.`);
 export const notFoundPage = () => messagePage(404, "Page not found", "That page doesn't exist.");

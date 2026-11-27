@@ -24,9 +24,9 @@ import { join } from "node:path";
 import { ANY_MOCK, CODE_RE, CONFIG, db, extractCode, findBuyer, productionGuard, siteUrlWarnings, type Buyer } from "./lib";
 import { loadContent } from "./content";
 import { chatEnabled, chatReply, parseChatBody } from "./chat";
-import { badCodePage, demoOfflinePage, forbiddenPage, guidePage, homePage, limitedPage, notFoundPage, revokedPage } from "./pages";
+import { badCodePage, demoOfflinePage, forbiddenPage, guidePage, homePage, limitedPage, notFoundPage, oauthLostPage, revokedPage } from "./pages";
 import { actions, allow, appUrlOf, canView, firstOpen, pBundle, pExit, pLog, pNext, startTicker } from "./setup";
-import { STEPS, csrfOk, getSetup, logRead, newSessionId, redact, secretValues, siteKey, updateSetup, type SetupData, type StepId } from "./store";
+import { STEPS, csrfOk, getSetup, logRead, newSessionId, redact, secretValues, siteKey, updateSetup, type SetupData, type StepId, isOptional } from "./store";
 import { HELP_SENT, noteStepError, wizardHelpRequest } from "./wizhelp";
 import { statusRev, wizardPage } from "./wizard";
 import { adminRoute } from "./admin-web";
@@ -167,6 +167,20 @@ function lookupBuyer(code: string, ip: string): { buyer?: Buyer; error?: Respons
   return { buyer: b };
 }
 
+/**
+ * Where a form that moved the buyer on sends them. `moved` is where nextStep() put them (the first step still to do), `view` the step the
+ * form was on. Someone who went Back and presses Continue gets the very next step, not a jump to the end; the usual forward case lands on
+ * the plain link (their saved step). Always a step they're allowed to see.
+ */
+function landing(code: string, view: string, at: StepId, moved: StepId): string {
+  let dest: StepId = moved;
+  if (STEPS.includes(view as StepId) && !isOptional(view as StepId)) {
+    const next = STEPS.slice(STEPS.indexOf(view as StepId) + 1).find((id) => !isOptional(id));
+    if (next && STEPS.indexOf(next) < STEPS.indexOf(moved)) dest = next;
+  }
+  return dest === at ? `/setup/${code}` : `/setup/${code}?step=${dest}`;
+}
+
 const SETUP = /^\/setup\/([^/]*)\/?$/;
 const STATUS = /^\/setup\/([^/]*)\/status$/;
 const CHAT = /^\/setup\/([^/]*)\/chat$/;
@@ -225,20 +239,23 @@ async function handle(req: Request, srv: Bun.Server<unknown>): Promise<Response>
     if (wait) return tooMany(wait);
     const c = consumeState(p, url.searchParams.get("state") || "", readBrowserCookie(req));
     const clear = { "Set-Cookie": "ob=; Path=/oauth; HttpOnly; Max-Age=0" };
-    if (!c.ok) return html(badCodePage(), 400, clear);
+    if (!c.ok) return html(oauthLostPage(), 400, clear);
     const b = db().query("SELECT * FROM buyers WHERE id = ?").get(c.buyerId) as Buyer | null;
     if (!b || b.revoked_at) return html(badCodePage(), 404, clear);
     const step = OAUTH_STEP[p];
     const back = `/setup/${b.code}?step=${step}`;
     let flash: SetupData["flash"] | null = null;
-    const before = getSetup(b.id).step;
+    updateSetup(b.id, (s) => { delete s.moved; });
     if (url.searchParams.get("error") || !url.searchParams.get("code")) flash = { kind: "err", text: "Sign-in was cancelled. Try again, or paste a key instead." };
     else {
       try { flash = await oauthComplete(b, p, await exchangeCode(p, url.searchParams.get("code")!, c.verifier)); }
       catch (e) { console.error(`[oauth] ${p}: ${(e as Error)?.message || "error"}`); flash = { kind: "err", text: "That sign-in didn't work. Try again, or paste a key instead." }; }
     }
-    const after = updateSetup(b.id, (s) => { if (flash) s.flash = flash; });
-    return redirect(after.step !== before ? `/setup/${b.code}` : back, clear);
+    // On to the next step when the sign-in finished this one (even if they had been sent Back to it); else back to the same step with the message.
+    const now0 = getSetup(b.id);
+    const moved = now0.moved;
+    updateSetup(b.id, (s) => { if (flash) s.flash = flash; delete s.moved; });
+    return redirect(moved ? landing(b.code, step, now0.step, moved) : back, clear);
   }
 
   // ---- the Done screen's "Download your full source code": the source of the version this buyer's agency runs ----
@@ -432,7 +449,8 @@ async function handle(req: Request, srv: Bun.Server<unknown>): Promise<Response>
     const want = url.searchParams.get("step") as StepId | null;
     let view: StepId = s.phase === "done" ? "done" : want && STEPS.includes(want) && canView(b, s, want) ? want : s.step;
     if (!canView(b, s, view)) view = firstOpen(b, s);
-    return html(wizardPage(b, s, m[1], sess.sid, view, flash), 200, sess.set ? { "Set-Cookie": sess.set } : {});
+    const opt = /^[a-z]{2,12}$/.test(url.searchParams.get("opt") || "") ? url.searchParams.get("opt")! : "";
+    return html(wizardPage(b, s, m[1], sess.sid, view, flash, opt), 200, sess.set ? { "Set-Cookie": sess.set } : {});
   }
 
   m = path.match(STATUS);
@@ -477,7 +495,7 @@ async function handle(req: Request, srv: Bun.Server<unknown>): Promise<Response>
     }
     const act = actions[m[2]];
     if (!act) return html(notFoundPage(), 404);
-    const before = getSetup(b.id).step;
+    updateSetup(b.id, (s) => { delete s.moved; }); // nextStep() sets it again when this form moves the buyer on
     let flash = null;
     try {
       flash = await act(b, f);
@@ -486,12 +504,19 @@ async function handle(req: Request, srv: Bun.Server<unknown>): Promise<Response>
       flash = { kind: "err" as const, text: "Something went wrong on our side. Please try again." };
     }
     const view = STEPS.includes(f.v as StepId) ? f.v : "";
-    const after = updateSetup(b.id, (s) => {
+    const at = getSetup(b.id);
+    const moved = at.moved;
+    updateSetup(b.id, (s) => {
+      delete s.moved;
       if (flash) { if (flash.form) for (const k of Object.keys(flash.form)) if (/token|key|pass|secret|^t$/i.test(k)) delete flash.form[k]; s.flash = flash; }
       // Kept so "I need a person" can tell us what went wrong on this step.
       if (flash?.kind === "err" && view) noteStepError(s, view as StepId, redact(flash.text, secretValues(b.id)));
     });
-    return redirect(after.step !== before || !view ? `/setup/${m[1]}` : `/setup/${m[1]}?step=${view}`);
+    // A form that moved the buyer on goes to the step it moved them to, whichever step they were looking at (Back, the sidebar, a returned sign-in).
+    // One that didn't (an error, or "stay here and show the result") goes back to the step it came from, and the voice choice they had open.
+    const opt = /^[a-z]{2,12}$/.test(f.opt || "") ? `&opt=${f.opt}` : "";
+    if (m[2] === "start") return redirect(`/setup/${m[1]}`); // Start goes to wherever the buyer's saved step is
+    return redirect(moved ? landing(m[1], view, at.step, moved) : view ? `/setup/${m[1]}?step=${view}${opt}` : `/setup/${m[1]}`);
   }
 
   if (path.startsWith("/setup/") || path === "/setup") {

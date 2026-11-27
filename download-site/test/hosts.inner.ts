@@ -152,7 +152,7 @@ describe("serving a buyer's wizard on their own domain", () => {
     const start = await post("/a/start", { v: "welcome" });
     expect(start.status).toBe(303);
     expect(start.headers.get("location")).toBe("/");
-    const phonesPage = await (await onHost(OWN, "/", { headers: { cookie } })).text();
+    const phonesPage = await (await onHost(OWN, "/?step=phones&opt=telnyx", { headers: { cookie } })).text();
     expect(phonesPage).toContain('name="key"');
     expect(phonesPage).toContain('action="/a/phones"');
     // a post from another site is refused

@@ -86,7 +86,7 @@ export function detailOf(b: { id: number }, s: SetupData, id: AssistId): string 
 export function installBlockers(b: Buyer, s: SetupData): string[] {
   const out: string[] = [];
   for (const id of STEPS.slice(0, STEPS.indexOf("install"))) {
-    if (OPTIONAL_STEPS.includes(id) || id === "welcome") continue;
+    if (OPTIONAL_STEPS.includes(id) || id === "welcome" || id === "extras") continue;
     if (!stepDone(b, s, id)) out.push(ASSIST_STEPS.find((x) => x.id === id)?.title || id);
   }
   if (!s.phones?.confirmed && !s.vapi?.confirmed && !s.skipped?.phones && !out.some((x) => /Phones/.test(x))) out.push("Phones (Telnyx, or Vapi + Twilio)");

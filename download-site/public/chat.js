@@ -53,19 +53,21 @@
   fab.addEventListener("click", function () { setOpen(true); });
   root.querySelector(".chat-x").addEventListener("click", function () { setOpen(false); });
   document.addEventListener("keydown", function (e) { if (e.key === "Escape" && root.classList.contains("open")) setOpen(false); });
-  // "Ask a person instead": close the chat and open the "I need a person" form at the bottom of the step.
-  const toPerson = root.querySelector(".chat-person");
-  if (toPerson) toPerson.addEventListener("click", function (e) {
-    const box = document.querySelector("#person details.person-ask");
-    if (!box) return;
-    e.preventDefault();
-    setOpen(false); box.open = true;
-    const q = document.getElementById("person-problem");
-    const last = history.filter(function (m) { return m.role === "user"; }).pop();
-    if (q && !q.value && last) q.value = String(last.content).slice(0, 1000);
-    box.scrollIntoView({ behavior: "smooth", block: "center" });
-    if (q) q.focus();
-  });
+  // "Talk to a person": a tab in the panel with the same ask-a-person form as the box at the bottom of the step (it makes a help request for our team).
+  const aiPane = root.querySelector(".chat-ai"), personPane = root.querySelector(".chat-person-box");
+  const tabs = root.querySelectorAll(".chat-tab");
+  function show(which) {
+    if (!personPane) return;
+    aiPane.hidden = which === "person"; personPane.hidden = which !== "person";
+    Array.prototype.forEach.call(tabs, function (t) { t.classList.toggle("on", t.getAttribute("data-tab") === which); });
+    if (which === "person") {
+      const q = personPane.querySelector("textarea");
+      const last = history.filter(function (m) { return m.role === "user"; }).pop();
+      if (q && !q.value && last) q.value = String(last.content).slice(0, 1000);
+      if (q) q.focus();
+    } else box.focus();
+  }
+  Array.prototype.forEach.call(tabs, function (t) { t.addEventListener("click", function () { show(t.getAttribute("data-tab")); }); });
 
   async function ask(q) {
     q = String(q || "").trim();
@@ -94,3 +96,48 @@
   form.addEventListener("submit", function (e) { e.preventDefault(); const q = box.value; box.value = ""; ask(q); });
   box.addEventListener("keydown", function (e) { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); form.requestSubmit(); } });
 })();
+
+// The step helper card (a friendly card on every wizard step): quick questions and an ask box, same help chat as the panel.
+(function () {
+  const root = document.getElementById("helper");
+  if (!root) return;
+  const form = root.querySelector(".hform"), log = root.querySelector(".hlog"), chips = root.querySelector(".hchips");
+  if (!form || !log) return;
+  const box = form.querySelector("textarea"), send = form.querySelector(".hsend");
+  const url = root.dataset.url, token = root.dataset.t || "", view = root.dataset.view || "", max = Number(root.dataset.max) || 500;
+  let history = [], busy = false;
+  if (chips) chips.hidden = false;
+  function fill(el, text) {
+    String(text).split(/\n+/).forEach(function (line) {
+      if (!line.trim()) return;
+      const p = document.createElement("p");
+      line.split(/(\*\*[^*]+\*\*)/).forEach(function (part) {
+        if (/^\*\*[^*]+\*\*$/.test(part)) { const b = document.createElement("b"); b.textContent = part.slice(2, -2); p.appendChild(b); }
+        else if (part) p.appendChild(document.createTextNode(part));
+      });
+      el.appendChild(p);
+    });
+  }
+  function add(kind, text) { const d = document.createElement("div"); d.className = "hmsg " + kind; fill(d, text); log.appendChild(d); d.scrollIntoView({ block: "nearest" }); return d; }
+  async function ask(q) {
+    q = String(q || "").trim();
+    if (!q || busy) return;
+    if (q.length > max) { add("err", "Please keep your question under " + max + " characters."); return; }
+    busy = true; send.disabled = true;
+    if (chips) chips.hidden = true;
+    add("me", q); history.push({ role: "user", content: q });
+    const wait = add("bot wait", "Thinking...");
+    try {
+      const r = await fetch(url, { method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ t: token, view: view, messages: history.slice(-10) }) });
+      let j = {}; try { j = await r.json(); } catch (_) {}
+      wait.remove();
+      if (r.ok && j.reply) { history.push({ role: "assistant", content: j.reply }); add("bot", j.reply); }
+      else { history.pop(); add("err", j.error || "Something went wrong. Try again in a minute."); }
+    } catch (_) { wait.remove(); history.pop(); add("err", "We couldn't reach the helper. Check your connection and try again."); }
+    busy = false; send.disabled = false;
+  }
+  Array.prototype.forEach.call(root.querySelectorAll(".hchip"), function (c) { c.addEventListener("click", function () { ask(c.getAttribute("data-q")); }); });
+  form.addEventListener("submit", function (e) { e.preventDefault(); const q = box.value; box.value = ""; ask(q); });
+  box.addEventListener("keydown", function (e) { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); form.requestSubmit(); } });
+})();
+

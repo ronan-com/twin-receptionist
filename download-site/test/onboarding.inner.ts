@@ -88,6 +88,29 @@ describe("OAuth: PKCE and state", () => {
     expect(oauth.consumeState("telnyx", late.state, late.browser, Date.now() + 11 * 60_000)).toMatchObject({ ok: false, reason: "expired" });
   });
 
+  test("OpenRouter does not send our state back: the browser cookie finds the sign-in instead (once, this browser, this provider, 10 minutes)", async () => {
+    const b = newBuyer("nostate");
+    const start = async (p: "railway" | "telnyx" | "openrouter") => {
+      const { cookie } = await oauth.oauthStart(b.id, p);
+      return cookie.match(/^ob=([^;]+)/)![1];
+    };
+    const c1 = await start("openrouter");
+    expect(oauth.consumeState("openrouter", "", "someone-elses-browser-cookie-0123")).toMatchObject({ ok: false, reason: "bad-state" }); // another browser
+    expect(oauth.consumeState("openrouter", "", "")).toMatchObject({ ok: false, reason: "bad-state" }); // no cookie at all
+    expect(oauth.consumeState("openrouter", "", c1)).toMatchObject({ ok: true, buyerId: b.id });
+    expect(oauth.consumeState("openrouter", "", c1)).toMatchObject({ ok: false, reason: "bad-state" }); // used up
+    const c2 = await start("openrouter");
+    expect(oauth.consumeState("openrouter", "", c2, Date.now() + 11 * 60_000)).toMatchObject({ ok: false, reason: "expired" });
+    // Only OpenRouter may do this: Telnyx and Railway still need their state.
+    const c3 = await start("telnyx");
+    expect(oauth.consumeState("telnyx", "", c3)).toMatchObject({ ok: false, reason: "bad-state" });
+    // Two sign-ins started in one browser: the newest one wins.
+    await start("openrouter");
+    const newest = await oauth.oauthStart(b.id, "openrouter");
+    const cookieN = newest.cookie.match(/^ob=([^;]+)/)![1];
+    expect(oauth.consumeState("openrouter", "", cookieN)).toMatchObject({ ok: true, buyerId: b.id });
+  });
+
   test("the code is swapped with the verifier; OpenRouter gives a key, Railway a refreshable token; a bad code is an error", async () => {
     const b = newBuyer("c");
     const or = await oauth.exchangeCode("openrouter", "mock-code", "v".repeat(60));
@@ -98,15 +121,16 @@ describe("OAuth: PKCE and state", () => {
     void b;
   });
 
-  test("Login with OpenRouter and Sign in with Telnyx finish their steps; Telnyx shows the numbers it already has", async () => {
+  test("Sign in with OpenRouter finishes its step; Telnyx sign-in is parked (no button) but its code still works; Telnyx shows the numbers it already has", async () => {
     const b = newBuyer("d");
     await setup.actions.start(b, {}); await setup.actions.brand(b, { productName: "Acme", ownerEmail: "o@acme.test" });
     store.updateSetup(b.id, (s) => { s.railway = { confirmed: true, via: "oauth" }; s.step = "phones"; });
     store.putSecret(b.id, "railway_token", "mock-rail-token-ok");
-    const before = wizardPage(b, store.getSetup(b.id), b.code, "sid", "phones");
-    expect(before).toContain("Sign in with Telnyx");
-    expect(before).toContain(`href="/setup/${b.code}/oauth/telnyx"`);
-    expect(before).toContain("Paste a key instead"); // the fallback is always there
+    const before = wizardPage(b, store.getSetup(b.id), b.code, "sid", "phones", undefined, "telnyx");
+    expect(before).not.toContain("Sign in with Telnyx"); // parked: paste a key only
+    expect(before).not.toContain(`/oauth/telnyx`);
+    expect(oauth.oauthEnabled("telnyx")).toBe(false);
+    expect(oauth.oauthEnabled("openrouter")).toBe(true); // this one is kept
     expect(await setup.oauthComplete(b, "telnyx", await oauth.exchangeCode("telnyx", "c", "v".repeat(60)))).toBeNull();
     const s = store.getSetup(b.id);
     expect(s.phones).toMatchObject({ confirmed: true, via: "oauth", numbers: ["+61 2 5550 0101", "+61 3 5550 0102"] });
@@ -118,7 +142,7 @@ describe("OAuth: PKCE and state", () => {
     expect(await setup.actions["phones-continue"](b, {})).toBeNull();
     expect(store.getSetup(b.id).step).toBe("ai");
     expect(await setup.oauthComplete(b, "openrouter", await oauth.exchangeCode("openrouter", "c", "v".repeat(60)))).toBeNull();
-    expect(store.getSetup(b.id)).toMatchObject({ ai: { confirmed: true, via: "oauth" }, step: "install" });
+    expect(store.getSetup(b.id)).toMatchObject({ ai: { confirmed: true, via: "oauth" }, step: "extras" });
     expect(store.getSecret(b.id, "openrouter_key")).toMatch(/^sk-or-v1-/);
   });
 });
@@ -133,7 +157,7 @@ describe("old setups keep working", () => {
   test("a buyer sitting on a step that is gone moves to the next one that is there; what they stored stays", () => {
     const brand = { productName: "Old Co", ownerEmail: "o@old.test", ownPhoneAccount: false };
     const b1 = old("m1", { step: "extras", brand, railway: { confirmed: true }, phones: { confirmed: true, provider: "telnyx" }, skipped: { email: true } });
-    expect(store.getSetup(b1.id)).toMatchObject({ schema: 2, step: "ai", skipped: { email: true }, phones: { confirmed: true } });
+    expect(store.getSetup(b1.id)).toMatchObject({ schema: 3, step: "ai", skipped: { email: true }, phones: { confirmed: true } });
     const b2 = old("m2", { step: "vapi", brand, railway: { confirmed: true } });
     expect(store.getSetup(b2.id).step).toBe("phones");
     const b3 = old("m3", { step: "calendars", railway: { confirmed: true } });
@@ -142,6 +166,13 @@ describe("old setups keep working", () => {
     const b4 = old("m4", { step: "install", phase: "deploying", brand, railway: { confirmed: true }, phones: { confirmed: true }, rw: { projectId: "p1" } });
     expect(store.getSetup(b4.id)).toMatchObject({ step: "install", phase: "deploying", rw: { projectId: "p1" } });
     expect(setup.stepDone(b4, store.getSetup(b4.id), "ai")).toBe(true); // an install in progress never goes back to ask for the new key
+    expect(store.getSetup(b4.id).extrasDone).toBe(true); // ...nor for the new Connect more step
+    // A buyer on the short wizard (schema 2): at Install they skip the new Connect more step; before it, they meet it.
+    const b8 = old("m8", { schema: 2, step: "install", brand, railway: { confirmed: true }, phones: { confirmed: true }, ai: { confirmed: true } });
+    expect(store.getSetup(b8.id)).toMatchObject({ schema: 3, step: "install", extrasDone: true });
+    const b9 = old("m9", { schema: 2, step: "ai", brand, railway: { confirmed: true }, phones: { confirmed: true } });
+    expect(store.getSetup(b9.id)).toMatchObject({ schema: 3, step: "ai" });
+    expect(store.getSetup(b9.id).extrasDone).toBeUndefined();
     // Email through Resend, started but with no domain finished, would block the install: dropped. A finished domain keeps its email.
     const b5 = old("m5", { step: "email", brand, railway: { confirmed: true }, phones: { confirmed: true }, email: { mode: "resend", confirmed: true, from: "A <a@mail.x.test>" } });
     expect(store.getSetup(b5.id).email).toBeUndefined();
@@ -361,23 +392,30 @@ describe("Login with ... on the real site (mock providers)", () => {
     expect(cookie).toMatch(/^ob=/);
     const auth = new URL(st.headers.get("location")!);
     expect(auth.pathname).toBe("/__mock/oauth/openrouter/authorize");
-    // The provider sends the browser back with a code and the same state.
+    // The provider sends the browser back with a code. Like the real OpenRouter, it does NOT send our state back.
     const back = await get(auth.pathname + auth.search);
     const cb = new URL(back.headers.get("location")!);
     expect(cb.pathname).toBe("/oauth/openrouter/callback");
-    expect(cb.searchParams.get("state")).toBe(auth.searchParams.get("state"));
-    // Another browser (no cookie): refused, and the state is used up.
-    expect((await get(cb.pathname + cb.search)).status).toBe(400);
-    expect((await get(cb.pathname + cb.search, cookie)).status).toBe(400);
-    // A fresh login from the right browser finishes the step.
+    expect(cb.searchParams.get("code")).toBeTruthy();
+    expect(cb.searchParams.get("state")).toBeNull();
+    // Another browser (no cookie): refused with a plain "didn't finish" page (not "setup link isn't valid"), and nothing is saved.
+    const lost = await get(cb.pathname + cb.search);
+    expect(lost.status).toBe(400);
+    const lostHtml = await lost.text();
+    expect(lostHtml).toContain("That sign-in didn&#39;t finish");
+    expect(lostHtml).not.toContain("setup link isn't valid");
+    expect(store.getSecret(b.id, "openrouter_key")).toBeNull();
+    // A fresh login from the right browser finishes the step, found by its browser cookie.
     const st2 = await get(`/setup/${b.code}/oauth/openrouter`);
     const cookie2 = (st2.headers.get("set-cookie") || "").split(";")[0];
     const a2 = new URL(st2.headers.get("location")!);
     const cb2 = new URL((await get(a2.pathname + a2.search)).headers.get("location")!);
     const done = await get(cb2.pathname + cb2.search, cookie2);
     expect(done.status).toBe(303);
-    expect(done.headers.get("location")).toBe(`/setup/${b.code}`);
-    expect(store.getSetup(b.id)).toMatchObject({ ai: { confirmed: true, via: "oauth" }, step: "install" });
+    expect(done.headers.get("location")).toBe(`/setup/${b.code}`); // s.step moved on to Connect more, so the plain link lands there
+    expect(store.getSetup(b.id)).toMatchObject({ ai: { confirmed: true, via: "oauth" }, step: "extras" });
+    // Used once: the same callback again is refused.
+    expect((await get(cb2.pathname + cb2.search, cookie2)).status).toBe(400);
     expect(store.getSecret(b.id, "openrouter_key")).toMatch(/^sk-or-v1-/);
     // The buyer can say no at the provider: nothing saved, a plain message.
     const b2 = newBuyer("http2");
@@ -386,8 +424,7 @@ describe("Login with ... on the real site (mock providers)", () => {
     store.putSecret(b2.id, "railway_token", "x");
     const s3 = await get(`/setup/${b2.code}/oauth/openrouter`);
     const c3 = (s3.headers.get("set-cookie") || "").split(";")[0];
-    const state3 = new URL(s3.headers.get("location")!).searchParams.get("state")!;
-    const denied = await get(`/oauth/openrouter/callback?error=access_denied&state=${state3}`, c3);
+    const denied = await get(`/oauth/openrouter/callback?error=access_denied`, c3);
     expect(denied.status).toBe(303);
     expect(store.getSecret(b2.id, "openrouter_key")).toBeNull();
     expect(store.getSetup(b2.id).flash?.text).toMatch(/cancelled/);

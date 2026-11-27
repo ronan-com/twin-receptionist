@@ -39,8 +39,19 @@ const err = (text: string, form?: Record<string, string>): Flash => ({ kind: "er
 
 // ---------------- rate limits (per buyer, in memory) ----------------
 const buckets = new Map<string, number[]>();
+const LONGEST_WINDOW = 24 * 3600_000; // the longest window any caller uses
+let lastSweep = 0;
+/** Drops buckets nobody has touched for a day. Without this every address that ever hit the site (scanners too) stays in memory. */
+export function sweepBuckets(t = Date.now()): number {
+  lastSweep = t;
+  let n = 0;
+  for (const [k, arr] of buckets) if (!arr.length || t - arr[arr.length - 1] > LONGEST_WINDOW) { buckets.delete(k); n++; }
+  return n;
+}
+export const bucketCount = () => buckets.size;
 export function allow(key: string, max: number, windowMs: number): number {
   const t = Date.now();
+  if (buckets.size > 2000 && t - lastSweep > 60_000) sweepBuckets(t);
   const arr = (buckets.get(key) || []).filter((x) => t - x < windowMs);
   if (arr.length >= max) { buckets.set(key, arr); return Math.ceil((arr[0] + windowMs - t) / 1000); }
   arr.push(t); buckets.set(key, arr);

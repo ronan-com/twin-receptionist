@@ -19,8 +19,7 @@ for (const ext of ["-wal", "-shm"]) if (existsSync(src + ext)) copyFileSync(src 
 process.env.DATA_DIR = dir;
 // Keys are only counted (names), never decrypted, so any 32-byte key does for the check.
 process.env.SETUP_SECRET_KEY = process.argv[3] || process.env.SETUP_SECRET_KEY || Buffer.alloc(32, 1).toString("base64");
-for (const k of ["MOCK_DO", "MOCK_RAILWAY", "MOCK_CF", "MOCK_RESEND", "MOCK_TELNYX", "MOCK_OAUTH", "PREVIEW_JUMP"]) delete process.env[k];
-if (!process.env.HOSTING) process.env.HOSTING = "railway";
+for (const k of ["MOCK_FAST", "MOCK_RAILWAY", "MOCK_CF", "MOCK_RESEND", "MOCK_TELNYX", "MOCK_OAUTH", "PREVIEW_JUMP"]) delete process.env[k];
 
 // What each buyer had before: straight from the copy, before any of this code touches the rows.
 const raw = new Database(join(dir, "site.db"), { readonly: true });
@@ -53,7 +52,7 @@ for (const b of buyers) {
     const open = setup.firstOpen(b, s);
     landed = s.phase === "done" ? "done" : s.phase !== "idle" ? `install (${s.phase})` : open;
     const keysNow = store.ALL_SECRETS.filter((n) => store.hasSecret(b.id, n));
-    const lost = (was?.keys || []).filter((k) => !keysNow.includes(k as any));
+    const lost = (was?.keys || []).filter((k) => k !== "do_token" && !keysNow.includes(k as any)); // do_token: from the retired DigitalOcean mode, no longer read
     if (lost.length) problems.push(`keys lost: ${lost.join(", ")}`);
     if (was?.brand && s.brand?.productName !== was.brand) problems.push(`brand changed: ${was.brand} -> ${s.brand?.productName}`);
     if (was?.phase === "done" && landed !== "done") problems.push("finished agency no longer shows as done");

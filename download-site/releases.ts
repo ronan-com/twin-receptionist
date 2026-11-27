@@ -20,13 +20,13 @@ export const packageOf = (version?: string) => (version ? listPackages().find((p
 /** The app's source (.tar.gz), taken out of the published bundle once and kept next to it. */
 export async function appSource(version?: string): Promise<Uint8Array> {
   const pkg = packageOf(version);
-  if (!pkg) throw new ProviderError("The app isn't ready to install yet. Please try again later or contact support.");
+  if (!pkg) throw new ProviderError("The app isn't ready to install yet. Please try again later.");
   const bundle = join(PACKAGES_DIR, pkg.file);
   const cached = bundle.replace(/\.tgz$/, ".app-src.tgz");
   if (!existsSync(cached)) {
     const p = Bun.spawn(["tar", "-xzOf", pkg.file, "./app-src.tgz"], { cwd: PACKAGES_DIR, stdout: "pipe", stderr: "ignore" }); // bare name: GNU tar reads "C:\..." as a remote host
     const out = new Uint8Array(await new Response(p.stdout).arrayBuffer());
-    if ((await p.exited) !== 0 || out.length < 1000) throw new ProviderError("The app bundle is damaged. Contact support.");
+    if ((await p.exited) !== 0 || out.length < 1000) throw new ProviderError("The app bundle is damaged.");
     writeFileSync(cached, out, { mode: 0o600 });
   }
   return new Uint8Array(readFileSync(cached));
@@ -73,9 +73,9 @@ export async function checkedAppSource(version?: string): Promise<Uint8Array> {
   p.stdin.write(bytes);
   await p.stdin.end();
   const names = (await new Response(p.stdout).text()).split("\n").filter(Boolean);
-  if ((await p.exited) !== 0 || !names.length) { console.error(`[release] source ${version ?? "current"}: tar said: ${(await new Response(p.stderr).text()).slice(0, 200)}`); throw new ProviderError("The source bundle is damaged. Contact support."); }
+  if ((await p.exited) !== 0 || !names.length) { console.error(`[release] source ${version ?? "current"}: tar said: ${(await new Response(p.stderr).text()).slice(0, 200)}`); throw new ProviderError("The source bundle is damaged."); }
   const bad = secretNamesIn(names);
-  if (bad.length) { console.error(`[release] source ${version ?? "current"} refused: holds ${bad.slice(0, 3).join(", ")}`); throw new ProviderError("This version's source can't be offered right now. Contact support."); }
+  if (bad.length) { console.error(`[release] source ${version ?? "current"} refused: holds ${bad.slice(0, 3).join(", ")}`); throw new ProviderError("This version's source can't be offered right now."); }
   checkedCache.set(key, "ok");
   return bytes;
 }

@@ -52,7 +52,7 @@ if [ -n "$TEST" ]; then
   log "    skipped (test mode)"
 else
   export DEBIAN_FRONTEND=noninteractive
-  # A fresh droplet runs unattended-upgrades on first boot; wait for its apt lock instead of failing.
+  # A fresh cloud server runs unattended-upgrades on first boot; wait for its apt lock instead of failing.
   echo 'DPkg::Lock::Timeout "900";' > /etc/apt/apt.conf.d/90receptionist-lock-timeout
   need=()
   for p in curl:curl openssl:openssl ufw:ufw; do command -v "${p%%:*}" >/dev/null || need+=("${p#*:}"); done

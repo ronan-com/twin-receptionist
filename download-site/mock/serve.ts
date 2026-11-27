@@ -1,8 +1,6 @@
 // TEST MODE ONLY. Local fakes of every outside service the wizard talks to, so the whole
 // flow runs on one machine with no real accounts:
-//   :4521  DigitalOcean API. A "droplet" is a privileged local container (mock/droplet/) with
-//          Docker inside; its user_data script is run in it, like cloud-init, so the real
-//          install.sh runs end to end and reports back to the site over HTTP.
+//   :4521  test controls only (/_mock/state, /_mock/registrar, /_mock/cleanup, /_mock/rail/...)
 //   :4522  SMTP server (user "test", password "test-pass") for the "other SMTP" option
 //   :4523  Cloudflare API (/client/v4)
 //   :4524  Resend API
@@ -23,9 +21,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 const BASE = Number(process.env.MOCK_PORT_BASE || 4520);
-const P = { do: BASE + 1, smtp: BASE + 2, cf: BASE + 3, resend: BASE + 4, dns: BASE + 5, rail: BASE + 6, gd: BASE + 7 };
-const NET = process.env.MOCK_DROPLET_NET || "wiz-test-net";
-const IMAGE = process.env.MOCK_DROPLET_IMAGE || "wiz-test-droplet:24.04";
+const P = { ctl: BASE + 1, smtp: BASE + 2, cf: BASE + 3, resend: BASE + 4, dns: BASE + 5, rail: BASE + 6, gd: BASE + 7 };
 const NS_AFTER = Number(process.env.MOCK_NS_AFTER || 3); // pending zone turns active after this many zone reads
 const log = (...a: unknown[]) => console.log("[mock]", ...a);
 const json = (status: number, body?: unknown) => new Response(body === undefined ? null : JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
@@ -230,99 +226,17 @@ Bun.serve({
   },
 });
 
-// ============================ DigitalOcean ============================
-const DO_OK = "mock-do-token-ok", DO_RO = "mock-do-token-readonly", DO_LIMIT = "mock-do-token-nolimit";
-const keys = new Map<number, any>();
-const droplets = new Map<number, any>();
-const tags = new Set<string>();
-let nextId = BASE * 10; // e.g. 45200 for the e2e run, 45900 for the preview, so container names never collide
-let failNextCreate: string | null = null;
-let noDockerNext = false;
-const sizes = [["s-1vcpu-1gb", 1, 1024, 25, 6], ["s-1vcpu-2gb", 1, 2048, 50, 12], ["s-2vcpu-2gb", 2, 2048, 60, 18], ["s-2vcpu-4gb", 2, 4096, 80, 24], ["s-4vcpu-8gb", 4, 8192, 160, 48]]
-  .map(([slug, vcpus, memory, disk, price]) => ({ slug, vcpus, memory, disk, price_monthly: price, price_hourly: Number(price) / 730, available: true, regions: ["syd1", "sgp1", "nyc3", "lon1"] }));
-const regions = [["syd1", "Sydney 1"], ["sgp1", "Singapore 1"], ["nyc3", "New York 3"], ["lon1", "London 1"]].map(([slug, name]) => ({ slug, name, available: true, sizes: sizes.map((s) => s.slug) }));
-
-async function bootDroplet(d: any) {
-  try {
-    const authorized = (d.ssh_keys || []).map((id: number) => keys.get(id)?.public_key).filter(Boolean).join("\n");
-    const r = await sh(["docker", "run", "-d", "--privileged", "--name", d.container, "--hostname", d.name.slice(0, 60), "--network", NET, "--label", "wiz-test=1",
-      "-v", `${d.volume}:/var/lib/docker`, "-e", `AUTHORIZED_KEYS=${authorized}`, ...(d.noDocker ? ["-e", "NO_DOCKERD=1"] : []), IMAGE]);
-    if (r.code !== 0) throw new Error(r.err);
-    d.ip = (await sh(["docker", "inspect", "-f", "{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}", d.container])).out;
-    d.status = "active";
-    log(`droplet ${d.id} is container ${d.container} at ${d.ip}`);
-    // cloud-init: run user_data once, as root, at first boot.
-    if (d.user_data) {
-      await sh(["docker", "exec", "-i", d.container, "sh", "-c", "mkdir -p /var/lib/cloud/instance && cat > /var/lib/cloud/instance/user-data.txt && chmod 600 /var/lib/cloud/instance/user-data.txt"], d.user_data);
-      await sh(["docker", "exec", "-d", d.container, "sh", "-c", "bash /var/lib/cloud/instance/user-data.txt > /var/log/cloud-init-output.log 2>&1"]);
-      log(`droplet ${d.id}: ran user_data (${d.user_data.length} bytes) like cloud-init`);
-    }
-  } catch (e) {
-    log("droplet boot failed: " + e);
-    d.status = "errored";
-  }
-}
-async function removeDroplet(d: any) {
-  droplets.delete(d.id);
-  await sh(["docker", "rm", "-f", d.container]);
-  await sh(["docker", "volume", "rm", d.volume]);
-  log(`deleted droplet ${d.id}`);
-}
-const dropletJson = (d: any) => ({ id: d.id, name: d.name, status: d.status, tags: d.tags, region: { slug: d.region }, size_slug: d.size, image: { slug: d.image }, networks: { v4: d.ip ? [{ ip_address: d.ip, type: "public" }] : [] } });
-
 Bun.serve({
-  port: P.do, hostname: "127.0.0.1",
+  port: P.ctl, hostname: "127.0.0.1",
   async fetch(req) {
     const u = new URL(req.url);
     const p = u.pathname, m0 = req.method;
     // ---- test controls (no auth: only on 127.0.0.1) ----
     if (p === "/_mock/rail/fail-next-deploy" && m0 === "POST") { railFailNext = (await req.text()) || "error: script \"build\" exited with code 1"; return json(200, { ok: true }); }
-    if (p === "/_mock/state") return json(200, { godaddy: gdDomains, railway: [...rProjects.values()].map((x) => ({ ...x, services: [...x.services.values()].map((s: any) => ({ ...s, variables: Object.keys(s.variables), smtpKey: /re_mocksend_/.test(String(s.variables.SMTP_URL || "")) ? "send-only" : /re_mock_full_access_key/.test(String(s.variables.SMTP_URL || "")) ? "FULL" : "" })) })), deployments: [...rDeps.values()].map(({ logs, rlogs, ...d }: any) => d), droplets: [...droplets.values()].map((d) => ({ ...d, user_data: undefined, user_data_bytes: d.user_data?.length || 0, has_user_data: !!d.user_data })), keys: [...keys.values()], zones, registrar, resend: domains.map(domainView), sent });
-    if (p === "/_mock/droplet-user-data") return new Response(droplets.get(Number(u.searchParams.get("id")))?.user_data || "", { status: 200 });
+    if (p === "/_mock/state") return json(200, { godaddy: gdDomains, railway: [...rProjects.values()].map((x) => ({ ...x, services: [...x.services.values()].map((s: any) => ({ ...s, variables: Object.keys(s.variables), smtpKey: /re_mocksend_/.test(String(s.variables.SMTP_URL || "")) ? "send-only" : /re_mock_full_access_key/.test(String(s.variables.SMTP_URL || "")) ? "FULL" : "" })) })), deployments: [...rDeps.values()].map(({ logs, rlogs, ...d }: any) => d), zones, registrar, resend: domains.map(domainView), sent });
     if (p === "/_mock/registrar" && m0 === "POST") { const b: any = await req.json(); registrar.push({ id: "reg-" + registrar.length, ttl: 300, ...b, name: String(b.name).toLowerCase() }); return json(200, { ok: true }); }
-    if (p === "/_mock/do/fail-next-create" && m0 === "POST") { failNextCreate = (await req.text()) || "Region is not available"; return json(200, { ok: true }); }
-    if (p === "/_mock/do/no-docker-next" && m0 === "POST") { noDockerNext = true; return json(200, { ok: true }); }
-    if (p === "/_mock/cleanup" && m0 === "POST") { for (const d of [...droplets.values()]) await removeDroplet(d); for (const x of [...rProjects.values()]) await removeRailProject(x); return json(200, { ok: true }); }
+    if (p === "/_mock/cleanup" && m0 === "POST") { for (const x of [...rProjects.values()]) await removeRailProject(x); return json(200, { ok: true }); }
 
-    const tok = (req.headers.get("authorization") || "").replace(/^Bearer /, "");
-    if (![DO_OK, DO_RO, DO_LIMIT].includes(tok)) return json(401, { id: "Unauthorized", message: "Unable to authenticate you" });
-    if (m0 !== "GET" && tok === DO_RO) return json(403, { id: "Forbidden", message: "You do not have access for the attempted action." });
-    if (m0 === "GET" && p === "/v2/account") return json(200, { account: { email: "owner@example.com", status: "active", email_verified: true, droplet_limit: tok === DO_LIMIT ? 0 : 10, uuid: "mock" } });
-    if (m0 === "GET" && p === "/v2/regions") return json(200, { regions, meta: { total: regions.length } });
-    if (m0 === "GET" && p === "/v2/sizes") return json(200, { sizes, meta: { total: sizes.length } });
-    if (m0 === "POST" && p === "/v2/tags") { const b: any = await req.json(); if (tags.has(b.name)) return json(422, { id: "unprocessable_entity", message: "tag already exists" }); tags.add(b.name); return json(201, { tag: { name: b.name } }); }
-    if (m0 === "POST" && p === "/v2/account/keys") {
-      const b: any = await req.json();
-      if (!/^(ssh-ed25519|ssh-rsa|ecdsa-sha2-\S+) [A-Za-z0-9+/=]+/.test(b.public_key || "")) return json(422, { id: "unprocessable_entity", message: "Key invalid type, we support 'ssh-rsa', 'ssh-ed25519', 'ecdsa-sha2-nistp256'..." });
-      if ([...keys.values()].some((k) => k.public_key === b.public_key)) return json(422, { id: "unprocessable_entity", message: "SSH Key is already in use on your account" });
-      const k = { id: nextId++, name: b.name, public_key: b.public_key, fingerprint: "mock:" + randomBytes(4).toString("hex") };
-      keys.set(k.id, k);
-      return json(201, { ssh_key: k });
-    }
-    if (m0 === "GET" && p === "/v2/account/keys") return json(200, { ssh_keys: [...keys.values()] });
-    if (m0 === "POST" && p === "/v2/droplets") {
-      const b: any = await req.json();
-      if (failNextCreate) { const msg = failNextCreate; failNextCreate = null; return json(422, { id: "unprocessable_entity", message: msg }); }
-      if (b.image !== "ubuntu-24-04-x64") return json(422, { id: "unprocessable_entity", message: "You specified an invalid image for Droplet creation." });
-      if (!regions.some((r) => r.slug === b.region)) return json(422, { id: "unprocessable_entity", message: "Region is not available" });
-      if (!sizes.some((s) => s.slug === b.size)) return json(422, { id: "unprocessable_entity", message: "Size is not available" });
-      if (b.user_data && Buffer.byteLength(b.user_data) > 64 * 1024) return json(422, { id: "unprocessable_entity", message: "user_data is too large (64 KiB max)" });
-      for (const k of b.ssh_keys || []) if (!keys.has(k)) return json(422, { id: "unprocessable_entity", message: "ssh_keys contains an unknown key" });
-      const id = nextId++;
-      const d = { noDocker: noDockerNext, id, name: b.name, region: b.region, size: b.size, image: b.image, tags: b.tags || [], ssh_keys: b.ssh_keys || [], user_data: b.user_data || "", status: "new", container: `wiz-test-droplet-${id}`, volume: `wiz-test-dvol-${id}` };
-      noDockerNext = false;
-      droplets.set(id, d);
-      log(`create droplet ${id} name=${b.name} region=${b.region} size=${b.size} tags=${d.tags.join(",")} ssh_keys=${d.ssh_keys.length} user_data=${d.user_data.length}B`);
-      setTimeout(() => bootDroplet(d), 1500);
-      return json(202, { droplet: dropletJson(d) });
-    }
-    const mm = p.match(/^\/v2\/droplets\/(\d+)$/);
-    if (mm) {
-      const d = droplets.get(Number(mm[1]));
-      if (!d) return json(404, { id: "not_found", message: "The resource you were accessing could not be found." });
-      if (m0 === "GET") return json(200, { droplet: dropletJson(d) });
-      if (m0 === "DELETE") { await removeDroplet(d); return json(204); }
-    }
     return json(404, { id: "not_found", message: "The resource you were accessing could not be found." });
   },
 });
@@ -394,7 +308,7 @@ async function streamInto(args: string[], into: string[]): Promise<number> {
   return pr.exited;
 }
 // A test app has fake keys: point every real provider at an address that refuses, so it can never reach them.
-const NO_REAL_HOSTS = ["backboard.railway.com", "backboard.railway.app", "api.telnyx.com", "api.vapi.ai", "api.twilio.com", "api.cloudflare.com", "api.godaddy.com", "api.resend.com", "openrouter.ai", "api.digitalocean.com", "smtp.resend.com", "pricing.twilio.com", "numbers.twilio.com"];
+const NO_REAL_HOSTS = ["backboard.railway.com", "backboard.railway.app", "api.telnyx.com", "api.vapi.ai", "api.twilio.com", "api.cloudflare.com", "api.godaddy.com", "api.resend.com", "openrouter.ai", "smtp.resend.com", "pricing.twilio.com", "numbers.twilio.com"];
 const NO_REAL_PROVIDERS = NO_REAL_HOSTS.flatMap((h) => ["--add-host", `${h}:127.0.0.1`]);
 async function runDeploy(d: any, body: Uint8Array) {
   if (process.env.DEMO_APP_URL) { await Bun.sleep(800); d.logs.push("Build finished", "Deploy complete"); d.status = "DEPLOYING"; await Bun.sleep(800); d.status = "SUCCESS"; return; }
@@ -455,6 +369,19 @@ async function runDeploy(d: any, body: Uint8Array) {
   } catch (e) {
     d.logs.push(String(e)); d.status = "CRASHED"; log("railway deploy error " + e);
   }
+}
+
+// A variable change without skipDeploys restarts the app on its last image with the new variables, like Railway does.
+async function restartApp(p: any, app: any) {
+  const net = `wiz-test-rail-net-${tag(p.id)}`, img = `wiz-test-rail-img-${tag(p.id)}`;
+  if ((await sh(["docker", "image", "inspect", img])).code !== 0) return; // never deployed
+  const env = resolveVars(p, app);
+  const envFile = join(RAIL_TMP, `restart-${rid("r")}.env`);
+  await Bun.write(envFile, Object.entries(env).map(([k, v]) => `${k}=${v.replace(/[\r\n]/g, " ")}`).join("\n") + "\n");
+  await sh(["docker", "rm", "-f", app.container]);
+  await sh(["docker", "run", "-d", "--name", app.container, "--network", net, "--label", "wiz-test=1", "--label", `wiz-test-port=${BASE}`, ...NO_REAL_PROVIDERS, "--env-file", envFile, ...(app.port ? ["-p", `127.0.0.1:${app.port}:${env.PORT || 8791}`] : []), img]);
+  rmSync(envFile, { force: true });
+  log(`railway: restarted ${app.container} with new variables`);
 }
 
 Bun.serve({
@@ -523,7 +450,12 @@ Bun.serve({
       return json(200, { data: { serviceCreate: { id } } });
     }
     if (has("volumeCreate")) { const [, s] = findService(input.serviceId); if (!s) return gqlErr("Service not found"); s.volume = input.mountPath; return json(200, { data: { volumeCreate: { id: rid("vol") } } }); }
-    if (has("variableCollectionUpsert")) { const [, s] = findService(input.serviceId); if (!s) return gqlErr("Service not found"); Object.assign(s.variables, input.variables || {}); return json(200, { data: { variableCollectionUpsert: true } }); }
+    if (has("variableCollectionUpsert")) {
+      const [p0, s] = findService(input.serviceId); if (!s) return gqlErr("Service not found");
+      Object.assign(s.variables, input.variables || {});
+      if (!input.skipDeploys && s.name === "app" && p0) void restartApp(p0, s);
+      return json(200, { data: { variableCollectionUpsert: true } });
+    }
     if (has("serviceInstanceUpdate")) { const [, s] = findService(variables.serviceId); if (!s) return gqlErr("Service not found"); Object.assign(s.settings, variables.input || {}); return json(200, { data: { serviceInstanceUpdate: true } }); }
     if (has("serviceDomainCreate")) {
       const [, s] = findService(input.serviceId); if (!s) return gqlErr("Service not found");
@@ -531,6 +463,14 @@ Bun.serve({
       if (!s.port) return gqlErr("mock: no free app port (MOCK_APP_PORTS)");
       s.domain = `localhost:${s.port}`;
       return json(200, { data: { serviceDomainCreate: { id: rid("sd"), domain: s.domain } } });
+    }
+    if (has("domains")) {
+      const p = rProjects.get(variables.p); if (!p) return gqlErr("Project not found");
+      return json(200, { data: { domains: { customDomains: p.customDomains.filter((c: any) => c.serviceId === variables.s).map((c: any) => ({ id: c.id, domain: c.domain })) } } });
+    }
+    if (has("customDomainDelete")) {
+      for (const p of rProjects.values()) { const i = p.customDomains.findIndex((c: any) => c.id === variables.id); if (i >= 0) { p.customDomains.splice(i, 1); return json(200, { data: { customDomainDelete: true } }); } }
+      return gqlErr("Custom domain not found");
     }
     if (has("customDomainCreate")) {
       const p = rProjects.get(input.projectId); if (!p) return gqlErr("Project not found");
@@ -604,5 +544,5 @@ Bun.serve({
   },
 });
 
-log(`DigitalOcean :${P.do}  SMTP :${P.smtp}  Cloudflare :${P.cf}  Resend :${P.resend}  DNS udp :${P.dns}  Railway :${P.rail}  GoDaddy :${P.gd} (apps on 127.0.0.1:${PORT_LO}-${PORT_HI})  (droplets on ${NET}, image ${IMAGE})`);
+log(`Test controls :${P.ctl}  SMTP :${P.smtp}  Cloudflare :${P.cf}  Resend :${P.resend}  DNS udp :${P.dns}  Railway :${P.rail}  GoDaddy :${P.gd} (apps on 127.0.0.1:${PORT_LO}-${PORT_HI})`);
 void join;

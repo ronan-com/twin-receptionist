@@ -616,3 +616,5 @@ progress.bar::-moz-progress-bar { background: linear-gradient(90deg, #7c3aed, #e
 .hhide { float: right; margin: 8px 0 0 8px; border: 0; background: none; color: var(--muted); font: inherit; font-size: 13px; cursor: pointer; text-decoration: underline; }
 .hshow { border: 1px solid var(--indigo-line); background: #fff; color: var(--accent); border-radius: 99px; padding: 6px 14px; font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; }
 .helper.off details { display: none; }
+/* phone width: the provider button's label wraps instead of pushing the icon off the screen */
+@media (max-width: 639px) { .btn.prov { height: auto; min-height: 52px; padding: 10px 16px; gap: 10px; } .btn.prov span:not(.pl) { font-size: 15px; line-height: 1.25; } .btn.prov svg.i { flex: none; } }

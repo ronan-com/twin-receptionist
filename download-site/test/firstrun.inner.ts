@@ -9,10 +9,10 @@ const dir = mkdtempSync(join(tmpdir(), "firstrun-test-"));
 process.env.DATA_DIR = dir;
 process.env.SETUP_SECRET_KEY = Buffer.alloc(32, 7).toString("base64");
 process.env.SITE_URL = "http://localhost:4500";
-for (const k of ["MOCK_DO", "MOCK_RAILWAY", "MOCK_CF", "MOCK_RESEND", "MOCK_TELNYX", "MOCK_OAUTH", "HOSTING"]) delete process.env[k];
+for (const k of ["MOCK_FAST", "MOCK_RAILWAY", "MOCK_CF", "MOCK_RESEND", "MOCK_TELNYX", "MOCK_OAUTH"]) delete process.env[k];
 
 const { addBuyer } = await import("../lib");
-const { actions, finish, railwayVars, buildSettings, ownerNameOf, dashboardLink, firstLoginFresh, dropExpiredFirstLogins } = await import("../setup");
+const { actions, finish, railwayVars, ownerNameOf, dashboardLink, firstLoginFresh, dropExpiredFirstLogins } = await import("../setup");
 const { getSetup, putSecret, updateSetup } = await import("../store");
 const { wizardPage } = await import("../wizard");
 
@@ -89,15 +89,5 @@ describe("first run", () => {
     expect(dropExpiredFirstLogins()).toBeGreaterThanOrEqual(1);
     expect(getSetup(old.id).firstLogin).toBeUndefined();
     expect(getSetup(fresh.id).firstLogin?.token).toBeTruthy();
-  });
-
-  test("the server install (DigitalOcean) gets the same variables", async () => {
-    const b = await buyer("e");
-    updateSetup(b.id, (s) => { s.email = { mode: "smtp", address: "hi@acme.test", from: "hi@acme.test", smtp: { host: "smtp.acme.test", port: 587, user: "u" }, checked: true, confirmed: true } as any; s.domain = { host: "app.acme.test", confirmed: true } as any; });
-    const env = buildSettings(b.id, getSetup(b.id));
-    expect(env).toContain("OWNER_NAME=");
-    expect(env).toContain("AGENCY_NAME=");
-    expect(env).toContain("FIRST_LOGIN_TOKEN=");
-    expect(env).toContain("FIRST_ADMIN_EMAIL=");
   });
 });

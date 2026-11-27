@@ -48,7 +48,7 @@ process.env.PRODUCT_NAME = "Zorbo";
 process.env.SELLER_NAME = "Zorbo AI";
 process.env.SITE_SMTP_URL = `smtp://127.0.0.1:${smtp.port}`;
 process.env.SITE_MAIL_FROM = "setup@example.com";
-for (const k of ["HOSTING", "SUPPORT_EMAIL", "DEMO_APP_URL", "OPENROUTER_API_KEY"]) delete process.env[k];
+for (const k of ["SUPPORT_EMAIL", "DEMO_APP_URL", "OPENROUTER_API_KEY"]) delete process.env[k];
 
 const { db, findBuyer } = await import("../lib");
 const { adminRoute, newAdminLink } = await import("../admin-web");

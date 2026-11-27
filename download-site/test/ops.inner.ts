@@ -14,7 +14,7 @@ process.env.DATA_DIR = dir;
 process.env.SETUP_SECRET_KEY = Buffer.alloc(32, 9).toString("base64");
 process.env.SITE_URL = SITE;
 process.env.RAILWAY_API_BASE = `http://127.0.0.1:${RAIL_PORT}`;
-for (const k of ["MOCK_DO", "MOCK_RAILWAY", "MOCK_CF", "MOCK_RESEND", "MOCK_TELNYX", "MOCK_OAUTH", "HOSTING", "PREVIEW_JUMP", "ALERT_WEBHOOK_URL", "ALERT_EMAIL_TO", "SITE_SMTP_URL", "SITE_MAIL_FROM", "ADMIN_EMAILS"]) delete process.env[k];
+for (const k of ["MOCK_FAST", "MOCK_RAILWAY", "MOCK_CF", "MOCK_RESEND", "MOCK_TELNYX", "MOCK_OAUTH", "PREVIEW_JUMP", "ALERT_WEBHOOK_URL", "ALERT_EMAIL_TO", "SITE_SMTP_URL", "SITE_MAIL_FROM", "ADMIN_EMAILS"]) delete process.env[k];
 
 const { addBuyer, db, recordPackage, PACKAGES_DIR, sha256 } = await import("../lib");
 const sync = await import("../sync");
@@ -445,6 +445,10 @@ describe("the admin pages", () => {
   test("the buyer page: the Problems panel, auto-update state, and Push update now (only when it can work)", async () => {
     const a = await (await adminGet(`/admin/b/${ids.ok}?tab=support`)).text();
     expect(a).toContain("Problems (last 24 hours)");
+    // "Send owner their login" is on the Support tab of a live agency (email it, or show the link)
+    expect(a).toContain(`action="/admin/b/${ids.ok}/assist/owner-login"`);
+    expect(a).toContain("Send owner their login");
+    expect(a).toContain("Show me the link");
     expect(a).toContain("Text-back failed");
     expect(a).toContain("Telnyx answered 502");
     expect(a).toContain(`action="/admin/b/${ids.ok}/push-update"`);

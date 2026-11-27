@@ -13,7 +13,6 @@
 //      the app's two records (a wrong one first), Done
 //   C  Delete the project
 //   D  read-only Cloudflare token, existing record, nameservers pending -> active, per-buyer limit
-// (The DigitalOcean variant is e2e-digitalocean.mjs.)
 import { spawn, spawnSync, execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -61,7 +60,7 @@ const env = {
   MOCK_RAILWAY: "1", MOCK_CF: "1", MOCK_RESEND: "1", MOCK_TELNYX: "1", MOCK_OAUTH: "1",
   CHECKS_PER_10_MIN: "15", LOOKUPS_PER_MINUTE: "20", SUPPORT_EMAIL: "support@example.com", PRODUCT_NAME: "AI Receptionist",
 };
-delete env.HOSTING; delete env.PREVIEW_JUMP; delete env.TEST_SITE;
+delete env.PREVIEW_JUMP; delete env.TEST_SITE;
 const procLog = join(DATA, "procs.log");
 function startProc(args, name) {
   const p = spawn("bun", args, { cwd: SITE_DIR, env, stdio: ["ignore", "pipe", "pipe"] });

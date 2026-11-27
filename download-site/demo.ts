@@ -9,14 +9,14 @@
 import { randomBytes } from "node:crypto";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { ANY_MOCK, CONFIG, RAILWAY, addBuyer } from "./lib";
+import { ANY_MOCK, CONFIG, addBuyer } from "./lib";
 
 const APP = (process.env.DEMO_APP_URL || "").replace(/\/+$/, "");
 const LOCAL = (process.env.DEMO_APP_LOCAL || "").replace(/\/+$/, "");
 const CALL = LOCAL || APP; // where this server talks to the demo app
 export const DEMO = ANY_MOCK && !!APP && !!LOCAL;
-/** Demo buyers can be made: the demo app's address and admin sign-in are set (and the site installs on Railway). */
-export const DEMO_READY = RAILWAY && !!APP && !!(process.env.DEMO_ADMIN_EMAIL || "").trim() && !!process.env.DEMO_ADMIN_PASSWORD;
+/** Demo buyers can be made: the demo app's address and admin sign-in are set. */
+export const DEMO_READY = !!APP && !!(process.env.DEMO_ADMIN_EMAIL || "").trim() && !!process.env.DEMO_ADMIN_PASSWORD;
 /** The wizard shows pretend values and the demo finish for this buyer. */
 export const isDemo = (b: { demo?: number }) => DEMO || b.demo === 1;
 export class DemoOffline extends Error {}

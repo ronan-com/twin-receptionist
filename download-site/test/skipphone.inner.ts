@@ -9,7 +9,7 @@ const dir = mkdtempSync(join(tmpdir(), "skipphone-test-"));
 process.env.DATA_DIR = dir;
 process.env.SETUP_SECRET_KEY = Buffer.alloc(32, 7).toString("base64");
 process.env.SITE_URL = "http://localhost:4500";
-for (const k of ["MOCK_DO", "MOCK_RAILWAY", "MOCK_CF", "MOCK_RESEND", "MOCK_TELNYX", "MOCK_OAUTH", "HOSTING"]) delete process.env[k];
+for (const k of ["MOCK_FAST", "MOCK_RAILWAY", "MOCK_CF", "MOCK_RESEND", "MOCK_TELNYX", "MOCK_OAUTH"]) delete process.env[k];
 
 const { addBuyer } = await import("../lib");
 const { actions, phoneSettings, railwayVars, firstOpen } = await import("../setup");
@@ -54,11 +54,10 @@ describe("Voice and AI are required", () => {
     expect((actions as any)["phones-skip"]).toBeUndefined();
   });
 
-  test("no voice key: Install is refused and the wizard stays on Voice (also with the backup-options shortcut)", async () => {
+  test("no voice key: Install is refused and the wizard stays on Voice ", async () => {
     const b = await buyer("b");
     expect(firstOpen(b, getSetup(b.id))).toBe("phones");
     expect((await run(b, "install-start"))?.kind).toBe("err");
-    await run(b, "phones-backup"); // the DigitalOcean-era "no Telnyx yet" shortcut must not count on Railway
     expect(firstOpen(b, getSetup(b.id))).toBe("phones");
     expect((await run(b, "install-start"))?.text).toMatch(/earlier steps|voice|Telnyx/i);
     expect(await run(b, "phones-continue")).toBeNull();
@@ -151,5 +150,20 @@ describe("Voice and AI are required", () => {
     expect(s.skipped?.phones).toBeUndefined();
     expect(s.assist?.steps?.phones?.by).toBe("admin@us.test");
     expect(detailOf(b, s, "phones")).toContain("Twilio " + SID);
+  });
+});
+
+describe("our admin's Brand form matches the buyer's wizard", () => {
+  test("owner name, up to three colours and light/dark are saved, and shown in the step's summary", async () => {
+    const b = addBuyer("Brand Admin", "brand-admin@example.com");
+    const out = await fillStep(b, "admin@us.test", "brand", { productName: "Acme AI", ownerEmail: "dana@acme.test", ownerName: "Dana Smith", colour: "#0a8f5c", colour2: "#f59e0b", colour2on: "1", colour3: "#ec4899", colour3on: "1", theme: "dark", logo: "", removeLogo: "" });
+    expect(out.ok).toBe(true);
+    const s = getSetup(b.id);
+    expect(s.brand).toMatchObject({ productName: "Acme AI", ownerName: "Dana Smith", colour: "#0a8f5c", colours: ["#0a8f5c", "#f59e0b", "#ec4899"], theme: "dark" });
+    expect(detailOf(b, s, "brand")).toContain("#0a8f5c #f59e0b #ec4899");
+    expect(detailOf(b, s, "brand")).toContain("dark");
+    // unticked second and third colours do not count; no theme given keeps the stored one
+    expect((await fillStep(b, "admin@us.test", "brand", { productName: "Acme AI", ownerEmail: "dana@acme.test", ownerName: "Dana Smith", colour: "#112233", colour2: "#f59e0b", colour3: "#ec4899", theme: "" })).ok).toBe(true);
+    expect(getSetup(b.id).brand).toMatchObject({ colours: ["#112233"], theme: "dark" });
   });
 });

@@ -8,7 +8,6 @@ import type { DnsRecord } from "./store";
 
 const MB = Number(process.env.MOCK_PORT_BASE || 4520); // the fakes in mock/serve.ts listen on MB+1..MB+5
 const M = (offset: number) => `${CONFIG.mockBase}:${MB + offset}`;
-export const DO_API = (process.env.DO_API_BASE || (CONFIG.mockDO ? M(1) : "https://api.digitalocean.com")).replace(/\/$/, "");
 export const CF_API = (process.env.CF_API_BASE || (CONFIG.mockCF ? M(3) + "/client/v4" : "https://api.cloudflare.com/client/v4")).replace(/\/$/, "");
 export const RESEND_API = (process.env.RESEND_API_BASE || (CONFIG.mockResend ? M(4) : "https://api.resend.com")).replace(/\/$/, "");
 export const RAILWAY_API = (process.env.RAILWAY_API_BASE || (CONFIG.mockRailway ? M(6) : "https://backboard.railway.com")).replace(/\/$/, "");
@@ -38,55 +37,6 @@ async function call(provider: string, url: string, init: RequestInit = {}, ms = 
 }
 
 const hasSpace = (s: string) => /\s/.test(s);
-
-// ======================= DigitalOcean =======================
-export async function doApi<T = any>(token: string, method: string, path: string, body?: unknown): Promise<T> {
-  const { status, json } = await call("DigitalOcean", DO_API + path, {
-    method,
-    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json", "User-Agent": UA },
-    body: body === undefined ? undefined : JSON.stringify(body),
-  });
-  if (status >= 200 && status < 300) return json as T;
-  const said = String(json?.message || "").slice(0, 200);
-  if (status === 401) throw new ProviderError("DigitalOcean didn't accept that token: copy it again, or make a new one.", 401);
-  if (status === 403) throw new ProviderError("That token can only read: make a new one with Full Access.", 403);
-  if (status === 404) throw new ProviderError("DigitalOcean couldn't find that (it may have been deleted already).", 404);
-  if (status === 429) throw new ProviderError("DigitalOcean is busy: wait a minute and try again.", 429);
-  if (status >= 500) throw new ProviderError("DigitalOcean is having a problem: try again in a few minutes.", status);
-  if (/droplet limit/i.test(said)) throw new ProviderError("Your DigitalOcean account is at its server limit: delete one, or ask DigitalOcean to raise it.", status);
-  throw new ProviderError(`DigitalOcean said: ${said || "error " + status}`, status);
-}
-
-export const DEFAULT_REGION = "syd1";
-export const DEFAULT_SIZE = "s-2vcpu-2gb";
-
-export async function checkDigitalOcean(token: string) {
-  if (!token) return { ok: false as const, message: "Paste your DigitalOcean token." };
-  if (hasSpace(token)) return { ok: false as const, message: "That token has spaces in it: copy just the token." };
-  try {
-    const a = (await doApi(token, "GET", "/v2/account")).account || {};
-    if (a.status && a.status !== "active") return { ok: false as const, message: `Your DigitalOcean account is "${a.status}". ${a.status_message || "Add a payment method and finish sign-up in DigitalOcean, then try again."}` };
-    if (a.email_verified === false) return { ok: false as const, message: "Confirm your email with DigitalOcean first, then try again." };
-    if (typeof a.droplet_limit === "number" && a.droplet_limit < 1) return { ok: false as const, message: "Add a payment method in DigitalOcean (Billing), then try again." };
-    // A read-only token passes every GET, so prove write access with a harmless write:
-    // the "receptionist" tag, which the server is tagged with anyway.
-    try {
-      await doApi(token, "POST", "/v2/tags", { name: "receptionist" });
-    } catch (e: any) {
-      if (!(e instanceof ProviderError && e.status === 422)) throw e; // 422 = tag already exists, which is fine
-    }
-    const [rr, sr] = await Promise.all([doApi(token, "GET", "/v2/regions?per_page=200"), doApi(token, "GET", "/v2/sizes?per_page=200")]);
-    const regions: { slug: string; name: string }[] = (rr.regions || []).filter((r: any) => r.available).map((r: any) => ({ slug: String(r.slug), name: String(r.name) })).sort((x: any, y: any) => x.name.localeCompare(y.name));
-    const sizes: { slug: string; label: string; price: number; regions: string[] }[] = (sr.sizes || [])
-      .filter((s: any) => s.available && /^s-/.test(s.slug) && s.memory >= 2048 && s.memory <= 8192)
-      .map((s: any) => ({ slug: String(s.slug), price: Number(s.price_monthly), regions: (s.regions || []).map(String), label: `${s.vcpus} CPU, ${s.memory / 1024} GB memory, ${s.disk} GB disk` }))
-      .sort((x: any, y: any) => x.price - y.price);
-    if (!regions.length || !sizes.length) return { ok: false as const, message: "DigitalOcean didn't offer any server sizes we can use. Try again later." };
-    return { ok: true as const, message: `Connected to DigitalOcean${a.email ? ` (${a.email})` : ""}.`, accountEmail: String(a.email || ""), regions, sizes };
-  } catch (e: any) {
-    return { ok: false as const, message: e instanceof ProviderError ? e.message : "Something went wrong checking DigitalOcean. Try again." };
-  }
-}
 
 // ======================= Cloudflare =======================
 async function cf(token: string, method: string, path: string, body?: unknown): Promise<any> {
@@ -284,7 +234,7 @@ export async function railwayUpload(token: string, projectId: string, environmen
   const text = await res.text();
   let json: any = {};
   try { json = text ? JSON.parse(text) : {}; } catch {}
-  if (res.status === 413) throw new ProviderError("Railway said the app upload is too large. Contact support.", 413);
+  if (res.status === 413) throw new ProviderError("Railway said the app upload is too large.", 413);
   if (!res.ok) throw railwayErr(res.status, String(json?.message || json?.error || ""));
   if (!json.deploymentId) throw new ProviderError("Railway took the upload but didn't start a build. Press Try again.", 500);
   return { deploymentId: String(json.deploymentId), url: json.url, deploymentDomain: json.deploymentDomain };

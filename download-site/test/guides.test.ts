@@ -7,7 +7,7 @@ import { expect, test } from "bun:test";
 import { readdirSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { PROVIDER_IDS, markdown, howTo } from "../content";
-import { STEP_GUIDES, STEPS_NOT_USED, STEPS_WITHOUT_GUIDE, allGuidesForHelper } from "../guides";
+import { STEP_GUIDES, STEPS_WITHOUT_GUIDE, allGuidesForHelper } from "../guides";
 import { STEPS } from "../store";
 import { systemPrompt } from "../chat";
 
@@ -59,7 +59,7 @@ test("hosting is Railway only: no DigitalOcean guide or helper knowledge", () =>
 
 test("every wizard step has a guide (with common problems) or needs no outside account", () => {
   for (const id of STEPS) {
-    if (STEPS_WITHOUT_GUIDE.includes(id) || STEPS_NOT_USED.includes(id)) continue;
+    if (STEPS_WITHOUT_GUIDE.includes(id)) continue;
     const ids = STEP_GUIDES[id];
     expect(ids?.length, `step ${id} has no guide`).toBeGreaterThan(0);
     for (const g of ids!) {
@@ -70,7 +70,7 @@ test("every wizard step has a guide (with common problems) or needs no outside a
     }
   }
   // No step is in two lists.
-  for (const id of [...STEPS_WITHOUT_GUIDE, ...STEPS_NOT_USED]) expect(STEP_GUIDES[id], id).toBeUndefined();
+  for (const id of STEPS_WITHOUT_GUIDE) expect(STEP_GUIDES[id], id).toBeUndefined();
 });
 
 test("the helper's prompt carries every guide, steps and common problems, and the step they are on", () => {

@@ -2,16 +2,16 @@
 // card per step with an icon tile, a headline, one short sentence, the inputs, one primary
 // button. How-tos sit behind a collapsed "Step-by-step guide". Plain forms (they work without
 // JavaScript); /wizard.js adds copy buttons and live progress.
-import { CONFIG, RAILWAY, type Buyer, type Style } from "./lib";
+import { CONFIG, type Buyer, type Style } from "./lib";
 import { DEMO, demoSample, isDemo } from "./demo";
 import { esc } from "./pages";
 import { howTo } from "./content";
 import { CHAT_MAX_MESSAGE, chatBubble, chatEnabled, chatHead } from "./chat";
-import { oauthEnabled, type OAuthProvider } from "./oauth";
+import { oauthEnabled } from "./oauth";
 import { brokerOn, offered } from "./broker";
 import { PHONE_LATER, agencyUrl, canView, dashboardLink, firstOpen, hostOf, locked, oauthRedirect, phoneSkipped, stepDone, updateInfo, webUrl, zoneOf } from "./setup";
 import { detailOf, hasAssist, helpedStep, stepRows, type AssistId } from "./assist";
-import { DEFAULT_REGION, DEFAULT_SIZE, RAILWAY_PLAN_UNKNOWN_MSG, RAILWAY_TRIAL_MSG } from "./providers";
+import { RAILWAY_PLAN_UNKNOWN_MSG, RAILWAY_TRIAL_MSG } from "./providers";
 import { OPTIONAL_HUB, STEPS, csrfToken, isOptional, logRead, secretHint, type DnsRecord, type SetupData, type StepId } from "./store";
 
 // ---------------- icons (Lucide, MIT) ----------------
@@ -68,8 +68,7 @@ const markLogo = (logo?: string) => (logo && /^data:image\/png;base64,[A-Za-z0-9
 const META: Record<StepId, { title: string; short: string; icon: string; hue: string }> = {
   welcome: { title: "Welcome", short: "", icon: "sparkles", hue: "indigo" },
   brand: { title: "Brand", short: "Name, logo, colour", icon: "tag", hue: "indigo" },
-  domain: { title: "Domain", short: RAILWAY ? "Optional" : "Your web address", icon: "globe", hue: "cyan" },
-  server: { title: "Server", short: "DigitalOcean", icon: "server", hue: "indigo" },
+  domain: { title: "Domain", short: "Optional", icon: "globe", hue: "cyan" },
   railway: { title: "Hosting", short: "Railway", icon: "server", hue: "indigo" },
   phones: { title: "Voice", short: "Telnyx", icon: "phone", hue: "indigo" },
   ai: { title: "AI", short: "OpenRouter", icon: "sparkles", hue: "indigo" },
@@ -78,14 +77,14 @@ const META: Record<StepId, { title: string; short: string; icon: string; hue: st
   extras: { title: "Connect more", short: "Optional", icon: "sparkles", hue: "cyan" },
   vapi: { title: "Vapi", short: "Backup option", icon: "phone", hue: "coral" },
   twilio: { title: "Twilio", short: "Optional", icon: "phone", hue: "coral" },
-  install: { title: "Install", short: RAILWAY ? "About 10 min" : "About 15 min", icon: "rocket", hue: "violet" },
+  install: { title: "Install", short: "About 10 min", icon: "rocket", hue: "violet" },
   done: { title: "Live", short: "", icon: "party", hue: "green" },
 };
 
 /** The colour key of a step (its provider's colour); the page's `acc-<key>` classes in wizard.css carry the actual colours. */
 function stepKey(s: SetupData, id: StepId, opt = ""): string {
   if (id === "phones") return opt === "vapi" || (s.vapi?.confirmed && !s.phones?.confirmed) ? "vapi" : "telnyx";
-  return ({ welcome: "violet", brand: "pink", railway: "railway", ai: "openrouter", extras: "more", email: "resend", domain: "domain", calendars: "pink", twilio: "twilio", vapi: "vapi", server: "violet", install: "orange", done: "green" } as Record<string, string>)[id] || "violet";
+  return ({ welcome: "violet", brand: "pink", railway: "railway", ai: "openrouter", extras: "more", email: "resend", domain: "domain", calendars: "pink", twilio: "twilio", vapi: "vapi", install: "orange", done: "green" } as Record<string, string>)[id] || "violet";
 }
 /** The logo shown for a step in the step list: its provider's mark where it has one, else a coloured icon tile. */
 function stepMark(s: SetupData, id: StepId): string {
@@ -152,10 +151,8 @@ const P = (c: Ctx) => esc(c.s.brand?.productName || NEUTRAL);
 
 // ======================= screens =======================
 function welcome(c: Ctx) {
-  const rows = RAILWAY
-    ? `<li>${plogo("railway")}<b>Hosting</b><span>Railway</span></li><li>${plogo("telnyx")}<b>Voice</b><span>Telnyx or Vapi</span></li><li>${plogo("openrouter")}<b>AI</b><span>OpenRouter</span></li>`
-    : `<li><b>Server</b><span>DigitalOcean</span></li><li>${plogo("telnyx")}<b>Voice</b><span>Telnyx</span></li><li>${plogo("openrouter")}<b>AI</b><span>OpenRouter</span></li>`;
-  return `${head(c, "Set up your agency", RAILWAY ? "About 10 minutes. Close the page any time: your link remembers where you were." : "A few short steps. About 20 minutes.")}
+  const rows = `<li>${plogo("railway")}<b>Hosting</b><span>Railway</span></li><li>${plogo("telnyx")}<b>Voice</b><span>Telnyx or Vapi</span></li><li>${plogo("openrouter")}<b>AI</b><span>OpenRouter</span></li>`;
+  return `${head(c, "Set up your agency", "About 10 minutes. Close the page any time: your link remembers where you were.")}
 <ul class="needs">${rows}</ul>
 <p class="hint">Everything stays yours.</p>
 ${mainForm(c, "start", "")}
@@ -195,7 +192,7 @@ ${nav(c, primary("Continue"))}`;
 function domainStep(c: Ctx) {
   const d = c.s.domain;
   const cf = d?.cf;
-  if (RAILWAY && d?.mode === "manual" && d.host && !c.flash?.form?.mode) return domainManualRecords(c);
+  if (d?.mode === "manual" && d.host && !c.flash?.form?.mode) return domainManualRecords(c);
   // Waiting for the nameserver switch: its own screen.
   if (d?.mode === "cloudflare" && cf?.zoneId && cf.status && cf.status !== "active") {
     return `${head(c, "Switch your nameservers", `At the company you bought <b>${esc(d.zone!)}</b> from, replace its nameservers with these two.`)}
@@ -206,11 +203,11 @@ ${showMeHow(["registrar-nameservers"])}
 ${nav(c, `${mini(c, "domain-edit", "Change domain", "btn o")}${mini(c, "cf-recheck", "Check now", "btn p")}`)}`;
   }
   const mode = c.flash?.form?.mode || d?.mode || (isDemo(c.b) ? "manual" : "cloudflare");
-  const zone = c.flash?.form?.domain || d?.zone || (RAILWAY && c.s.email?.sendingDomain ? c.s.email.sendingDomain.replace(/^(mail|send|email|mg|news)\./, "") : "");
+  const zone = c.flash?.form?.domain || d?.zone || (c.s.email?.sendingDomain ? c.s.email.sendingDomain.replace(/^(mail|send|email|mg|news)\./, "") : "");
   const saved = d?.mode === "cloudflare" ? secretHint(c.b.id, "cf_token") : null;
   const replace = d?.mode === "cloudflare" && cf?.status === "active" && cf.existing && !d.confirmed
     ? `${notice("warn", `<b>app.${esc(d.zone!)}</b> already points somewhere else.`)}<label class="opt"><input type="checkbox" name="replace" value="1"><b>Replace it with my new server</b><small>Nothing else on your domain changes.</small></label>` : "";
-  return `${head(c, RAILWAY ? "Your own web address (optional)" : "Your web address", RAILWAY ? "Your agency already works at the https address Railway gives it. Add your domain to use app.your-domain instead. Your main website stays as it is." : "Your dashboard will live at app.your-domain. Your main website stays as it is.")}
+  return `${head(c, "Your own web address (optional)", "Your agency already works at the https address Railway gives it. Add your domain to use app.your-domain instead. Your main website stays as it is.")}
 <div class="body">${mainForm(c, "domain", `
   <label class="f" for="domain">Your domain</label>
   <input id="domain" name="domain" maxlength="253"${c.b.demo === 1 ? "" : " required"} autocapitalize="off" spellcheck="false" placeholder="yourbusiness.com.au" value="${esc(zone)}">
@@ -224,16 +221,11 @@ ${nav(c, `${mini(c, "domain-edit", "Change domain", "btn o")}${mini(c, "cf-reche
     <p class="hint">Use the <b>Edit zone DNS</b> template and add <b>Zone: Read</b>, for this domain.</p>
     ${showMeHow(["cloudflare-domain", "registrar-nameservers", "cloudflare-token"])}
   </div>
-  <div class="only-manual">${RAILWAY ? `<p class="hint">We'll show you each record to add, with a tick as it appears.</p>` : ""}${showMeHow(["registrar-dns-records"])}</div>
+  <div class="only-manual"><p class="hint">We'll show you each record to add, with a tick as it appears.</p>${showMeHow(["registrar-dns-records"])}</div>
   ${replace}`)}</div>
-${nav(c, `${RAILWAY ? mini(c, "domain-skip", "Skip for now", "btn o") : c.b.demo === 1 ? mini(c, "domain", "Skip this step", "btn o", "", `<input type="hidden" name="domain" value="">`) : ""}${primary("Continue")}`)}`;
+${nav(c, `${mini(c, "domain-skip", "Skip for now", "btn o")}${primary("Continue")}`)}`;
 }
 
-/** "Login with ..." button. Only drawn when that login is set up on this site. */
-const oauthBtn = (c: Ctx, p: OAuthProvider, label: string) => (oauthEnabled(p) ? `<p><a class="btn p big oauth" data-oauth="${p}" href="${base(c)}/oauth/${p}">${label}</a></p>` : "");
-/** The paste-a-key form: open on its own when there's no login button, otherwise tucked under "or paste". */
-const pasteBox = (c: Ctx, p: OAuthProvider, form: string, open = false) =>
-  oauthEnabled(p) ? `<details class="alt"${open || c.flash?.kind === "err" ? " open" : ""}><summary>Paste a key instead</summary>${form}</details>` : form;
 const okRow = (text: string) => `<div class="okrow">${icon("check")}<b>${text}</b></div>`;
 
 function railwayStep(c: Ctx) {
@@ -284,31 +276,6 @@ ${mainForm(c, "domain-continue", "")}
 ${nav(c, `${mini(c, "domain-edit", "Change domain", "btn o")}${primary("Continue")}`)}`;
 }
 
-const REGIONS = [["syd1", "Sydney"], ["sgp1", "Singapore"], ["blr1", "Bangalore"], ["sfo3", "San Francisco"], ["nyc3", "New York"], ["tor1", "Toronto"], ["lon1", "London"], ["fra1", "Frankfurt"], ["ams3", "Amsterdam"]];
-const SIZES: [string, string][] = [["s-2vcpu-2gb", "2 GB · US$18/mo · recommended"], ["s-1vcpu-2gb", "2 GB, 1 CPU · US$12/mo"], ["s-2vcpu-4gb", "4 GB · US$24/mo"]];
-
-function server(c: Ctx) {
-  const sv = c.s.server;
-  const saved = secretHint(c.b.id, "do_token");
-  const region = c.flash?.form?.region || sv?.region || DEFAULT_REGION;
-  const size = c.flash?.form?.size || sv?.size || DEFAULT_SIZE;
-  const regions = sv?.regions?.map((r) => [r.slug, r.name.replace(/ \d+$/, "")]) || REGIONS;
-  const sizes: [string, string][] = sv?.sizes ? sv.sizes.map((z) => [z.slug, `${(z.label.match(/(\d+) GB memory/) || [])[1] || "?"} GB, ${(z.label.match(/^(\d+) CPU/) || [])[1] || "?"} CPU · US$${z.price}/mo${z.slug === DEFAULT_SIZE ? " · recommended" : ""}`]) : SIZES;
-  return `${head(c, "Your server", "We create one server in your DigitalOcean account. You pay DigitalOcean directly.")}
-<div class="body">${mainForm(c, "server", `
-  ${secretIn("token", "dop_v1_...", saved, "DigitalOcean API token")}
-  <div class="two">
-    <div><label class="f" for="region">Location</label><select id="region" name="region">${regions.map(([v, n]) => `<option value="${esc(v)}"${v === region ? " selected" : ""}>${esc(n)}</option>`).join("")}</select></div>
-    <div><label class="f" for="size">Size</label><select id="size" name="size">${sizes.map(([v, n]) => `<option value="${esc(v)}"${v === size ? " selected" : ""}>${esc(n)}</option>`).join("")}</select></div>
-  </div>
-  <details class="advanced"><summary>Advanced: add your own SSH key</summary>
-    <label class="f" for="sshPublicKey">SSH public key (optional)</label>
-    <textarea id="sshPublicKey" name="sshPublicKey" rows="2" spellcheck="false" placeholder="ssh-ed25519 AAAA... you@laptop">${val(c, "sshPublicKey", sv?.sshPublicKey || "")}</textarea>
-    <p class="hint">Lets you log in to the server yourself. We never hold a key to it.</p>
-  </details>`)}</div>
-${nav(c, primary("Check and continue"))}`;
-}
-
 /** Older setups that skipped Voice before it became required: the reminder on their Done screen. */
 const phoneLaterNote = (c: Ctx) => notice("warn", `<b>No voice provider yet.</b> ${esc(PHONE_LATER)}.${c.s.phase === "idle" && c.view !== "phones" ? ` <a class="btn o" href="${base(c)}?step=phones" data-action="connect-phones">Connect now</a>` : ""}`);
 
@@ -323,45 +290,9 @@ const phonesSummary = (c: Ctx) => {
   return bits.filter(Boolean).join(" + ") || "Telnyx";
 };
 
-/** Vapi (voice) with optional Twilio (numbers and texts): the way in when Telnyx isn't used, or a backup engine next to it. */
-function vapiTwilio(c: Ctx): string {
-  const tel = !!c.s.phones?.confirmed;
-  const on = !!c.s.vapi?.confirmed;
-  const fl = c.flash?.form || {};
-  const form = `<form id="vapitwilio" method="post" action="${base(c)}/a/phones-vapi">${hidden(c)}
-  <div class="two"><div>${secretIn("vapiKey", "Private key", secretHint(c.b.id, "vapi_key"), "Vapi private key")}</div>
-  <div><label class="f" for="vapiPublic">Vapi public key</label><input id="vapiPublic" name="vapiPublic" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" maxlength="300" placeholder="Public key" value="${esc(fl.vapiPublic ?? "")}"></div></div>
-  <div class="two"><div><label class="f" for="twilioSid">Twilio Account SID <span class="tag">Optional</span></label><input id="twilioSid" name="twilioSid" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" maxlength="60" placeholder="AC..." value="${esc(fl.twilioSid ?? c.s.twilio?.sid ?? "")}"></div>
-  <div>${secretIn("twilioToken", "Auth Token", secretHint(c.b.id, "twilio_token"), "Twilio Auth Token")}</div></div>
-  ${showMeHow(["vapi-account", "twilio-account"])}
-  <p><button class="btn o" type="submit" data-action="phones-vapi">Check and save</button></p></form>`;
-  const status = on ? okRow(`Vapi connected${c.s.twilio?.confirmed ? " + Twilio" : ""}${tel ? " (backup)" : ""} ${mini(c, "phones-vapi-remove", "Remove", "linkbtn")}`) : "";
-  return `<section class="phone-alt" data-option="vapi-twilio"><details class="alt"${on || c.flash?.form?.vapiPublic !== undefined || (c.flash?.kind === "err" && c.flash?.form?.twilioSid !== undefined) ? " open" : ""}><summary>${tel ? "Add Vapi as a backup" : "Can't use Telnyx? Use Vapi + Twilio"}</summary>${status}${form}</details></section>`;
-}
-
-function phones(c: Ctx) {
-  const s = c.s;
-  const tel = !!s.phones?.confirmed;
-  const saved = secretHint(c.b.id, "telnyx_key");
-  const nums = s.phones?.numbers || [];
-  const connected = tel ? `${okRow(`Telnyx connected${s.phones?.balance ? ` · ${esc(s.phones.balance)}` : ""}`)}
-  <div class="nums"><h3>Your numbers</h3>${nums.length ? `<ul>${nums.map((n) => `<li>${esc(n)}</li>`).join("")}</ul>` : `<p class="hint">No numbers on this account yet. Add them later.</p>`}</div>` : "";
-  const form = `<form id="main" method="post" action="${base(c)}/a/phones">${hidden(c)}
-  ${secretIn("key", "KEY...", saved, "Telnyx API key")}
-  ${showMeHow(["telnyx-account", "telnyx-api-key"])}
-  <p><button class="btn o" type="submit">Check key</button></p></form>`;
-  const ready = tel || !!s.vapi?.confirmed;
-  return `${head(c, "Voice", "Telnyx carries your calls.")}
-<div class="body">${connected}
-${tel ? "" : `${oauthBtn(c, "telnyx", "Sign in with Telnyx")}${pasteBox(c, "telnyx", form, !oauthEnabled("telnyx"))}`}
-${vapiTwilio(c)}
-</div>
-${nav(c, ready ? mini(c, "phones-continue", `Continue ${icon("right")}`, "btn p") : "")}`;
-}
-
 function vapi(c: Ctx) {
   const vSaved = secretHint(c.b.id, "vapi_key");
-  return `${head(c, RAILWAY ? "Backup voice (Vapi)" : "Vapi for voice", RAILWAY ? "A second voice provider on your own Vapi account, ready if Telnyx has a problem." : "Your receptionists run on your own Vapi account. Add Twilio too for Australian numbers and texts.")}
+  return `${head(c, "Backup voice (Vapi)", "A second voice provider on your own Vapi account, ready if Telnyx has a problem.")}
 <div class="body">${mainForm(c, "vapi", `
   ${secretIn("vapiKey", "Private key", vSaved, "Vapi private API key")}
   <label class="f" for="vapiPublic">Vapi public key (used by the browser test call)</label><input id="vapiPublic" name="vapiPublic" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" maxlength="300" placeholder="Public key" value="${val(c, "vapiPublic", "")}">
@@ -371,10 +302,10 @@ ${nav(c, `${mini(c, "vapi-skip", "Skip", "linkbtn")}${primary("Check and continu
 }
 
 function twilio(c: Ctx) {
-  return `${head(c, "Connect Twilio", RAILWAY ? "Australian numbers and follow-up texts, on your own Twilio account." : "A backup option. Buy Australian numbers on your own Twilio account, or use ones you already have, and send follow-up texts from them. It works with the Vapi backup option. You can also add it later under Connections.", RAILWAY ? "twilio" : undefined)}
-<div class="body">${RAILWAY ? `${openBtn("twilio", "https://console.twilio.com/", "Open Twilio and copy your two details")}
-${mini3(["Sign in to Twilio.", "On the Console home page, find <b>Account Info</b>.", "Copy the <b>Account SID</b> and <b>Auth Token</b> and paste them below."])}` : ""}${mainForm(c, "twilio", `
-  <label class="f" for="twilioSid">Twilio Account SID${RAILWAY ? "" : ` <span class="tag">Optional</span>`}</label><input id="twilioSid" name="twilioSid" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" maxlength="60" placeholder="AC..." value="${val(c, "twilioSid", c.s.twilio?.sid || c.s.phones?.twilioSid || "")}">
+  return `${head(c, "Connect Twilio", "Australian numbers and follow-up texts, on your own Twilio account.", "twilio")}
+<div class="body">${openBtn("twilio", "https://console.twilio.com/", "Open Twilio and copy your two details")}
+${mini3(["Sign in to Twilio.", "On the Console home page, find <b>Account Info</b>.", "Copy the <b>Account SID</b> and <b>Auth Token</b> and paste them below."])}${mainForm(c, "twilio", `
+  <label class="f" for="twilioSid">Twilio Account SID</label><input id="twilioSid" name="twilioSid" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" maxlength="60" placeholder="AC..." value="${val(c, "twilioSid", c.s.twilio?.sid || c.s.phones?.twilioSid || "")}">
   ${secretIn("twilioToken", "Auth Token", secretHint(c.b.id, "twilio_token"), "Twilio Auth Token")}`)}</div>
 ${nav(c, `${mini(c, "twilio-skip", "Skip", "linkbtn")}${primary("Check and continue")}`)}`;
 }
@@ -403,7 +334,7 @@ function email(c: Ctx) {
 ${nav(c, `${mini(c, "email-mode", "Use Resend instead", "linkbtn", "", `<input type="hidden" name="mode" value="resend">`)}${skipEmail(c)}${primary("Check and continue")}`)}`;
   }
   const rs = e?.resend;
-  if (RAILWAY && !c.s.domain?.confirmed) {
+  if (!c.s.domain?.confirmed) {
     if (rs?.domainId && e?.checked) {
       return `${head(c, "Email is connected", `Emails will come from <b>${esc(e.from || "")}</b>.`)}
 ${notice("ok", `Resend is connected. We add its records for <b>${esc(e.sendingDomain || "")}</b> on the Domain step.`)}
@@ -435,7 +366,7 @@ ${manual ? recordTable(rows, true) + showMeHow(["registrar-dns-records"]) : ""}
 ${manual ? "" : `<details class="log"><summary>Show details</summary>${recordTable(rows, false)}</details>`}
 ${nav(c, `${mini(c, "email-continue", "Continue, finish later", "btn o", "", `<input type="hidden" name="later" value="1">`)}${mini(c, "email-recheck", `Check now ${icon("right")}`, "btn p")}`)}`;
   }
-  return `${head(c, RAILWAY ? "Send email from your own address (optional)" : "Send email from your domain", "Invites and notices go out through your own Resend account.")}
+  return `${head(c, "Send email from your own address (optional)", "Invites and notices go out through your own Resend account.")}
 <div class="body">${mainForm(c, "email", `
   ${secretIn("key", "re_...", secretHint(c.b.id, "resend_key"), "Resend API key")}
   <p class="hint">Create it with <b>Full access</b>.</p>
@@ -446,7 +377,7 @@ ${nav(c, `${mini(c, "email-continue", "Continue, finish later", "btn o", "", `<i
 ${nav(c, `${mini(c, "email-mode", "Use another email service", "linkbtn", "", `<input type="hidden" name="mode" value="smtp">`)}${skipEmail(c)}${primary("Check and continue")}`)}`;
 }
 /** Railway: email is optional. */
-const skipEmail = (c: Ctx) => (RAILWAY ? mini(c, "email-skip", "Skip for now", "btn o") : "");
+const skipEmail = (c: Ctx) => mini(c, "email-skip", "Skip for now", "btn o");
 
 function calendars(c: Ctx) {
   const cal = c.s.calendars || {};
@@ -466,7 +397,7 @@ ${mainForm(c, "calendars", `<div class="choice">${card("google", "Google", "Clie
   ${showMeHow(["google-oauth", "microsoft-oauth"])}`)}</div>
 ${nav(c, `${mini(c, "cal-skip", "Continue without my own keys")}${primary("Check and save my keys")}`)}`;
   }
-  if (RAILWAY && !hostOf(c.s)) {
+  if (!hostOf(c.s)) {
     return `${head(c, "Calendar booking (optional)", "Let receptionists book into Google or Outlook calendars.")}
 ${notice("info", "Calendar sign-in needs a web address of your own to send people back to. Add your domain first, or skip this and add calendars later in your dashboard's Settings.")}
 ${mainForm(c, "cal-skip", "")}
@@ -584,64 +515,6 @@ ${nav(c, primary(have.email || have.domain || have.calendars || have.twilio || h
 }
 
 // ---------------- install ----------------
-function stageOf(s: SetupData): number {
-  if (s.phase === "creating" || s.phase === "create_failed") return s.ip ? 2 : s.dropletId ? 1 : 0;
-  if (s.phase === "dns") return 2;
-  if (s.phase === "starting") return 3;
-  const n = Number((s.installStep || "").match(/^(\d+)\//)?.[1] || 0);
-  if (s.phase === "installing" || s.phase === "failed") return n === 0 ? 3 : n <= 4 ? 4 : n <= 6 ? 5 : n <= 8 ? 6 : 7;
-  return 8;
-}
-
-function install(c: Ctx) {
-  if (RAILWAY) return installRailway(c);
-  const s = c.s;
-  const host = hostOf(s);
-  if (s.phase === "idle") {
-    const sv = s.server!;
-    const region = sv.regions?.find((r) => r.slug === sv.region)?.name.replace(/ \d+$/, "") || sv.region;
-    const rows: [string, string][] = [
-      ["Brand", `${esc(s.brand?.productName || "")} · ${s.brand?.logo ? "logo added" : "no logo yet"}`], ["Dashboard", esc(host)], ["Server", `${esc(region)} · ${esc((sv.sizes?.find((z) => z.slug === sv.size)?.label.match(/(\d+) GB memory/) || [])[1] || "2")} GB · US$${sv.price}/mo`],
-      ["Phones", phonesSummary(c)], ["Email from", esc(s.email?.from || "")],
-      ["DNS", s.domain?.mode === "cloudflare" ? "Handled by the wizard" : s.domain?.mode === "godaddy" ? "Handled by the wizard (GoDaddy)" : "You add one record"],
-    ];
-    return `${head(c, "Ready to install", `We'll set up ${P(c)} on your new server. You can close the page while it runs.`)}
-<div class="summary">${rows.map(([k, v]) => `<div><span>${k}</span><b>${v}</b></div>`).join("")}</div>
-${mainForm(c, "install-start", "")}
-${nav(c, primary("Install"))}`;
-  }
-  const manual = s.domain?.mode === "manual";
-  const stages = ["Creating your server in DigitalOcean", "Starting your server", manual ? `Waiting for your DNS record for ${host}` : `Pointing ${host} at your server`,
-    "Downloading the app", "Preparing the server", "Building the app (the longest step)", "Starting the database and the app", "Getting your security certificate"];
-  const at = stageOf(s);
-  const bad = s.phase === "failed" || s.phase === "create_failed";
-  const list = `<ul class="stages">${stages.map((t, i) => {
-    const cls = i < at ? "ok" : i === at ? (bad ? "bad" : "run") : "";
-    const mark = cls === "ok" ? icon("check") : cls === "bad" ? icon("x") : "";
-    const rec = i === 2 && at === 2 && manual && s.aRecord ? `<li class="inline-rec">${recordTable([s.aRecord], true)}</li>` : "";
-    return `<li class="${cls}"><i>${mark}</i>${esc(t)}</li>${rec}`;
-  }).join("")}</ul>`;
-  const { text, next } = logRead(c.b.id);
-  const log = `<details class="log"><summary>Show details</summary><pre id="log" data-next="${next}">${esc(text.slice(-60000))}</pre></details>`;
-  const del = mini(c, "server-delete", "Delete the server", "linkbtn", ` data-confirm="Delete this server from your DigitalOcean account?"`);
-  if (bad) {
-    return `${head(c, s.phase === "failed" ? "The install stopped" : "We couldn't make your server", "")}
-${notice("err", esc((s.error || "Something went wrong.").replace(/^./, (x) => x.toUpperCase())))}
-${list}${log}
-${nav(c, `${s.dropletId ? del : ""}${mini(c, s.phase === "failed" ? "install-retry" : "install-start", `Try again ${icon("right")}`, "btn p")}`, { back: false })}`;
-  }
-  const status = s.phase === "creating" ? "Usually a minute or two."
-    : s.phase === "dns" ? (manual ? `Add the record above. It usually shows up within 15 minutes.` : "Usually a few seconds.")
-    : s.phase === "starting" ? (s.lastSeenAt ? "Your server is collecting the app." : "Your server is finishing booting.")
-    : `Step ${esc((s.installStep || "").replace(/^(\d+)\/(\d+) /, "$1 of $2: ") || "starting")}${s.attempt && s.attempt > 1 ? ` · attempt ${s.attempt}` : ""}`;
-  const skip = s.phase === "dns" && (s.dnsChecks || 0) >= 3 ? mini(c, "dns-skip", "I've added it, install anyway", "btn o") : "";
-  return `${head(c, `Setting up ${P(c)}`, "About 10 to 15 minutes. You can close this page; your link picks up where you left off.")}
-${list}
-<p class="status"><span class="spin"></span>${status}</p>
-${log}
-${nav(c, `${s.dropletId ? del : ""}${skip}`, { back: false })}`;
-}
-
 function railStage(s: SetupData): number {
   const rw = s.rw || {};
   if (s.phase === "creating" || s.phase === "create_failed") return !rw.projectId ? 0 : !rw.pgVolume ? 1 : !rw.deploymentId ? 2 : 3;
@@ -711,25 +584,6 @@ ${list}${recs}
 <p class="status"><span class="spin"></span>${status}${s.attempt && s.attempt > 1 ? ` · attempt ${s.attempt}` : ""}</p>
 ${log}
 ${nav(c, del, { back: false })}`;
-}
-
-function done(c: Ctx) {
-  const s = c.s;
-  if (RAILWAY) return doneRailway(c);
-  const url = s.resultUrl || `https://${hostOf(s)}`;
-  const { text, next } = logRead(c.b.id);
-  return `${head(c, "Your agency is live", `${P(c)} is running on your own server. Everything here is yours.`)}
-<div class="live"><div class="dot">● Live</div><a class="url" href="${esc(url)}" target="_blank" rel="noopener noreferrer">${esc(url)}</a>
-<p class="hint">Your owner account (<b>${esc(s.brand?.ownerEmail || "your owner email")}</b>) is ready. Open your dashboard below to get in. You can choose a password in Settings.</p></div>
-<div class="checks"><b>Before you go</b>
-  ${todo("do", `Delete your DigitalOcean token. <a href="https://cloud.digitalocean.com/account/api/tokens" target="_blank" rel="noopener noreferrer">Open DigitalOcean</a>`)}
-  ${s.domain?.mode === "cloudflare" ? todo("cf", `Delete your Cloudflare token. <a href="https://dash.cloudflare.com/profile/api-tokens" target="_blank" rel="noopener noreferrer">Open Cloudflare</a>`) : ""}
-  ${note(`Keep your ${s.email?.mode === "resend" ? "Resend key" : "email login"}: your server sends email with it.`)}
-  ${note(s.sshKeyAdded ? `Log in to the server with your SSH key: <code>ssh root@${esc(s.ip || "")}</code>` : "Server login: DigitalOcean emailed you its root password, or use the droplet's Console.")}
-</div>
-${lockedOut(c)}
-<details class="log"><summary>Show details</summary><pre id="log" data-next="${next}">${esc(text.slice(-60000))}</pre></details>
-${nav(c, `<a class="btn p big" href="${esc(dashboardLink(s, url))}" target="_blank" rel="noopener noreferrer">Open your dashboard ${icon("ext")}</a>${sourceLink(c)}`, { back: false })}`;
 }
 
 /** Done screen: for owners with no email set up (or who simply forgot). Asks their agency for a one-time reset link; the answer comes back on screen only. */
@@ -813,8 +667,56 @@ function sourceLink(c: Ctx): string {
   return c.s.attemptVersion ? ` <a class="btn o" href="${base(c)}/source" data-action="download-source">Download your full source code</a>` : "";
 }
 
+/** The Done screen's own-address card: add one, or change it. The form is the next screen (domainAddScreen). */
+function domainCard(c: Ctx): string {
+  const s = c.s;
+  if (s.update?.phase === "running") return "";
+  const host = hostOf(s);
+  if (!host) return `<div class="xcard"><div class="xh">${plogo("domain")}<b>Your own web address</b></div><p>Use app.yourbusiness.com instead of the Railway address.</p><div class="xa">${mini(c, "domain-add-open", "Add your own domain", "btn o")}</div></div>`;
+  return `<p class="hint">Your web address: <b>${esc(host)}</b> · ${mini(c, "domain-add-open", "Change domain", "linkbtn")}</p>`;
+}
+
+/** Add or change the address after the install: the form, the work, or it stopped (nothing changed). */
+function domainAddScreen(c: Ctx): string {
+  const s = c.s, d = s.domainAdd!;
+  if (d.phase === "ask") {
+    const saved = secretHint(c.b.id, "railway_token");
+    return `${head(c, hostOf(s) ? "Change your web address" : "Add your own web address", `${P(c)} will open at <b>app.</b>your domain. Your agency keeps working at its Railway address while this is set up.`)}
+<div class="body">${mainForm(c, "domain-add-start", `
+  <label class="f" for="domain">Your domain</label>
+  <input id="domain" name="domain" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" maxlength="253" placeholder="yourbusiness.com" value="${esc(c.flash?.form?.domain ?? "")}">
+  <p class="hint">Your dashboard will be at <b id="pv">app.${esc(c.flash?.form?.domain || "your-domain")}</b>.</p>
+  ${secretIn("token", "Paste your Railway token", saved, "Railway account token")}
+  <p class="hint">The same kind of token as when you set up (Account Settings, Tokens, <b>No workspace</b>). We use it for this change only, then delete it.</p>
+  ${showMeHow(["railway-token"])}`)}</div>
+${nav(c, `${mini(c, "domain-add-cancel", "Not now", "btn o")}${primary("Check and connect")}`, { back: false })}`;
+  }
+  const bad = d.phase === "failed";
+  const stages = [...(d.from ? [`Taking ${d.from} off your agency`] : []), `Connecting ${d.host}`, "Pointing your agency at its new address", "Restarting your agency"];
+  const at = (d.from && d.removedOld ? 1 : 0) + (d.customDomainId ? 1 : 0) + (d.varsSet ? 1 : 0);
+  const list = `<ul class="stages">${stages.map((t, i) => {
+    const cls = i < at ? "ok" : i === at ? (bad ? "bad" : "run") : "";
+    return `<li class="${cls}"><i>${cls === "ok" ? icon("check") : cls === "bad" ? icon("x") : ""}</i>${esc(t)}</li>`;
+  }).join("")}</ul>`;
+  const { text, next } = logRead(c.b.id);
+  const log = `<details class="log"><summary>Show details</summary><pre id="log" data-next="${next}">${esc(text.slice(-60000))}</pre></details>`;
+  if (bad) {
+    return `${head(c, "The change stopped", "")}
+${notice("err", esc((d.error || "Something went wrong.").replace(/^./, (x) => x.toUpperCase())))}
+${notice("ok", "Nothing was lost. Your agency keeps working at its current address.")}
+${list}${log}
+${nav(c, `${mini(c, "domain-add-cancel", "Not now", "btn o")}${mini(c, "domain-add-retry", `Try again ${icon("right")}`, "btn p")}`, { back: false })}`;
+  }
+  return `${head(c, `Connecting ${esc(d.host || "")}`, "Your agency keeps working while this runs. You can close this page; your link picks up where you left off.")}
+${list}
+<p class="status"><span class="spin"></span>${d.varsSet ? "Restarting your agency. A minute or so." : "Setting things up on Railway."}</p>
+${log}
+${nav(c, "", { back: false })}`;
+}
+
 function doneRailway(c: Ctx) {
   if (c.s.update && c.s.update.phase !== "done") return updateScreen(c);
+  if (c.s.domainAdd) return domainAddScreen(c);
   if (isDemo(c.b)) {
     return `${head(c, "Your agency is live", `${P(c)} is ready. This test uses a temporary address instead of your own domain.`)}
 <div class="live"><div class="dot">● Live</div><p class="hint">Next: create your password and your branded dashboard opens.</p></div>
@@ -832,6 +734,7 @@ ${nav(c, `<a class="btn p" href="${base(c)}/open">Open your dashboard ${icon("ex
 ${pending ? `<p class="hint">Your temporary address. <b>${esc(hostOf(s))}</b> starts working by itself once the records below are in.</p>` : ""}
 <p class="hint">Your owner account (<b>${esc(s.brand?.ownerEmail || "your owner email")}</b>) is ready. Open your dashboard below to get in. You can choose a password in Settings.</p></div>
 ${updateBanner(c)}
+${domainCard(c)}
 ${phoneSkipped(s) ? phoneLaterNote(c) : ""}
 ${dnsCheck(s) ? `<div class="checks">${dnsCheck(s)}</div>` : ""}
 ${pending && s.finishRecords?.length ? `<div class="recbox"><b>Records for ${esc(hostOf(s))}</b>${recordTable(s.finishRecords, true)}</div>` : ""}
@@ -840,19 +743,19 @@ ${lockedOut(c)}
 ${nav(c, `<a class="btn p big" href="${esc(dashboardLink(s, shown))}" target="_blank" rel="noopener noreferrer">Open your dashboard ${icon("ext")}</a>${sourceLink(c)}`, { back: false })}`;
 }
 
-const SCREENS: Record<StepId, (c: Ctx) => string> = { welcome, brand, railway: railwayStep, domain: domainStep, server, phones: RAILWAY ? phonesRailway : phones, ai: aiStep, email, calendars, extras, vapi, twilio, install, done };
+const SCREENS: Record<StepId, (c: Ctx) => string> = { welcome, brand, railway: railwayStep, domain: domainStep, phones: phonesRailway, ai: aiStep, email, calendars, extras, vapi, twilio, install: installRailway, done: doneRailway };
 
 export function statusRev(c: { b: Buyer; s: SetupData }): string {
   const s = c.s;
-  const bits = [s.step, s.phase, (s.progress || []).length, s.installStep, s.error, s.aRecord?.ok, s.dnsChecks && s.dnsChecks >= 3, s.lastSeenAt ? 1 : 0, s.domain?.cf?.status, s.domain?.cf?.canEdit,
-    s.email?.resend?.status, s.email?.testSentTo, ...(s.email?.resend?.records || []).map((r) => (r.ok ? 1 : 0)), s.email?.resend?.dmarc?.ok ? 1 : 0, s.attempt, s.dropletId ? 1 : 0, s.ip ? 1 : 0,
+  const bits = [s.domainAdd?.phase, s.domainAdd?.customDomainId ? 1 : 0, s.domainAdd?.varsSet ? 1 : 0, s.domainAdd?.removedOld ? 1 : 0, s.domainPending ? 1 : 0, ...(s.finishRecords || []).map((r) => `${r.ok ? 1 : 0}${r.seen || ""}`), s.resultUrl, s.step, s.phase, (s.progress || []).length, s.error, s.domain?.cf?.status, s.domain?.cf?.canEdit,
+    s.email?.resend?.status, s.email?.testSentTo, ...(s.email?.resend?.records || []).map((r) => (r.ok ? 1 : 0)), s.email?.resend?.dmarc?.ok ? 1 : 0, s.attempt,
     s.rw?.projectId ? 1 : 0, s.rw?.pgVolume ? 1 : 0, s.update?.phase, s.update?.deployStatus, s.update?.appId ? 1 : 0, s.update?.varsSet ? 1 : 0, s.update?.deploymentId, s.rw?.deploymentId, s.rw?.deployStatus, s.rw?.certStatus, s.rw?.healthy ? 1 : 0, ...(s.rw?.records || []).map((r) => `${r.ok ? 1 : 0}${r.seen || ""}`), ...(s.email?.resend?.records || []).map((r) => r.seen || "")];
   return Bun.hash(JSON.stringify(bits)).toString(36);
 }
 const isLive = (c: Ctx) =>
-  (c.view === "install" && ["creating", "dns", "starting", "installing", "deploying", "domain"].includes(c.s.phase)) ||
-  (c.view === "done" && c.s.update?.phase === "running") ||
-  (c.view === "domain" && RAILWAY && c.s.domain?.mode === "manual" && !!c.s.domain.host && c.s.email?.resend?.status !== "verified" && !!c.s.email?.resend?.records?.length) ||
+  (c.view === "install" && ["creating", "deploying", "domain"].includes(c.s.phase)) ||
+  (c.view === "done" && (c.s.update?.phase === "running" || c.s.domainAdd?.phase === "running" || !!c.s.domainPending)) ||
+  (c.view === "domain" && c.s.domain?.mode === "manual" && !!c.s.domain.host && c.s.email?.resend?.status !== "verified" && !!c.s.email?.resend?.records?.length) ||
   (c.view === "domain" && !!c.s.domain?.cf?.zoneId && !!c.s.domain.cf.status && c.s.domain.cf.status !== "active") ||
   (c.view === "email" && !!c.s.email?.resend?.domainId && c.s.email.resend.status !== "verified");
 
@@ -862,7 +765,6 @@ const isLive = (c: Ctx) =>
 const HELP: Record<string, { say: string; chips: string[] }> = {
   welcome: { say: "Hi! I'll guide you through. It takes about 10 minutes. Press Start.", chips: ["What do I need?", "What will it cost?"] },
   brand: { say: "Pick your name, colours and look. You can change them later.", chips: ["Can I change this later?", "What logo works best?"] },
-  server: { say: "Open DigitalOcean, make a token, paste it here.", chips: ["Where do I find my DigitalOcean token?", "What does the server cost?"] },
   vapi: { say: "Optional: a backup voice provider. Copy both keys from Vapi and paste them here.", chips: ["Which two Vapi keys?", "Do I need a backup?"] },
   railway: { say: "Open Railway, make a token, paste it here.", chips: ["Where do I find my Railway token?", "What is No workspace?", "What is the Hobby plan?"] },
   phones: { say: "Telnyx is the easy pick. Vapi works too. Stuck on Telnyx's ID check? Pick Vapi now, add Telnyx later in your dashboard.", chips: ["Telnyx or Vapi?", "Telnyx wants an ID check"] },

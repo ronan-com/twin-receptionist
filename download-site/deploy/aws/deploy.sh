@@ -62,7 +62,7 @@ if [ -n "${ADMIN_PASSWORD_HASH:-}" ]; then
   [[ $ADMIN_PASSWORD_HASH == \$argon2* ]] || { echo "ADMIN_PASSWORD_HASH must come from: bun download-site/admin.ts admin-hash"; exit 1; }
   put ADMIN_PASSWORD_HASH "$ADMIN_PASSWORD_HASH"
 fi
-for k in SUPPORT_EMAIL SELLER_NAME PRODUCT_NAME SITE_SMTP_URL SITE_MAIL_FROM HOSTING OPENROUTER_API_KEY SETUP_CHAT_MODEL; do
+for k in SUPPORT_EMAIL SELLER_NAME PRODUCT_NAME SITE_SMTP_URL SITE_MAIL_FROM OPENROUTER_API_KEY SETUP_CHAT_MODEL; do
   [ -n "${!k:-}" ] && put "$k" "${!k}"
 done
 true

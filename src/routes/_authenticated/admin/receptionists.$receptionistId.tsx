@@ -99,7 +99,7 @@ function ReceptionistEditor() {
     />
   );
   // The setup pages below belong to the agency's own clients (they save through the workspace).
-  const editable = ownOrg && !r.demo_assistant;
+  const editable = ownOrg;
   const readNote = <p className="text-[12.5px] text-ink-muted">This receptionist belongs to another agency, so it can only be looked at here.</p>;
 
   return (

@@ -15,7 +15,7 @@ export function DateRangeSelect({ value, onChange, className }: { value: RangePr
             onClick={() => onChange(p.value)}
             className={cn(
               "h-full rounded-[4px] px-2.5 text-[12px] font-medium outline-none transition-colors focus-visible:ring-2 focus-visible:ring-indigo",
-              active ? "bg-slate-deep text-white" : "text-ink-muted hover:text-ink",
+              active ? "bg-slate-deep text-[var(--page)] dark:text-[var(--page)]" : "text-ink-muted hover:text-ink",
             )}
           >
             <span className="sm:hidden">{p.short}</span>

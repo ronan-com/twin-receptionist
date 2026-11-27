@@ -298,8 +298,8 @@ function ClientDetailPage() {
                         </div>
                       </div>
                     </div>
-                    <Button asChild size="sm" variant="outline" className="h-8 self-start text-[12.5px] sm:self-auto">
-                      <Link to="/admin/receptionists/$receptionistId" params={{ receptionistId: r.id }} search={{ tab: "voice" }} data-action="open-receptionist">Open receptionist <ChevronRight className="ml-1 h-3.5 w-3.5" /></Link>
+                    <Button asChild size="lg" className="self-start sm:self-auto">
+                      <Link to="/admin/receptionists/$receptionistId" params={{ receptionistId: r.id }} search={{ tab: "voice" }} data-action="open-receptionist"><Pencil className="mr-1.5 h-4 w-4" /> Edit receptionist</Link>
                     </Button>
                   </li>
                 );

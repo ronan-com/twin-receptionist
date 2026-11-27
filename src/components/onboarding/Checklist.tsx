@@ -148,7 +148,7 @@ export function GetStartedChecklist() {
       aria-labelledby="gs-heading"
       className="overflow-hidden rounded-xl border border-hairline bg-white shadow-sm"
     >
-      <div className="relative border-b border-hairline bg-[linear-gradient(135deg,color-mix(in_srgb,var(--indigo)_10%,#fff),#fff_70%)] px-4 py-3.5 sm:px-5">
+      <div className="relative border-b border-hairline bg-[linear-gradient(135deg,color-mix(in_srgb,var(--indigo)_10%,var(--card)),var(--card)_70%)] px-4 py-3.5 sm:px-5">
         <div className="flex items-start gap-3 pr-8">
           <div className="min-w-0 flex-1">
             <h2 id="gs-heading" className="text-[15px] font-semibold tracking-[-0.01em] text-ink">
@@ -198,7 +198,7 @@ export function GetStartedChecklist() {
             key={item.key}
             data-gs-item={item.key}
             data-done={item.done ? "true" : "false"}
-            className={cn("flex flex-col gap-2 px-4 py-3 sm:flex-row sm:items-center sm:gap-3 sm:px-5", idx === next && !loading && "bg-[color-mix(in_srgb,var(--indigo)_5%,#fff)]")}
+            className={cn("flex flex-col gap-2 px-4 py-3 sm:flex-row sm:items-center sm:gap-3 sm:px-5", idx === next && !loading && "bg-[color-mix(in_srgb,var(--indigo)_5%,var(--card))]")}
           >
             <div className="flex min-w-0 flex-1 items-start gap-3">
               <span

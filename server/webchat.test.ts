@@ -470,11 +470,14 @@ describe("storage", () => {
       ready = false;
       console.error("storage tests need the dev database:", (err as Error).message);
     }
-  });
+    // bun's default hook timeout is 5s. migrate() takes a database-wide advisory lock that other test runs, the dev
+    // server and other agents also take, so under load it can wait longer than that; a timed-out hook skips every
+    // test in this block (the "345 tests, 1 fail" release failure), so give it room.
+  }, 120_000);
   afterAll(async () => {
     await sql`delete from clients where org_id = ${orgId}`.catch(() => {});
     await sql`delete from orgs where id = ${orgId}`.catch(() => {});
-  });
+  }, 30_000);
 
   test("settings are made once per receptionist, off, with an unguessable id", async () => {
     expect(ready).toBe(true);

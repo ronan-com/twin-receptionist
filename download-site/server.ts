@@ -428,5 +428,5 @@ if (CONFIG.extraListen) {
 startTicker();
 startAlerts();
 
-console.log(`Setup site for ${CONFIG.productName} (${CONFIG.sellerName}) on http://${server.hostname}:${server.port}${CONFIG.extraListen ? ` and ${CONFIG.extraListen}` : ""}  data: ${CONFIG.dataDir}`);
+console.log(`AI agency setup site on http://${server.hostname}:${server.port}${CONFIG.extraListen ? ` and ${CONFIG.extraListen}` : ""}  data: ${CONFIG.dataDir}`);
 if (ANY_MOCK) console.log(`TEST MODE: ${Object.entries({ PREVIEW_JUMP: CONFIG.previewJump, MOCK_RAILWAY: CONFIG.mockRailway, MOCK_DO: CONFIG.mockDO, MOCK_CF: CONFIG.mockCF, MOCK_RESEND: CONFIG.mockResend, MOCK_TELNYX: CONFIG.mockTelnyx, MOCK_OAUTH: CONFIG.mockOAuth }).filter(([, v]) => v).map(([k]) => k).join(" ")} (fake providers; nothing real is called)`);

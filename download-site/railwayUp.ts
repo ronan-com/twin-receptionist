@@ -26,7 +26,7 @@ export class RailwayError extends Error {
 export const railwayBase = (override?: string) => (override || process.env.RAILWAY_API_BASE || "https://backboard.railway.com").replace(/\/+$/, "");
 
 export function railwayHeaders(a: RailwayAuth, extra: Record<string, string> = {}): Record<string, string> {
-  return { ...(a.kind === "project" ? { "Project-Access-Token": a.token } : { Authorization: `Bearer ${a.token}` }), "User-Agent": "chloe-railway/1", ...extra };
+  return { ...(a.kind === "project" ? { "Project-Access-Token": a.token } : { Authorization: `Bearer ${a.token}` }), "User-Agent": "agency-setup/1", ...extra };
 }
 
 function classify(status: number, said: string): RailwayError {

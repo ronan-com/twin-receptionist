@@ -172,7 +172,7 @@ const cfBody = (r: DnsRecord) => ({
   ttl: r.ttl === "Auto" ? 1 : r.ttl,
   proxied: r.type === "A" || r.type === "CNAME" ? false : undefined, // DNS only, so the server can get its certificate
   priority: r.type === "MX" ? r.priority ?? 10 : undefined,
-  comment: `Added by the ${CONFIG.productName} setup`,
+  comment: "Added by the agency setup",
 });
 const unq = (s: string) => String(s || "").replace(/^"|"$/g, "").replace(/" "/g, "");
 

@@ -121,7 +121,7 @@ describe("serving a buyer's wizard on their own domain", () => {
     expect(await r.text()).toContain(`/setup/${b.code}/a/start`);
     expect((await onHost(OWN, `/setup/${b.code}`)).status).toBe(200);
     expect((await fetch(`${SITE}/`)).status).toBe(200); // our own home page is still ours
-    expect(await (await fetch(`${SITE}/`)).text()).toContain(CONFIG.productName);
+    expect(await (await fetch(`${SITE}/`)).text()).toContain("AI receptionist agency");
   });
 
   test("a host that isn't registered is the normal site, a revoked buyer's host says so", async () => {

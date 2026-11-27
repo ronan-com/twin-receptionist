@@ -9,7 +9,6 @@ import { howTo } from "./content";
 import { chatBubble, chatHead } from "./chat";
 import { PHONE_LATER, agencyUrl, canView, firstOpen, hostOf, locked, oauthRedirect, phoneSkipped, stepDone, updateInfo, webUrl, zoneOf } from "./setup";
 import { detailOf, hasAssist, helpedStep, stepRows, type AssistId } from "./assist";
-import { servingOwnHost } from "./ctx";
 import { personHelpHtml } from "./wizhelp";
 import { DEFAULT_REGION, DEFAULT_SIZE } from "./providers";
 import { OPTIONAL_HUB, STEPS, csrfToken, isOptional, logRead, secretHint, type DnsRecord, type SetupData, type StepId } from "./store";
@@ -104,9 +103,9 @@ function nav(c: Ctx, right: string, opts: { back?: boolean } = {}) {
   const skip = CONFIG.previewJump && i < STEPS.length - 1 ? `<a class="btn g" href="${base(c)}?step=${STEPS[i + 1]}">Skip (preview)</a>` : "";
   return `<div class="nav">${back}<div class="right">${skip}${right}</div></div>`;
 }
-/** The buyer's brand. Before they've named it, ours (on our address) or a plain "your agency" (on their own domain: nothing of ours shows there). */
-const NEUTRAL = (b?: Buyer) => (servingOwnHost() || b?.style === "neutral" ? "your agency" : CONFIG.productName);
-const P = (c: Ctx) => esc(c.s.brand?.productName || NEUTRAL(c.b));
+/** The buyer's brand. Before they've named it, a plain "your agency": nothing of ours shows anywhere. */
+const NEUTRAL = "your agency";
+const P = (c: Ctx) => esc(c.s.brand?.productName || NEUTRAL);
 
 // ======================= screens =======================
 function welcome(c: Ctx) {
@@ -125,7 +124,7 @@ function brand(c: Ctx) {
   return `${head(c, "Name your brand", "Your brand appears on every screen and email your clients see.")}
 <div class="body">${mainForm(c, "brand", `
   <label class="f" for="productName">Brand name</label>
-  <input id="productName" name="productName" maxlength="60" required value="${val(c, "productName", br?.productName || "")}" placeholder="e.g. ${c.b.style === "neutral" ? "Acme AI" : "Chloe"}">
+  <input id="productName" name="productName" maxlength="60" required value="${val(c, "productName", br?.productName || "")}" placeholder="e.g. Acme AI">
   <label class="f" for="ownerEmail">Owner email</label>
   <input id="ownerEmail" name="ownerEmail" type="email" maxlength="200" required autocomplete="email" value="${val(c, "ownerEmail", br?.ownerEmail || c.b.email)}">
   <p class="hint">You'll sign in with this as the owner of your agency.</p>
@@ -777,14 +776,11 @@ function screenOf(c: Ctx): string {
 }
 
 /**
- * The wizard page. A "neutral" agency (an onboarding link set to the generic style, genericlink.ts) never sees our name:
- * the title and placeholders above use "your agency", and the links to our branded /guide page are taken out here.
+ * The wizard page. It is generic: it never shows our name. The title and placeholders use "your agency" until the buyer
+ * names their brand, and the /guide page it links to is generic too.
  */
 export function wizardPage(b: Buyer, s: SetupData, code: string, sid: string, view: StepId, flash?: SetupData["flash"]) {
-  const html = wizardHtml(b, s, code, sid, view, flash);
-  return b.style === "neutral"
-    ? html.replace(/<a href="\/guide"[^>]*>Full guide<\/a>/g, "").replace(/<p><a class="more-link" href="\/guide#[^"]*"[^>]*>[\s\S]*?<\/a><\/p>/g, "")
-    : html;
+  return wizardHtml(b, s, code, sid, view, flash);
 }
 function wizardHtml(b: Buyer, s: SetupData, code: string, sid: string, view: StepId, flash?: SetupData["flash"]) {
   const c: Ctx = { b, s, code, sid, view, flash };
@@ -797,7 +793,7 @@ function wizardHtml(b: Buyer, s: SetupData, code: string, sid: string, view: Ste
   // A one-time link (owner password reset): a big button, shown once and never stored.
   const flLink = flash?.link && /^https?:\/\/[^\s"'<>]+$/.test(flash.link)
     ? `<p class="resetlink"><a class="btn p big" href="${esc(flash.link)}" target="_blank" rel="noopener noreferrer" data-owner-reset-link>Set a new password ${icon("ext")}</a></p>` : "";
-  const title = `${META[view].title} · Set up ${s.brand?.productName || NEUTRAL(b)}`;
+  const title = `${META[view].title} · Set up ${s.brand?.productName || NEUTRAL}`;
   return `<!doctype html>
 <html lang="en-AU">
 <head>
@@ -832,18 +828,16 @@ ${chatBubble({ url: `/setup/${code}/chat`, t: csrfToken(sid, code), view })}
 
 /**
  * The page shell for the public onboarding link pages (genericlink.ts): the wizard's own look (same stylesheet, ribbon,
- * header bars and footer line), in either style. Branded shows our product name; neutral shows nothing of ours.
+ * header and footer line). Generic: it shows nothing of ours.
  */
-export function startShell(style: Style, title: string, inner: string): string {
-  const neutral = style === "neutral";
-  const name = neutral ? "" : esc(CONFIG.productName);
+export function startShell(_style: Style, title: string, inner: string): string {
   return `<!doctype html>
 <html lang="en-AU">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex, nofollow">
-<title>${esc(neutral ? title : `${title} · ${CONFIG.productName}`)}</title>
+<title>${esc(title)}</title>
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
 <link rel="preload" href="/fonts/inter-latin-400-normal.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="stylesheet" href="/wizard.css">
@@ -851,11 +845,11 @@ export function startShell(style: Style, title: string, inner: string): string {
 </head>
 <body>
 <div class="ribbon" aria-hidden="true"></div>
-<header class="top"><span class="mark">${neutral ? "" : bars}<span>${neutral ? "Your AI receptionist agency" : name}</span></span>
+<header class="top"><span class="mark"><span>Your AI receptionist agency</span></span>
 <nav>${CONFIG.supportEmail ? `<a href="mailto:${esc(CONFIG.supportEmail)}">Help</a>` : ""}</nav></header>
 <div class="shell wiz admshell"><main>
   <section class="card">${inner}</section>
-  <p class="foot">${neutral ? "" : `${icon("shield")} `}Your keys are stored encrypted and deleted once your install is done.${neutral ? "" : ` ${esc(CONFIG.sellerName)}.`}</p>
+  <p class="foot">Your keys are stored encrypted and deleted once your install is done.</p>
 </main></div>
 </body>
 </html>`;

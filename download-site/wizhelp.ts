@@ -8,7 +8,6 @@
 import { CONFIG, db, now, type Buyer } from "./lib";
 import { esc } from "./pages";
 import { allow } from "./setup";
-import { servingOwnHost } from "./ctx";
 import { ALL_SECRETS, STEPS, hasSecret, redact, secretValues, type SetupData, type StepId } from "./store";
 import { messagesOf, text, ticketById, ticketTables, touch, wizardCtx, type Ticket, type WizardContext } from "./tickets";
 
@@ -103,8 +102,7 @@ const when = (iso: string) => new Date(iso).toISOString().slice(0, 16).replace("
  */
 export function personHelpHtml(b: Buyer, s: SetupData, code: string, hidden: string): string {
   const t = wizardTicketOf(b.id);
-  const neutral = servingOwnHost() || b.style === "neutral";
-  const us = neutral ? "Support" : `${CONFIG.sellerName} support`;
+  const us = "Support";
   const msgs = t ? messagesOf(t.id) : [];
   const thread = t ? `<div class="person-req" id="person-request"><div class="person-head"><b>Your help request</b> <span class="pill ${t.status === "closed" ? "live" : t.status === "waiting" ? "installing" : "in-setup"}">${t.status === "closed" ? "Closed" : t.status === "waiting" ? "We replied" : "We've got it"}</span></div>
 ${msgs.map((m) => `<div class="person-msg ${m.author === "support" ? "us" : "me"}"><div class="who"><b>${m.author === "support" ? esc(us) : "You"}</b> <span>${esc(when(m.at))}</span></div><div class="text">${esc(m.body)}</div></div>`).join("")}

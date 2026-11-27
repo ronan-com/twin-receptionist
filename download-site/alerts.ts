@@ -51,12 +51,12 @@ export async function raise(buyerId: number, kind: AlertKind, message: string, a
   const b = findBuyerById(buyerId);
   const label = b ? `${b.name}${getSetup(buyerId).brand?.productName ? ` (${getSetup(buyerId).brand!.productName})` : ""}` : `buyer ${buyerId}`;
   const link = `${CONFIG.siteUrl}/admin/b/${buyerId}`;
-  const text = `${CONFIG.sellerName} alert: ${label}: ${message}\n${link}`;
+  const text = `AI Agency Admin alert: ${label}: ${message}\n${link}`;
   const id = Number(db().query("INSERT INTO alerts (buyer_id, kind, message, at, sent) VALUES (?, ?, ?, ?, '')").run(buyerId, kind, message.slice(0, 400), new Date(at).toISOString()).lastInsertRowid);
   const c = alertConfig();
   const sent: string[] = [];
   if (c.smtp && c.from && c.to.length) {
-    try { await alertDeps.sendMail(c.smtp, { from: c.from, to: c.to.join(", "), subject: `${CONFIG.sellerName} alert: ${label}`, text }); sent.push("email"); } catch (e) { console.error(`[alerts] email failed: ${(e as any)?.code || (e as Error)?.name}`); }
+    try { await alertDeps.sendMail(c.smtp, { from: c.from, to: c.to.join(", "), subject: `AI Agency Admin alert: ${label}`, text }); sent.push("email"); } catch (e) { console.error(`[alerts] email failed: ${(e as any)?.code || (e as Error)?.name}`); }
   }
   if (c.webhook) {
     try {

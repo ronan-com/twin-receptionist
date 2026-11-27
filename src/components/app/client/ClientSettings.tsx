@@ -331,6 +331,7 @@ export function ClientSettings() {
           )}
           <p className="text-[13.5px] text-ink-muted">Voice, call transfers, texting, extra numbers and other call handling are looked after for you. {AGENCY_NOTE(who)}</p>
         </Section>
+        <LinkRow to="/app/how-it-works" title="How it works" summary="Quick help: calls, bookings, messages, hours and getting in touch" />
         <LinkRow to="/app/analytics" title="Reports" summary="How your calls and bookings are trending" />
         <LinkRow to="/app/settings" search={{ tab: "business" }} title="Business details" summary="Name, address, time zone" />
         <LinkRow to="/app/settings" search={{ tab: "branding" }} title="Logo and colours" summary="How your dashboard looks" />

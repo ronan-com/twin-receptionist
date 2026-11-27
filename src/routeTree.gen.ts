@@ -37,6 +37,7 @@ import { Route as AuthenticatedAdminSettingsRouteImport } from './routes/_authen
 import { Route as AuthenticatedAdminSupportRequestsRouteImport } from './routes/_authenticated/admin/support-requests'
 import { Route as AuthenticatedAdminSystemRouteImport } from './routes/_authenticated/admin/system'
 import { Route as AuthenticatedAdminTestLabRouteImport } from './routes/_authenticated/admin/test-lab'
+import { Route as AuthenticatedAdminTutorialsRouteImport } from './routes/_authenticated/admin/tutorials'
 import { Route as AuthenticatedAdminUsageRouteImport } from './routes/_authenticated/admin/usage'
 import { Route as AuthenticatedAdminVoicesRouteImport } from './routes/_authenticated/admin/voices'
 import { Route as AuthenticatedAppIndexRouteImport } from './routes/_authenticated/app/index'
@@ -44,6 +45,7 @@ import { Route as AuthenticatedAppAnalyticsRouteImport } from './routes/_authent
 import { Route as AuthenticatedAppAutomationsRouteImport } from './routes/_authenticated/app/automations'
 import { Route as AuthenticatedAppBookingsRouteImport } from './routes/_authenticated/app/bookings'
 import { Route as AuthenticatedAppCallsRouteImport } from './routes/_authenticated/app/calls'
+import { Route as AuthenticatedAppHowItWorksRouteImport } from './routes/_authenticated/app/how-it-works'
 import { Route as AuthenticatedAppIntegrationsRouteImport } from './routes/_authenticated/app/integrations'
 import { Route as AuthenticatedAppKnowledgeRouteImport } from './routes/_authenticated/app/knowledge'
 import { Route as AuthenticatedAppLeadsRouteImport } from './routes/_authenticated/app/leads'
@@ -207,6 +209,12 @@ const AuthenticatedAdminTestLabRoute =
     path: '/test-lab',
     getParentRoute: () => AuthenticatedAdminRouteRoute,
   } as any)
+const AuthenticatedAdminTutorialsRoute =
+  AuthenticatedAdminTutorialsRouteImport.update({
+    id: '/tutorials',
+    path: '/tutorials',
+    getParentRoute: () => AuthenticatedAdminRouteRoute,
+  } as any)
 const AuthenticatedAdminUsageRoute = AuthenticatedAdminUsageRouteImport.update({
   id: '/usage',
   path: '/usage',
@@ -246,6 +254,12 @@ const AuthenticatedAppCallsRoute = AuthenticatedAppCallsRouteImport.update({
   path: '/calls',
   getParentRoute: () => AuthenticatedAppRouteRoute,
 } as any)
+const AuthenticatedAppHowItWorksRoute =
+  AuthenticatedAppHowItWorksRouteImport.update({
+    id: '/how-it-works',
+    path: '/how-it-works',
+    getParentRoute: () => AuthenticatedAppRouteRoute,
+  } as any)
 const AuthenticatedAppIntegrationsRoute =
   AuthenticatedAppIntegrationsRouteImport.update({
     id: '/integrations',
@@ -338,12 +352,14 @@ export interface FileRoutesByFullPath {
   '/admin/support-requests': typeof AuthenticatedAdminSupportRequestsRoute
   '/admin/system': typeof AuthenticatedAdminSystemRoute
   '/admin/test-lab': typeof AuthenticatedAdminTestLabRoute
+  '/admin/tutorials': typeof AuthenticatedAdminTutorialsRoute
   '/admin/usage': typeof AuthenticatedAdminUsageRoute
   '/admin/voices': typeof AuthenticatedAdminVoicesRoute
   '/app/analytics': typeof AuthenticatedAppAnalyticsRoute
   '/app/automations': typeof AuthenticatedAppAutomationsRoute
   '/app/bookings': typeof AuthenticatedAppBookingsRoute
   '/app/calls': typeof AuthenticatedAppCallsRoute
+  '/app/how-it-works': typeof AuthenticatedAppHowItWorksRoute
   '/app/integrations': typeof AuthenticatedAppIntegrationsRoute
   '/app/knowledge': typeof AuthenticatedAppKnowledgeRoute
   '/app/leads': typeof AuthenticatedAppLeadsRoute
@@ -383,12 +399,14 @@ export interface FileRoutesByTo {
   '/admin/support-requests': typeof AuthenticatedAdminSupportRequestsRoute
   '/admin/system': typeof AuthenticatedAdminSystemRoute
   '/admin/test-lab': typeof AuthenticatedAdminTestLabRoute
+  '/admin/tutorials': typeof AuthenticatedAdminTutorialsRoute
   '/admin/usage': typeof AuthenticatedAdminUsageRoute
   '/admin/voices': typeof AuthenticatedAdminVoicesRoute
   '/app/analytics': typeof AuthenticatedAppAnalyticsRoute
   '/app/automations': typeof AuthenticatedAppAutomationsRoute
   '/app/bookings': typeof AuthenticatedAppBookingsRoute
   '/app/calls': typeof AuthenticatedAppCallsRoute
+  '/app/how-it-works': typeof AuthenticatedAppHowItWorksRoute
   '/app/integrations': typeof AuthenticatedAppIntegrationsRoute
   '/app/knowledge': typeof AuthenticatedAppKnowledgeRoute
   '/app/leads': typeof AuthenticatedAppLeadsRoute
@@ -432,12 +450,14 @@ export interface FileRoutesById {
   '/_authenticated/admin/support-requests': typeof AuthenticatedAdminSupportRequestsRoute
   '/_authenticated/admin/system': typeof AuthenticatedAdminSystemRoute
   '/_authenticated/admin/test-lab': typeof AuthenticatedAdminTestLabRoute
+  '/_authenticated/admin/tutorials': typeof AuthenticatedAdminTutorialsRoute
   '/_authenticated/admin/usage': typeof AuthenticatedAdminUsageRoute
   '/_authenticated/admin/voices': typeof AuthenticatedAdminVoicesRoute
   '/_authenticated/app/analytics': typeof AuthenticatedAppAnalyticsRoute
   '/_authenticated/app/automations': typeof AuthenticatedAppAutomationsRoute
   '/_authenticated/app/bookings': typeof AuthenticatedAppBookingsRoute
   '/_authenticated/app/calls': typeof AuthenticatedAppCallsRoute
+  '/_authenticated/app/how-it-works': typeof AuthenticatedAppHowItWorksRoute
   '/_authenticated/app/integrations': typeof AuthenticatedAppIntegrationsRoute
   '/_authenticated/app/knowledge': typeof AuthenticatedAppKnowledgeRoute
   '/_authenticated/app/leads': typeof AuthenticatedAppLeadsRoute
@@ -481,12 +501,14 @@ export interface FileRouteTypes {
     | '/admin/support-requests'
     | '/admin/system'
     | '/admin/test-lab'
+    | '/admin/tutorials'
     | '/admin/usage'
     | '/admin/voices'
     | '/app/analytics'
     | '/app/automations'
     | '/app/bookings'
     | '/app/calls'
+    | '/app/how-it-works'
     | '/app/integrations'
     | '/app/knowledge'
     | '/app/leads'
@@ -526,12 +548,14 @@ export interface FileRouteTypes {
     | '/admin/support-requests'
     | '/admin/system'
     | '/admin/test-lab'
+    | '/admin/tutorials'
     | '/admin/usage'
     | '/admin/voices'
     | '/app/analytics'
     | '/app/automations'
     | '/app/bookings'
     | '/app/calls'
+    | '/app/how-it-works'
     | '/app/integrations'
     | '/app/knowledge'
     | '/app/leads'
@@ -574,12 +598,14 @@ export interface FileRouteTypes {
     | '/_authenticated/admin/support-requests'
     | '/_authenticated/admin/system'
     | '/_authenticated/admin/test-lab'
+    | '/_authenticated/admin/tutorials'
     | '/_authenticated/admin/usage'
     | '/_authenticated/admin/voices'
     | '/_authenticated/app/analytics'
     | '/_authenticated/app/automations'
     | '/_authenticated/app/bookings'
     | '/_authenticated/app/calls'
+    | '/_authenticated/app/how-it-works'
     | '/_authenticated/app/integrations'
     | '/_authenticated/app/knowledge'
     | '/_authenticated/app/leads'
@@ -805,6 +831,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedAdminTestLabRouteImport
       parentRoute: typeof AuthenticatedAdminRouteRoute
     }
+    '/_authenticated/admin/tutorials': {
+      id: '/_authenticated/admin/tutorials'
+      path: '/tutorials'
+      fullPath: '/admin/tutorials'
+      preLoaderRoute: typeof AuthenticatedAdminTutorialsRouteImport
+      parentRoute: typeof AuthenticatedAdminRouteRoute
+    }
     '/_authenticated/admin/usage': {
       id: '/_authenticated/admin/usage'
       path: '/usage'
@@ -852,6 +885,13 @@ declare module '@tanstack/react-router' {
       path: '/calls'
       fullPath: '/app/calls'
       preLoaderRoute: typeof AuthenticatedAppCallsRouteImport
+      parentRoute: typeof AuthenticatedAppRouteRoute
+    }
+    '/_authenticated/app/how-it-works': {
+      id: '/_authenticated/app/how-it-works'
+      path: '/how-it-works'
+      fullPath: '/app/how-it-works'
+      preLoaderRoute: typeof AuthenticatedAppHowItWorksRouteImport
       parentRoute: typeof AuthenticatedAppRouteRoute
     }
     '/_authenticated/app/integrations': {
@@ -949,6 +989,7 @@ interface AuthenticatedAdminRouteRouteChildren {
   AuthenticatedAdminSupportRequestsRoute: typeof AuthenticatedAdminSupportRequestsRoute
   AuthenticatedAdminSystemRoute: typeof AuthenticatedAdminSystemRoute
   AuthenticatedAdminTestLabRoute: typeof AuthenticatedAdminTestLabRoute
+  AuthenticatedAdminTutorialsRoute: typeof AuthenticatedAdminTutorialsRoute
   AuthenticatedAdminUsageRoute: typeof AuthenticatedAdminUsageRoute
   AuthenticatedAdminVoicesRoute: typeof AuthenticatedAdminVoicesRoute
   AuthenticatedAdminIndexRoute: typeof AuthenticatedAdminIndexRoute
@@ -975,6 +1016,7 @@ const AuthenticatedAdminRouteRouteChildren: AuthenticatedAdminRouteRouteChildren
       AuthenticatedAdminSupportRequestsRoute,
     AuthenticatedAdminSystemRoute: AuthenticatedAdminSystemRoute,
     AuthenticatedAdminTestLabRoute: AuthenticatedAdminTestLabRoute,
+    AuthenticatedAdminTutorialsRoute: AuthenticatedAdminTutorialsRoute,
     AuthenticatedAdminUsageRoute: AuthenticatedAdminUsageRoute,
     AuthenticatedAdminVoicesRoute: AuthenticatedAdminVoicesRoute,
     AuthenticatedAdminIndexRoute: AuthenticatedAdminIndexRoute,
@@ -994,6 +1036,7 @@ interface AuthenticatedAppRouteRouteChildren {
   AuthenticatedAppAutomationsRoute: typeof AuthenticatedAppAutomationsRoute
   AuthenticatedAppBookingsRoute: typeof AuthenticatedAppBookingsRoute
   AuthenticatedAppCallsRoute: typeof AuthenticatedAppCallsRoute
+  AuthenticatedAppHowItWorksRoute: typeof AuthenticatedAppHowItWorksRoute
   AuthenticatedAppIntegrationsRoute: typeof AuthenticatedAppIntegrationsRoute
   AuthenticatedAppKnowledgeRoute: typeof AuthenticatedAppKnowledgeRoute
   AuthenticatedAppLeadsRoute: typeof AuthenticatedAppLeadsRoute
@@ -1010,6 +1053,7 @@ const AuthenticatedAppRouteRouteChildren: AuthenticatedAppRouteRouteChildren = {
   AuthenticatedAppAutomationsRoute: AuthenticatedAppAutomationsRoute,
   AuthenticatedAppBookingsRoute: AuthenticatedAppBookingsRoute,
   AuthenticatedAppCallsRoute: AuthenticatedAppCallsRoute,
+  AuthenticatedAppHowItWorksRoute: AuthenticatedAppHowItWorksRoute,
   AuthenticatedAppIntegrationsRoute: AuthenticatedAppIntegrationsRoute,
   AuthenticatedAppKnowledgeRoute: AuthenticatedAppKnowledgeRoute,
   AuthenticatedAppLeadsRoute: AuthenticatedAppLeadsRoute,

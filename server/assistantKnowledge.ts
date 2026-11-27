@@ -1,4 +1,5 @@
 import { TEMPLATES } from "../src/lib/templates";
+import { TUTORIAL_GROUPS, plainTutorial, tutorialsFor } from "../src/lib/tutorials";
 
 // What the in-app help assistant knows about the agency console. Written from the
 // handoff docs (handoff-content/after-install.md and buyer-pack/owner-quickstart.md),
@@ -16,7 +17,7 @@ const templateList = (() => {
 
 /** The pages an agency owner or admin can open, with the in-app path to link to. */
 export const PAGES = `Sidebar (agency console, paths are relative links you may use):
-- Overview /admin : calls, bookings and "Needs attention" across all clients, plus the Get started checklist (brand, first receptionist, test call, invite a client, connect a number). The ? menu in the top bar has Get started, Take the tour and Ask AI.
+- Overview /admin : calls, bookings and "Needs attention" across all clients, plus the Get started checklist (brand, first receptionist, test call, invite a client, connect a number). The ? menu in the top bar has Get started, Take the tour, Tutorials and Ask AI.
 - Clients /admin/clients : the businesses the agency looks after. A client's page (/admin/clients/<id>) is the hub: its receptionists and automations, Talk to this receptionist (browser test call), numbers, Customers with access (invite as Manager or Viewer), Send onboarding link, Branding for that client, recent calls, bookings and follow-ups, changes. Buttons: Add receptionist, Send onboarding link, Edit, Pause or Resume.
 - New receptionist /admin/clients/new : the setup wizard (see below).
 - Calls /admin/calls : every call and text with outcome and transcript. Browser test calls show here too. Failed calls are highlighted.
@@ -28,6 +29,7 @@ export const PAGES = `Sidebar (agency console, paths are relative links you may 
 - Usage /admin/usage : call minutes and activity per client.
 - System / QA /admin/system : failed calls and background problems found automatically.
 - Audit Log /admin/audit : who changed what.
+- Tutorials /admin/tutorials : short step-by-step tutorials with a Go there button for each, and Take the tour (see the list below).
 - Settings /admin/settings : tabs Team (/admin/settings), Branding (/admin/settings?tab=branding), Account (/admin/settings?tab=account), and for owners Email and calendars (/admin/settings?tab=email).`;
 
 export const WIZARD = `New receptionist wizard (Clients > New receptionist), six short steps. Everything can be changed afterwards:
@@ -63,6 +65,16 @@ export const HOWTOS = `Common how-tos:
 - Email: invite and reset links are shown on screen for copying until email is set up under Settings > Email and calendars (owner only).
 - Calls stop or something breaks: check phone credit/account, the number is connected, the receptionist or client isn't Paused (click Resume), then System / QA and Overview > Needs attention. While down, clients can forward back to their original route.
 - Every day: check failed or missed calls and open follow-ups. Every week: place a test call to each client and review unanswered questions.`;
+
+/** The Tutorials page, so answers can point at the matching one (/admin/tutorials#<id>). Only the ones this agency sees. */
+export function tutorialList(mode: PhoneMode, singleAgency: boolean): string {
+  const list = tutorialsFor(mode, singleAgency);
+  const lines = TUTORIAL_GROUPS.map((g) => {
+    const items = list.filter((t) => t.group === g.id);
+    return items.length ? `${g.title}: ${items.map((t) => `${plainTutorial(t.title)} (/admin/tutorials#${t.id})`).join("; ")}` : "";
+  }).filter(Boolean);
+  return `Tutorials page (/admin/tutorials): each tutorial has numbered steps, a Go there button and sometimes a short animation. When a question matches one, answer it and also link the tutorial, for example [Tutorial: Make a test call](/admin/tutorials#test-call). Only use these ids:\n${lines.join("\n")}`;
+}
 
 export function numbersFor(mode: PhoneMode, singleAgency: boolean): string {
   if (singleAgency || mode === "own") return `${NUMBERS_OWN} ${NUMBERS_TWILIO}`;

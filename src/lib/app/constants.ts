@@ -9,6 +9,7 @@ import {
   ClipboardCheck,
   CreditCard,
   FlaskConical,
+  GraduationCap,
   Home,
   LayoutDashboard,
   LifeBuoy,
@@ -62,13 +63,13 @@ export const CLIENT_NAV: NavItem[] = [
     to: "/app/settings",
     label: "Settings",
     icon: Settings,
-    match: ["/app/receptionist", "/app/knowledge", "/app/phone-numbers", "/app/automations", "/app/analytics", "/app/team", "/app/integrations"],
+    match: ["/app/how-it-works", "/app/receptionist", "/app/knowledge", "/app/phone-numbers", "/app/automations", "/app/analytics", "/app/team", "/app/integrations"],
   },
 ];
 
 /** Pages without a tab of their own: where "Back" on them goes. */
 export const CLIENT_BACKLINKS: { to: string; label: string; from: string[] }[] = [
-  { to: "/app/settings", label: "Settings", from: ["/app/receptionist", "/app/knowledge", "/app/phone-numbers", "/app/automations", "/app/analytics", "/app/team", "/app/integrations"] },
+  { to: "/app/settings", label: "Settings", from: ["/app/how-it-works", "/app/receptionist", "/app/knowledge", "/app/phone-numbers", "/app/automations", "/app/analytics", "/app/team", "/app/integrations"] },
   { to: "/app", label: "Home", from: ["/app/leads"] },
 ];
 
@@ -89,6 +90,7 @@ export const ADMIN_NAV: NavItem[] = [
   { to: "/admin/system", label: "System / QA", icon: ClipboardCheck },
   { to: "/admin/audit", label: "Audit Log", icon: ScrollText },
   { to: "/admin/support-requests", label: "Support requests", icon: LifeBuoy, agencyOnly: true },
+  { to: "/admin/tutorials", label: "Tutorials", icon: GraduationCap, agencyOnly: true },
   { to: "/admin/settings", label: "Settings", icon: ShieldCheck, match: ["/admin/branding"] },
 ];
 // (Integrations and Billing have no Twin backing yet: no console pages. Branding is a tab of Settings.)

@@ -1,0 +1,64 @@
+/* The admin dashboard: plain white, top tabs, tidy spacing. Loaded last, after wizard.css and tickets.css. */
+body.adm { background: #fff; }
+.adm .ribbon { height: 3px; }
+.adm .top { max-width: 1080px; padding: 16px 16px 10px; }
+.adm .top .mark { font-size: 17px; }
+.adm .top nav.acct { display: flex; align-items: center; gap: 12px; font-size: 13px; }
+.adm .top .who { color: var(--muted); }
+.adm .top .linkbtn { color: var(--muted); font-size: 13px; }
+
+/* Top tabs: one per section, with counts. Scrolls sideways on a phone rather than wrapping. */
+.atabs { max-width: 1080px; margin: 0 auto; padding: 0 16px; display: flex; gap: 4px; overflow-x: auto; border-bottom: 1px solid var(--line); -webkit-overflow-scrolling: touch; scrollbar-width: none; }
+.atabs::-webkit-scrollbar { display: none; }
+.atab { flex: none; display: inline-flex; align-items: center; gap: 6px; padding: 10px 12px; margin-bottom: -1px; border-bottom: 2px solid transparent; color: var(--muted); font-size: 14.5px; font-weight: 500; text-decoration: none; white-space: nowrap; }
+.atab:hover { color: var(--ink); }
+.atab.on { color: var(--accent); border-bottom-color: var(--accent); font-weight: 600; }
+.atab .n { font-size: 12px; font-weight: 600; color: var(--muted); background: #f2f4f7; border-radius: 999px; padding: 1px 8px; }
+.atab.on .n { background: var(--indigo-soft); color: var(--accent); }
+.atab .badge { margin-left: 0; }
+
+/* Agency tabs and the alerts/problems switch: pill-less, lighter than the top tabs. */
+.dtabs { display: flex; gap: 4px; overflow-x: auto; margin: 6px 0 18px; border-bottom: 1px solid var(--line); scrollbar-width: none; }
+.dtabs::-webkit-scrollbar { display: none; }
+.dtab { flex: none; padding: 8px 14px; margin-bottom: -1px; border-bottom: 2px solid transparent; color: var(--muted); font-size: 14px; font-weight: 500; text-decoration: none; white-space: nowrap; }
+.dtab:hover { color: var(--ink); }
+.dtab.on { color: var(--ink); border-bottom-color: var(--ink); font-weight: 600; }
+.crumb { margin: 4px 0 6px; font-size: 13.5px; }
+.crumb a { text-decoration: none; color: var(--muted); }
+.agh { margin-bottom: 4px; }
+.agh h1 { font-size: 26px; }
+
+.admshell { padding-top: 24px; padding-bottom: 72px; }
+.admshell .card, .admshell main > .card { padding: 20px; border-radius: 12px; }
+@media (min-width: 640px) { .admshell .card, .admshell main > .card { padding: 26px 28px; } }
+.admshell main > .card + .card { margin-top: 16px; }
+.admshell h1 { font-size: 24px; margin: 0; }
+.admshell h2 { font-size: 16px; font-weight: 650; margin: 0 0 10px; letter-spacing: -.01em; }
+.admshell h2.sub { margin-top: 30px; padding-top: 22px; border-top: 1px solid var(--line); }
+.admshell .card > .lead { margin: 6px 0 14px; font-size: 15px; color: var(--muted); }
+.admshell .summary { margin-top: 6px; }
+.admshell label.f { margin: 18px 0 6px; }
+.admshell .nav { margin-top: 14px; }
+.admshell .notes { white-space: pre-wrap; font-size: 13px; }
+.records th { text-align: left; font-size: 12px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); font-weight: 600; }
+form.inl { margin-top: 10px; }
+
+/* The red danger zone on an agency's Settings tab. */
+.admshell .card.danger-zone { border: 1px solid var(--red-line); background: var(--red-soft); }
+.danger-zone h2 { color: var(--red-ink); }
+.dz { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 14px 0; border-top: 1px solid var(--red-line); }
+.dz:first-of-type { border-top: 0; }
+.dz > div { min-width: 0; }
+.dz b { display: block; font-size: 14.5px; }
+.dz .hint { display: block; margin: 2px 0 0; }
+.dz form { flex: none; margin: 0; }
+.danger-zone .btn.danger { background: var(--red-ink); border-color: var(--red-ink); color: #fff; }
+.danger-zone .btn.o { background: #fff; }
+
+@media (max-width: 639px) {
+  .adm .top .who { display: none; }
+  .admshell h1, .agh h1 { font-size: 21px; }
+  .dz { flex-direction: column; align-items: stretch; gap: 10px; }
+  .dz form .btn { width: 100%; }
+  .atab { padding: 10px 10px; font-size: 14px; }
+}

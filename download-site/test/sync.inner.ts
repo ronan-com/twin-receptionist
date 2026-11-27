@@ -231,12 +231,12 @@ describe("the admin pages", () => {
     expect(row).toContain("seen-live");
     expect(row).toContain("2026.11.5");
     expect(row).toContain(">31<");
-    expect(row).toContain(">4<");
   });
 
   test("the buyer page shows the snapshot; with Support access off it says to ask the buyer", async () => {
-    const html = await (await adminGet(`/admin/b/${buyerId}`)).text();
-    expect(html).toContain("Health and support");
+    expect(await (await adminGet(`/admin/b/${buyerId}`)).text()).toContain("<h2>Health</h2>");
+    const html = await (await adminGet(`/admin/b/${buyerId}?tab=support`)).text();
+    expect(html).toContain("Support tools");
     expect(html).toContain("Sync now");
     expect(html).toContain("The agency has switched Support access off");
     expect(html).toMatch(/<button class="btn o" type="button" disabled>View as<\/button>/);

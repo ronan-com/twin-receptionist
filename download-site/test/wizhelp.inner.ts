@@ -168,7 +168,7 @@ describe("the admin", () => {
 
   test("a red badge on Agencies and a Needs help pill on the agency row", async () => {
     const html = await (await get("/admin")).text();
-    expect(html).toMatch(/Agencies <span class="badge" data-badge="help"[^>]*>2<\/span>/); // Acme and Busy
+    expect(html).toMatch(/Agencies[^<]*<span class="n">\d+<\/span> <span class="badge" data-badge="help"[^>]*>2<\/span>/); // Acme and Busy
     const row = html.slice(html.indexOf(`/admin/b/${acme.id}"`), html.indexOf("</tr>", html.indexOf(`/admin/b/${acme.id}"`)));
     expect(row).toContain("Needs help");
     expect(row).toContain(`/admin/tickets/${ticketId}`);
@@ -210,7 +210,7 @@ describe("the admin", () => {
     await form(`/admin/tickets/${ticketId}/close`);
     expect(T.ticketById(ticketId)!.status).toBe("closed");
     const list = await (await get("/admin")).text();
-    expect(list).toMatch(/Agencies <span class="badge" data-badge="help"[^>]*>1<\/span>/);
+    expect(list).toMatch(/Agencies[^<]*<span class="n">\d+<\/span> <span class="badge" data-badge="help"[^>]*>1<\/span>/);
     const row = list.slice(list.indexOf(`/admin/b/${acme.id}"`), list.indexOf("</tr>", list.indexOf(`/admin/b/${acme.id}"`)));
     expect(row).not.toContain("Needs help");
   });

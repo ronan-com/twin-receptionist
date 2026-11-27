@@ -60,6 +60,7 @@ const ASSETS: Record<string, { body: Uint8Array; type: string }> = {
   "/chat.js": { body: readFileSync(join(import.meta.dir, "public/chat.js")), type: "text/javascript; charset=utf-8" },
   "/chat.css": { body: readFileSync(join(import.meta.dir, "public/chat.css")), type: "text/css; charset=utf-8" },
   "/admin-live.js": { body: readFileSync(join(import.meta.dir, "public/admin-live.js")), type: "text/javascript; charset=utf-8" },
+  "/admin.css": { body: readFileSync(join(import.meta.dir, "public/admin.css")), type: "text/css; charset=utf-8" },
   "/tickets.css": { body: readFileSync(join(import.meta.dir, "public/tickets.css")), type: "text/css; charset=utf-8" },
   "/wizard.css": { body: readFileSync(join(import.meta.dir, "public/wizard.css")), type: "text/css; charset=utf-8" },
 };

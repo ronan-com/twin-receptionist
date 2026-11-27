@@ -254,6 +254,56 @@ describe("every step of the 1.0.21 flow, stored in the 1.0.21 format", () => {
   });
 });
 
+describe("the 1.0.23 stored format (neutral owner onboarding: brand.deferred, no name, no colours)", () => {
+  const plain = { productName: "Your agency", ownerEmail: "newowner@acme.test", ownPhoneAccount: false, deferred: true };
+  const railwayVars = async (id: number, s: any) => (await import("../setup")).railwayVars(id, s, "rail-token-0123456789");
+
+  test("a plain buyer at Voice: lands on Voice, carries on through AI to Install, and installs a plain dashboard", async () => {
+    const b = addBuyer("Plain at voice", "plain-v@example.com");
+    storedLike(b.id, { step: "phones", phase: "idle", schema: 2, brand: plain, railway: { confirmed: true, via: "paste" } });
+    store.putSecret(b.id, "railway_token", "rail-token-0123456789");
+    const br = await browser(b.code);
+    const first = await br.page();
+    expect(titleOf(first)).toStartWith("Voice");
+    noError(first);
+    expect((await br.post("phones", { v: "phones", opt: "telnyx", key: "platform-fake-plain-0001" })).status).toBe(303);
+    await br.post("phones-continue", { v: "phones" });
+    expect((await br.post("ai", { v: "ai", key: "sk-or-v1-plain0123456789" })).status).toBe(303);
+    await br.post("ai-continue", { v: "ai" });
+    await br.post("extras-continue", { v: "extras" });
+    const install = await br.page();
+    expect(titleOf(install)).toStartWith("Install");
+    noError(install);
+    const vars = await railwayVars(b.id, store.getSetup(b.id));
+    expect(vars.NEUTRAL_DASHBOARD).toBe("1");
+    expect(vars).not.toHaveProperty("BRAND_COLOUR");
+    expect(vars.OWNER_NAME).toBe("Newowner");
+  });
+
+  test("a plain buyer can still go Back and give the agency a name, colours and look", async () => {
+    const b = addBuyer("Plain names it", "plain-n@example.com");
+    storedLike(b.id, { step: "railway", phase: "idle", schema: 2, brand: plain });
+    const br = await browser(b.code);
+    const page = await br.page("brand");
+    expect(page).toContain('name="productName"');
+    expect((await br.post("brand", { v: "brand", ownerEmail: "newowner@acme.test", ownerName: "New Owner", productName: "Named AI", colour: "#0a8f5c", theme: "dark" })).status).toBe(303);
+    const s = store.getSetup(b.id);
+    expect(s.brand).toMatchObject({ productName: "Named AI", ownerName: "New Owner", theme: "dark" });
+    expect(s.brand?.deferred).not.toBe(true);
+  });
+
+  test("a plain buyer who is done (installed on 1.0.23) still sees the live screen", async () => {
+    const b = addBuyer("Plain done", "plain-d@example.com");
+    storedLike(b.id, { step: "done", phase: "done", schema: 2, brand: plain, railway: { confirmed: true }, phones: { confirmed: true, provider: "telnyx" }, extrasDone: true,
+      resultUrl: "https://app-plain.up.railway.app", tempUrl: "https://app-plain.up.railway.app", attemptVersion: "1.0.23", rw: { projectId: "p", serviceDomain: "app-plain.up.railway.app" } });
+    const br = await browser(b.code);
+    const html = await br.page();
+    expect(html).toContain("Your agency is live");
+    expect(html).toContain("app-plain.up.railway.app");
+    noError(html);
+  });
+});
+
 describe("Railway mode never shows DigitalOcean", () => {
   test("no DigitalOcean on any wizard step or the public pages for a Railway buyer", async () => {
     const b = addBuyer("Rail only", "rail-only@example.com");

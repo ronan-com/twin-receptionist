@@ -11,7 +11,7 @@ process.env.SELLER_NAME = "Chloe AI";
 delete process.env.HOSTING;
 const { addBuyer, db, PLAIN_AGENCY_NAME } = await import("../lib");
 const { getSetup, updateSetup } = await import("../store");
-const { actions, railwayVars, buildSettings } = await import("../setup");
+const { actions, railwayVars } = await import("../setup");
 const { wizardPage } = await import("../wizard");
 afterAll(() => { db().close(); rmSync(dir, { recursive: true, force: true }); });
 async function owner(name: string) {
@@ -19,20 +19,34 @@ async function owner(name: string) {
   await actions.start(b, {});
   return b;
 }
-test("generic onboarding asks for owner email without a name, logo or colour", async () => {
+test("the Brand step takes owner email, an OPTIONAL agency name, logo, 1 to 3 colours and light/dark; leaving the name blank starts a plain dashboard", async () => {
   const b = await owner("Alice");
   const html = wizardPage(b, getSetup(b.id), b.code, "sid", "brand");
-  expect(html).toContain("Your owner account");
   expect(html).toContain("data-neutral-onboarding");
-  expect(html).toContain('name="ownerEmail"');
-  for (const field of ["productName", "logo", "colour"]) expect(html).not.toContain('name="' + field + '"');
+  for (const field of ["ownerEmail", "ownerName", "productName", "logo", "colour", "colour2", "colour3", "theme"]) expect(html).toContain('name="' + field + '"');
+  expect(html).toMatch(/<input id="productName" name="productName" maxlength="60" value=/); // not required
+  expect(html).toContain("Leave it blank to start with a plain dashboard");
   expect(html).not.toMatch(/Chloe|Twin Technologies/);
   expect((await actions.brand(b, { ownerEmail: "invalid" }))?.kind).toBe("err");
-  expect(await actions.brand(b, { ownerEmail: "alice@example.com" })).toBeNull();
-  expect(getSetup(b.id).brand).toMatchObject({ productName: PLAIN_AGENCY_NAME, deferred: true });
+  expect(await actions.brand(b, { ownerEmail: "alice@example.com", colour: "#4f46e5", theme: "dark" })).toBeNull();
+  expect(getSetup(b.id).brand).toMatchObject({ productName: PLAIN_AGENCY_NAME, deferred: true, theme: "dark" });
   expect(getSetup(b.id).step).toBe("railway");
+  // a plain install carries NEUTRAL_DASHBOARD and the look, but no brand colours or logo
+  const vars = await railwayVars(b.id, getSetup(b.id), "fake-token");
+  expect(vars.NEUTRAL_DASHBOARD).toBe("1");
+  expect(vars.THEME).toBe("dark");
+  expect(vars).not.toHaveProperty("BRAND_COLOUR");
+  expect(vars).not.toHaveProperty("BRAND_COLOURS");
+  // naming it later in the wizard makes it a branded install
+  expect(await actions.brand(b, { ownerEmail: "alice@example.com", productName: "Alice AI", colour: "#0a8f5c", colour2on: "1", colour2: "#f59e0b", theme: "dark" })).toBeNull();
+  const named = getSetup(b.id).brand!;
+  expect(named.deferred).not.toBe(true);
+  expect(named).toMatchObject({ productName: "Alice AI", colours: ["#0a8f5c", "#f59e0b"] });
+  const v2 = await railwayVars(b.id, getSetup(b.id), "fake-token");
+  expect(v2).not.toHaveProperty("NEUTRAL_DASHBOARD");
+  expect(v2.BRAND_COLOURS).toBe("#0a8f5c,#f59e0b");
 });
-test("new installations are plain on both hosting paths and reveal no seller brand", async () => {
+test("new installations with no agency name are plain and reveal no seller brand", async () => {
   const b = await owner("Bob");
   await actions.brand(b, { ownerEmail: "bob@example.com" });
   updateSetup(b.id, (s) => {
@@ -48,9 +62,7 @@ test("new installations are plain on both hosting paths and reveal no seller bra
   expect(vars.SUPPORT_SELLER_NAME).toBe("Support");
   expect(vars).not.toHaveProperty("BRAND_LOGO_PNG");
   expect(vars).not.toHaveProperty("BRAND_COLOUR");
-  const settings = buildSettings(b.id, s);
-  expect(settings).toContain("NEUTRAL_DASHBOARD=1");
-  expect(settings).not.toMatch(/Chloe|BRAND_LOGO_PNG|BRAND_COLOUR/);
+  expect(JSON.stringify(vars)).not.toMatch(/Chloe|BRAND_LOGO_PNG|BRAND_COLOUR/);
 });
 test("changing owner email preserves the manual branding and other buyers are independent", async () => {
   const a = await owner("Carol"), b = await owner("Dan");
@@ -72,7 +84,7 @@ test("legacy buyer styles use the neutral portal and preserve supplied business 
   expect(getSetup(b.id).brand?.deferred).not.toBe(true);
   expect(await actions.brand(b, { ownerEmail: "changed@example.com" })).toBeNull();
   expect(getSetup(b.id).brand).toMatchObject({ productName: "Existing Brand", ownerEmail: "changed@example.com" });
-  expect(wizardPage(b, getSetup(b.id), b.code, "sid", "brand")).not.toContain('name="productName"');
+  expect(wizardPage(b, getSetup(b.id), b.code, "sid", "brand")).toContain('value="Existing Brand"');
 });
 
 test("skip buttons open a read-only preview without submitting forms or advancing setup", async () => {
@@ -83,7 +95,7 @@ test("skip buttons open a read-only preview without submitting forms or advancin
   const { dashboardPreview } = await import("../dashboard-preview");
   for (const step of STEPS.filter(step => step !== "done")) {
     const html = wizardPage(b, getSetup(b.id), b.code, "sid", step);
-    expect(html).toContain('href="/setup/' + b.code + '?preview=dashboard">Skip for now');
+    expect(html).toContain('href="/setup/' + b.code + '?preview=dashboard">Preview your dashboard');
   }
   const page = dashboardPreview("/setup/" + b.code);
   expect(page).toContain('href="/setup/' + b.code + '">Continue onboarding');
@@ -104,7 +116,7 @@ test("shared link preview does not create a buyer, consume a place, or require a
   };
   const base = "/start/" + l.code;
   const form = await startRoute(new Request("http://localhost:4500"+base),l.code,ctx);
-  expect(await form.text()).toContain("Skip for now");
+  expect(await form.text()).toContain("Preview your dashboard");
   const preview = await startRoute(new Request("http://localhost:4500"+base+"?preview=dashboard&section=clients"),l.code,ctx);
   expect(preview.status).toBe(200);
   const text = await preview.text();

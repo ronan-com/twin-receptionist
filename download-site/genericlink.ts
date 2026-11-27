@@ -82,18 +82,26 @@ export function rotateLink(admin: string, id: number): boolean {
 
 // ---------------- admin panel ----------------
 interface PanelHelpers { hiddenT: (sid: string) => string; copyBtn: (v: string) => string }
-/** The onboarding link panel at the top of the Agencies page: on/off, the address with Copy, and "Make a new link". */
+/** The onboarding link panel at the top of the Agencies page: two links, Chloe-branded and generic (nothing of ours shows),
+ *  each with on/off, the address with Copy, and "Make a new link". */
 export function linksPanel(sid: string, h: PanelHelpers): string {
-  const l = listLinks()[0];
   const T = h.hiddenT(sid);
-  const url = l ? linkUrl(l) : "";
+  const row = (style: Style, title: string, note: string) => {
+    const l = listLinks().find((x) => x.style === style);
+    const url = l ? linkUrl(l) : "";
+    return `<div class="linkblock" data-style="${style}">
+<div class="titlerow"><b>${esc(title)}</b> ${l && l.enabled ? `<span class="pill live">On</span>` : `<span class="pill">Off</span>`} ${l ? `<span class="hint">${l.started} started</span>` : ""}
+<form method="post" action="/admin/links/${l ? `${l.id}/toggle` : `new-${style}`}">${T}<button class="btn ${l && l.enabled ? "o" : "p"}" type="submit">${l && l.enabled ? "Turn off" : "Turn on"}</button></form></div>
+<p class="hint">${esc(note)}</p>
+${l && l.enabled ? `<div class="linkrow"><code id="${style === "neutral" ? "neutral-link" : "generic-link"}">${esc(url)}</code>${h.copyBtn(url)}</div>
+<form method="post" action="/admin/links/${l.id}/rotate">${T}<button class="btn o" type="submit" data-confirm="Make a new link? The old one stops working straight away. People who already started keep their own private links.">Make a new link</button></form>` : ""}
+</div>`;
+  };
   return `<section class="card" id="onboarding-link">
-<h2>${esc(CONFIG.productName)} onboarding link</h2>
-<p class="lead">One reusable address anyone can open to start their own onboarding; each person then gets their own private setup link. Or leave it off and send a private link per person (Add an agency, below).</p>
-<div class="titlerow"><b>Generic link</b> ${l && l.enabled ? `<span class="pill live">On</span>` : `<span class="pill">Off</span>`} ${l ? `<span class="hint">${l.started} started</span>` : ""}
-<form method="post" action="/admin/links/${l ? `${l.id}/toggle` : "new"}">${T}<button class="btn ${l && l.enabled ? "o" : "p"}" type="submit">${l && l.enabled ? "Turn off" : "Turn on"}</button></form></div>
-${l && l.enabled ? `<div class="linkrow"><code id="generic-link">${esc(url)}</code>${h.copyBtn(url)}</div>
-<form method="post" action="/admin/links/${l.id}/rotate">${T}<button class="btn o" type="submit" data-confirm="Make a new link? The old one stops working straight away. People who already started keep their own private links.">Make a new link</button></form>` : `<p class="hint">${l ? "Switched off: opening it shows \"This link isn't active\"." : "Not made yet."}</p>`}
+<h2>Onboarding links</h2>
+<p class="lead">Reusable addresses anyone can open to start their own onboarding; each person then gets their own private setup link. Or leave them off and send a private link per person (Add an agency, below).</p>
+${row("branded", `${CONFIG.productName} onboarding link`, `Shows the ${CONFIG.productName} name and look.`)}
+${row("neutral", "Generic onboarding link", "No Chloe name or logo anywhere, for sharing under someone else's name.")}
 </section>`;
 }
 

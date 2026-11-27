@@ -498,11 +498,12 @@ export async function adminRoute(req: Request, url: URL, c: AdminCtx): Promise<R
   }
 
   // The generic onboarding link (genericlink.ts): turn it on/off, make a new address.
-  m = path.match(/^\/admin\/links\/(new|\d{1,9}\/(?:toggle|rotate))$/);
+  m = path.match(/^\/admin\/links\/(new|new-branded|new-neutral|\d{1,9}\/(?:toggle|rotate))$/);
   if (m && method === "POST") {
     const [what, act] = m[1].split("/");
-    if (what === "new") {
-      const l = listLinks()[0] ?? createLink(sess.email, "", "branded", "");
+    if (what.startsWith("new")) {
+      const style = what === "new-neutral" ? "neutral" : "branded";
+      const l = listLinks().find((x) => x.style === style) ?? createLink(sess.email, "", style, "");
       if (l && !l.enabled) toggleLink(sess.email, l.id);
       return c.redirect("/admin?m=link-on");
     }

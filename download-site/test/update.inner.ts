@@ -11,6 +11,7 @@ let uploads: { projectId: string; envId: string; serviceId: string; bytes: numbe
 let syncToken = "";
 let failBuilds = 0; // the next N deployments fail to build
 let deployments = new Map<string, string>();
+let appHasVolume = true;
 const PROJECT = "prj-test-1", ENV = "env-test-1", APP = "svc-app-1", PG = "svc-pg-1";
 // What the agency's service has in Railway today (what the install set up, plus the buyer's own additions).
 const appVars: Record<string, string> = {
@@ -41,12 +42,14 @@ const rail = Bun.serve({
     if (tok !== TOKEN) return bad();
     const { query = "", variables = {} } = (await req.json()) as any;
     const has = (f: string) => new RegExp(`\\b${f}\\s*[({]`).test(query);
-    for (const f of ["projectCreate", "serviceCreate", "volumeCreate", "projectDelete", "customDomainCreate", "serviceDomainCreate", "serviceInstanceUpdate"]) if (has(f)) { railCalls.push({ op: f }); return gql({ [f]: true }); }
+    if (has("volumeCreate")) { railCalls.push({ op: "volumeCreate", body: variables.input }); return gql({ volumeCreate: true }); }
+    for (const f of ["projectCreate", "serviceCreate", "projectDelete", "customDomainCreate", "serviceDomainCreate", "serviceInstanceUpdate"]) if (has(f)) { railCalls.push({ op: f }); return gql({ [f]: true }); }
     if (has("me")) return /\bplan\b/.test(query) ? gql({ me: { workspaces: [{ id: "ws-1", plan: "HOBBY", customer: { isTrialing: false, defaultPaymentMethodId: "pm" } }] } }) : gql({ me: { email: "owner@example.com", workspaces: [{ id: "ws-1", name: "Owner" }] } });
     if (has("variableCollectionUpsert")) { railCalls.push({ op: "upsert", body: variables.input }); Object.assign(appVars, variables.input.variables); return gql({ variableCollectionUpsert: true }); }
     if (has("variables")) { railCalls.push({ op: "variables" }); return variables.s === APP && variables.p === PROJECT ? gql({ variables: { ...appVars } }) : bad(); }
     if (has("project")) {
       if (variables.id !== PROJECT) return Response.json({ data: null, errors: [{ message: "Project not found" }] });
+      if (/volumes/.test(query)) return gql({ project: { volumes: { edges: appHasVolume ? [{ node: { id: "vol-1", volumeInstances: { edges: [{ node: { serviceId: APP, environmentId: ENV } }] } } }] : [{ node: { id: "vol-pg", volumeInstances: { edges: [{ node: { serviceId: PG, environmentId: ENV } }] } } }] } } });
       return gql({ project: { id: PROJECT, environments: { edges: [{ node: { id: ENV, name: "production" } }] }, services: { edges: [{ node: { id: PG, name: "Postgres" } }, { node: { id: APP, name: "app" } }] } } });
     }
     if (has("deployment")) return gql({ deployment: { id: variables.id, status: deployments.get(variables.id) || "FAILED" } });
@@ -65,7 +68,7 @@ for (const k of ["HOSTING", "MOCK_CF", "MOCK_RESEND", "MOCK_TELNYX", "MOCK_OAUTH
 mkdirSync(join(dir, "packages"), { recursive: true });
 
 const { addBuyer, recordPackage, setPackageNotes, PACKAGES_DIR } = await import("../lib");
-const { actions, kick, updateInfo, updateVarHooks } = await import("../setup");
+const { actions, kick, updateInfo, updateVarHooks, ensureAppVolume, APP_VOLUME_PATH } = await import("../setup");
 const { getSetup, saveSetup, getSecret, hasSecret, putSecret, updateSetup, logRead } = await import("../store");
 const { wizardPage } = await import("../wizard");
 
@@ -145,7 +148,7 @@ describe("update your agency", () => {
     syncToken = appVars.SUPPORT_SYNC_TOKEN;
     expect(appVars.PUBLIC_URL).toBe("https://real-agency.up.railway.app");
     const upsert = railCalls.find((c) => c.op === "upsert")!.body;
-    expect(Object.keys(upsert.variables).sort()).toEqual(["APP_VERSION", "NEW_THING", "SUPPORT_CALL_TOKEN", "SUPPORT_SELLER_NAME", "SUPPORT_SYNC_TOKEN", "SUPPORT_SYNC_URL"]);
+    expect(Object.keys(upsert.variables).sort()).toEqual(["APP_VERSION", "NEW_THING", "RAILWAY_RUN_UID", "SUPPORT_CALL_TOKEN", "SUPPORT_SELLER_NAME", "SUPPORT_SYNC_TOKEN", "SUPPORT_SYNC_URL"]);
     expect(upsert.skipDeploys).toBe(true);
     // Recorded, and the token is gone again.
     expect(s.attemptVersion).toBe("1.0.3");
@@ -156,6 +159,18 @@ describe("update your agency", () => {
     expect(logRead(buyer.id).text).not.toContain(TOKEN);
     expect(page(buyer)).toContain("on version 1.0.3, the latest");
   }, 60_000);
+
+  test("an agency with no app volume gets one (once, on the app service); one that has it is left alone", async () => {
+    railCalls = [];
+    appHasVolume = false;
+    expect(await ensureAppVolume(TOKEN, PROJECT, ENV, APP)).toBe(true);
+    expect(railCalls.filter((c) => c.op === "volumeCreate").map((c) => c.body)).toEqual([{ projectId: PROJECT, environmentId: ENV, serviceId: APP, mountPath: APP_VOLUME_PATH }]);
+    appHasVolume = true;
+    railCalls = [];
+    expect(await ensureAppVolume(TOKEN, PROJECT, ENV, APP)).toBe(false);
+    expect(railCalls.filter((c) => c.op === "volumeCreate")).toEqual([]);
+    expect(await ensureAppVolume("wrong-token", PROJECT, ENV, APP)).toBe(false); // best effort: never throws
+  });
 
   test("a failed build loses nothing: clear error, still on the old version, Try again works", async () => {
     publish("1.0.4", "- Another fix");

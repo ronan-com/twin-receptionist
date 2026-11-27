@@ -20,8 +20,9 @@ import { EmailCalendarsSection } from "./-email-calendars";
 import { EmailSendingSection } from "./-email-sending";
 import { SupportSection } from "./-support";
 import { UpdatesSection } from "./-updates";
+import { BackupsSection } from "./-backups";
 
-const TABS = ["team", "account", "platform", "accounts", "sending", "email", "support", "updates"] as const;
+const TABS = ["team", "account", "platform", "accounts", "sending", "email", "support", "updates", "backups"] as const;
 type Tab = (typeof TABS)[number];
 
 export const Route = createFileRoute("/_authenticated/admin/settings")({
@@ -59,6 +60,7 @@ function AdminSettingsPage() {
           {serverSettings ? <TabsTrigger value="email">Email and calendars</TabsTrigger> : null}
           {supportTab ? <TabsTrigger value="support">Support</TabsTrigger> : null}
           {supportTab ? <TabsTrigger value="updates">Updates</TabsTrigger> : null}
+          {supportTab ? <TabsTrigger value="backups">Backups</TabsTrigger> : null}
         </TabsList>
         <TabsContent value="team" className="mt-4">
           <TeamSection />
@@ -89,6 +91,11 @@ function AdminSettingsPage() {
         {supportTab ? (
           <TabsContent value="updates" className="mt-4">
             <UpdatesSection />
+          </TabsContent>
+        ) : null}
+        {supportTab ? (
+          <TabsContent value="backups" className="mt-4">
+            <BackupsSection />
           </TabsContent>
         ) : null}
         {supportTab ? (

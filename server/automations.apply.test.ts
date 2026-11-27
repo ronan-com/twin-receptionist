@@ -112,3 +112,21 @@ test("a provider failure is reported, not thrown", async () => {
   });
   expect(err).toBe("The phone service said: Unauthorized");
 });
+
+test("spam filtering sends the block-list script lines, the webhook and the safe defaults to Telnyx", async () => {
+  stored = { ...normaliseAutomations({ spam: { blockList: ["0412 345 678"], anonymous: "reject", endRobocalls: true } }), _token: "tok_abcdefghijklmnop" };
+  calls.length = 0;
+  const syncAssistant = async (c: Business) => {
+    const { telnyx } = await import("./telnyx");
+    await telnyx("POST", `/ai/assistants/${c.assistantId}`, await withAutomations(c, { instructions: "SCRIPT", tools: [{ type: "hangup" }] }));
+    return c;
+  };
+  expect(await applyAutomations(client, { syncAssistant })).toBeNull();
+  const [script, , rest] = calls;
+  expect(script.body.instructions).toContain('"{{twin_blocked}}" is "yes"');
+  expect(script.body.instructions).toContain("hangup tool");
+  expect(rest.body.greeting).toBe("{{twin_greeting}}");
+  expect(rest.body.dynamic_variables).toMatchObject({ twin_blocked: "no", twin_anonymous: "no" });
+  expect(rest.body.dynamic_variables_webhook_url).toContain(`/hooks/automations/${client.id}/`);
+  expect(JSON.stringify(calls)).not.toContain("+61412345678"); // the list stays on our side for Telnyx
+});

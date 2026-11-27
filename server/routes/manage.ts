@@ -17,6 +17,7 @@ import { COLLECT_FIELDS, DEFAULT_PAUSE_MESSAGE, DIALECTS, TONES, ValidationError
 import { isDemo } from "../sandbox";
 import { getClient, orgOfClient, saveClient } from "../store";
 import { json, readBody, type ClientAccess, type ClientRouteArgs } from "./http";
+import { knowledgeImportRoutes } from "./knowledgeImport";
 import { UI_PRODUCT } from "../product";
 import { providerOfClient } from "../voice/config";
 
@@ -687,6 +688,12 @@ export async function manageRoutes(args: ClientRouteArgs): Promise<Response | nu
     const r = await createRequest(asOrg, client.id, client.settings.businessName, body, args.appUrl);
     await audit(ctx, "number.requested", { summary: `Requested a ${r.type} number`, id: r.id, type: r.type }, where);
     return json({ request: r, numbers: await answeredNumbers(client) }, 201);
+  }
+
+  // ---- Knowledge: import from the website (server/routes/knowledgeImport.ts) ----
+  if (rest.startsWith("/knowledge/import/")) {
+    const imported = await knowledgeImportRoutes({ client, ctx, method, rest, req, where, resync: () => resync(client, d) });
+    if (imported) return imported;
   }
 
   // ---- Knowledge (S5) ----

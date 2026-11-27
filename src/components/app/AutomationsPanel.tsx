@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { BellRing, Languages, MessageSquareText, Mic, MoonStar, PhoneCall, PhoneForwarded, Star, Timer, type LucideIcon } from "lucide-react";
+import { BellRing, Languages, MessageSquareText, Mic, MoonStar, PhoneCall, PhoneForwarded, ShieldBan, Star, Timer, type LucideIcon } from "lucide-react";
 import { toast } from "sonner";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
@@ -47,6 +47,7 @@ const AUTOMATION_HUE: Record<AutomationKey, Hue> = {
   reminders: "sky",
   missedFollowup: "green",
   reviews: "amber",
+  spam: "coral",
 };
 
 const selectClass =
@@ -140,9 +141,13 @@ export function AutomationsPanel({ businessId, canEdit: canEditProp = true }: { 
   const qc = useQueryClient();
   const q = useQuery({ queryKey: automationsQueryKey(businessId), queryFn: () => getAutomations(businessId) });
   const [form, setForm] = useState<AutomationSettings | null>(null);
+  const [blockText, setBlockText] = useState("");
 
   useEffect(() => {
-    if (q.data) setForm(q.data.settings);
+    if (q.data) {
+      setForm(q.data.settings);
+      setBlockText(q.data.settings.spam.blockList.join("\n"));
+    }
   }, [q.data]);
 
   const save = useMutation({
@@ -150,6 +155,7 @@ export function AutomationsPanel({ businessId, canEdit: canEditProp = true }: { 
     onSuccess: (state: AutomationsState) => {
       qc.setQueryData(automationsQueryKey(businessId), state);
       setForm(state.settings);
+      setBlockText(state.settings.spam.blockList.join("\n"));
       if (state.applyError) toast.warning("Saved, but the receptionist couldn't be updated yet", { description: state.applyError });
       else toast.success("Automations saved");
     },
@@ -421,12 +427,46 @@ export function AutomationsPanel({ businessId, canEdit: canEditProp = true }: { 
         <RecentFollowups items={fu.recent} kind="review" />
       </Card>
 
+      <Card
+        id="spam"
+        icon={ShieldBan}
+        title="Spam and robocalls"
+        description="Hang up on blocked numbers, calls with no caller ID, and obvious robocalls and telemarketers."
+        status={st.spam}
+        on={s.spam.blockList.length > 0 || s.spam.anonymous !== "allow" || s.spam.endRobocalls}
+        canEdit={canEdit}
+        toggleable={false}
+      >
+        <Field label="Blocked numbers" htmlFor="auto-spam-list" hint="One per line, like 0412 345 678 or +1 415 555 0123. You can also block a caller from the call log. The receptionist still answers, then hangs up within a few seconds.">
+          <Textarea
+            id="auto-spam-list"
+            rows={4}
+            value={blockText}
+            onChange={(e) => setBlockText(e.target.value)}
+            onBlur={() => set("spam", { blockList: blockText.split(/[\n,;]+/).map((x) => x.trim()).filter(Boolean) })}
+            disabled={!canEdit}
+            placeholder="0412 345 678"
+          />
+        </Field>
+        <Field label="Calls with no caller ID" htmlFor="auto-spam-anon">
+          <select id="auto-spam-anon" className={selectClass} value={s.spam.anonymous} onChange={(e) => set("spam", { anonymous: e.target.value as AutomationSettings["spam"]["anonymous"] })} disabled={!canEdit}>
+            <option value="allow">Treat like any other call</option>
+            <option value="reject">Hang up</option>
+            <option value="message">Only take a message</option>
+          </select>
+        </Field>
+        <Check name="endRobocalls" label="End robocalls and sales calls quickly" hint="Hangs up on recordings, telemarketers and silent calls. It won't end a call with a real customer." checked={s.spam.endRobocalls} onChange={(v) => set("spam", { endRobocalls: v })} disabled={!canEdit} />
+      </Card>
+
       {canEdit ? (
         <SaveBar
           dirty={dirty}
           saving={save.isPending}
           onSave={() => save.mutate(patch)}
-          onReset={() => setForm(state.settings)}
+          onReset={() => {
+            setForm(state.settings);
+            setBlockText(state.settings.spam.blockList.join("\n"));
+          }}
           lastSavedAt={state.updatedAt}
         />
       ) : null}

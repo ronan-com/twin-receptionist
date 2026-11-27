@@ -28,7 +28,8 @@ const NAME_RE = /^backup-\d{8}-\d{6}\.jsonl\.gz$/;
 export const SETTINGS_KEY = "backup_settings";
 export const STATE_KEY = "backup_state";
 
-export const backupDir = () => process.env.BACKUP_DIR || join(import.meta.dir, "..", "data", "backups");
+/** BACKUP_DIR, else the app's Railway volume (set at install; RAILWAY_VOLUME_MOUNT_PATH), else ./data/backups. */
+export const backupDir = () => process.env.BACKUP_DIR || (process.env.RAILWAY_VOLUME_MOUNT_PATH ? join(process.env.RAILWAY_VOLUME_MOUNT_PATH, "backups") : join(import.meta.dir, "..", "data", "backups"));
 /** On by default for a single agency's own copy (SINGLE_AGENCY); BACKUPS=on/off overrides. */
 export const backupsEnabled = () => (process.env.BACKUPS === "off" ? false : process.env.BACKUPS === "on" || singleAgency());
 /** On Railway: is a volume mounted on this service? "n/a" anywhere else. */

@@ -799,7 +799,7 @@ async function tickDemoInstall(id: number) {
   const stages: [string, (s: SetupData) => void][] = [
     ["Creating your project", (s) => { s.rw = { ...s.rw, projectId: "demo" }; }],
     ["Adding your database", (s) => { s.rw!.pgVolume = true; }],
-    ["Adding the app and your settings", (s) => { s.rw!.deploymentId = "demo"; s.phase = "deploying"; s.rw!.deployStatus = "BUILDING"; }],
+    ["Adding the app and your settings", (s) => { s.rw!.appVolume = true; s.rw!.deploymentId = "demo"; s.phase = "deploying"; s.rw!.deployStatus = "BUILDING"; }],
     ["Building the app", (s) => { s.rw!.deployStatus = "DEPLOYING"; }],
     ["Starting the app", () => {}],
   ];
@@ -1409,6 +1409,7 @@ export async function railwayVars(id: number, s: SetupData, token: string): Prom
     PORT: String(APP_PORT),
     DATABASE_URL: "${{Postgres.DATABASE_URL}}",
     RAILWAY_DOCKERFILE_PATH: "deploy/Dockerfile",
+    RAILWAY_RUN_UID: "0", // a Railway volume is owned by root: the app writes its backups to one
   };
   if (s.calendars?.google) { v.GOOGLE_CLIENT_ID = s.calendars.google.clientId; v.GOOGLE_CLIENT_SECRET = getSecret(id, "google_secret") || ""; }
   if (s.calendars?.microsoft) { v.MICROSOFT_CLIENT_ID = s.calendars.microsoft.clientId; v.MICROSOFT_CLIENT_SECRET = getSecret(id, "microsoft_secret") || ""; }
@@ -1493,6 +1494,12 @@ async function tickRailCreate(id: number) {
       progress(id, "Adding the app and your settings");
       const svc = (await railway(token, "mutation($input: ServiceCreateInput!) { serviceCreate(input: $input) { id } }", { input: { ...base, name: "app" } })).serviceCreate;
       setRw(id, (r) => { r.appId = String(svc.id); });
+      return;
+    }
+    // The app's own volume: the daily backups (server/backup.ts) are kept on it. Railway sets RAILWAY_VOLUME_MOUNT_PATH.
+    if (!rw.appVolume) {
+      await railway(token, "mutation($input: VolumeCreateInput!) { volumeCreate(input: $input) { id } }", { input: { ...base, serviceId: rw.appId, mountPath: APP_VOLUME_PATH } });
+      setRw(id, (r) => { r.appVolume = true; });
       return;
     }
     // Railway's own address first: with no custom domain it is the app's PUBLIC_URL.
@@ -1646,6 +1653,27 @@ export const updateVarHooks: ((buyerId: number, existing: Record<string, string>
 updateVarHooks.push((id, have) => ("SUPPORT_SYNC_TOKEN" in have ? {} : supportSettings(id)));
 
 const UPDATE_TOKEN_MSG = "That token can't see your agency's project. Paste the token from the Railway account you installed with (workspace set to No workspace).";
+/** Where the app's volume is mounted (the backups go to <this>/backups). */
+export const APP_VOLUME_PATH = "/data";
+
+/**
+ * An agency installed before backups existed has no volume on its app service: add one (once). Returns true if it
+ * created one. Best effort: a failure is logged and the update carries on (the app then keeps backups on its
+ * temporary disk and says so in Settings, Backups).
+ */
+export async function ensureAppVolume(token: string, projectId: string, envId: string, appId: string): Promise<boolean> {
+  try {
+    const p = (await railway(token, "query($id: String!) { project(id: $id) { volumes { edges { node { id volumeInstances { edges { node { serviceId environmentId } } } } } } } }", { id: projectId })).project;
+    const has = (p?.volumes?.edges || []).some((v: any) => (v.node?.volumeInstances?.edges || []).some((i: any) => String(i.node?.serviceId) === appId));
+    if (has) return false;
+    await railway(token, "mutation($input: VolumeCreateInput!) { volumeCreate(input: $input) { id } }", { input: { projectId, environmentId: envId, serviceId: appId, mountPath: APP_VOLUME_PATH } });
+    return true;
+  } catch (e) {
+    console.log(`[setup] couldn't add the app volume: ${(e as Error).message}`);
+    return false;
+  }
+}
+
 async function locateAgency(token: string, projectId: string): Promise<{ envId: string; appId: string }> {
   let p: any;
   try {
@@ -1737,6 +1765,7 @@ async function tickUpdate(id: number) {
       const to = currentPackage()?.version || u.to || "";
       const add: Record<string, string> = {};
       for (const h of updateVarHooks) for (const [k, v] of Object.entries(h(id, have))) if (!(k in have) && !(k in add)) add[k] = v;
+      if (!("RAILWAY_RUN_UID" in have)) add.RAILWAY_RUN_UID = "0"; // so the app can write to its backup volume
       add.APP_VERSION = to; // ours: says which version this agency is
       // Automatic updates: a new project token for the app if it has none yet, its last automatic update failed, or its
       // latest heartbeat says automatic updates are unavailable (a token Railway no longer accepts). Not kept by us.
@@ -1745,6 +1774,11 @@ async function tickUpdate(id: number) {
       }
       await railway(token, "mutation($input: VariableCollectionUpsertInput!) { variableCollectionUpsert(input: $input) }", { input: { ...base, serviceId: u.appId, variables: add, skipDeploys: true } });
       setUpdate(id, (u) => { u.varsSet = true; u.to = to; });
+      return;
+    }
+    if (!u.volumeSet) {
+      if (await ensureAppVolume(token, projectId, u.envId, u.appId)) progress(id, "Adding a volume for your daily backups");
+      setUpdate(id, (u) => { u.volumeSet = true; });
       return;
     }
     if (!u.deploymentId) {

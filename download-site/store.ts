@@ -174,7 +174,7 @@ export interface SetupData {
   railway?: { via?: "oauth" | "paste"; expiresAt?: string; email?: string; workspaceId?: string; workspaceName?: string; plan?: string; confirmed?: boolean };
   /** What we made in the buyer's Railway account (ids only). */
   rw?: {
-    projectId?: string; environmentId?: string; pgId?: string; pgVolume?: boolean; appId?: string; varsSet?: boolean; settingsSet?: boolean;
+    projectId?: string; environmentId?: string; pgId?: string; pgVolume?: boolean; appId?: string; appVolume?: boolean; varsSet?: boolean; settingsSet?: boolean;
     deploymentId?: string; deployStatus?: string; deployedAt?: string; serviceDomain?: string;
     customDomainId?: string; records?: DnsRecord[]; certStatus?: string; domainOk?: boolean; cfWritten?: boolean; healthy?: boolean;
     uploadedAt?: string; createdAt?: string;
@@ -203,7 +203,7 @@ export interface SetupData {
   update?: {
     phase: "ask" | "running" | "failed" | "done";
     from?: string; to?: string;
-    envId?: string; appId?: string; varsSet?: boolean;
+    envId?: string; appId?: string; varsSet?: boolean; volumeSet?: boolean;
     deploymentId?: string; deployStatus?: string; uploadedAt?: string; healthSince?: string;
     error?: string; startedAt?: string; at?: string; attempt?: number;
   };

@@ -161,7 +161,7 @@ export function ReceptionistCard({
     <div className="space-y-4" data-receptionist-card={r.id}>
       {canManage || r.onboarding_pending || r.demo_assistant ? (
         <div className="flex flex-wrap items-center gap-2">
-          <StatusBadge tone={paused ? "muted" : "success"} dot>{paused ? "Paused" : "Active"}</StatusBadge>
+          {paused ? <StatusBadge tone="muted" dot>Paused</StatusBadge> : null}
           {r.onboarding_pending ? <StatusBadge tone="warning">Waiting for client</StatusBadge> : null}
           {r.demo_assistant ? <DemoBadge /> : null}
           <span data-engine={r.provider}><StatusBadge tone="muted">{engineLabel}</StatusBadge></span>

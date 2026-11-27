@@ -76,7 +76,7 @@ export function Home() {
       <div className="hero-card px-5 py-6 sm:px-7 sm:py-7">
         <div className="relative z-10 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div>
-            <h1 className="text-[26px] font-semibold tracking-[-0.02em] sm:text-[30px]">{hello()}{first ? `, ${first}` : ""}</h1>
+            <h1 className="text-[26px] font-semibold tracking-[-0.02em] text-white sm:text-[30px]">{hello()}{first ? `, ${first}` : ""}</h1>
             <p className="mt-1 text-[14px] text-white/85">{platform ? "Everything on the platform" : orgName || "Your agency"}, today.</p>
           </div>
           {!readOnly ? (

@@ -1,0 +1,22 @@
+import { afterAll, beforeAll, expect, test } from "bun:test";
+import { sql, migrate } from "./db";
+import { readCustomerBilling, writeCustomerBilling } from "./customerBilling";
+import { consoleRoutes } from "./routes/console";
+import type { Ctx } from "./accounts";
+const orgA=crypto.randomUUID(), orgB=crypto.randomUUID(), co=crypto.randomUUID();
+const owner:Ctx={tokenHash:"test",org:{id:orgA,name:"Test agency"},role:"owner",user:{id:crypto.randomUUID(),name:"Test owner",email:"owner@example.com",platformAdmin:false}};
+const plan={monthlyCents:19900,currency:"AUD",checkoutUrl:"https://buy.stripe.com/test_example",status:"not_started"};
+beforeAll(async()=>{await migrate();await sql`insert into orgs (id,name) values (${orgA},'Billing A'),(${orgB},'Billing B')`;await sql`insert into companies (id,org_id,name) values (${co},${orgA},'Example client')`});
+afterAll(async()=>{await sql`delete from orgs where id in (${orgA},${orgB})`});
+test("billing stays scoped to the company and owner",async()=>{
+ await writeCustomerBilling(orgA,co,plan);
+ expect(await readCustomerBilling(orgA,co)).toMatchObject(plan);
+ expect(await readCustomerBilling(orgB,co)).toBeNull();
+ await expect(writeCustomerBilling(orgB,co,{...plan,monthlyCents:100})).rejects.toThrow();
+ expect(await readCustomerBilling(orgA,co)).toMatchObject(plan);
+ const path="/api/console/companies/"+co+"/billing",url=new URL("http://localhost"+path);
+ const call=(ctx:Ctx)=>consoleRoutes({req:new Request(url),url,path,method:"GET",ctx,orgId:ctx.org!.id,appUrl:"http://localhost"},{createClient:async()=>{throw Error("not called")}});
+ expect((await call(owner))?.status).toBe(200);
+ await expect(call({...owner,role:"admin"})).rejects.toThrow("Only the agency owner");
+ await expect(call({...owner,org:{id:orgB,name:"Other agency"}})).rejects.toThrow();
+});

@@ -20,6 +20,7 @@ import { describeHours, INDUSTRIES, industry as industryPreset, type IndustryKey
 import type { AppointmentStatus, LeadStage } from "@/lib/app/types";
 import { AutomationChips, AutomationIcon, CallSheet, LinkBox, READ_ONLY_HINT, useConsole } from "./-shared";
 import { BrandEditor } from "./-brand";
+import { CustomerBilling } from "@/components/app/CustomerBilling";
 import { BuyNumber } from "./-buy-number";
 import { ImportNumber } from "./-import-number";
 import { AttachedNumbers } from "./-own-numbers";
@@ -373,6 +374,7 @@ function ClientDetailPage() {
         ) : null}
       </Panel>
 
+      {!ws.viewing && !platform && ws.session?.role === "owner" ? <CustomerBilling key={co.id} companyId={co.id} editable /> : null}
       <Panel title="Branding" description={`${co.name}'s logo, background and colours on its customer workspace. Blank fields use the agency's branding.`}>
         <BrandEditor
           lockable

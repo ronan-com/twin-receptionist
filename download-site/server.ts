@@ -57,6 +57,7 @@ console.log(`content: ${[...content.values()].filter((h) => !h.placeholder).leng
 const ASSETS: Record<string, { body: Uint8Array; type: string }> = {
   "/styles.css": { body: readFileSync(join(import.meta.dir, "public/styles.css")), type: "text/css; charset=utf-8" },
   "/favicon.svg": { body: readFileSync(join(import.meta.dir, "public/favicon.svg")), type: "image/svg+xml" },
+  "/dashboard-preview.js": { body: readFileSync(join(import.meta.dir, "public/dashboard-preview.js")), type: "text/javascript; charset=utf-8" },
   "/wizard.js": { body: readFileSync(join(import.meta.dir, "public/wizard.js")), type: "text/javascript; charset=utf-8" },
   "/chat.js": { body: readFileSync(join(import.meta.dir, "public/chat.js")), type: "text/javascript; charset=utf-8" },
   "/chat.css": { body: readFileSync(join(import.meta.dir, "public/chat.css")), type: "text/css; charset=utf-8" },
@@ -387,7 +388,7 @@ async function handle(req: Request, srv: Bun.Server<unknown>): Promise<Response>
     const b = r.buyer!;
     const sess = session(req);
     let s = getSetup(b.id);
-    if (url.searchParams.get("preview") === "dashboard" && s.phase !== "done") return html(dashboardPreview(`/setup/${m[1]}`, url.searchParams.get("section")));
+    if (url.searchParams.get("preview") === "dashboard" && s.phase !== "done") return html(dashboardPreview(`/setup/${m[1]}`, url.searchParams.get("section"), url.searchParams.get("view")));
     const flash = s.flash;
     if (flash) s = updateSetup(b.id, (x) => { delete x.flash; });
     const want = url.searchParams.get("step") as StepId | null;

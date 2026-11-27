@@ -144,7 +144,7 @@ export function CallSheet({ callId, onClose }: { callId: string | null; onClose:
 }
 
 /** Copy for the honest stubs. */
-export const NOT_BILLED = "Usage is counted from the calls we log. Billing isn't connected yet, so nothing here is charged.";
+export const NOT_BILLED = "Usage is measured from logged calls. Manage monthly subscriptions separately under Billing.";
 
 const AUTOMATION_TONE = { live: STATE_TONE.live, attention: STATE_TONE.failed, paused: STATE_TONE.paused, off: STATE_TONE.off } as const;
 const AUTOMATION_SHORT: Record<string, string> = { voice: "Voice", sms: "SMS", email: "Email", booking: "Bookings", crm: "CRM" };

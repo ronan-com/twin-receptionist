@@ -88,6 +88,10 @@ test("skip buttons open a read-only preview without submitting forms or advancin
   const page = dashboardPreview("/setup/" + b.code);
   expect(page).toContain('href="/setup/' + b.code + '">Continue onboarding');
   expect(page).toContain("Preview mode");
+  expect(page).toContain("Switch to customer view");
+  const customer=dashboardPreview("/setup/"+b.code,"calendar","customer");
+  expect(customer).toContain("Switch to agency view");
+  expect(customer).toContain('data-demo-form="booking"');
   expect(page).not.toContain("preview@example.com");
   expect(JSON.stringify(getSetup(b.id))).toBe(before);
 });

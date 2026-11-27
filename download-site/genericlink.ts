@@ -191,7 +191,7 @@ export async function startRoute(req: Request, code: string, c: StartCtx): Promi
     const preview = url.searchParams.get("preview") === "dashboard";
     if (resume) return c.redirect(`/setup/${resume.code}${preview ? "?preview=dashboard" : ""}`);
     if (!isActive(link)) return c.html(inactivePage(style), 410);
-    if (preview) return c.html(dashboardPreview(`/start/${link.code}`, url.searchParams.get("section")));
+    if (preview) return c.html(dashboardPreview(`/start/${link.code}`, url.searchParams.get("section"), url.searchParams.get("view")));
     const have = ck(req, "gf");
     const gf = have || newSessionId();
     return c.html(formPage(link, gf), 200, have ? {} : { "Set-Cookie": `gf=${gf}; Path=/start; HttpOnly; SameSite=Lax${c.secure ? "; Secure" : ""}; Max-Age=7200` });

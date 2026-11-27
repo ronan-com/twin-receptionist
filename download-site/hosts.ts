@@ -82,7 +82,7 @@ export function ownHostBuyer(req: Request): Buyer | null {
   if (!h || h === siteHost()) return null;
   return buyerOfHost(h);
 }
-const STATIC = /^\/(?:styles\.css|wizard\.css|wizard\.js|chat\.css|chat\.js|favicon\.svg|robots\.txt|healthz|fonts\/inter-latin-[0-9]{3}-normal\.woff2)$/;
+const STATIC = /^\/(?:styles\.css|wizard\.css|wizard\.js|dashboard-preview\.js|chat\.css|chat\.js|favicon\.svg|robots\.txt|healthz|fonts\/inter-latin-[0-9]{3}-normal\.woff2)$/;
 /** The path the normal site serves for this path on a buyer's own host; null = not served there at all. */
 export function mapOwnPath(method: string, path: string, code: string): string | null {
   if (STATIC.test(path)) return path;

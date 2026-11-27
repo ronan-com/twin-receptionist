@@ -436,3 +436,7 @@ details.alt > summary::after { content: " \203A"; }
 details.alt[open] > summary { margin-bottom: 14px; }
 .skip-phones { margin-top: 24px; }
 .linkbtn { color: var(--muted); }
+
+.xscroll { overflow-x: auto; }
+form.inl { display: inline; }
+header nav .linkbtn { white-space: nowrap; }

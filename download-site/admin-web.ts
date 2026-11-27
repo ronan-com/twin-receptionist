@@ -265,7 +265,7 @@ function listPage(sid: string, email: string, q: string, filter: string, flash =
 <td data-l="Status">${pill(r.status)}</td>
 <td data-l=""><form method="post" action="/admin/b/${r.b.id}/delete">${hiddenT(sid)}<button class="linkbtn" type="submit" data-confirm="${esc(`Delete the test run ${r.b.name}?`)}">Delete</button></form></td></tr>`).join("");
   const testsSection = tests.length || DEMO_READY ? `<section class="card tests">
-<div class="titlerow"><details><summary>Test runs (${tests.length})</summary>${tests.length ? `<form method="post" action="/admin/demo/delete-all">${hiddenT(sid)}<button class="btn danger" type="submit" data-confirm="${esc(`Delete all ${tests.length} test runs?`)}">Delete all test runs</button></form>` : ""}${tests.length ? `<div style="overflow-x:auto"><table class="records"><thead><tr><th>Name</th><th>Created</th><th>Status</th><th></th></tr></thead><tbody>${testRows}</tbody></table></div>` : `<p class="hint">No test runs.</p>`}</details>
+<div class="titlerow"><details><summary>Test runs (${tests.length})</summary>${tests.length ? `<form method="post" action="/admin/demo/delete-all">${hiddenT(sid)}<button class="btn danger" type="submit" data-confirm="${esc(`Delete all ${tests.length} test runs?`)}">Delete all test runs</button></form>` : ""}${tests.length ? `<div class="xscroll"><table class="records"><thead><tr><th>Name</th><th>Created</th><th>Status</th><th></th></tr></thead><tbody>${testRows}</tbody></table></div>` : `<p class="hint">No test runs.</p>`}</details>
 ${DEMO_READY ? `<form method="post" action="/admin/demo" target="_blank">${hiddenT(sid)}<button class="btn o" type="submit" title="Makes a test agency with pretend accounts and opens their setup in a new tab">Start a test run</button></form>` : ""}</div>
 </section>` : "";
   return page("Agencies", `${flash}
@@ -277,7 +277,7 @@ ${DEMO_READY ? `<form method="post" action="/admin/demo" target="_blank">${hidde
   <select name="status" aria-label="Status"><option value="">All statuses</option>${STATUSES.map((s) => `<option value="${s}"${s === filter ? " selected" : ""}>${s} (${counts[s]})</option>`).join("")}</select>
   <button class="btn o" type="submit">Show</button>
 </form>
-${shown.length ? `<div style="overflow-x:auto"><table class="records buyers"><thead><tr><th>Agency</th><th>Brand</th><th>Status</th><th>Invited</th><th>Live at</th><th>Sync</th><th>Version</th><th>Calls 7d</th><th>Receptionists</th><th>Last activity</th></tr></thead><tbody>${tr}</tbody></table></div>` : `<p class="hint">${all.length ? "No agencies match." : "No agencies yet. Add one below."}</p>`}
+${shown.length ? `<div class="xscroll"><table class="records buyers"><thead><tr><th>Agency</th><th>Brand</th><th>Status</th><th>Invited</th><th>Live at</th><th>Sync</th><th>Version</th><th>Calls 7d</th><th>Receptionists</th><th>Last activity</th></tr></thead><tbody>${tr}</tbody></table></div>` : `<p class="hint">${all.length ? "No agencies match." : "No agencies yet. Add one below."}</p>`}
 </section>
 <section class="card">
 <h2>Add an agency</h2>
@@ -398,7 +398,7 @@ function problemsPage(sid: string, email: string) {
   return page("Problems", `<p><a href="/admin">← All agencies</a></p>
 <section class="card"><h1>Problems</h1>
 <p class="lead">${all.length ? `${all.length} problem${all.length === 1 ? "" : "s"} across ${agencies} agenc${agencies === 1 ? "y" : "ies"}, from the last 24 hours.` : "Nothing reported by any agency in the last 24 hours."} The apps send a kind and a masked one-line description, never names, numbers or what anyone said.</p>
-${all.length ? `<div style="overflow-x:auto"><table class="records"><thead><tr><th>Agency</th><th>Kind</th><th>What</th><th>Times</th><th>Last</th></tr></thead><tbody>${all.map((x) => `<tr><td data-l="Agency"><a href="/admin/b/${x.id}"><b>${esc(x.name)}</b></a>${x.brand ? `<br><span class="hint">${esc(x.brand)}</span>` : ""}</td><td data-l="Kind"><span class="pill failed">${esc(x.p.kind)}</span></td><td data-l="What">${esc(x.p.msg)}</td><td data-l="Times">${x.p.count}</td><td data-l="Last">${esc(ago(x.p.last))}</td></tr>`).join("")}</tbody></table></div>` : ""}
+${all.length ? `<div class="xscroll"><table class="records"><thead><tr><th>Agency</th><th>Kind</th><th>What</th><th>Times</th><th>Last</th></tr></thead><tbody>${all.map((x) => `<tr><td data-l="Agency"><a href="/admin/b/${x.id}"><b>${esc(x.name)}</b></a>${x.brand ? `<br><span class="hint">${esc(x.brand)}</span>` : ""}</td><td data-l="Kind"><span class="pill failed">${esc(x.p.kind)}</span></td><td data-l="What">${esc(x.p.msg)}</td><td data-l="Times">${x.p.count}</td><td data-l="Last">${esc(ago(x.p.last))}</td></tr>`).join("")}</tbody></table></div>` : ""}
 </section>`, { sid, email });
 }
 
@@ -408,7 +408,7 @@ function alertsPage(sid: string, email: string) {
   return page("Alerts", `<p><a href="/admin">← All agencies</a></p>
 <section class="card"><h1>Alerts</h1>
 <p class="lead">Raised when an agency goes quiet for 30 minutes, a new kind of problem appears, or an automatic update fails. One per agency per kind per hour.${process.env.ALERT_WEBHOOK_URL || process.env.SITE_SMTP_URL ? "" : " <b>No alert channel is set (ALERT_WEBHOOK_URL, or SITE_SMTP_URL + SITE_MAIL_FROM), so these are only recorded here.</b>"}</p>
-${list.length ? `<div style="overflow-x:auto"><table class="records"><thead><tr><th>When (UTC)</th><th>Agency</th><th>Kind</th><th>What</th><th>Sent to</th></tr></thead><tbody>${list.map((a) => `<tr><td data-l="When">${esc(when(a.at))}</td><td data-l="Agency"><a href="/admin/b/${a.buyer_id}">${esc(names.get(a.buyer_id) || `Buyer ${a.buyer_id}`)}</a></td><td data-l="Kind"><span class="pill failed">${esc(a.kind)}</span></td><td data-l="What">${esc(a.message)}</td><td data-l="Sent to">${esc(a.sent || "nowhere")}</td></tr>`).join("")}</tbody></table></div>` : `<p class="hint">No alerts yet.</p>`}
+${list.length ? `<div class="xscroll"><table class="records"><thead><tr><th>When (UTC)</th><th>Agency</th><th>Kind</th><th>What</th><th>Sent to</th></tr></thead><tbody>${list.map((a) => `<tr><td data-l="When">${esc(when(a.at))}</td><td data-l="Agency"><a href="/admin/b/${a.buyer_id}">${esc(names.get(a.buyer_id) || `Buyer ${a.buyer_id}`)}</a></td><td data-l="Kind"><span class="pill failed">${esc(a.kind)}</span></td><td data-l="What">${esc(a.message)}</td><td data-l="Sent to">${esc(a.sent || "nowhere")}</td></tr>`).join("")}</tbody></table></div>` : `<p class="hint">No alerts yet.</p>`}
 </section>`, { sid, email });
 }
 

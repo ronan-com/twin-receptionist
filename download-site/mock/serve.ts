@@ -556,7 +556,7 @@ Bun.serve({
 
 // ============================ SMTP ============================
 createServer((sock) => {
-  let authed = false, inData = false, buf = "", authStep = "";
+  let authed = false, inData = false, buf = "", authStep = "", rcpt = "", dataBuf = "";
   const say = (s: string) => sock.write(s + "\r\n");
   say("220 mock.smtp ready");
   sock.on("data", (d) => {
@@ -564,7 +564,7 @@ createServer((sock) => {
     let i: number;
     while ((i = buf.indexOf("\r\n")) >= 0) {
       const line = buf.slice(0, i); buf = buf.slice(i + 2);
-      if (inData) { if (line === ".") { inData = false; say("250 queued"); } continue; }
+      if (inData) { if (line === ".") { inData = false; sent.push({ smtp: true, to: rcpt, data: dataBuf }); log(`smtp: email to ${rcpt}`); dataBuf = ""; say("250 queued"); } else dataBuf += line + "\n"; continue; }
       if (authStep === "user") { authStep = Buffer.from(line, "base64").toString() === "test" ? "pass" : "bad"; say("334 UGFzc3dvcmQ6"); continue; }
       if (authStep) { authed = authStep === "pass" && Buffer.from(line, "base64").toString() === "test-pass"; authStep = ""; say(authed ? "235 ok" : "535 5.7.8 Authentication credentials invalid"); continue; }
       const cmd = line.toUpperCase();
@@ -573,7 +573,7 @@ createServer((sock) => {
       else if (cmd.startsWith("AUTH PLAIN")) { const parts = Buffer.from(line.split(" ")[2] || "", "base64").toString().split("\0"); authed = parts[1] === "test" && parts[2] === "test-pass"; say(authed ? "235 ok" : "535 5.7.8 Authentication credentials invalid"); }
       else if (cmd.startsWith("AUTH LOGIN")) { authStep = "user"; say("334 VXNlcm5hbWU6"); }
       else if (cmd.startsWith("MAIL FROM")) say(authed ? "250 ok" : "530 auth required");
-      else if (cmd.startsWith("RCPT TO")) say("250 ok");
+      else if (cmd.startsWith("RCPT TO")) { rcpt = line.replace(/^RCPT TO:\s*<?/i, "").replace(/>.*$/, ""); say("250 ok"); }
       else if (cmd === "DATA") { inData = true; say("354 go"); }
       else if (cmd === "QUIT") { say("221 bye"); sock.end(); }
       else say("250 ok");

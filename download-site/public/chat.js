@@ -53,6 +53,19 @@
   fab.addEventListener("click", function () { setOpen(true); });
   root.querySelector(".chat-x").addEventListener("click", function () { setOpen(false); });
   document.addEventListener("keydown", function (e) { if (e.key === "Escape" && root.classList.contains("open")) setOpen(false); });
+  // "Ask a person instead": close the chat and open the "I need a person" form at the bottom of the step.
+  const toPerson = root.querySelector(".chat-person");
+  if (toPerson) toPerson.addEventListener("click", function (e) {
+    const box = document.querySelector("#person details.person-ask");
+    if (!box) return;
+    e.preventDefault();
+    setOpen(false); box.open = true;
+    const q = document.getElementById("person-problem");
+    const last = history.filter(function (m) { return m.role === "user"; }).pop();
+    if (q && !q.value && last) q.value = String(last.content).slice(0, 1000);
+    box.scrollIntoView({ behavior: "smooth", block: "center" });
+    if (q) q.focus();
+  });
 
   async function ask(q) {
     q = String(q || "").trim();

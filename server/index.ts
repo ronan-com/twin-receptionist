@@ -64,7 +64,7 @@ import { changeBrand, ownBrand, serveAsset, uploadAsset } from "./brand";
 import { accessibleClients, customerClientId, setFollowUpStage, customersFor, inviteCustomer, removeCustomer, revokeCustomerInvite } from "./customers";
 import { createRequest, declineRequest, listRequests, markDone, pendingCount, pendingRequest, requestsForClient, settleRequests } from "./numberRequests";
 import { createAgency, exitView, inviteAgencyOwner, viewAs, isSuspended, listAgencies, telnyxSettings, updateAgency } from "./agencies";
-import { canBuyNumbers, canUseOwnNumbers, canUseTwilio, checkKey, checkVapiKeys, connectPhoneAccount, connectTwilio, countCheck, disconnectPhoneAccount, disconnectTwilio, phoneAccount, pretendAccount, requirePhoneAccount, testTwilio, twilioAccount } from "./phoneAccount";
+import { canBuyNumbers, canUseOwnNumbers, canUseTwilio, checkNewKey, checkVapiKeys, connectPhoneAccount, connectTwilio, countCheck, disconnectPhoneAccount, disconnectTwilio, phoneAccount, pretendAccount, requirePhoneAccount, testTwilio, twilioAccount } from "./phoneAccount";
 import { availableTwilioNumbers, isTestTwilio, requireTwilio, twilioNumbersFor, twilioRegulatory } from "./twilio";
 import { previewEmail, sendSimText, startTextSim } from "./simulator";
 import {
@@ -761,7 +761,7 @@ async function route(req: Request, server?: { requestIP(r: Request): { address: 
         await checkVapiKeys(input.key, input.publicKey);
         return json({ ok: true, balance: null });
       }
-      const checked = await checkKey(input.key);
+      const checked = await checkNewKey(input.key);
       return json({ ok: true, balance: checked.balance });
     }
     if (method === "GET") return json(await phoneAccount(ctx));

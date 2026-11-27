@@ -113,7 +113,7 @@ describe("skip the phone step", () => {
     const b = await buyer("t");
     stub(200, { data: { available_credit: "12.50", currency: "USD" } });
     expect(await run(b, "phones", { key: TKEY })).toBeNull();
-    expect(calls).toEqual(["https://api.telnyx.com/v2/balance"]);
+    expect(calls).toEqual(["https://api.telnyx.com/v2/balance", "https://api.telnyx.com/v2/ai/assistants?page[size]=1", "https://api.telnyx.com/v2/call_control_applications?page[size]=1"]); // the balance, then the pretrial probes
     expect(getSetup(b.id).step).toBe("extras");
     expect(await run(b, "extras-continue")).toBeNull();
     expect(firstOpen(b, getSetup(b.id))).toBe("install");

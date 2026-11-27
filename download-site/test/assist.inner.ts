@@ -183,13 +183,15 @@ describe("admin fills steps, the buyer's wizard sees them", () => {
     expect(await actions.start(b, {})).toBeNull();
     expect(getSetup(b.id).step).toBe("phones");
     expect(await actions["assist-release"](b, { step: "brand" })).toBeNull();
-    expect(page(b, "brand")).toContain('name="productName"');
+    expect(page(b, "brand")).toContain('name="ownerEmail"');
+    expect(page(b, "brand")).not.toContain('name="productName"');
     expect(getSetup(b.id).assist?.steps?.brand).toBeDefined(); // still ours until they save
-    expect(await actions.brand(b, { productName: "Acme AI Pty", ownerEmail: "o@acme.test" })).toBeNull();
+    expect(await actions.brand(b, { ownerEmail: "owner@acme.test" })).toBeNull();
     const s = getSetup(b.id);
     expect(s.assist?.steps?.brand).toBeUndefined();
     expect(A.stepRows(b, s).find((r) => r.id === "brand")).toMatchObject({ done: true, by: "buyer" });
-    expect(s.brand?.productName).toBe("Acme AI Pty");
+    expect(s.brand?.productName).toBe("Acme AI");
+    expect(s.brand?.ownerEmail).toBe("owner@acme.test");
     expect(s.brand?.logo).toBe(PNG); // kept
     // their own Telnyx: theirs from the start
     expect(await actions.phones(b, { key: "platform-fake-buyer-own-key" })).toBeNull();

@@ -4,6 +4,7 @@ import { recordIncident, resolveIncidents } from "./incidents";
 import { isDemo } from "./sandbox";
 import { accountMode, asProvider } from "./voice/config";
 import { runAsOrg } from "./telnyx";
+import { summariseEnded } from "./callSummary";
 
 // Keeps call_log up to date: every minute, for each receptionist, the most recent
 // conversations from the phone provider are upserted by provider_call_id. Demo
@@ -67,6 +68,21 @@ export async function syncAllCalls(): Promise<void> {
         clientId: c.id,
         message: `Couldn't fetch recent calls: ${(err as Error).message}`.slice(0, 300),
       });
+    }
+    // Summaries and outcomes for calls that have ended (server/callSummary.ts). Its own incident
+    // kind: a failure here never stops the calls syncing, nor the other receptionists.
+    if (!isDemo(c.assistant_id)) {
+      try {
+        await runAsOrg(c.org_id, () => summariseEnded(c));
+        await resolveIncidents("call_summary", c.id);
+      } catch (err) {
+        await recordIncident({
+          kind: "call_summary",
+          orgId: c.org_id,
+          clientId: c.id,
+          message: `Couldn't summarise a call: ${(err as Error).message}`.slice(0, 300),
+        });
+      }
     }
   }
 }

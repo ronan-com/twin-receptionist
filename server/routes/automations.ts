@@ -44,5 +44,5 @@ export async function automationRoutes(args: RouteArgs, deps: AutomationRouteDep
 export async function automationHooks(req: Request, path: string): Promise<Response | null> {
   const m = path.match(/^\/hooks\/automations\/([a-f0-9-]{36})\/([A-Za-z0-9_-]{16,64})$/);
   if (!m || (req.method !== "POST" && req.method !== "GET")) return null;
-  return dynamicVariables(m[1], m[2]);
+  return dynamicVariables(m[1], m[2], req);
 }

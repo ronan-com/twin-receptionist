@@ -6,6 +6,7 @@ import { Switch } from "@/components/ui/switch";
 import { ErrorState, Notice, Panel } from "@/components/app/primitives";
 import { fmtDateTime } from "@/lib/app/format";
 import { updatesApi, type UpdatesChange } from "@/lib/api/support";
+import { request } from "@/lib/api/base";
 import { READ_ONLY_HINT, useConsole } from "./-shared";
 
 // Settings, "Updates" (server/autoUpdate.ts): this copy can update itself, in your own Railway project, using a
@@ -42,6 +43,8 @@ export function UpdatesSection() {
     },
     onError: (e: Error) => toast.error(e.message),
   });
+  // Owners see which web address this copy answers on (changing it is done from the setup link).
+  const address = useQuery({ queryKey: ["console", "public-url"], enabled: role === "owner", retry: false, staleTime: 60_000, queryFn: () => request<{ url?: string }>("GET", "/api/public-url") });
   if (q.error) return <ErrorState message={(q.error as Error).message} onRetry={() => void q.refetch()} />;
   if (!q.data) return <div className="panel p-4 text-[12.5px] text-ink-muted">Loading…</div>;
   const u = q.data;
@@ -49,6 +52,11 @@ export function UpdatesSection() {
   return (
     <div className="space-y-4" data-section="updates">
       {readOnly ? <Notice tone="info">{READ_ONLY_HINT}</Notice> : !canChange ? <Notice tone="info">Only an owner or admin can change these.</Notice> : null}
+      {role === "owner" && address.data?.url ? (
+        <p className="text-[12.5px] text-ink-muted" data-web-address>
+          Your web address: <span className="font-medium text-ink">{address.data.url.replace(/^https?:\/\//, "").replace(/\/$/, "")}</span> · Change it from your setup link
+        </p>
+      ) : null}
       <Panel title="Automatic updates" description={`You're on version ${u.version || "unknown"}${u.latest && u.latest !== u.version ? `; ${u.latest} is available` : ""}.`}>
         {!u.available ? (
           <p className="max-w-[620px] text-[13px] leading-5 text-ink-muted" data-state="unavailable">

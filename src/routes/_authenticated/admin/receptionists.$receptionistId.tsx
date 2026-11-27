@@ -84,6 +84,9 @@ function ReceptionistEditor() {
   const refresh = async () => {
     await qc.invalidateQueries({ queryKey: ["console"] });
     await qc.invalidateQueries({ queryKey: ["admin"] });
+    // The status line in the script card reads the numbers on their own query: a number added or taken off shows there straight away.
+    await qc.invalidateQueries({ queryKey: ["phone-numbers"] });
+    await qc.invalidateQueries({ queryKey: ["own-numbers"] });
   };
   const viewAs = useMutation({
     mutationFn: (r: CompanyReceptionist) => platformApi.viewAs(q.data!.company.org_id, r.id),

@@ -14,7 +14,7 @@ const AUTH_FACTS: { label: string; value: string; hue: Hue; icon: typeof PhoneIn
 // Answered's sign-in layout: brand panel on the left (wide screens), form on the right.
 export function AuthLayout({ title, subtitle, children, footer }: { title: string; subtitle?: ReactNode; children: ReactNode; footer?: ReactNode }) {
   return (
-    <div className="min-h-screen bg-white text-ink lg:grid lg:grid-cols-[1.05fr_1fr]">
+    <div data-auth-shell className="min-h-screen bg-white text-ink lg:grid lg:grid-cols-[1.05fr_1fr]">
       <aside className="relative hidden overflow-hidden border-r border-hairline bg-canvas-2 lg:flex lg:flex-col lg:justify-between lg:p-10">
         {/* Answered's ribbon: a colour sweep across the top, fading into the canvas. */}
         <div className="auth-ribbon" aria-hidden>
@@ -53,7 +53,7 @@ export function AuthLayout({ title, subtitle, children, footer }: { title: strin
 
       <main className="relative flex min-h-screen min-w-0 flex-col px-4 py-8 sm:px-10 lg:min-h-0 lg:justify-center lg:px-16">
         {/* On phones the side panel is hidden: keep a ribbon across the top. */}
-        <div className="pointer-events-none absolute inset-x-0 top-0 h-[5px] bg-[linear-gradient(90deg,#635bff,#a78bfa_22%,#ff5caa_46%,#ff7a59_68%,#ffb03d_84%,#00d4ff)] lg:hidden" aria-hidden />
+        <div className="auth-mobile-rule pointer-events-none absolute inset-x-0 top-0 lg:hidden" aria-hidden />
         <div className="mb-10 lg:hidden">
           <BrandMark to="/" />
         </div>

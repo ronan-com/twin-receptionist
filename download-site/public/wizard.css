@@ -368,3 +368,53 @@ input[type=color] { display: block; width: 64px; height: 40px; padding: 2px; bor
 .person-msg .who span { color: var(--muted); font-size: 12px; }
 .person-msg.us .who b { color: var(--indigo, #635bff); }
 .person-msg .text { white-space: pre-wrap; overflow-wrap: anywhere; margin-top: 2px; }
+
+/* Chloe refresh: the same visual rhythm across setup, help and admin. */
+:root {
+  --ink: #191a22; --muted: #565966; --line: #e4e4eb; --bg: #f5f5f8;
+  --indigo: #5148d7; --indigo-soft: #efeeff; --indigo-line: #c8c3f5;
+  --surface-shadow: 0 1px 3px #191a2208, 0 24px 54px -38px #191a2255;
+}
+body { font-family: -apple-system, BlinkMacSystemFont, Inter, "Segoe UI", ui-sans-serif, system-ui, sans-serif; }
+.ribbon { height: 3px; background: var(--indigo); }
+.top { padding-block: 21px; }
+.top nav { flex-shrink: 0; align-items: center; gap: 4px; }
+.top nav a { display: grid; align-items: center; padding-inline: 8px; min-height: 38px; border-radius: 9px; }
+.top nav a:hover { background: var(--indigo-soft); }
+.card { padding: clamp(20px, 4vw, 38px); border-radius: 22px; box-shadow: var(--surface-shadow); }
+.shell { grid-template-columns: minmax(0, 1fr); }
+.shell > * { min-width: 0; }
+@media (min-width: 960px) {
+  .shell { grid-template-columns: 224px minmax(0, 1fr); gap: 48px; }
+}
+.rail li > :is(a, span) { border-radius: 12px; margin-bottom: 5px; }
+.rail li.on > span { box-shadow: 0 1px 2px #191a220b; }
+.rail li.on b { border: 1px solid var(--indigo-line); }
+.phonebar .lab { font-variant-numeric: tabular-nums; }
+progress.bar, progress.bar::-webkit-progress-bar { background: #e8e7f0; }
+progress.bar::-webkit-progress-value { background: var(--indigo); }
+progress.bar::-moz-progress-bar { background: var(--indigo); }
+h1 { font-size: clamp(26px, 4vw, 38px); line-height: 1.08; letter-spacing: -.038em; text-wrap: balance; }
+.lead { line-height: 1.65; }
+.body { margin-top: 26px; }
+input:is([type=text],[type=email],[type=password],[type=search],:not([type])),
+select, textarea { min-height: 46px; border-radius: 11px; background: #fdfdfe; }
+.opt { border-radius: 14px; }
+.opt:has(input:checked) { background: var(--indigo-soft); }
+.notice, .howbox { border-radius: 12px; }
+.btn { min-height: 44px; height: auto; line-height: 1.3; border-radius: 12px; padding-block: 9px; white-space: normal; text-align: center; }
+.btn.p:hover { background: #4138be; }
+:where(a, button, summary, input, select, textarea):focus-visible {
+  outline: 2px solid var(--indigo);
+  outline-offset: 3px;
+}
+a, button, summary { -webkit-tap-highlight-color: transparent; }
+@media (max-width: 639px) {
+  .top { padding-block: 12px; }
+  .nav .right > .btn { flex: 1 1 max-content; }
+  .nav > .btn { width: 100%; }
+  .card { border-radius: 17px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .howpanel, details.how > summary::after { animation: none; transition: none; }
+}

@@ -336,3 +336,29 @@
     transition: none;
   }
 }
+
+/* Keep semantic tile icons and status colours, not decorative colour bands. */
+.client-overview .overview-metrics > div,
+.client-overview .overview-support > section,
+.client-overview .overview-calls {
+  border-radius: 16px;
+  border-color: var(--hairline);
+  box-shadow: var(--chloe-surface-shadow);
+}
+.client-overview .overview-metrics .metric-value {
+  font-variant-numeric: tabular-nums;
+  font-size: clamp(27px, 4vw, 34px);
+}
+.client-overview .overview-support > section > header,
+.client-overview .overview-calls > header {
+  background: var(--card);
+}
+.dashboard-journey {
+  border: 1px solid var(--hairline);
+  border-radius: 18px;
+  background: radial-gradient(ellipse at 100% 0, color-mix(in srgb, var(--indigo) 7%, white), var(--card) 68%);
+  box-shadow: var(--chloe-surface-shadow);
+}
+.journey-step.is-current { color: var(--primary-ink); }
+.journey-step.is-current::after,
+.journey-step.is-current .journey-step-icon { background: var(--indigo); }

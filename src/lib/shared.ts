@@ -168,6 +168,8 @@ export type Business = {
   phoneNumbers?: string[];
   // Where each attached number came from (recorded when it's attached; older numbers have none).
   numberSources?: Record<string, NumberSource>;
+  // The Telnyx messaging profile our own texting bot is on (server/texting.ts). Missing: not set up yet.
+  textingProfileId?: string;
   // The voice engine this receptionist's assistant lives on. Missing means Telnyx (every
   // receptionist made before Vapi was added). Set when it is made (the agency's choice, or the
   // wizard's Voice engine pick), and changed by "Move to Telnyx/Vapi".

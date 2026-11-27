@@ -78,6 +78,8 @@ test("saving sends the script + tools, then greeting, telephony settings and tra
     "POST /ai/assistants/assistant-123",
     "GET /ai/assistants/assistant-123",
     "POST /ai/assistants/assistant-123",
+    // A receptionist whose texts were still the Telnyx assistant's is looked at (and moved to our own texting).
+    "GET /ai/assistants/assistant-123",
   ]);
   const [script, , rest] = calls;
   expect(script.body.instructions).toStartWith("SCRIPT\n\nAutomations");

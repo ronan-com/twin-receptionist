@@ -1,3 +1,5 @@
+import { DEFAULT_CHAT_MODEL, LlmError, chatStream, llmConfigured, llmModel } from "./llm";
+import { currentOrg } from "./telnyx";
 import { AUTOMATIONS, HOWTOS, PAGES, WIZARD, numbersFor, tutorialList, type PhoneMode } from "./assistantKnowledge";
 
 // The in-app help assistant for agency owners and admins: POST /api/assistant.
@@ -9,8 +11,7 @@ import { AUTOMATIONS, HOWTOS, PAGES, WIZARD, numbersFor, tutorialList, type Phon
 // This file has no database or framework imports so the pieces can be tested alone;
 // server/index.ts passes in the agency summary (server/routes/console.ts agencySnapshot).
 
-const OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions";
-export const DEFAULT_MODEL = "anthropic/claude-sonnet-5.5";
+export const DEFAULT_MODEL = DEFAULT_CHAT_MODEL;
 
 export const LIMITS = {
   messages: 20, // turns of history kept
@@ -23,10 +24,9 @@ export const LIMITS = {
   maxTokens: 1_200,
 } as const;
 
-export const assistantKey = () => (process.env.OPENROUTER_API_KEY ?? "").trim();
-/** The feature is off (and its button hidden) until a key is set. */
-export const assistantConfigured = () => assistantKey().length > 0;
-export const assistantModel = () => (process.env.OPENROUTER_MODEL ?? "").trim() || DEFAULT_MODEL;
+/** The feature is off (and its button hidden) until a key is set: the agency's own (Connections) or the server's. */
+export const assistantConfigured = (orgId: string | null = currentOrg()) => llmConfigured(orgId);
+export const assistantModel = llmModel;
 
 /** Who may use it: an agency's own owners and admins (not clients, the platform team or a read-only view). */
 export function canUseAssistant(ctx: {
@@ -260,7 +260,7 @@ const sse = (obj: unknown) => enc.encode(`data: ${JSON.stringify(obj)}\n\n`);
  */
 export async function assistantRoute(req: Request, ctx: AssistantCtx | null, deps: AssistantDeps): Promise<Response> {
   if (!ctx) return json({ error: "Please sign in." }, 401);
-  if (!assistantConfigured()) return json({ error: "AI help isn't switched on for this account." }, 404);
+  if (!(await assistantConfigured(ctx.org?.id ?? null))) return json({ error: "AI help isn't switched on for this account." }, 404);
   if (!canUseAssistant(ctx)) return json({ error: "AI help is for agency owners and admins." }, 403);
   if (req.method !== "POST") return json({ error: "Not found" }, 404);
 
@@ -289,44 +289,32 @@ export async function assistantRoute(req: Request, ctx: AssistantCtx | null, dep
   const snapshot = await deps.snapshot().catch(() => null);
   const route = cleanRoute(payload?.route);
   const model = assistantModel();
-  // Anthropic models behind OpenRouter can cache the long fixed part between questions.
+  // (The long fixed part is cached between questions by server/llm.ts for Anthropic models.)
   const fixed = buildKnowledgePrompt({ product: deps.product, phone: snapshot?.phone ?? "none", singleAgency: snapshot?.singleAgency ?? false });
-  const system = model.startsWith("anthropic/")
-    ? [{ role: "system", content: [{ type: "text", text: fixed, cache_control: { type: "ephemeral" } }] }]
-    : [{ role: "system", content: fixed }];
 
   const abort = new AbortController();
   req.signal?.addEventListener("abort", () => abort.abort());
   let upstream: Response;
   try {
-    upstream = await (deps.fetch ?? fetch)(OPENROUTER_URL, {
-      method: "POST",
+    upstream = await chatStream({
+      model,
+      title: deps.product,
+      maxTokens: LIMITS.maxTokens,
+      temperature: 0.3,
       signal: abort.signal,
-      headers: {
-        Authorization: `Bearer ${assistantKey()}`,
-        "Content-Type": "application/json",
-        "HTTP-Referer": process.env.PUBLIC_URL || "https://openrouter.ai",
-        "X-Title": deps.product,
-      },
-      body: JSON.stringify({
-        model,
-        stream: true,
-        max_tokens: LIMITS.maxTokens,
-        temperature: 0.3,
-        messages: [...system, { role: "system", content: buildContextPrompt({ route, snapshot }) }, ...messages],
-      }),
+      orgId: ctx.org?.id ?? null,
+      fetch: deps.fetch,
+      messages: [{ role: "system", content: fixed }, { role: "system", content: buildContextPrompt({ route, snapshot }) }, ...messages],
     });
-  } catch {
+  } catch (err) {
+    if (err instanceof LlmError && err.reason === "status") {
+      const busy = err.status === 429 || (err.status ?? 0) >= 500;
+      return json({ error: busy ? "The assistant is busy. Try again in a moment." : "The assistant isn't available right now." }, 502);
+    }
     return json({ error: "The assistant couldn't be reached. Try again in a moment." }, 502);
   }
-  if (!upstream.ok || !upstream.body) {
-    // Log the status only: never the body, the question or the key.
-    console.error(`[assistant] provider answered ${upstream.status}`);
-    const busy = upstream.status === 429 || upstream.status >= 500;
-    return json({ error: busy ? "The assistant is busy. Try again in a moment." : "The assistant isn't available right now." }, 502);
-  }
 
-  const reader = upstream.body.getReader();
+  const reader = upstream.body!.getReader();
   const dec = new TextDecoder();
   const stream = new ReadableStream<Uint8Array>({
     async start(controller) {

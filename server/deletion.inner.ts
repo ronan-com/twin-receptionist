@@ -85,6 +85,8 @@ async function seedClient(orgId: string, companyId: string, provider: "telnyx" |
     (async () => {
       await sql`insert into webchat_conversations (id, client_id) values (${conv}, ${cid})`;
       await sql`insert into webchat_messages (conversation_id, role, content) values (${conv}, 'user', 'hi')`;
+      await sql`insert into sms_threads (client_id, contact, conversation_id) values (${cid}, '0412345678', ${conv})`;
+      await sql`insert into sms_optouts (client_id, contact) values (${cid}, '0412345678')`;
     })(),
     (async () => {
       await sql`insert into support_tickets (id, org_id, client_id, subject, route) values (${ticket}, ${orgId}, ${cid}, 's', 'agency')`;

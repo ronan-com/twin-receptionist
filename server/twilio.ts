@@ -3,6 +3,7 @@ import { sql } from "./db";
 import { ValidationError } from "./prompt";
 import { fakeProvider } from "./sandbox";
 import { seal, unseal } from "./secrets";
+import { smsHookUrl } from "./smsWebhook";
 import { currentOrg } from "./telnyx";
 
 // Twilio as another place a receptionist's phone number can come from (optional).
@@ -138,7 +139,7 @@ type Form = Record<string, string | undefined>;
  */
 export async function twilio<T = any>(creds: TwilioCreds, method: string, path: string, form?: Form): Promise<T> {
   const url = path.startsWith("http") ? path : `${API}/Accounts/${creds.accountSid}${path}`;
-  const body = form ? new URLSearchParams(Object.entries(form).filter((e): e is [string, string] => e[1] !== undefined && e[1] !== "")) : undefined;
+  const body = form ? new URLSearchParams(Object.entries(form).filter((e): e is [string, string] => e[1] !== undefined && (e[1] !== "" || e[0] === "SmsUrl"))) : undefined;
   let res: Response;
   try {
     res = await fetch(url, {
@@ -312,6 +313,37 @@ export async function sendTwilioSms(creds: TwilioCreds, from: string, to: string
   if (isTestTwilio(creds)) return "SM-test";
   const r = await twilio<{ sid: string }>(creds, "POST", "/Messages.json", { From: from, To: to, Body: text });
   return r.sid;
+}
+
+/**
+ * Points a Twilio number's incoming texts at our text chatbot (server/smsBot.ts): sets its SmsUrl.
+ * Only voice stays with Vapi (it is imported with smsEnabled: false so it leaves the texting
+ * address alone). Best effort: false when there's nothing to do (no public address, a number that
+ * can't text, not on this account), never an error that would undo an attach.
+ */
+export async function pointTextsAtUs(creds: TwilioCreds, clientId: string, phoneNumber: string, url = smsHookUrl("twilio", clientId)): Promise<boolean> {
+  if (!url || isTestTwilio(creds)) return false;
+  try {
+    const owned = await ownedTwilioNumbers(creds);
+    const n = owned.find((x) => x.phoneNumber === phoneNumber);
+    if (!n || !n.sms) return false;
+    await twilio(creds, "POST", `/IncomingPhoneNumbers/${n.id}.json`, { SmsUrl: url, SmsMethod: "POST" });
+    return true;
+  } catch (err) {
+    console.error(`[twilio ${clientId}] couldn't point texts at the receptionist for ${phoneNumber}:`, (err as Error).message);
+    return false;
+  }
+}
+
+/** Takes the text address off a number again (a number let go of a receptionist). Best effort. */
+export async function releaseTexts(creds: TwilioCreds, clientId: string, phoneNumber: string): Promise<void> {
+  if (isTestTwilio(creds)) return;
+  try {
+    const n = (await ownedTwilioNumbers(creds)).find((x) => x.phoneNumber === phoneNumber);
+    if (n) await twilio(creds, "POST", `/IncomingPhoneNumbers/${n.id}.json`, { SmsUrl: "" , SmsMethod: "POST" });
+  } catch (err) {
+    console.error(`[twilio ${clientId}] couldn't release texts for ${phoneNumber}:`, (err as Error).message);
+  }
 }
 
 const smsCache = new Map<string, { number: string | null; at: number }>();

@@ -2,7 +2,7 @@ import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { AuthError, hashToken, ownerResetLink, requireRole, sessionCookie, singleAgency, type Ctx } from "./accounts";
-import { assistantConfigured } from "./assistant";
+import { llmConfiguredAnywhere } from "./llm";
 import { audit } from "./audit";
 import { resolveBrand } from "./brand";
 import { sql } from "./db";
@@ -240,7 +240,7 @@ export async function buildSnapshot(): Promise<Record<string, any>> {
     },
     lastCallAt: c.last_call ? new Date(c.last_call).toISOString() : null,
     brand: { name: brandName, logoUrl: logoUrl ? (logoUrl.startsWith("/") ? base + logoUrl : logoUrl) : "" },
-    extras: { email: Boolean(mailConfig().smtpUrl), domain: ownDomain(base), openRouter: assistantConfigured() },
+    extras: { email: Boolean(mailConfig().smtpUrl), domain: ownDomain(base), openRouter: await llmConfiguredAnywhere() },
     support: { sharing, access: accessOpen(access), accessUntil: accessOpen(access) ? access?.until ?? null : null, edit: editAllowed(edit) },
     updates: await updatesStatus().then(({ available, enabled, mode, latest, lastResult, lastError, lastAt }) => ({ available, enabled, mode, latest, lastResult, lastError, lastAt })).catch(() => ({ available: false, enabled: true, mode: "overnight", latest: "", lastResult: "", lastError: "", lastAt: null })),
     problems: await collectProblems(),

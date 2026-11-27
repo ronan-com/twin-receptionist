@@ -3,7 +3,7 @@ import { requestsFor } from "./booking";
 import { sql } from "./db";
 import { getClient } from "./store";
 import { voiceFor } from "./voice";
-import { chatConfigured, chatKey, chatModel } from "./webchat";
+import { chatText, llmConfigured } from "./llm";
 import { callerKey } from "./callerMemory";
 
 // Summaries and outcomes for real calls. server/callsync.ts upserts each call from the phone
@@ -11,8 +11,10 @@ import { callerKey } from "./callerMemory";
 // (summary_tries bounds the retries). Where the words come from, cheapest first:
 //   summary: Telnyx's own conversation insight (free), else the model reads the transcript
 //   outcome: a booking or callback the call produced (our own records), else the model's pick
-// The model is OpenRouter's, the same key and model as the website chat (server/webchat.ts).
-// Vapi calls get theirs from the end-of-call report (server/voice/vapiMap.ts), not from here.
+// The model is OpenRouter's, the same key and model as the website chat (server/llm.ts), on both
+// phone providers. A Vapi call's end-of-call report may already carry Vapi's own summary and a
+// booked/callback outcome (server/voice/vapiMap.ts); what's still missing is filled from here,
+// reading the transcript the report stored, so Vapi calls end up with the same outcomes as Telnyx's.
 
 export const OUTCOMES = ["resolved", "booked", "lead_captured", "transferred", "voicemail", "no_answer", "spam", "callback_requested", "unresolved"] as const;
 export type Outcome = (typeof OUTCOMES)[number];
@@ -26,7 +28,6 @@ export const SKIPPED = 99;
 const BATCH = 5;
 const MAX_AGE_DAYS = 3;
 const TRANSCRIPT_CHARS = 5000;
-const OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions";
 
 const isOutcome = (v: unknown): v is Outcome => OUTCOMES.includes(v as Outcome);
 
@@ -102,46 +103,35 @@ export async function summariseCall(call: CallToSummarise, deps: SummaryDeps): P
 }
 
 /** One model call through OpenRouter, like the website chat's. Cheap: a short answer from a capped transcript. */
-export async function askModel(transcript: string, f: typeof fetch = fetch): Promise<string> {
-  const res = await f(OPENROUTER_URL, {
-    method: "POST",
-    signal: AbortSignal.timeout(30_000),
-    headers: {
-      Authorization: `Bearer ${chatKey()}`,
-      "Content-Type": "application/json",
-      "HTTP-Referer": process.env.PUBLIC_URL || "https://openrouter.ai",
-      "X-Title": "Call summaries",
-    },
-    body: JSON.stringify({
-      model: (process.env.CALL_SUMMARY_MODEL ?? "").trim() || chatModel(),
-      max_tokens: 250,
-      temperature: 0.2,
-      messages: [
-        { role: "system", content: SYSTEM },
-        { role: "user", content: `Transcript:\n${transcript}` },
-      ],
-    }),
+export async function askModel(transcript: string, f: typeof fetch = fetch, orgId?: string | null): Promise<string> {
+  return chatText({
+    model: (process.env.CALL_SUMMARY_MODEL ?? "").trim() || undefined,
+    maxTokens: 250,
+    temperature: 0.2,
+    title: "Call summaries",
+    timeoutMs: 30_000,
+    fetch: f,
+    orgId,
+    messages: [
+      { role: "system", content: SYSTEM },
+      { role: "user", content: `Transcript:\n${transcript}` },
+    ],
   });
-  // The status only: never the body, the caller's words or the key.
-  if (!res.ok) throw new Error(`summary model answered ${res.status}`);
-  const data: any = await res.json().catch(() => null);
-  const text = data?.choices?.[0]?.message?.content;
-  if (typeof text !== "string" || !text) throw new Error("summary model gave no answer");
-  return text;
 }
 
 type Receptionist = { id: string; org_id: string; assistant_id: string; voice_provider?: string | null };
 
 /**
- * Summarises this receptionist's recently ended Telnyx calls that have no summary yet: a few per
+ * Summarises this receptionist's recently ended calls (Telnyx or Vapi) that have no summary yet
+ * (a Vapi call also qualifies while it has no outcome): a few per
  * pass, each at most MAX_TRIES times. Call inside the receptionist's org scope. Returns how many were filled.
  * A call that fails is left for the next pass; the error is thrown only after the others were tried.
  */
 export async function summariseEnded(c: Receptionist, deps?: Partial<SummaryDeps> & { business?: Business | null }): Promise<number> {
-  if ((c.voice_provider ?? "telnyx") !== "telnyx") return 0;
+  const provider = c.voice_provider === "vapi" ? "vapi" : "telnyx";
   const rows = (await sql`
     select id, provider_call_id, from_number, started_at, ended_at, duration_seconds from call_log
-    where client_id = ${c.id} and provider = 'telnyx' and summary is null and channel <> 'web'
+    where client_id = ${c.id} and provider = ${provider} and (summary is null or (provider = 'vapi' and outcome is null)) and channel <> 'web'
       and ended_at is not null and ended_at < ${new Date(Date.now() - QUIET_MS)} and started_at > ${new Date(Date.now() - MAX_AGE_DAYS * 86_400_000)}
       and summary_tries < ${MAX_TRIES}
     order by started_at desc limit ${BATCH}`) as any[];
@@ -151,7 +141,7 @@ export async function summariseEnded(c: Receptionist, deps?: Partial<SummaryDeps
   if (!business) return 0;
   const full: SummaryDeps = {
     detail: deps?.detail ?? ((id) => voiceFor(business).callDetail(business, id)),
-    model: deps && "model" in deps ? deps.model! : chatConfigured() ? (t) => askModel(t) : null,
+    model: deps && "model" in deps ? deps.model! : (await llmConfigured(c.org_id)) ? (t) => askModel(t, fetch, c.org_id) : null,
     requests: deps?.requests ?? (() => requestsFor(c.id)),
   };
   let filled = 0;

@@ -13,7 +13,7 @@ const { BOOKING_TOOL_DEFS, bookingTools } = await import("../booking");
 const { defaultAutomations, normaliseAutomations, transferTool } = await import("../automations");
 const map = await import("./vapiMap");
 const { buildVapi, vapi, vapiProvider, attachNumber, checkVapiKey } = await import("./vapi");
-const { vapiEvents, vapiToolHook } = await import("./vapiWebhook");
+const { vapiCallerHook, vapiEvents, vapiToolHook } = await import("./vapiWebhook");
 
 const BASE = "https://app.example.com";
 const now = new Date().toISOString();
@@ -247,6 +247,21 @@ describe("assistant body", () => {
     expect(open.script).toContain('Open right now: "yes"');
   });
 
+  test("returning callers: a caller_history tool that asks our server, and a script line telling the assistant to use it", () => {
+    const row = saved({});
+    const body: any = map.vapiAssistantBody(buildVapi(client, client.settings, client.instructions, row, BASE));
+    const tool = body.model.tools.find((t: any) => t.function?.name === "caller_history");
+    expect(tool.server).toEqual({ url: `${BASE}/hooks/vapi/${client.id}/caller`, timeoutSeconds: 5, headers: { "X-Vapi-Secret": map.eventsSecret(client.id) } });
+    expect(tool.function.parameters).toEqual({ type: "object", properties: {} });
+    expect(body.model.messages[0].content).toContain("caller_history tool");
+    // Not when nothing is saved yet, the business has paused it, or there's no public address.
+    for (const b of [buildVapi(client, client.settings, "x", null, BASE), buildVapi(client, { ...client.settings, paused: { message: "Back soon.", since: now } as any }, "x", row, BASE), buildVapi(client, client.settings, "x", row, "")]) {
+      const o: any = map.vapiAssistantBody(b);
+      expect(o.model.tools.some((t: any) => t.function?.name === "caller_history")).toBe(false);
+      expect(o.model.messages[0].content).not.toContain("caller_history");
+    }
+  });
+
   test("with no public address there is no report address and no tools", () => {
     const b = buildVapi(client, client.settings, "x", null, "");
     const body: any = map.vapiAssistantBody(b);
@@ -478,5 +493,36 @@ describe("Vapi's API", () => {
     await expect(attachNumber(client, { source: "twilio", number: "+61412000111", accountSid: "nope", authToken: "y" })).rejects.toThrow("Account SID");
     await expect(attachNumber(client, { source: "other" })).rejects.toThrow("Choose where");
     expect(sent).toHaveLength(0);
+  });
+});
+
+describe("the caller_history tool", () => {
+  const msg = (number = "+61412345678", name = "caller_history") => ({ message: { type: "tool-calls", call: { id: "c1", customer: { number } }, toolCallList: [{ id: "tc1", function: { name, arguments: "{}" } }] } });
+  const post = (body: unknown, key = map.eventsSecret(client.id)) => new Request(`https://x/hooks/vapi/${client.id}/caller`, { method: "POST", headers: key ? { "x-vapi-secret": key } : {}, body: JSON.stringify(body) });
+  const asked: string[] = [];
+  const deps = (notes: string, c: Business | null = client) => ({ getClient: async () => c, context: async (_c: any, phone: string) => (asked.push(phone), notes) }) as any;
+
+  test("returns the notes for the number on the line, in Vapi's results shape", async () => {
+    asked.length = 0;
+    const res = await vapiCallerHook(post(msg()), client.id, deps("Returning caller (Sam). Earlier calls: yesterday: a blocked drain."));
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ results: [{ name: "caller_history", toolCallId: "tc1", result: "Returning caller (Sam). Earlier calls: yesterday: a blocked drain." }] });
+    expect(asked).toEqual(["+61412345678"]);
+  });
+  test("a first-time caller, a web call (no number) and a paused receptionist all get the new-caller answer without a lookup", async () => {
+    asked.length = 0;
+    const fresh: any = await (await vapiCallerHook(post(msg()), client.id, deps(""))).json();
+    expect(fresh.results[0].result).toContain("new caller");
+    const web: any = await (await vapiCallerHook(post(msg("")), client.id, deps("notes"))).json();
+    expect(web.results[0].result).toContain("new caller");
+    const paused: any = await (await vapiCallerHook(post(msg()), client.id, deps("notes", { ...client, settings: { ...client.settings, paused: { message: "x", since: now } as any } }))).json();
+    expect(paused.results[0].result).toContain("new caller");
+    expect(asked).toEqual(["+61412345678"]);
+  });
+  test("wrong or missing secret, unknown receptionist: refused as if nothing is there; other tool names get no answer", async () => {
+    expect((await vapiCallerHook(post(msg(), "nope"), client.id, deps("n"))).status).toBe(404);
+    expect((await vapiCallerHook(post(msg(), ""), client.id, deps("n"))).status).toBe(404);
+    expect((await vapiCallerHook(post(msg()), client.id, deps("n", null))).status).toBe(404);
+    expect(((await (await vapiCallerHook(post(msg("+61412345678", "book_appointment")), client.id, deps("n"))).json()) as any).results).toEqual([]);
   });
 });

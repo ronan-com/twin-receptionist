@@ -235,6 +235,12 @@ details.log pre { margin: 10px 0 0; background: #0b1727; color: #b9c7d8; border-
 .checks div { display: flex; gap: 10px; align-items: flex-start; padding: 11px 0; border-bottom: 1px solid var(--line); font-size: 14px; }
 .checks div svg { color: var(--indigo); margin-top: 3px; }
 .checks a { font-weight: 600; text-decoration: none; }
+/* A to-do starts empty; the tick only shows once the buyer presses it. */
+.checks .todo .tick { flex: none; width: 18px; height: 18px; margin-top: 2px; padding: 0; border-radius: 50%; border: 1.5px solid var(--line); background: #fff; cursor: pointer; position: relative; }
+.checks .todo .tick:focus-visible { outline: 2px solid var(--indigo); outline-offset: 2px; }
+.checks .todo.done .tick { background: var(--indigo); border-color: var(--indigo); }
+.checks .todo.done .tick::after { content: ""; position: absolute; left: 5px; top: 2px; width: 4px; height: 8px; border: solid #fff; border-width: 0 2px 2px 0; transform: rotate(45deg); }
+.checks .todo.done > span { color: var(--muted); }
 
 .foot { margin-top: 14px; display: flex; gap: 6px; align-items: center; font-size: 12.5px; color: var(--muted); padding: 0 4px; }
 .cal { border: 1.5px solid var(--line); border-radius: 12px; padding: 14px; }

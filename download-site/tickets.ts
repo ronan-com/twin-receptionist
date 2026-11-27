@@ -7,7 +7,7 @@
 // What a ticket carries is fixed here, like the heartbeat: a subject, a message, an optional screenshot (an image,
 // at most 2 MB) and a small context (page address with no query or token, app version, browser, agency and
 // receptionist ids). Never a key. Anything that looks like one is masked before it is stored.
-import { db, now } from "./lib";
+import { addColumn, db, now } from "./lib";
 import { esc } from "./pages";
 import { allow } from "./setup";
 import { ago, bearerOf, buyerBySyncToken } from "./sync";
@@ -49,7 +49,7 @@ function tables() {
     CREATE INDEX IF NOT EXISTS ticket_events_buyer ON ticket_events (buyer_id, id);
   `);
   // Older sites made the table before "source" existed: app = sent from their installed app, wizard = "I need a person" on the setup wizard.
-  if (!(db().query("PRAGMA table_info(tickets)").all() as { name: string }[]).some((c) => c.name === "source")) db().exec("ALTER TABLE tickets ADD COLUMN source TEXT NOT NULL DEFAULT 'app'");
+  addColumn(db(), "tickets", "source", "TEXT NOT NULL DEFAULT 'app'");
   made = true;
 }
 export const ticketTables = tables;

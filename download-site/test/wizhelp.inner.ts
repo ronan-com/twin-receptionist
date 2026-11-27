@@ -19,7 +19,7 @@ const { addBuyer, db } = await import("../lib");
 const { putSecret, updateSetup, getSetup } = await import("../store");
 const T = await import("../tickets");
 const { newAdminLink } = await import("../admin-web");
-const { HELP_SENT, HELP_PER_HOUR } = await import("../wizhelp");
+const { HELP_SENT, HELP_EMPTY, HELP_PER_HOUR } = await import("../wizhelp");
 
 const UA = "Mozilla/5.0 (X11; Linux x86_64) Firefox/131.0";
 const TOKEN_VALUE = "rail-token-abcdef0123456789-secret";
@@ -116,6 +116,17 @@ describe("the wizard", () => {
   test("the alert goes out: Help request from <agency> at step <step>", async () => {
     await Bun.sleep(300);
     expect(hooked.some((h) => String(h?.text || "").includes("Help request from Acme Agency at step Brand"))).toBe(true);
+  });
+
+  test("an empty or blank message is refused: no ticket, an error shown, and the box says it is required", async () => {
+    const x = addBuyer("Quiet Agency", "quiet@example.com", false, { style: "neutral" });
+    const b = await browser(x.code);
+    for (const problem of ["", "   \n  "]) await b.post("help-request", { v: "welcome", problem, contact: "q@example.com" });
+    await b.post("help-request", { v: "welcome", contact: "q@example.com" });
+    expect(T.listTickets("all", x.id)).toHaveLength(0);
+    const html = await b.page("welcome");
+    expect(html).toContain(escd(HELP_EMPTY));
+    expect(personBlock(html)).toMatch(/<textarea[^>]* required/);
   });
 
   test("rate limit: 5 an hour per setup code", async () => {

@@ -235,7 +235,15 @@ export async function railway<T = any>(token: string, query: string, variables: 
 }
 
 export interface RailwayWorkspace { id: string; name: string; plan?: string; hasCard?: boolean; trialing?: boolean }
-export async function checkRailway(token: string): Promise<Check<{ email: string; workspace: RailwayWorkspace }>> {
+/**
+ * What Railway's docs say (docs.railway.com/pricing/free-trial, /reference/pricing/plans, read 27 Nov 2026): a Trial account gets a one-time
+ * US$5 credit and "the trial ends after 30 days or when the $5 is spent, and your services stop"; its volumes are deleted 30 days after that.
+ * A Limited Trial (GitHub verification pending or failed) has restricted outbound network access and only a limited set of ports. The Free plan
+ * (US$1 a month, apps sleep) is not for an always-on receptionist. Hobby (US$5 a month, card) is what we ask for.
+ */
+export const RAILWAY_TRIAL_MSG = "Your Railway account is on its free trial. You can set up and try your agency, but Railway stops everything after 30 days or once the US$5 credit is used up, and later deletes the data. Upgrade to Hobby (US$5 a month, with a card) in Railway before you go live. Some trial accounts also have limited internet access, so email or phone features may not work until you upgrade.";
+export const RAILWAY_PLAN_UNKNOWN_MSG = "We couldn't read which Railway plan you're on. Your agency needs the Hobby plan (US$5 a month, with a card): check Plans in Railway before you install, or the install may stop.";
+export async function checkRailway(token: string): Promise<Check<{ email: string; workspace: RailwayWorkspace; trial: boolean; planKnown: boolean }>> {
   if (!token) return { ok: false, message: "Paste your Railway token." };
   if (hasSpace(token)) return { ok: false, message: "That token has spaces in it: copy just the token." };
   try {
@@ -252,12 +260,12 @@ export async function checkRailway(token: string): Promise<Check<{ email: string
     } catch (e) { if (e instanceof ProviderError && e.status === 401) throw e; }
     const paid = all.find((w) => (w.plan === "HOBBY" || w.plan === "PRO") && w.hasCard !== false);
     // Railway's free trial (US$5 of credit) is enough to set up and try the agency.
-    const trial = paid ? undefined : all.find((w) => w.trialing);
+    const trial = paid ? undefined : all.find((w) => w.trialing || /trial/i.test(w.plan || ""));
     const known = all.some((w) => w.plan);
     if (!paid && !trial && known) return { ok: false, message: RAILWAY_PLAN_MSG };
     const ws = paid || trial || all[0];
-    const note = trial ? " You're on Railway's free trial (US$5 of credit). Add a card in Railway before it runs out, or your agency stops." : "";
-    return { ok: true, message: `Connected to Railway${me.email ? ` (${me.email})` : ""}.${note}`, email: String(me.email || ""), workspace: ws };
+    const note = trial ? ` ${RAILWAY_TRIAL_MSG}` : !known ? ` ${RAILWAY_PLAN_UNKNOWN_MSG}` : "";
+    return { ok: true, message: `Connected to Railway${me.email ? ` (${me.email})` : ""}.${note}`, email: String(me.email || ""), workspace: ws, trial: !!trial, planKnown: known };
   } catch (e: any) {
     return { ok: false, message: e instanceof ProviderError ? e.message : "Something went wrong checking Railway. Try again." };
   }

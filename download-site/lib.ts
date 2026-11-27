@@ -153,13 +153,26 @@ export interface Pkg {
   notes: string | null;
 }
 
+/**
+ * Adds a column if it isn't there yet. Safe to run twice and from two processes: if another one added it between our look and our
+ * ALTER, SQLite says "duplicate column name" and that counts as done.
+ */
+export function addColumn(d: Database, table: string, column: string, ddl: string) {
+  if ((d.query(`PRAGMA table_info(${table})`).all() as { name: string }[]).some((c) => c.name === column)) return;
+  try { d.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${ddl}`); } catch (e) { if (!/duplicate column name/i.test(String((e as Error)?.message))) throw e; }
+}
+
 let _db: Database | null = null;
 export function db(): Database {
   if (_db) return _db;
   mkdirSync(PACKAGES_DIR, { recursive: true, mode: 0o700 });
   const d = new Database(join(CONFIG.dataDir, "site.db"), { create: true, strict: true });
   // secure_delete: deleted secrets are overwritten with zeros, not left in free pages.
-  d.exec("PRAGMA journal_mode = WAL; PRAGMA busy_timeout = 5000; PRAGMA foreign_keys = ON; PRAGMA secure_delete = ON;");
+  // busy_timeout first: the server and `admin.ts publish` can open a fresh site.db at the same moment.
+  d.exec("PRAGMA busy_timeout = 5000; PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON; PRAGMA secure_delete = ON;");
+  // The whole schema setup runs under one write lock, so a second process opening the same new file waits and then finds it all done.
+  d.exec("BEGIN IMMEDIATE");
+  try {
   d.exec(`
     CREATE TABLE IF NOT EXISTS buyers (
       id INTEGER PRIMARY KEY,
@@ -258,14 +271,14 @@ export function db(): Database {
     );
   `);
   // Older databases (the live one) have no demo column: add it, off for everyone already there.
-  if (!(d.query("PRAGMA table_info(buyers)").all() as { name: string }[]).some((c) => c.name === "demo")) d.exec("ALTER TABLE buyers ADD COLUMN demo INTEGER NOT NULL DEFAULT 0");
+  addColumn(d, "buyers", "demo", "INTEGER NOT NULL DEFAULT 0");
   // Same for release notes (the live database has no notes column on packages).
-  if (!(d.query("PRAGMA table_info(packages)").all() as { name: string }[]).some((c) => c.name === "notes")) d.exec("ALTER TABLE packages ADD COLUMN notes TEXT");
+  addColumn(d, "packages", "notes", "TEXT");
   // Onboarding links (genericlink.ts): which look a buyer gets, and which generic link they started from.
-  if (!(d.query("PRAGMA table_info(buyers)").all() as { name: string }[]).some((c) => c.name === "style")) d.exec("ALTER TABLE buyers ADD COLUMN style TEXT NOT NULL DEFAULT 'neutral'");
-  if (!(d.query("PRAGMA table_info(buyers)").all() as { name: string }[]).some((c) => c.name === "source_link")) d.exec("ALTER TABLE buyers ADD COLUMN source_link INTEGER");
+  addColumn(d, "buyers", "style", "TEXT NOT NULL DEFAULT 'neutral'");
+  addColumn(d, "buyers", "source_link", "INTEGER");
   // "Invite them" on the agency page: when we emailed them. Existing agencies start as not invited.
-  if (!(d.query("PRAGMA table_info(buyers)").all() as { name: string }[]).some((c) => c.name === "invited_at")) d.exec("ALTER TABLE buyers ADD COLUMN invited_at TEXT");
+  addColumn(d, "buyers", "invited_at", "TEXT");
   d.exec(`
     CREATE TABLE IF NOT EXISTS generic_links (
       id INTEGER PRIMARY KEY,
@@ -283,6 +296,12 @@ export function db(): Database {
   // Generic is the only style now: anything stored as "branded" renders (and is kept) as generic.
   d.exec("UPDATE buyers SET style = 'neutral' WHERE style <> 'neutral'");
   d.exec("UPDATE generic_links SET style = 'neutral' WHERE style <> 'neutral'");
+  d.exec("COMMIT");
+  } catch (e) {
+    try { d.exec("ROLLBACK"); } catch { /* nothing open */ }
+    d.close();
+    throw e;
+  }
   _db = d;
   return d;
 }

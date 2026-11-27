@@ -149,7 +149,12 @@ async function saveRailway(b: Buyer, token: string, via: "oauth" | "paste", toke
   putSecret(b.id, "railway_token", token);
   if (tokens?.refresh) putSecret(b.id, "railway_refresh", tokens.refresh); else deleteSecret(b.id, "railway_refresh");
   const expiresAt = via === "oauth" && tokens?.expiresIn ? new Date(Date.now() + tokens.expiresIn * 1000).toISOString() : undefined;
-  updateSetup(b.id, (s) => { s.railway = { via, expiresAt, email: r.email, workspaceId: r.workspace.id, workspaceName: r.workspace.name, plan: r.workspace.plan, confirmed: true }; nextStep(b, s, "railway"); });
+  // On a free trial (or a plan we can't read) stay on the Hosting step, so the warning is read before they go on; "Continue" then moves on.
+  const warn = r.trial || !r.planKnown;
+  updateSetup(b.id, (s) => {
+    s.railway = { via, expiresAt, email: r.email, workspaceId: r.workspace.id, workspaceName: r.workspace.name, plan: r.workspace.plan, trial: r.trial || undefined, planUnknown: !r.planKnown || undefined, confirmed: true };
+    if (!warn) nextStep(b, s, "railway");
+  });
   return null;
 }
 

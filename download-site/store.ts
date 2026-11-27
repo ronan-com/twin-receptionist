@@ -171,7 +171,7 @@ export interface SetupData {
   vapi?: { confirmed?: boolean };
   /** Backup option: a Twilio account for numbers and texts (with Vapi). Its token is the twilio_token secret. */
   twilio?: { sid?: string; confirmed?: boolean };
-  railway?: { via?: "oauth" | "paste"; expiresAt?: string; email?: string; workspaceId?: string; workspaceName?: string; plan?: string; confirmed?: boolean };
+  railway?: { via?: "oauth" | "paste"; expiresAt?: string; email?: string; workspaceId?: string; workspaceName?: string; plan?: string; /** On Railway's free trial: it can set up, but stops after 30 days or US$5. Shown on the Hosting step until they upgrade. */ trial?: boolean; /** We could not read the plan. */ planUnknown?: boolean; /** They saw the plan warning and chose to go on. */ planAck?: boolean; confirmed?: boolean };
   /** What we made in the buyer's Railway account (ids only). */
   rw?: {
     projectId?: string; environmentId?: string; pgId?: string; pgVolume?: boolean; appId?: string; appVolume?: boolean; varsSet?: boolean; settingsSet?: boolean;

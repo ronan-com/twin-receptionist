@@ -13,6 +13,7 @@ import { messagesOf, text, ticketById, ticketTables, touch, wizardCtx, type Tick
 
 export const MAX_PROBLEM = 1000;
 export const HELP_PER_HOUR = 5;
+export const HELP_EMPTY = "Please tell us what's wrong, even in a few words, so we know how to help.";
 export const HELP_SENT = "We've got it — we'll get back to you shortly. You can keep going or wait here.";
 
 /** The step's name, as our admin reads it. */
@@ -56,12 +57,14 @@ export type HelpResult = { ok: true; ticketId: number; created: boolean } | { ok
 /** The form arriving. `f` is the posted form, `ua` the browser's User-Agent header. */
 export function wizardHelpRequest(b: Buyer, s: SetupData, f: Record<string, string>, ua: string, code: string): HelpResult {
   ticketTables();
-  const wait = allow(`wizhelp:${code}`, HELP_PER_HOUR, 60 * 60_000);
-  if (wait) return { ok: false, message: `You've sent a few requests already. We have them; please wait ${Math.ceil(wait / 60)} minutes before sending another.` };
   const step: StepId = STEPS.includes(f.v as StepId) ? (f.v as StepId) : s.step;
   const mine = secretValues(b.id);
   const clean = (v: unknown, max: number, multi = false) => text(redact(typeof v === "string" ? v.slice(0, max * 2) : "", mine), max, multi);
   const problem = clean(f.problem, MAX_PROBLEM, true);
+  // A request with no words gives us nothing to act on (and a fast double click would use up their hourly allowance).
+  if (!problem.trim()) return { ok: false, message: HELP_EMPTY };
+  const wait = allow(`wizhelp:${code}`, HELP_PER_HOUR, 60 * 60_000);
+  if (wait) return { ok: false, message: `You've sent a few requests already. We have them; please wait ${Math.ceil(wait / 60)} minutes before sending another.` };
   const email = clean(f.contact, 200);
   const phone = clean(f.phone, 40).replace(/[^\d +().-]/g, "");
   const ctx: WizardContext = {
@@ -73,7 +76,7 @@ export function wizardHelpRequest(b: Buyer, s: SetupData, f: Record<string, stri
     contactEmail: email || s.brand?.ownerEmail || b.email,
     contactPhone: phone,
   };
-  const body = problem || `(No details given. They asked for a person at the ${ctx.stepLabel} step.)`;
+  const body = problem;
   const from = clean(s.brand?.ownerEmail || b.name, 80);
   const existing = db().query("SELECT * FROM tickets WHERE buyer_id = ? AND source = 'wizard' AND status <> 'closed' ORDER BY id DESC LIMIT 1").get(b.id) as Ticket | null;
   // Asking again without contact details keeps the ones they gave before.
@@ -111,8 +114,8 @@ ${t.status === "open" ? `<p class="hint">We'll get back to you shortly. Our repl
   return `<div class="person" id="person">${thread}<details class="person-ask"><summary>I need a person</summary>
 <form method="post" action="/setup/${esc(code)}/a/help-request" class="person-form">${hidden}
   <p class="hint">Stuck? Tell us what's wrong and a real person will help. ${t && t.status !== "closed" ? "This adds to your open request." : "We'll see it straight away."}</p>
-  <label class="f" for="person-problem">What's the problem? <span class="hint">(optional)</span></label>
-  <textarea id="person-problem" name="problem" rows="3" maxlength="${MAX_PROBLEM}" placeholder="e.g. The Railway token keeps saying it's not valid"></textarea>
+  <label class="f" for="person-problem">What's the problem?</label>
+  <textarea id="person-problem" name="problem" rows="3" required maxlength="${MAX_PROBLEM}" placeholder="e.g. The Railway token keeps saying it's not valid"></textarea>
   <label class="f" for="person-contact">Best way to reach you</label>
   <input id="person-contact" name="contact" type="email" maxlength="200" autocomplete="email" value="${esc(email)}">
   <input id="person-phone" name="phone" type="tel" maxlength="40" autocomplete="tel" placeholder="Phone (optional)" aria-label="Phone (optional)">

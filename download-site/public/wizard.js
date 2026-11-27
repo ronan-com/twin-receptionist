@@ -14,6 +14,20 @@
     else { const t = document.createElement("textarea"); t.value = v; document.body.appendChild(t); t.select(); try { document.execCommand("copy"); done(); } catch (_) {} t.remove(); }
   });
 
+  // "Before you go" to-dos: empty until pressed (we can't see that they did it); kept on this device only.
+  Array.prototype.forEach.call(document.querySelectorAll(".checks .todo"), function (row) {
+    const btn = row.querySelector(".tick");
+    if (!btn) return;
+    const key = "wiz-todo:" + location.pathname + ":" + row.getAttribute("data-todo");
+    const set = function (on) { row.classList.toggle("done", on); btn.setAttribute("aria-checked", on ? "true" : "false"); };
+    try { if (localStorage.getItem(key) === "1") set(true); } catch (_) {}
+    btn.addEventListener("click", function () {
+      const on = !row.classList.contains("done");
+      set(on);
+      try { if (on) localStorage.setItem(key, "1"); else localStorage.removeItem(key); } catch (_) {}
+    });
+  });
+
   // "Show me how" opens the guide in a side panel (a bottom sheet on a phone) instead of pushing the page down.
   let panel = null, scrim = null, opener = null;
   function closePanel() {

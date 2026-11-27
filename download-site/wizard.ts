@@ -12,7 +12,7 @@ import { brokerOn, offered } from "./broker";
 import { PHONE_LATER, agencyUrl, canView, firstOpen, hostOf, locked, oauthRedirect, phoneSkipped, stepDone, updateInfo, webUrl, zoneOf } from "./setup";
 import { detailOf, hasAssist, helpedStep, stepRows, type AssistId } from "./assist";
 import { personHelpHtml } from "./wizhelp";
-import { DEFAULT_REGION, DEFAULT_SIZE } from "./providers";
+import { DEFAULT_REGION, DEFAULT_SIZE, RAILWAY_PLAN_UNKNOWN_MSG, RAILWAY_TRIAL_MSG } from "./providers";
 import { OPTIONAL_HUB, STEPS, csrfToken, isOptional, logRead, secretHint, type DnsRecord, type SetupData, type StepId } from "./store";
 
 // ---------------- icons (Lucide, MIT) ----------------
@@ -186,11 +186,13 @@ function railwayStep(c: Ctx) {
   const on = !!c.s.railway?.confirmed && hasS(c, "railway_token");
   const form = `<form id="main" method="post" action="${base(c)}/a/railway">${hidden(c)}
   ${secretIn("token", "Railway token", saved, "Railway token")}
-  <p class="hint">Create it with <b>No workspace</b>. Hobby plan, US$5 a month.</p>
+  <p class="hint">Create it with <b>No workspace</b>. Your Railway account needs the <b>Hobby plan</b>, US$5 a month with a card. Railway's free trial can set things up and try them, but it stops after 30 days or when its US$5 credit runs out; the Free plan can't run an agency.</p>
   ${showMeHow(["railway-token"])}
   <p><button class="btn o" type="submit">Check token</button></p></form>`;
   return `${head(c, "Hosting", "Your agency runs on your own Railway account.")}
 <div class="body">${on ? okRow(`Railway connected${c.s.railway?.workspaceName ? ` · ${esc(c.s.railway.workspaceName)}` : ""}`) : ""}
+${on && c.s.railway?.trial ? notice("warn", `<b>You're on Railway's free trial.</b> ${esc(RAILWAY_TRIAL_MSG.replace(/^Your Railway account is on its free trial\. /, ""))} After upgrading, connect again here. Or continue to just try it.`) : ""}
+${on && c.s.railway?.planUnknown ? notice("warn", esc(RAILWAY_PLAN_UNKNOWN_MSG)) : ""}
 ${oauthBtn(c, "railway", on ? "Login with Railway again" : "Login with Railway")}
 ${pasteBox(c, "railway", form, !oauthEnabled("railway"))}</div>
 ${nav(c, on ? mini(c, "railway-continue", `Continue ${icon("right")}`, "btn p") : "")}`;
@@ -589,10 +591,10 @@ function done(c: Ctx) {
 <div class="live"><div class="dot">● Live</div><a class="url" href="${esc(url)}" target="_blank" rel="noopener noreferrer">${esc(url)}</a>
 <p class="hint"><b>First time in:</b> you'll see <b>Set up your agency</b>. Use <b>${esc(s.brand?.ownerEmail || "your owner email")}</b> and pick a password. Only that address can create the first account.</p></div>
 <div class="checks"><b>Before you go</b>
-  <div>${icon("check")}<span>Delete your DigitalOcean token. <a href="https://cloud.digitalocean.com/account/api/tokens" target="_blank" rel="noopener noreferrer">Open DigitalOcean</a></span></div>
-  ${s.domain?.mode === "cloudflare" ? `<div>${icon("check")}<span>Delete your Cloudflare token. <a href="https://dash.cloudflare.com/profile/api-tokens" target="_blank" rel="noopener noreferrer">Open Cloudflare</a></span></div>` : ""}
-  <div>${icon("check")}<span>Keep your ${s.email?.mode === "resend" ? "Resend key" : "email login"}: your server sends email with it.</span></div>
-  <div>${icon("check")}<span>${s.sshKeyAdded ? `Log in to the server with your SSH key: <code>ssh root@${esc(s.ip || "")}</code>` : "Server login: DigitalOcean emailed you its root password, or use the droplet's Console."}</span></div>
+  ${todo("do", `Delete your DigitalOcean token. <a href="https://cloud.digitalocean.com/account/api/tokens" target="_blank" rel="noopener noreferrer">Open DigitalOcean</a>`)}
+  ${s.domain?.mode === "cloudflare" ? todo("cf", `Delete your Cloudflare token. <a href="https://dash.cloudflare.com/profile/api-tokens" target="_blank" rel="noopener noreferrer">Open Cloudflare</a>`) : ""}
+  ${note(`Keep your ${s.email?.mode === "resend" ? "Resend key" : "email login"}: your server sends email with it.`)}
+  ${note(s.sshKeyAdded ? `Log in to the server with your SSH key: <code>ssh root@${esc(s.ip || "")}</code>` : "Server login: DigitalOcean emailed you its root password, or use the droplet's Console.")}
 </div>
 ${lockedOut(c)}
 ${notice("info", `We've deleted every key you gave us${s.assist?.keepDns ? " except the DNS access noted above" : ""}. We have no login to your server or accounts. Your agency shares health and usage counts and a short, masked list of recent problems with us (never calls or customer details). Sharing and Support access (which lets us sign in and, unless you say no, fix things for you, but never see your keys, billing or owner account) are both on by default so we can help you fast. You can switch each one off in your dashboard, under Settings: Support. Automatic updates are not available on a DigitalOcean server yet.`)}
@@ -689,13 +691,20 @@ ${log}
 ${nav(c, "", { back: false })}`;
 }
 
+/**
+ * A "Before you go" to-do. It starts empty: we can't see whether they did it (deleting a token happens in another site), so a tick only
+ * appears when the buyer presses it (wizard.js keeps it on this device). A note with nothing to do uses `note()` instead.
+ */
+const todo = (key: string, html: string) => `<div class="todo" data-todo="${key}"><button type="button" class="tick" role="checkbox" aria-checked="false" aria-label="Mark as done"></button><span>${html}</span></div>`;
+const note = (html: string) => `<div>${icon("info")}<span>${html}</span></div>`;
+
 /** The "Before you go" line about the DNS login used for the domain. */
 function dnsCheck(s: SetupData): string {
   const m = s.domain?.mode;
   if (m !== "cloudflare" && m !== "godaddy") return "";
   const [name, href] = m === "godaddy" ? ["GoDaddy API key", "https://developer.godaddy.com/keys"] : ["Cloudflare token", "https://dash.cloudflare.com/profile/api-tokens"];
-  if (s.assist?.keepDns) return `<div>${icon("check")}<span>Your provider kept the ${m === "godaddy" ? "GoDaddy" : "Cloudflare"} access you gave them, only for changes to your domain's records that you ask for. You can delete that ${name} any time. <a href="${href}" target="_blank" rel="noopener noreferrer">Open ${m === "godaddy" ? "GoDaddy" : "Cloudflare"}</a></span></div>`;
-  return `<div>${icon("check")}<span>Delete your ${name}. <a href="${href}" target="_blank" rel="noopener noreferrer">Open ${m === "godaddy" ? "GoDaddy" : "Cloudflare"}</a></span></div>`;
+  if (s.assist?.keepDns) return note(`Your provider kept the ${m === "godaddy" ? "GoDaddy" : "Cloudflare"} access you gave them, only for changes to your domain's records that you ask for. You can delete that ${name} any time. <a href="${href}" target="_blank" rel="noopener noreferrer">Open ${m === "godaddy" ? "GoDaddy" : "Cloudflare"}</a>`);
+  return todo("dns", `Delete your ${name}. <a href="${href}" target="_blank" rel="noopener noreferrer">Open ${m === "godaddy" ? "GoDaddy" : "Cloudflare"}</a>`);
 }
 
 function doneRailway(c: Ctx) {
@@ -722,9 +731,9 @@ ${updateBanner(c)}
 ${phoneSkipped(s) ? phoneLaterNote(c) : ""}
 ${pending && s.finishRecords?.length ? `<div class="recbox"><b>Records for ${esc(hostOf(s))}</b>${recordTable(s.finishRecords, true)}</div>` : ""}
 <div class="checks"><b>Before you go</b>
-  <div>${icon("check")}<span>${s.railway?.via === "oauth" ? "Revoke our access in Railway." : "Delete your Railway token."} <a href="https://railway.com/account/tokens" target="_blank" rel="noopener noreferrer">Open Railway</a></span></div>
+  ${todo("railway", `${s.railway?.via === "oauth" ? "Revoke our access in Railway." : "Delete your Railway token."} <a href="https://railway.com/account/tokens" target="_blank" rel="noopener noreferrer">Open Railway</a>`)}
   ${dnsCheck(s)}
-  <div>${icon("check")}<span>Turn on backups for the database in Railway.</span></div>
+  ${todo("backups", "Turn on backups for the database in Railway.")}
 </div>
 ${lockedOut(c)}
 ${laterCards(c, shown)}

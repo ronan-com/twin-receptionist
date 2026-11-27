@@ -625,3 +625,11 @@ progress.bar::-moz-progress-bar { background: linear-gradient(90deg, #7c3aed, #e
 .shell.wiz:not(.admshell) { grid-template-columns: minmax(0, 1fr); }
 @media (min-width: 960px) { .shell.wiz:not(.admshell) { grid-template-columns: 220px minmax(0, 1fr); } }
 @media (min-width: 1200px) { .shell.wiz:not(.admshell) { grid-template-columns: 220px minmax(0, 640px) 300px; } }
+
+/* Step-by-step guides: "Common problems" under the numbered steps */
+.howbox h4 { font-size: 15px; margin: 18px 0 4px; padding-top: 12px; border-top: 1px solid var(--line); }
+.howbox ul > li { margin: 0 0 7px; line-height: 1.5; }
+/* The helper card: hide it (remembered), bring it back with one small button */
+.hhide { float: right; margin: 8px 0 0 8px; border: 0; background: none; color: var(--muted); font: inherit; font-size: 13px; cursor: pointer; text-decoration: underline; }
+.hshow { border: 1px solid var(--indigo-line); background: #fff; color: var(--accent); border-radius: 99px; padding: 6px 14px; font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; }
+.helper.off details { display: none; }

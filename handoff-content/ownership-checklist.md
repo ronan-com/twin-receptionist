@@ -39,7 +39,7 @@ Delete these. You don't need them again: the wizard is finished.
 Keep these, but save them in your password manager. The dashboard uses them to run:
 
 - [ ] **Telnyx API key.** Rotate it if it was ever pasted anywhere else: create a new one in Telnyx, paste it into the app's Variables in Railway (see the operating guide), then delete the old one. Use a key from the same Telnyx account: your receptionists live in that account.
-- [ ] **Resend send-only key** (the one the wizard made, in the app's `SMTP_URL` variable). To rotate it, make a new one with Sending access, update the mail server address in **Settings → Email and calendars** (`smtps://resend:NEW_KEY@smtp.resend.com:465`), click **Send test email**, then delete the old one in Resend.
+- [ ] **Resend send-only key** (the one the wizard made, in the app's `SMTP_URL` variable). To rotate it, make a new one with Sending access, update the mail server address in **Settings → Email and calendars** (`smtp://resend:NEW_KEY@smtp.resend.com:2587`), click **Send test email**, then delete the old one in Resend.
 - [ ] **Google / Microsoft client secrets** (if set). Change them in **Settings → Email and calendars**.
 - [ ] **`MAILBOX_KEY`** from the app's Variables in Railway.
 

@@ -117,99 +117,76 @@ const sec = (id: string, title: string, body: string) => `<section class="gsec" 
 const ul = (items: string[]) => `<ul class="gul">${items.map((i) => `<li>${i}</li>`).join("")}</ul>`;
 const ht = (id: string) => {
   const h = howTo(id);
-  const meta = [h.time, h.cost].filter(Boolean).map((x) => esc(x!)).join(" · ");
+  const meta = [h.time, h.cost, h.checked ? `Checked ${h.checked}` : ""].filter(Boolean).map((x) => esc(x!)).join(" · ");
   return `<div class="ght" id="${esc(id)}"><h3>${esc(h.title)}</h3>${meta ? `<p class="hint">${meta}</p>` : ""}<div class="md">${h.html}</div>${h.link ? `<p class="hint"><a href="${esc(h.link)}" rel="noopener noreferrer" target="_blank">Open the provider's page</a></p>` : ""}</div>`;
 };
 
+const KNOWN = new Set(["cloudflare-domain", "registrar-nameservers", "cloudflare-token", "registrar-dns-records", "railway-token", "telnyx-account", "telnyx-api-key", "vapi-account", "twilio-account", "openrouter-key", "resend", "google-oauth", "microsoft-oauth", "install"]);
+
+// Hosting is Railway only. The guide follows the wizard's order: Railway, Voice, AI, then the optional extras, then Install.
 export function guidePage() {
   const toc: [string, string][] = [
     ["requirements", "What you need"], ["accounts", "Get your accounts ready"], ["wizard", "The setup page, step by step"],
-    ["after", "After the install"], ...(RAILWAY ? [["later", "Adding the extras later"] as [string, string]] : []), ["backups", "Backups and updates"], ["problems", "If something goes wrong"], ["yours", "What's yours now"],
+    ["after", "After the install"], ["later", "Adding the extras later"], ["backups", "Backups and updates"], ["problems", "If something goes wrong"], ["yours", "What's yours now"],
   ];
-  const known = new Set(["cloudflare-domain", "registrar-nameservers", "cloudflare-token", "registrar-dns-records", "digitalocean-token", "railway-token", "telnyx-account", "telnyx-api-key", "vapi-account", "twilio-account", "resend", "google-oauth", "microsoft-oauth"]);
-  const extra = allHowTos().filter((h) => !known.has(h.id) && !h.placeholder);
   return layout(`Buyer guide · AI agency setup`, `
 <section class="hero small">
   <p class="eyebrow">Buyer guide</p>
   <h1>Setting up your AI receptionist agency</h1>
-  <p class="lead">${RAILWAY ? "Two accounts, one token each, and you're live. Each guide below is five steps or fewer. Anything marked optional can wait." : "Everything from opening your accounts to your first sign-in. The setup page does the work; this guide explains each account and key it asks for. Allow about 20 minutes, plus any waiting for Telnyx's checks."}</p>
+  <p class="lead">Every account the setup page asks for, with the exact buttons to click, what the key looks like and the problems people hit most. Each guide was checked against the provider's own pages on 28 Nov 2026. Provider screens change now and then: if a button has moved, look for the nearest match in the same menu.</p>
 </section>
 <div class="guide">
 <nav class="toc card" aria-label="On this page"><b>On this page</b><ol>${toc.map(([id, t]) => `<li><a href="#${id}">${t}</a></li>`).join("")}</ol></nav>
 <article class="gbody">
-${sec("requirements", "1. What you need", RAILWAY ? `<p><b>Required</b> (about 15 minutes):</p>${ul([
-    "<b>A Railway account</b>, on the Hobby plan (US$5 a month, with a card). Your agency lives here.",
-    "<b>A Telnyx account</b>, upgraded, with at least US$10 of credit. It carries your calls. Australian phone numbers need proof of address and take 1 to 3 days to approve.",
-  ])}<p><b>Optional</b> (skip them now, add them later):</p>${ul([
+${sec("requirements", "1. What you need", `<p><b>Required</b> (about 30 minutes, plus any waiting while a provider checks you):</p>${ul([
+    "<b>A Railway account</b> on the Hobby plan (US$5 a month, with a card). Your agency and its database live here.",
+    "<b>A phone provider</b>: Telnyx (the usual choice, upgraded, with at least US$10 of credit) or Vapi (with Twilio for numbers). Australian phone numbers need proof of address and take about 3 days to approve.",
+    "<b>An OpenRouter account</b> with a few dollars of credit. It is the AI that does the thinking.",
+  ])}<p><b>Optional</b> (add them now or later):</p>${ul([
     "<b>Your own email</b> (Resend), so invites come from your address.",
     "<b>Your own domain</b> (GoDaddy, Cloudflare and so on), so your agency lives at app.yourcompany.com.",
     "<b>Calendar keys</b> (Google or Microsoft), so receptionists can book appointments.",
-    "<b>AI help for your team</b> (OpenRouter key), which switches on an <b>Ask for help</b> button in your dashboard.",
-  ])}`  : ul([
-    "<b>A domain</b> you own, from any registrar (GoDaddy, Namecheap, Crazy Domains, VentraIP, Cloudflare and so on).",
-    "<b>A DigitalOcean account</b> with a payment method. Your server is rented here.",
-    "<b>A Telnyx account</b>, upgraded from trial and with credit. Telnyx provides phone numbers and carries the calls.",
-    "<b>A Resend account</b> to send email (or any SMTP service, under Advanced on the Email step).",
-    "<b>Optional:</b> Google Cloud or Microsoft Entra keys, so receptionists can book into calendars.",
-    "<b>A browser.</b> There's nothing to download or install on your computer.",
-  ]))}
-${sec("accounts", "2. Get your accounts ready", RAILWAY ? `
+    "<b>Twilio</b>, for Australian numbers and follow-up texts on your own account.",
+  ])}`)}
+${sec("accounts", "2. Get your accounts ready", `
+<p>Each guide has numbered steps and a <b>Common problems</b> list. The same guides open inside the setup page, from the <b>Step-by-step guide</b> button on each step.</p>
 <h2 class="gopt">Required</h2>
 <h3>Hosting: Railway</h3>${ht("railway-token")}
-<h3>Phones: Telnyx</h3>${ht("telnyx-account")}${ht("telnyx-api-key")}
+<h3>Voice: Telnyx</h3>${ht("telnyx-account")}${ht("telnyx-api-key")}
+<h3>Voice: Vapi (instead of, or as a backup to, Telnyx)</h3>${ht("vapi-account")}
+<h3>AI: OpenRouter</h3>${ht("openrouter-key")}
 <h2 class="gopt">Optional extras</h2>
-<p>Skip these to install now. You can add each one later (see <a href="#later">Adding the extras later</a>).</p>
-<h3>Email: Resend (optional)</h3>${ht("resend")}
-<h3>Your own domain (optional)</h3>
+<p>You can add each one later (see <a href="#later">Adding the extras later</a>).</p>
+<h3>Email: Resend</h3>${ht("resend")}
+<h3>Your own domain</h3>
 <p>Two ways. <b>Let the setup add the records</b> (easiest): use the three Cloudflare guides in order. <b>Add the records yourself</b>: use the last guide.</p>
 ${ht("cloudflare-domain")}${ht("registrar-nameservers")}${ht("cloudflare-token")}${ht("registrar-dns-records")}
-<h3>Calendars (optional)</h3>${ht("google-oauth")}${ht("microsoft-oauth")}
-<h2 class="gopt">Or: Vapi + Twilio</h2>
-<p>The second option on the Phones step, instead of Telnyx: Vapi for voice, Twilio for numbers and texts.</p>
-<h3>Voice: Vapi</h3>${ht("vapi-account")}
+<h3>Calendars</h3>${ht("google-oauth")}${ht("microsoft-oauth")}
 <h3>Numbers and texts: Twilio</h3>${ht("twilio-account")}
-${extra.map((h) => ht(h.id)).join("")}` : `
-<h3>Your domain</h3>
-<p>The setup page offers two ways. <b>Let the setup handle DNS</b> (recommended): put your domain on a free Cloudflare account and change its nameservers at your registrar; the setup then adds every record for you. <b>I'll add the records myself</b>: keep DNS where it is, and the setup shows you each record to add.</p>
-${ht("cloudflare-domain")}${ht("registrar-nameservers")}${ht("cloudflare-token")}${ht("registrar-dns-records")}
-<h3>Your server</h3>${ht("digitalocean-token")}
-<h3>Phones</h3>${ht("telnyx-account")}${ht("telnyx-api-key")}
-<h3>Email</h3>${ht("resend")}
-<h3>Calendars (optional)</h3>${ht("google-oauth")}${ht("microsoft-oauth")}
-<h3>Or: Vapi + Twilio</h3><p>The second option on the Phones step: Vapi for voice, Twilio for numbers and texts.</p>${ht("vapi-account")}${ht("twilio-account")}
-${extra.map((h) => ht(h.id)).join("")}`)}
-${sec("wizard", "3. The setup page, step by step", RAILWAY ? `
+<h2 class="gopt">The install</h2>${ht("install")}
+${allHowTos().filter((h) => !KNOWN.has(h.id) && !h.placeholder).map((h) => ht(h.id)).join("")}`)}
+${sec("wizard", "3. The setup page, step by step", `
 <ol class="glist steps-long">
   <li><b>Welcome.</b> Open the private link from your purchase email. Your progress is saved, so you can stop and come back.</li>
   <li><b>Brand.</b> Type your brand name and owner email. You sign in with that email.</li>
-  <li><b>Hosting.</b> Paste your Railway token and press <b>Check</b>.</li>
-  <li><b>Phones.</b> Paste your Telnyx key and press <b>Check</b>. Or, under it, use <b>Vapi + Twilio</b>. No account approved yet? <b>Skip for now</b> and connect it later in your dashboard, under <b>Connections</b>.</li>
-  <li><b>Extras (optional).</b> Email, your own domain and calendars. Press <b>Skip all and continue</b> to go straight on.</li>
-  <li><b>Install.</b> Press the install button and wait about 5 minutes. If it stops, press <b>Try again</b>.</li>
+  <li><b>Hosting.</b> Paste your Railway token and press <b>Check and continue</b>.</li>
+  <li><b>Voice.</b> Paste your Telnyx key and press <b>Check key</b>. Or use <b>Vapi</b> and paste both its keys.</li>
+  <li><b>AI.</b> Press <b>Sign in with OpenRouter</b>, or paste an OpenRouter key.</li>
+  <li><b>Extras (optional).</b> Email, your own domain, calendars and Twilio. Press <b>Skip all and continue</b> to go straight on.</li>
+  <li><b>Install.</b> Press <b>Install</b> and wait 5 to 10 minutes. You can close the page. If it stops, press <b>Try again</b>.</li>
   <li><b>Done.</b> Open your address and sign in. Then delete your Railway token (and Cloudflare token, if you made one).</li>
-</ol>` : `
-<ol class="glist steps-long">
-  <li><b>Welcome.</b> Open the private link from your purchase email. Your progress is saved, so you can stop and come back to it.</li>
-  <li><b>Brand.</b> Your brand name, which your clients see on every screen and email, and your owner email (you sign in with it).</li>
-  <li><b>Domain.</b> Connect Cloudflare (we wait for your nameserver change, then handle DNS) or choose to add records yourself. Pick the dashboard address, <b>app</b> by default.</li>
-  <li><b>Server.</b> Paste your DigitalOcean token, then choose where the server lives and its size. You see the monthly price before anything is made.</li>
-  <li><b>Phones.</b> Paste your Telnyx key (the page shows your credit), or use Vapi + Twilio under it.</li>
-  <li><b>Email.</b> Paste your Resend key. We add your sending domain to Resend, put its records into DNS (or show them to you), and wait until Resend verifies them. Then send yourself a test email.</li>
-  <li><b>Calendars</b> (optional). Paste Google or Microsoft keys, or skip.</li>
-  <li><b>Install.</b> Click <b>Create my server and install</b>. We create the server in your DigitalOcean account and point your address at it. The server then downloads the app from us with a one-time link and installs it, 5 to 15 minutes. You can close the page. If it stops, the page says why: <b>Try again</b> reuses the same server, or <b>Delete the server</b> removes it.</li>
-  <li><b>Done.</b> Your agency is live. Open your address and sign in with your owner email. Delete your DigitalOcean and Cloudflare tokens. Keep your Resend key: your server sends email with it.</li>
 </ol>`)}
 ${sec("after", "4. After the install", ul([
     "Open your address and <b>sign in with the owner email</b> you entered. That makes you the owner of your agency.",
     "Add your first client (a business you sell a receptionist to), open it and click <b>Buy a number</b>. Australian numbers need proof of address and take about three days.",
     "The <b>Connections</b> page shows your Telnyx connection and credit (it warns you below US$5). Every client's receptionist runs on your Telnyx account.",
   ]))}
-${RAILWAY ? sec("later", "5. Adding the extras later", `
+${sec("later", "5. Adding the extras later", `
 <p>Your agency works without these. Add each whenever you like.</p>
 <h3>Your own email</h3>
 ${ul([
     "Open your dashboard, then <b>Settings</b>, then <b>Email and calendars</b>.",
-    "Paste your mail server address (for Resend: <code>smtps://resend:YOUR_RESEND_KEY@smtp.resend.com:465</code>) and the address emails come from. Press <b>Send test email</b>.",
+    "Paste your mail server address. Railway's Free and Hobby plans block the usual mail ports, so for Resend use its port 2587 (for Resend: <code>smtp://resend:YOUR_RESEND_KEY@smtp.resend.com:2587</code>) and the address emails come from. Press <b>Send test email</b>.",
     "Add the DNS records Resend shows for your domain.",
     "Until then, invite links show on screen for you to copy and send.",
   ])}
@@ -223,44 +200,34 @@ ${ul([
 ${ul([
     "Make the Google or Microsoft app (see the guides above). Its redirect address is your agency's address followed by <code>/api/oauth/google/callback</code> (or <code>/microsoft/callback</code>).",
     "Open <b>Settings</b>, then <b>Email and calendars</b>, and paste the client ID and secret.",
-  ])}
-<h3>AI help for your team</h3>
-${ul([
-    "Make an account at openrouter.ai, create an API key and add a few dollars of credit.",
-    "In Railway, open the <b>app</b> service, then <b>Variables</b>, and add <code>OPENROUTER_API_KEY</code> with your key.",
-    "An <b>Ask for help</b> button then appears at the bottom right of your dashboard.",
   ])}`) + sec("backups", "6. Backups and updates", ul([
     "Your database is the <b>Postgres</b> service in your Railway project. Open it, then <b>Backups</b>, and turn on daily (and weekly) backups. Railway charges backups like volume storage.",
     "Your app's settings are the <b>app</b> service's <b>Variables</b> in Railway. Never change <code>MAILBOX_KEY</code>: it unlocks saved mailbox and calendar logins.",
     "Updates: we'll send you a link when a new version is out.",
-  ])) : sec("backups", "5. Backups and updates", `
-<p>Your app lives in <code>/opt/receptionist</code> on your server. Sign in with your own SSH key (if you added one) or the <b>Console</b> button on the droplet's page in DigitalOcean.</p>
-${ul([
-    "The database is backed up <b>every night at about 03:30</b> (server time) into <code>/opt/receptionist/backups</code>, kept for 14 days.",
-    "Make one by hand: <code>sudo bash /opt/receptionist/backup.sh</code>. Restore: <code>sudo bash /opt/receptionist/restore.sh &lt;file&gt;</code>.",
-    "Copy backups off the server now and then, or turn on DigitalOcean's droplet backups. Keep <code>/opt/receptionist/secrets.env</code> safe too.",
-    "Updates: copy a new <code>selfhost-bundle.tgz</code> to the server and run <code>sudo bash /opt/receptionist/update.sh /root/selfhost-bundle.tgz</code>. It backs up first and keeps your settings and data.",
-  ])}`)}
-${sec("problems", `${RAILWAY ? 7 : 6}. If something goes wrong`, `
+  ]))}
+${sec("problems", "7. If something goes wrong", `
+<p>Each guide above ends with its own <b>Common problems</b> list. The most common ones:</p>
 <dl class="faq">
-  ${RAILWAY ? `<dt>"Railway didn't accept that token"</dt><dd>You made it with a workspace picked. On Railway's <b>Tokens</b> page make a new one and leave <b>Workspace</b> on <b>No workspace</b>.</dd>
-  <dt>"Your Railway account needs the Hobby plan"</dt><dd>Open <b>Plans</b> in Railway, choose <b>Hobby</b> and add your card. Then press <b>Check</b> again.</dd>` : ""}
-  ${RAILWAY ? "" : `<dt>"That token can only read"</dt><dd>Make a new DigitalOcean token with Full Access (or tick Write) and paste that one.</dd>`}
+  <dt>"Railway didn't accept that token"</dt><dd>You made it with a workspace picked. On Railway's <b>Tokens</b> page the <b>Scope</b> column must say <b>Account</b>. Make a new one and leave <b>Workspace</b> on <b>No workspace</b>.</dd>
+  <dt>"Your Railway account needs the Hobby plan"</dt><dd>Open <b>Plans</b> in Railway, choose <b>Hobby</b> and add your card. Then press <b>Check</b> again.</dd>
+  <dt>"Telnyx didn't accept that key"</dt><dd>Copy the whole key again, starting with <code>KEY</code>, from <b>API Keys</b> (v2). Or create a new one with <b>No expiration</b>.</dd>
+  <dt>Callers can't get through</dt><dd>Open <b>Account Level</b> in Telnyx: it must not say Trial. Check you have credit under <b>Billing</b>, and that the number is connected on the client's page.</dd>
+  <dt>A Telnyx number is "pending requirements"</dt><dd>Telnyx needs a proof of address under 3 months old (mobile numbers also an ID check). Approval takes about 72 hours.</dd>
+  <dt>OpenRouter says "402" or "insufficient credits"</dt><dd>Add credit at openrouter.ai/settings/credits. A 401 means the key was deleted or copied wrongly: make a new one.</dd>
+  <dt>Vapi says "invalid key"</dt><dd>The private and public keys are swapped. The private one goes in the first box.</dd>
+  <dt>"That Resend key can only send email"</dt><dd>Create a new Resend key with Full access. The setup needs it to add your sending domain.</dd>
   <dt>Cloudflare is still waiting for the nameserver change</dt><dd>Check the two nameservers at your registrar match exactly. Most changes show within an hour; some registrars take up to a day.</dd>
   <dt>"This token can't change DNS records"</dt><dd>Create a Cloudflare token with Zone: Read and DNS: Edit for your domain, or choose to add the records yourself.</dd>
-  <dt>"That Resend key can only send email"</dt><dd>Create a new Resend key with Full access. The setup needs it to add your sending domain.</dd>
-  <dt>A record never shows as found</dt><dd>Compare the name and value with the setup page. Some registrars want the name without your domain on the end (for example <code>app</code>, not <code>app.yourcompany.com</code>).</dd>
-  <dt>"Telnyx didn't accept that key"</dt><dd>Copy it again from API Keys, or create a new one. Check you copied the whole line, starting with KEY.</dd>
-  <dt>The install stopped</dt><dd>The page says why. Fix that if it's on your side, then press <b>Try again</b>: it reuses the same server and picks up where it stopped.</dd>
-  <dt>Callers can't get through</dt><dd>Check your Telnyx Account Level says Paid, that you have credit, and that the number is connected on the client's page.</dd>
+  <dt>A record never shows as found</dt><dd>Compare the name and value with the setup page. Type only the short name (for example <code>app</code>, not <code>app.yourcompany.com</code>), and on Cloudflare turn the orange cloud off (DNS only).</dd>
+  <dt>The install stopped</dt><dd>The page says why. Fix that if it's on your side, then press <b>Try again</b>: it reuses the same Railway project and picks up where it stopped. For a build error, open the failed deployment in Railway and read its <b>Build Logs</b>.</dd>
 </dl>`)}
-${sec("yours", `${RAILWAY ? 8 : 7}. What's yours now`, `
+${sec("yours", "8. What's yours now", `
 ${ul([
-    RAILWAY ? "<b>Your agency and its database</b> are in your Railway project. You pay Railway for them and can back up, resize or delete them." : "<b>The server</b> is in your DigitalOcean account. You pay DigitalOcean for it and can resize, back up or delete it.",
-    RAILWAY ? "<b>Telnyx</b>, and any <b>domain, Resend or Google or Microsoft keys</b> you add, are yours, billed to you by each provider." : "<b>Your domain, Telnyx, Resend</b> and any <b>Google or Microsoft keys</b> are yours, billed to you by each provider.",
-    `<b>Your data</b> (your clients, their receptionists, calls and settings) lives only on your ${RAILWAY ? "Railway project" : "server"}.`,
+    "<b>Your agency and its database</b> are in your Railway project. You pay Railway for them and can back up, resize or delete them.",
+    "<b>Telnyx or Vapi, OpenRouter</b>, and any <b>domain, Resend, Twilio or Google or Microsoft keys</b> you add, are yours, billed to you by each provider.",
+    `<b>Your data</b> (your clients, their receptionists, calls and settings) lives only on your Railway project.`,
   ])}
-<p>We have <b>no login to your accounts</b>. While you set up, your keys are stored encrypted; once the install succeeds we delete every one of them. We never hold a key or password to your ${RAILWAY ? "Railway project" : "server"}.</p>
+<p>We have <b>no login to your accounts</b>. While you set up, your keys are stored encrypted; once the install succeeds we delete every one of them. We never hold a key or password to your Railway project.</p>
 <h3>What your agency shares with us, and what it doesn't</h3>
 ${ul([
     "<b>Health and usage stats: on by default, and you can switch it off.</b> Every 15 minutes your agency sends us its version and address, whether it's healthy, counts (clients, receptionists, phone numbers, calls over the last 24 hours, 7 and 30 days, bookings, errors), when the last call came in, your brand name and logo address, and yes or no for email, your own domain and AI help. It never sends caller names or numbers, messages, transcripts, recordings, customer details, passwords or keys. Switch it off in your dashboard: <b>Settings</b>, then <b>Support</b>. When it's off, nothing is sent.",

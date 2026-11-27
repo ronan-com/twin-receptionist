@@ -40,7 +40,7 @@ deploy/            compose.yml + Caddyfile + .env.example for our small server
 ## The buyer's path (Railway)
 
 `/setup/<code>` (old `/download/<code>` links redirect there). One screen per step; how-tos sit
-behind **Show me how** (from `handoff-content/providers/<id>.md`), which opens a side panel: five numbered steps or fewer, a Copy button on anything to paste, and a **Stuck?** line with the usual error and its fix.
+behind **Step-by-step guide** (from `handoff-content/providers/<id>.md`), which opens a side panel: numbered steps, a Copy button on anything to paste, and a **Common problems** list with each fix. Facts are researched from the provider's own pages; update the `checked:` date when you re-check one. The same files feed the /guide page and the AI helper's prompt (`guides.ts`), so they never disagree. The helper card has a remembered **Hide** button.
 
 **Only Railway and Telnyx are required.** Email (Resend), the buyer's own domain and calendars are
 optional: one **Optional extras** screen sits between Telnyx and Install, with a card for each

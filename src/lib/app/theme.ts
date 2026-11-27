@@ -31,6 +31,21 @@ export function envBrandColours(): string[] {
   return raw.map((c) => c.trim()).filter((c) => HEX.test(c)).slice(0, 3);
 }
 
+// What the server says about this install: GET /api/session gives `brand: { colours, theme }` when signed in
+// and `look: { colours, theme }` before sign-in. It comes first; the page tags / window.__BRANDING__ are the fallback.
+let serverLook: { colours: string[]; theme: Theme | "" } = { colours: [], theme: "" };
+
+export function applySessionLook(session: unknown) {
+  const s = (session ?? {}) as { brand?: { colours?: unknown; theme?: unknown }; look?: { colours?: unknown; theme?: unknown } };
+  const l = s.brand ?? s.look ?? {};
+  const colours = (Array.isArray(l.colours) ? l.colours.map(String) : String(l.colours ?? "").split(/[,\s]+/)).map((c) => c.trim()).filter((c) => HEX.test(c)).slice(0, 3);
+  const theme = l.theme === "light" || l.theme === "dark" ? l.theme : "";
+  if (colours.join() === serverLook.colours.join() && theme === serverLook.theme) return;
+  serverLook = { colours, theme };
+  applyEnvBrand();
+  applyTheme();
+}
+
 function envTheme(): Theme {
   const t = String(branding().theme ?? meta("theme")).toLowerCase();
   return t === "dark" || t === "auto" ? t : "light";
@@ -43,7 +58,7 @@ export function getTheme(): Theme {
   } catch {
     /* private window */
   }
-  return envTheme();
+  return serverLook.theme || envTheme();
 }
 
 const listeners = new Set<() => void>();
@@ -80,7 +95,7 @@ export const isDark = () => typeof document !== "undefined" && document.document
 /** Writes the server's brand colours (if any) as CSS variables. Call once at start. */
 export function applyEnvBrand() {
   if (typeof document === "undefined") return;
-  const [c1, c2, c3] = envBrandColours();
+  const [c1, c2, c3] = serverLook.colours.length ? serverLook.colours : envBrandColours();
   let el = document.getElementById("brand-env") as HTMLStyleElement | null;
   if (!c1) {
     el?.remove();

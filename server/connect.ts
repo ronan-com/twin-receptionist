@@ -98,6 +98,11 @@ export async function signInStart(provider: OAuthProvider, token: string, mode: 
   return startSignIn(provider, purpose === "calendar" ? "calendar" : "mail", { linkToken: token }, m);
 }
 
+/** A return path we'll send the browser to: under /app/ or /admin/, optionally with ?tab=<name> (the receptionist editor's tab). */
+export const safeReturn = (returnTo?: string): string | undefined => (returnTo && /^\/(app|admin)\/[A-Za-z0-9/_-]*(\?tab=[a-z]+)?$/.test(returnTo) ? returnTo : undefined);
+/** Adds the outcome (?calendar=1, ?error=...) to a return path that may already have a query. */
+export const withOutcome = (where: string, query: string) => `${where}${where.includes("?") ? "&" : "?"}${query}`;
+
 // The same, started by a team member from the dashboard (calendar only: a
 // mailbox is the business's to connect).
 // returnTo: where to send the browser afterwards (the workspace's integrations page,
@@ -106,7 +111,7 @@ export async function dashboardSignInStart(provider: OAuthProvider, orgId: strin
   if (!client.booking || providerOf(client) !== provider) {
     throw new ValidationError(`Choose ${provider === "google" ? "Google Calendar" : "Outlook"} in the calendar card first.`);
   }
-  const back = returnTo && /^\/(app|admin)\/[A-Za-z0-9/_-]*$/.test(returnTo) ? returnTo : undefined;
+  const back = safeReturn(returnTo);
   return startSignIn(provider, "calendar", { clientId: client.id, orgId, ...(back ? { returnTo: back } : {}) });
 }
 
@@ -135,8 +140,8 @@ export async function signInFinish(provider: OAuthProvider, params: URLSearchPar
       if (!pending.linkToken) throw new ValidationError("Mailboxes are connected from the business's connect link.");
       await connectOAuth(client.id, result);
     }
-    return `${where}?${back(result.purpose)}=1`;
+    return withOutcome(where, `${back(result.purpose)}=1`);
   } catch (err) {
-    return `${where}?error=${encodeURIComponent((err as Error).message.slice(0, 300))}`;
+    return withOutcome(where, `error=${encodeURIComponent((err as Error).message.slice(0, 300))}`);
   }
 }

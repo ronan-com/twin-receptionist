@@ -309,7 +309,7 @@ function ClientDetailPage() {
         )}
       </section>
 
-      <Panel title="Customers with access" description="The company's own people. Managers can change its receptionists; viewers only look. Access covers every receptionist of this client." padded={false}>
+      <Panel title="Customers with access" description="The client's own people." padded={false}>
         <ul className="divide-y divide-hairline" data-list="customers">
           {d.members.map((m) => (
             <li key={m.id} className="flex flex-col gap-2 px-4 py-2.5 text-[13px] sm:flex-row sm:items-center sm:justify-between" data-customer={m.profile.email}>
@@ -346,7 +346,7 @@ function ClientDetailPage() {
               </div>
             </li>
           ))}
-          {d.members.length === 0 && d.invitations.length === 0 ? <li className="px-4 py-5 text-center text-[12.5px] text-ink-muted">Not shared with anyone at the company yet.</li> : null}
+          {d.members.length === 0 && d.invitations.length === 0 ? <li className="px-4 py-5 text-center text-[12.5px] text-ink-muted">No one yet.</li> : null}
         </ul>
         {canManage && d.receptionists.length ? (
           <form
@@ -386,7 +386,9 @@ function ClientDetailPage() {
         ) : null}
       </Panel>
 
-      <Panel title="Branding" description={`${co.name}'s logo, background and colours on its customer workspace. Blank fields use the agency's branding.`}>
+      <details className="panel px-4 py-3" data-section="client-branding">
+        <summary className="cursor-pointer text-[14px] font-semibold text-ink">Branding <span className="ml-1 text-[12px] font-normal text-ink-muted">logo and colours</span></summary>
+        <div className="mt-4">
         <BrandEditor
           lockable
           brand={d.brand}
@@ -400,7 +402,8 @@ function ClientDetailPage() {
             await qc.invalidateQueries({ queryKey: ["console", "companies"] });
           }}
         />
-      </Panel>
+        </div>
+      </details>
 
       <div className="grid gap-4 xl:grid-cols-3">
         <Panel title="Recent calls" className="xl:col-span-2" padded={false}>

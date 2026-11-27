@@ -12,7 +12,7 @@ import { companyApi, getAdminRecentActivity, getAdminAppointmentsLeads, getConso
 import { getEmail } from "@/lib/api/manage";
 import { fmtNumber, fmtRelative } from "@/lib/app/format";
 import { nicheIcon } from "@/lib/app/niche-icons";
-import { useProviderWarnings } from "@/components/app/ProviderWarnings";
+import { useProviderWarnings, warningInfo } from "@/components/app/ProviderWarnings";
 import { useConsole } from "./-shared";
 
 // Home: a quick look at everything. Today's numbers, what needs a look, receptionists, clients and what just happened.
@@ -53,7 +53,7 @@ export function Home() {
 
   const attention = useMemo(() => {
     const out: { icon: typeof AlertTriangle; text: string; to: string; tone: "danger" | "warning" }[] = [];
-    for (const w of warnings) out.push({ icon: AlertTriangle, text: `${w.provider} is running low`, to: "/admin/connections", tone: "warning" });
+    for (const w of warnings) out.push({ icon: AlertTriangle, text: warningInfo(w).title, to: "/admin/connections", tone: "warning" });
     if (c?.openIncidents) out.push({ icon: ServerCrash, text: `${c.openIncidents} problem${c.openIncidents === 1 ? "" : "s"} to look at`, to: "/admin/system", tone: "danger" });
     if (failed) out.push({ icon: ServerCrash, text: `${failed} failed call${failed === 1 ? "" : "s"} today`, to: "/admin/calls", tone: "danger" });
     if (noNumber.length) out.push({ icon: PhoneCall, text: `${noNumber.length} receptionist${noNumber.length === 1 ? " has" : "s have"} no number`, to: "/admin/phone-numbers", tone: "warning" });

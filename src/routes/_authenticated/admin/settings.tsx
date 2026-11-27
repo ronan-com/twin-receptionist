@@ -49,7 +49,7 @@ function AdminSettingsPage() {
 
   return (
     <div className="space-y-5" data-page="admin-settings">
-      <PageHeader eyebrow={platform ? "Platform console" : "Agency console"} title="Settings" description={`${orgName || "Your team"}: the people who use this console, its branding and your own account.`} />
+      <PageHeader eyebrow={platform ? "Platform console" : "Agency console"} title="Settings" description={orgName || "Your team"} />
       <Tabs value={tab} onValueChange={setTab}>
         <TabsList className="max-w-full overflow-x-auto">
           <TabsTrigger value="team">Team</TabsTrigger>
@@ -165,7 +165,7 @@ function TeamSection() {
   return (
     <div className="space-y-4">
       {readOnly ? <Notice tone="info">{READ_ONLY_HINT}</Notice> : null}
-      <Panel title="Name" description="Shown to your team and to the businesses you share receptionists with.">
+      <Panel title="Name" description="Shown to your team and clients.">
         <form
           className="flex flex-col gap-2 sm:flex-row"
           onSubmit={(e) => {
@@ -182,7 +182,7 @@ function TeamSection() {
         </form>
       </Panel>
 
-      <Panel title="People" description="Owners and admins can invite people and share clients. Members can work on clients." padded={false}>
+      <Panel title="People" description="Who can use this console." padded={false}>
         <ul className="divide-y divide-hairline" data-list="team">
           {(t?.members ?? []).map((m) => (
             <li key={m.id} className="flex flex-col gap-2 px-4 py-2.5 text-[13px] sm:flex-row sm:items-center sm:justify-between">

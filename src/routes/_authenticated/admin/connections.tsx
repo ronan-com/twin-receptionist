@@ -45,7 +45,7 @@ function ConnectionsPage() {
       <PageHeader
         eyebrow={platform ? "Platform console" : "Agency console"}
         title="Connections"
-        description="What's plugged in to your agency, and whether it's working."
+        description="What's connected."
         actions={
           <Button size="sm" variant="outline" className="h-8 text-[12.5px]" onClick={() => void q.refetch()} disabled={q.isFetching} data-action="check-now">
             {q.isFetching ? <Loader2 className="animate-spin" /> : <RefreshCw />} Check now
@@ -66,7 +66,7 @@ function ConnectionsPage() {
                   <div className="min-w-0">
                     <div className="text-[14px] font-semibold text-ink">{a.provider === "vapi" ? "Vapi (backup option) is your voice engine" : "Use Vapi instead of Telnyx for voice"}</div>
                     <p className="mt-0.5 max-w-[560px] text-[12.5px] text-ink-muted">
-                      {a.provider === "vapi" ? "New receptionists run on Vapi. Telnyx is the recommended engine; you can switch back at any time." : "A backup option. New receptionists run on your Vapi account. Receptionists you already have stay on Telnyx."}
+                      {a.provider === "vapi" ? "New receptionists use Vapi. You can switch back." : "Backup. New receptionists would use Vapi."}
                     </p>
                   </div>
                   <Button size="sm" variant="outline" className="h-8 shrink-0 text-[12.5px]" onClick={() => openEngine(a.provider === "vapi" ? "telnyx" : "vapi")} data-action={a.provider === "vapi" ? "use-telnyx" : "use-vapi"}>
@@ -83,24 +83,29 @@ function ConnectionsPage() {
 
       <OpenRouterCard canManage={canManage} readOnly={readOnly} />
 
+      <BalancesCard />
+      <Health account={a} />
+
+      <details className="panel px-4 py-3" data-section="more-connections">
+        <summary className="cursor-pointer text-[14px] font-semibold text-ink">More</summary>
+        <div className="mt-4 space-y-5">
       <div className="grid gap-3 md:grid-cols-3">
-        <CountCard icon={Building2} hue="indigo" label="Clients" count={a.counts.clients} hint="Businesses you run receptionists for." to="/admin/clients" cta="Open clients" />
+        <CountCard icon={Building2} hue="indigo" label="Clients" count={a.counts.clients} hint="Your businesses." to="/admin/clients" cta="Open clients" />
         <CountCard
           icon={Phone}
           hue="cyan"
           label="Phone numbers"
           count={a.counts.numbers}
-          hint={a.provider === "vapi" ? "Buy or bring a Twilio number (or bring a Telnyx one) from each client's page." : a.mode === "own" || a.installed ? "Bought on your Telnyx account, from each client's page." : "Each number rings one receptionist."}
+          hint="Each number rings a receptionist."
           to="/admin/phone-numbers"
           cta="Open numbers"
         />
-        <CountCard icon={CalendarCheck} hue="magenta" label="Calendars" count={a.counts.calendars} hint="Google and Outlook calendars are connected per client." to="/admin/clients" cta="Connect from a client" />
+        <CountCard icon={CalendarCheck} hue="magenta" label="Calendars" count={a.counts.calendars} hint="Google and Outlook." to="/admin/clients" cta="Connect from a client" />
       </div>
 
-      <BalancesCard />
       <PipedreamCard canManage={canManage && !readOnly} />
-
-      <Health account={a} />
+        </div>
+      </details>
     </div>
   );
 }
@@ -188,15 +193,15 @@ function PhoneCard({ account: a, platform, backup }: { account: PhoneAccount; pl
             ) : a.mode === "platform" ? (
               <p className="mt-1 max-w-[560px] text-[13px] text-ink-muted">
                 {a.installed
-                  ? `Your ${name} account, set when this server was installed (${a.provider === "vapi" ? "VAPI_API_KEY" : "TELNYX_API_KEY"}). ${a.provider === "vapi" ? "Calls are charged to it." : "Numbers you buy for clients are charged to it."}`
-                  : platform ? "The platform's own phone account, set on the server. Agencies that bring their own connect it in Setup." : "Your phone service is set up and run for you. There's nothing to connect here."}
+                  ? `Your ${name} account, set at install.`
+                  : platform ? "The platform's own phone account." : "Set up for you. Nothing to do."}
               </p>
             ) : connectHere ? (
               <p className="mt-1 max-w-[560px] text-[13px] text-ink-muted">
-                Connect your phone provider to start making receptionists. Paste your {name} API key once {name} has approved your account: it's checked, saved and used straight away.
+                Paste your {name} API key to start.
               </p>
             ) : (
-              <p className="mt-1 max-w-[560px] text-[13px] text-ink-muted">Nothing can answer calls until you connect your {name} account. Set-up walks you through it.</p>
+              <p className="mt-1 max-w-[560px] text-[13px] text-ink-muted">Connect your {name} account to answer calls.</p>
             )}
           </div>
         </div>

@@ -91,7 +91,7 @@ export function IntegrationsPage({ show = "all" }: { /** In the receptionist edi
   useEffect(() => {
     if (search.error) toast.error("Calendar sign-in didn't finish", { description: search.error });
     else if (search.calendar) toast.success("Calendar connected", { description: "Your receptionist can now book into it." });
-    if (search.error || search.calendar) void navigate({ search: {} as never, replace: true } as never);
+    if (search.error || search.calendar) void navigate({ search: ((p: Record<string, unknown>) => ({ ...p, error: undefined, calendar: undefined })) as never, replace: true } as never);
   }, [search.error, search.calendar, navigate]);
 
   const categories = Array.from(new Set(CATALOG.map((d) => d.category))).filter((c) => (show === "all" ? true : show === "booking" ? c === "Calendar" || c === "Automation" : false));
@@ -215,6 +215,7 @@ export function IntegrationsPage({ show = "all" }: { /** In the receptionist edi
               existing={byProvider.get(dialog.provider)}
               calendar={calendar}
               canEdit={canEdit}
+              embedded={embedded}
               onDone={(list) => {
                 if (list) qc.setQueryData(["integrations", ws.businessId], list);
                 void qc.invalidateQueries({ queryKey: ["integrations", ws.businessId] });
@@ -235,9 +236,11 @@ function IntegrationDialog({
   existing,
   calendar,
   canEdit,
+  embedded,
   onDone,
   onClose,
 }: {
+  embedded: boolean;
   def: Def;
   existing?: Integration;
   calendar: Integration | null;
@@ -315,7 +318,7 @@ function IntegrationDialog({
       }
       if (res.action === "setup" && provider !== "builtin") {
         // Sign in with Google/Microsoft; they send the browser back to this page.
-        window.location.assign(calendarSignInUrl(businessId, provider));
+        window.location.assign(calendarSignInUrl(businessId, provider, embedded ? "editor" : undefined));
         return;
       }
       if (res.action !== "test" && res.action !== "check" && res.action !== "mode") onClose();
@@ -356,7 +359,7 @@ function IntegrationDialog({
             </Notice>
           ) : null}
           {existing && provider !== "builtin" && existing.status === "not_connected" && canEdit ? (
-            <Button size="sm" variant="outline" className="w-fit" onClick={() => window.location.assign(calendarSignInUrl(businessId, provider))}>
+            <Button size="sm" variant="outline" className="w-fit" onClick={() => window.location.assign(calendarSignInUrl(businessId, provider, embedded ? "editor" : undefined))}>
               <ExternalLink className="mr-1.5 h-3.5 w-3.5" /> Sign in with {provider === "google" ? "Google" : "Microsoft"}
             </Button>
           ) : null}

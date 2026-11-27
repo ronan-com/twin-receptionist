@@ -278,10 +278,13 @@ export function AppShell({ nav, variant, brandTo, sidebarHeader, topbarRight, ba
   const current = nav.find((n) => isNavActive(n, pathname));
 
   return (
-    <div data-app-shell className="min-h-screen bg-[var(--page)] text-ink">
+    <div data-app-shell className="min-h-screen bg-[var(--page)] text-ink lg:flex">
       {/* Desktop sidebar */}
-      <aside className="fixed inset-y-0 left-0 z-30 hidden w-[244px] border-r border-hairline bg-[var(--surface)] lg:block">
-        <SidebarBody nav={nav} variant={variant} brandTo={brandTo} sidebarHeader={sidebarHeader} notifications={notifications} />
+      {/* The column runs the full height of the page; its content sticks to the top of the screen. */}
+      <aside className="z-30 hidden w-[244px] shrink-0 border-r border-hairline bg-[var(--surface)] lg:block">
+        <div className="sticky top-0 h-screen">
+          <SidebarBody nav={nav} variant={variant} brandTo={brandTo} sidebarHeader={sidebarHeader} notifications={notifications} />
+        </div>
       </aside>
 
       {/* Mobile sheet */}
@@ -292,7 +295,7 @@ export function AppShell({ nav, variant, brandTo, sidebarHeader, topbarRight, ba
         </SheetContent>
       </Sheet>
 
-      <div className="flex min-h-screen flex-col lg:pl-[244px]">
+      <div className="flex min-h-screen min-w-0 flex-1 flex-col">
         <header className="sticky top-0 z-20 flex h-14 items-center gap-2 border-b border-hairline bg-[color-mix(in_srgb,var(--surface)_92%,transparent)] px-3 backdrop-blur sm:px-5">
           <button
             type="button"

@@ -6,7 +6,7 @@ import { rangeKey } from "@/lib/app/queries";
 import { fmtPhone } from "@/lib/app/format";
 import type { ResolvedRange } from "@/lib/app/date-range";
 import { armSounds, playSound } from "@/lib/app/sounds";
-import { useProviderWarnings } from "./ProviderWarnings";
+import { useProviderWarnings, warningInfo } from "./ProviderWarnings";
 
 // The bell's list and the small pop-up in the bottom corner. They carry what used to be the top bar
 // (low phone or AI balance), plus new calls and messages while the dashboard is open.
@@ -66,15 +66,17 @@ export function useLiveAlerts(range: ResolvedRange | null, enabled: boolean): Al
 
   const warn = useMemo<AlertItem[]>(
     () =>
-      warnings.map((i) => ({
-        id: `prov-${i.provider}`,
-        kind: "warning",
-        tone: "warning",
-        title: `${i.provider.charAt(0).toUpperCase()}${i.provider.slice(1)} is running low`,
-        description: i.message || (i.balance != null ? `Balance is low (${i.balance} ${i.currency ?? ""})` : "Running low"),
-        href: i.url && /^https:\/\//.test(i.url) ? i.url : undefined,
-        hrefLabel: "Top up",
-      })),
+      warnings.map((i) => {
+        const w = warningInfo(i);
+        return {
+          id: `prov-${i.provider}`,
+          kind: "warning" as const,
+          tone: "warning" as const,
+          title: w.title,
+          description: w.text,
+          ...(w.missingKey ? { to: "/admin/connections" } : { href: i.url && /^https:\/\//.test(i.url) ? i.url : undefined, hrefLabel: "Top up" }),
+        };
+      }),
     [warnings],
   );
 
@@ -85,7 +87,7 @@ export function useLiveAlerts(range: ResolvedRange | null, enabled: boolean): Al
       if (shown.has(w.id)) continue;
       shown.add(w.id);
       any = true;
-      toast.warning(w.title, { id: w.id, description: w.description, duration: 9000, className: "alert-toast", action: w.href ? { label: "Top up", onClick: () => window.open(w.href, "_blank", "noopener") } : undefined });
+      toast.warning(w.title, { id: w.id, description: w.description, duration: 9000, className: "alert-toast", action: w.href ? { label: "Top up", onClick: () => window.open(w.href, "_blank", "noopener") } : w.to ? { label: "Open", onClick: () => window.location.assign(w.to!) } : undefined });
     }
     if (any) playSound("warning");
   }, [warn]);

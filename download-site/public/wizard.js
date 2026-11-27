@@ -118,8 +118,8 @@
     if (b) {
       const label = b.innerHTML;
       b.classList.add("busy"); b.innerHTML = '<span class="spin"></span> ' + (/check/i.test(b.textContent) ? "Checking..." : "Working...");
-      // If nothing came back (a dropped connection), give the button back so the step can be tried again instead of staying stuck.
-      setTimeout(function () { delete f.dataset.sent; b.classList.remove("busy"); b.innerHTML = label; }, 30000);
+      // If nothing came back at all (a dropped connection), give the button back after two minutes so the step can be tried again. Not sooner: a slow check is still running and a second press would send it twice.
+      setTimeout(function () { delete f.dataset.sent; b.classList.remove("busy"); b.innerHTML = label; }, 120000);
     }
   });
 

@@ -68,7 +68,7 @@ const FOUR = [
   ["Open your private link", "It came in your purchase email and opens your own setup page."],
   ["Connect your accounts", RAILWAY ? "Two accounts, one at a time: Railway (hosting) and Telnyx (phones). Each is checked before you move on. Email and your own domain are optional extras." : "One at a time: domain, server, phones, email. Each is checked before you move on."],
   ["Click Install", RAILWAY ? "We set up your agency and its database in your Railway account. It's live at an https address straight away; your own domain is optional." : "We create a server in your DigitalOcean account and set up your agency on it, with https on your own domain."],
-  ["It's yours", `Your brand, your clients, your ${RAILWAY ? "hosting" : "server"}. We delete every key you gave us and have no login to your accounts. Your agency shares health counts with us, and we can sign in to help (never to see your keys or billing), unless you switch those off in Settings. It also updates itself overnight unless you turn that off.`],
+  ["It's yours", `Your brand, your clients, your ${RAILWAY ? "hosting" : "server"}. Your keys are stored encrypted, and we have no login to your accounts. Your agency shares health counts with us, and we can sign in to help (never to see your keys or billing), unless you switch those off in Settings. It also updates itself overnight unless you turn that off.`],
 ];
 
 export function homePage(error = "", value = "") {
@@ -258,7 +258,7 @@ ${ul([
     RAILWAY ? "<b>Telnyx</b>, and any <b>domain, Resend or Google or Microsoft keys</b> you add, are yours, billed to you by each provider." : "<b>Your domain, Telnyx, Resend</b> and any <b>Google or Microsoft keys</b> are yours, billed to you by each provider.",
     `<b>Your data</b> (your clients, their receptionists, calls and settings) lives only on your ${RAILWAY ? "Railway project" : "server"}.`,
   ])}
-<p>We have <b>no login to your accounts</b>. While you set up, your keys are stored encrypted; once the install succeeds we delete every one of them. We never hold a key or password to your ${RAILWAY ? "Railway project" : "server"}.</p>
+<p>We have <b>no login to your accounts</b>. While you set up, your keys are stored encrypted. We never hold a key or password to your ${RAILWAY ? "Railway project" : "server"}.</p>
 <h3>What your agency shares with us, and what it doesn't</h3>
 ${ul([
     "<b>Health and usage stats: on by default, and you can switch it off.</b> Every 15 minutes your agency sends us its version and address, whether it's healthy, counts (clients, receptionists, phone numbers, calls over the last 24 hours, 7 and 30 days, bookings, errors), when the last call came in, your brand name and logo address, and yes or no for email, your own domain and AI help. It never sends caller names or numbers, messages, transcripts, recordings, customer details, passwords or keys. Switch it off in your dashboard: <b>Settings</b>, then <b>Support</b>. When it's off, nothing is sent.",

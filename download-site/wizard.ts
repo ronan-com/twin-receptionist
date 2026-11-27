@@ -351,7 +351,7 @@ ${nav(c, ready ? mini(c, "phones-continue", `Continue ${icon("right")}`, "btn p"
 
 function vapi(c: Ctx) {
   const vSaved = secretHint(c.b.id, "vapi_key");
-  return `${head(c, "Vapi for voice", "Your receptionists run on your own Vapi account. Add Twilio too for Australian numbers and texts.")}
+  return `${head(c, RAILWAY ? "Backup voice (Vapi)" : "Vapi for voice", RAILWAY ? "A second voice provider on your own Vapi account, ready if Telnyx has a problem." : "Your receptionists run on your own Vapi account. Add Twilio too for Australian numbers and texts.")}
 <div class="body">${mainForm(c, "vapi", `
   ${secretIn("vapiKey", "Private key", vSaved, "Vapi private API key")}
   <label class="f" for="vapiPublic">Vapi public key (used by the browser test call)</label><input id="vapiPublic" name="vapiPublic" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" maxlength="300" placeholder="Public key" value="${val(c, "vapiPublic", "")}">
@@ -555,7 +555,7 @@ const extrasState = (s: SetupData) => ({
 
 function extras(c: Ctx) {
   const have = extrasState(c.s);
-  const card = (key: "email" | "domain" | "calendars" | "twilio", logo: string, title: string, text: string, step: StepId, skipAction: string) => {
+  const card = (key: "email" | "domain" | "calendars" | "twilio" | "vapi", logo: string, title: string, text: string, step: StepId, skipAction: string) => {
     const added = have[key];
     return `<div class="xcard${added ? " added" : ""}" data-card="${key}"><div class="xh">${logo}<b>${title}</b></div><p>${text}</p>
   <div class="xa">${added ? `<span class="st f">${icon("check")} Added</span><a class="btn o" href="${base(c)}?step=${step}">Change</a>`
@@ -566,10 +566,11 @@ function extras(c: Ctx) {
 ${card("email", plogo("resend"), "Your own email", "Send invites and notices from your own address.", "email", "email-skip")}
 ${card("domain", plogo("domain"), "Your own web address", "Use app.yourbusiness.com instead of the Railway address.", "domain", "domain-skip")}
 ${card("calendars", `<span class="pl sm cal">${icon("calendar")}</span>`, "Calendars", "Let receptionists book into Google or Outlook calendars.", "calendars", "cal-skip")}
+${c.s.phones?.confirmed || have.vapi ? card("vapi", plogo("vapi"), "Backup voice (Vapi)", "A second voice provider, ready if Telnyx has a problem.", "vapi", "vapi-skip") : ""}
 ${card("twilio", plogo("twilio"), "Twilio", "Australian numbers and follow-up texts, on your own Twilio account.", "twilio", "twilio-skip")}
 </div>
 ${mainForm(c, "extras-continue", "")}
-${nav(c, primary(have.email || have.domain || have.calendars || have.twilio ? "Continue to install" : "Skip all and continue"))}`;
+${nav(c, primary(have.email || have.domain || have.calendars || have.twilio || have.vapi ? "Continue to install" : "Skip all and continue"))}`;
 }
 
 // ---------------- install ----------------
@@ -851,6 +852,8 @@ const isLive = (c: Ctx) =>
 const HELP: Record<string, { say: string; chips: string[] }> = {
   welcome: { say: "Hi! I'll guide you through. It takes about 10 minutes. Press Start.", chips: ["What do I need?", "What will it cost?"] },
   brand: { say: "Pick your name, colours and look. You can change them later.", chips: ["Can I change this later?", "What logo works best?"] },
+  server: { say: "Open DigitalOcean, make a token, paste it here.", chips: ["Where do I find my DigitalOcean token?", "What does the server cost?"] },
+  vapi: { say: "Optional: a backup voice provider. Copy both keys from Vapi and paste them here.", chips: ["Which two Vapi keys?", "Do I need a backup?"] },
   railway: { say: "Open Railway, make a token, paste it here.", chips: ["Where do I find my Railway token?", "What is No workspace?", "What is the Hobby plan?"] },
   phones: { say: "Telnyx is the easy pick. Vapi works too. Stuck on Telnyx's ID check? Pick Vapi now, add Telnyx later in your dashboard.", chips: ["Telnyx or Vapi?", "Telnyx wants an ID check"] },
   "phones:telnyx": { say: "Open Telnyx, create an API key, paste it here.", chips: ["How do I get my Telnyx key?", "Why upgrade my Telnyx account?"] },

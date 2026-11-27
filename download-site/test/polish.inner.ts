@@ -387,3 +387,34 @@ describe("the step helper card", () => {
     expect(wizardPage(b, store.getSetup(b.id), b.code, "sid", "install")).toContain("acc-orange");
   });
 });
+
+describe("Backup voice, Twilio and the plain-words copy", () => {
+  test("Connect more offers Backup voice (Vapi) once Telnyx is the chosen provider; adding it installs Telnyx + Vapi", async () => {
+    const { phoneSettings } = await import("../setup");
+    const b = await doneBuyer({ extrasDone: false, step: "extras" });
+    const br = await browser(b.code);
+    const page = await br.page("extras");
+    expect(page).toContain("Backup voice (Vapi)");
+    expect(page).toContain(`step=vapi`);
+    const vapiPage = await br.page("vapi");
+    expect(vapiPage).toContain("Backup voice (Vapi)");
+    expect(vapiPage).toContain('name="vapiKey"');
+    store.putSecret(b.id, "vapi_key", "priv-0123456789abcdef"); store.putSecret(b.id, "vapi_public", "pub-0123456789abcdef");
+    store.updateSetup(b.id, (s) => { s.vapi = { confirmed: true }; });
+    expect(await br.page("extras")).toContain("Added");
+    expect(phoneSettings(b.id, store.getSetup(b.id))).toMatchObject({ VOICE_PROVIDER: "telnyx", VAPI_API_KEY: "priv-0123456789abcdef" });
+  });
+
+  test("Twilio from Connect more is not lost when there is no voice provider (old setups, DigitalOcean)", async () => {
+    const { phoneSettings } = await import("../setup");
+    const b = addBuyer("Twilio Buyer", "twi@example.com");
+    store.putSecret(b.id, "twilio_token", "t".repeat(32));
+    store.updateSetup(b.id, (s) => { s.twilio = { sid: "AC" + "a".repeat(32), confirmed: true } as any; s.skipped = { phones: true }; });
+    expect(phoneSettings(b.id, store.getSetup(b.id))).toEqual({ TWILIO_ACCOUNT_SID: "AC" + "a".repeat(32), TWILIO_AUTH_TOKEN: "t".repeat(32) });
+  });
+
+  test("no 'we delete every key' wording on the public pages", async () => {
+    const { homePage, guidePage } = await import("../pages") as any;
+    for (const html of [homePage(), guidePage?.()].filter(Boolean) as string[]) expect(html).not.toMatch(/delete every/i);
+  });
+});

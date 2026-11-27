@@ -96,13 +96,13 @@ export type StepId = "welcome" | "brand" | "railway" | "domain" | "server" | "ph
  * DigitalOcean still needs a domain (its server gets an https certificate for it), so it keeps the long path.
  */
 export const STEPS: StepId[] = RAILWAY
-  ? ["welcome", "brand", "railway", "phones", "ai", "extras", "email", "domain", "calendars", "twilio", "install", "done"]
+  ? ["welcome", "brand", "railway", "phones", "ai", "extras", "email", "domain", "calendars", "vapi", "twilio", "install", "done"]
   : ["welcome", "brand", "domain", "server", "phones", "vapi", "twilio", "email", "calendars", "install", "done"];
 /**
  * Steps that are never required. Railway: the pages behind the "Connect more" screen (extras): email, your own domain and Twilio,
  * each skippable. DigitalOcean: the backup phone options.
  */
-export const OPTIONAL_STEPS: StepId[] = RAILWAY ? ["email", "domain", "calendars", "twilio"] : ["vapi", "twilio"];
+export const OPTIONAL_STEPS: StepId[] = RAILWAY ? ["email", "domain", "calendars", "vapi", "twilio"] : ["vapi", "twilio"];
 /**
  * Railway steps that used to be in the path (extras, email, domain, calendars, Vapi, Twilio). Email, your own domain and
  * calendars are now "later" items on the Done screen; Vapi + Twilio is on the Voice step. Old stored setups may sit on one

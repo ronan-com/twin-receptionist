@@ -984,8 +984,8 @@ export const hasTelnyx = (id: number, s: SetupData) => !!s.phones?.confirmed && 
 export function phoneSettings(id: number, s: SetupData): Record<string, string> {
   const sid = twilioSidOf(s);
   const twilio: Record<string, string> = sid && getSecret(id, "twilio_token") ? { TWILIO_ACCOUNT_SID: sid, TWILIO_AUTH_TOKEN: getSecret(id, "twilio_token") || "" } : {};
-  // Skipped: no voice key at all. The app (SINGLE_AGENCY) then expects the owner's own key, pasted in Connections.
-  if (phoneSkipped(s)) return {};
+  // No voice provider (an old setup that skipped it): no voice key. The app (SINGLE_AGENCY) expects the owner's own key, pasted in Connections. Twilio from Connect more still goes along.
+  if (phoneSkipped(s)) return twilio;
   const telnyx = hasTelnyx(id, s);
   const vapi = useVapi(s) && hasSecret(id, "vapi_key");
   const out: Record<string, string> = {};

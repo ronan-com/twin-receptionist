@@ -64,6 +64,7 @@ const NAV_COPY: Record<string, { title: string; body: string }> = {
   "/admin/number-requests": { title: "Number Requests", body: "Ask for a new number for a client. When it is ready it appears under Phone Numbers." },
   "/admin/connections": { title: "Connections", body: "Link your phone account, calendars and email so receptionists can book and follow up." },
   "/admin/usage": { title: "Usage", body: "Minutes and activity for each client, so you always know what is being used." },
+  "/admin/tutorials": { title: "Tutorials", body: "Short how-tos for everything here, each with a button that takes you to the right page. You can take this tour again from there." },
   "/admin/settings": { title: "Settings", body: "Your team, your logo and brand colour, and your account. Branding here sets how clients see their dashboard." },
 };
 
@@ -74,7 +75,7 @@ export function buildTourSteps(navPaths: string[], withChecklist: boolean): Tour
     steps.push({ id: to, target: `nav:${to}`, ...NAV_COPY[to] });
     if (to === "/admin" && withChecklist) steps.push({ id: "checklist", target: "checklist", title: "Your Get started list", body: "A few things to do, ticked off for you as you go. Each one links to where you do it." });
   }
-  steps.push({ id: "help", target: "help", title: "Help is always here", body: "Open this menu to take the tour again, reopen the Get started list or contact us." });
+  steps.push({ id: "help", target: "help", title: "Help is always here", body: "Open this menu to take the tour again, find a tutorial, reopen the Get started list or contact us." });
   return steps;
 }
 

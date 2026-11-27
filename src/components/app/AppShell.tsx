@@ -1,6 +1,6 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { Link, useRouterState } from "@tanstack/react-router";
-import { Bell, Compass, HelpCircle, LifeBuoy, Menu, Rocket, Sparkles } from "lucide-react";
+import { Bell, Compass, GraduationCap, HelpCircle, LifeBuoy, Menu, Rocket, Sparkles } from "lucide-react";
 import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
@@ -118,6 +118,7 @@ export function AppShell({ nav, variant, brandTo, sidebarHeader, topbarRight, ba
   const support = useSupportUnread();
   // The agency console has a "Support requests" page (with the client inbox); the help menu links to it.
   const requestsPage = nav.find((n) => n.to === "/admin/support-requests")?.to;
+  const tutorialsPage = nav.find((n) => n.to === "/admin/tutorials")?.to;
   const canContact = Boolean(support.data?.canCreate || support.data?.mine.length || (requestsPage && support.data?.inbox.length));
   const getStarted = useGetStarted();
   const assistant = useAssistant();
@@ -208,8 +209,18 @@ export function AppShell({ nav, variant, brandTo, sidebarHeader, topbarRight, ba
                 </button>
               </PopoverTrigger>
               <PopoverContent align="end" className="w-72 text-[12.5px]">
-                {getStarted || assistant || canContact ? (
+                {getStarted || assistant || canContact || tutorialsPage ? (
                   <div className="mb-3 space-y-1 border-b border-hairline pb-3">
+                    {tutorialsPage ? (
+                      <Link
+                        to={tutorialsPage}
+                        data-action="open-tutorials"
+                        onClick={() => setHelpOpen(false)}
+                        className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left font-medium text-ink hover:bg-canvas-2"
+                      >
+                        <GraduationCap className="h-4 w-4 text-indigo" /> Tutorials
+                      </Link>
+                    ) : null}
                     {canContact ? (
                       <button
                         type="button"

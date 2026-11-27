@@ -1,6 +1,6 @@
 import { useState, type ReactNode } from "react";
 import { Link, useRouterState } from "@tanstack/react-router";
-import { ChevronLeft, HelpCircle, LifeBuoy } from "lucide-react";
+import { BookOpen, ChevronLeft, HelpCircle, LifeBuoy } from "lucide-react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
 import { CLIENT_BACKLINKS, type NavItem } from "@/lib/app/constants";
@@ -53,12 +53,20 @@ function HelpMenu({ className }: { className?: string }) {
         <PopoverContent align="end" className="w-72 text-[13px]">
           <div className="font-semibold text-ink">Need a hand?</div>
           <p className="mt-1 text-ink-muted">Contact {who} and they'll help you out. You can always change how your receptionist answers in Settings.</p>
+          <Link
+            to="/app/how-it-works"
+            data-action="how-it-works"
+            onClick={() => setOpen(false)}
+            className="mt-3 flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left font-medium text-ink hover:bg-canvas-2"
+          >
+            <BookOpen className="h-4 w-4 text-[var(--primary-ink)]" /> How it works
+          </Link>
           {canContact ? (
             <button
               type="button"
               data-action="contact-support"
               onClick={() => { setOpen(false); setSupportOpen(true); }}
-              className="mt-3 flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left font-medium text-ink hover:bg-canvas-2"
+              className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left font-medium text-ink hover:bg-canvas-2"
             >
               <LifeBuoy className="h-4 w-4 text-[var(--primary-ink)]" /> Contact support
               {support.unread ? <UnreadDot className="ml-auto" /> : null}

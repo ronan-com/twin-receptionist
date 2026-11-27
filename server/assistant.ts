@@ -1,4 +1,4 @@
-import { AUTOMATIONS, HOWTOS, PAGES, WIZARD, numbersFor, type PhoneMode } from "./assistantKnowledge";
+import { AUTOMATIONS, HOWTOS, PAGES, WIZARD, numbersFor, tutorialList, type PhoneMode } from "./assistantKnowledge";
 
 // The in-app help assistant for agency owners and admins: POST /api/assistant.
 // It answers with OpenRouter (OPENROUTER_API_KEY, OPENROUTER_MODEL), streaming the
@@ -162,7 +162,9 @@ ${WIZARD}
 
 ${AUTOMATIONS}
 
-${HOWTOS}`;
+${HOWTOS}
+
+${tutorialList(opts.phone, opts.singleAgency)}`;
 }
 
 export function buildContextPrompt(opts: { route: string; snapshot: AgencySnapshot | null }): string {

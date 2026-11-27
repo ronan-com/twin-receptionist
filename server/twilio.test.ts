@@ -1,9 +1,9 @@
 // Twilio as a phone-number source: connecting and checking an account, listing / searching / buying
 // numbers, importing one into Vapi for a receptionist, and sending a receptionist's texts through
-// Twilio. Nothing here calls Twilio, Vapi or a database: fetch is stubbed, and the credentials come
+// Twilio. Nothing here calls Twilio or Vapi: fetch is stubbed, and the credentials come
 // from the install's own TWILIO_* settings (the path with no org to look up).
-//   DATABASE_URL=postgres://unused@localhost/unused bun test server/twilio.test.ts
-import { afterAll, beforeEach, describe, expect, test } from "bun:test";
+//   DATABASE_URL=<scratch db> bun test server/twilio.test.ts   (sendSms reads sms_optouts, so it migrates)
+import { afterAll, beforeAll, beforeEach, describe, expect, test } from "bun:test";
 import { blankSettings, type Business } from "../src/lib/shared";
 
 const SID = "AC" + "a".repeat(32);
@@ -19,6 +19,12 @@ const { attachNumber } = await import("./voice/vapi");
 const { sendSms } = await import("./sms");
 const { smsNumberOf, statusFor, defaultAutomations } = await import("./automations");
 const { twilioAllowed } = await import("./phoneAccount");
+
+// sendSms checks the opt-out list first, so the scratch database needs its tables.
+beforeAll(async () => {
+  const { migrate } = await import("./db");
+  await migrate();
+}, 60000);
 
 const realFetch = globalThis.fetch;
 afterAll(() => {

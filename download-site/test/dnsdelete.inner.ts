@@ -1,6 +1,6 @@
-// The checks for dnsdelete.test.ts, run once with HOSTING=railway and once with HOSTING=digitalocean:
-// "Delete the project" / "Delete the server" take back the DNS records the install wrote (GoDaddy or Cloudflare),
-// and never one that was already there. On DigitalOcean, GoDaddy writes the server's A record like on Railway.
+// The checks for dnsdelete.test.ts:
+// "Delete the project" takes back the DNS records the install wrote (GoDaddy or Cloudflare),
+// and never one that was already there.
 // Small in-process fakes only: nothing real is called.
 import { afterAll, describe, expect, test } from "bun:test";
 import { mkdtempSync } from "node:fs";
@@ -51,38 +51,35 @@ const cf = Bun.serve({
   },
 });
 
-// ---- fake Railway (projectDelete) and DigitalOcean (droplet delete) ----
+// ---- fake Railway (projectDelete) ----
 const deleted: string[] = [];
 const rail = Bun.serve({ port: 0, hostname: "127.0.0.1", async fetch(req) { const { query } = (await req.json()) as any; if (/projectDelete/.test(query)) { deleted.push("project"); return Response.json({ data: { projectDelete: true } }); } return Response.json({ data: null, errors: [{ message: "unsupported" }] }); } });
-const doApi = Bun.serve({ port: 0, hostname: "127.0.0.1", fetch(req) { const m = new URL(req.url).pathname.match(/^\/v2\/droplets\/(\d+)$/); if (m && req.method === "DELETE") { deleted.push(`droplet ${m[1]}`); return new Response(null, { status: 204 }); } return Response.json({ id: "not_found" }, { status: 404 }); } });
 
 process.env.DATA_DIR = dir;
 process.env.SETUP_SECRET_KEY = Buffer.alloc(32, 5).toString("base64");
 process.env.SITE_URL = "http://localhost:4500";
 process.env.MOCK_RAILWAY = "1";
-process.env.MOCK_DO = "1"; // test mode: check on every tick
+process.env.MOCK_FAST = "1"; // test mode: check on every tick
 process.env.MOCK_TELNYX = "1";
 process.env.RAILWAY_API_BASE = `http://127.0.0.1:${rail.port}`;
-process.env.DO_API_BASE = `http://127.0.0.1:${doApi.port}`;
 process.env.CF_API_BASE = `http://127.0.0.1:${cf.port}/client/v4`;
 process.env.GODADDY_API_BASE = `http://127.0.0.1:${gd.port}`;
 process.env.DNS_SERVERS = "127.0.0.1:9"; // nothing answers: "not live yet", never the real resolvers
 for (const k of ["MOCK_CF", "MOCK_RESEND", "MOCK_OAUTH", "SITE_SMTP_URL", "SITE_MAIL_FROM"]) delete process.env[k];
 
-const { RAILWAY, addBuyer } = await import("../lib");
+const { addBuyer } = await import("../lib");
 const setup = await import("../setup");
-const { actions, kick } = setup;
+const { actions } = setup;
 const { getSetup, putSecret, updateSetup } = await import("../store");
 const { asAdmin } = await import("../ctx");
 const dnsm = await import("../dns");
 
-afterAll(() => { gd.stop(true); cf.stop(true); rail.stop(true); doApi.stop(true); });
+afterAll(() => { gd.stop(true); cf.stop(true); rail.stop(true); });
 const rec = (type: any, name: string, value: string, extra: any = {}) => ({ key: "k", purpose: "p", type, name, value, ttl: "Auto" as const, ...extra });
-async function until(id: number, fn: () => boolean, ms = 15_000) { const t0 = Date.now(); while (!fn() && Date.now() - t0 < ms) { kick(id); await Bun.sleep(100); } }
 // As our admin ("Set up for them"): skips the "finish the earlier steps first" ordering, so a test can jump to a step.
 const asUs = <T>(fn: () => Promise<T>) => asAdmin.run("boss@example.com", fn);
 
-describe(`DNS writers take back their own records (${RAILWAY ? "railway" : "digitalocean"})`, () => {
+describe("DNS writers take back their own records", () => {
   test("GoDaddy: remove() deletes the record it wrote, keeps others at the same name, and never one that was already there", async () => {
     gdRecords = [
       { type: "TXT", name: "app", data: "someone-elses-txt", ttl: 600 },
@@ -137,126 +134,46 @@ describe(`DNS writers take back their own records (${RAILWAY ? "railway" : "digi
   });
 });
 
-if (RAILWAY) {
-  describe("Railway: Delete the project", () => {
-    test("removes the app's GoDaddy records it wrote at Install, and keeps the rest of their DNS", async () => {
-      const b = addBuyer("Rail Delete", "raildel@example.com");
-      gdRecords = [{ type: "A", name: "@", data: "198.51.100.1", ttl: 600 }, { type: "MX", name: "@", data: "mail.example.com.au", ttl: 600, priority: 10 }];
-      putSecret(b.id, "railway_token", "railway-test-token-0001");
-      putSecret(b.id, "godaddy_key", "gd-key-0001"); putSecret(b.id, "godaddy_secret", "gd-secret-0001");
-      const w = dnsm.godaddyWriter("gd-key-0001", "gd-secret-0001", "example.com.au");
-      const recs = [rec("CNAME", "app.example.com.au", "x1y2.up.railway.app"), rec("TXT", "_railway-verify.app.example.com.au", "railway-verify=abc123")];
-      for (const r of recs) r.cfId = await w.ensure(r); // what tickRailCreate does
-      updateSetup(b.id, (s) => {
-        s.brand = { productName: "Rail Delete", ownerEmail: "o@example.com", ownPhoneAccount: true };
-        s.domain = { mode: "godaddy", zone: "example.com.au", sub: "app", host: "app.example.com.au", confirmed: true };
-        s.step = "install"; s.phase = "create_failed"; s.error = "Railway is having a problem.";
-        s.rw = { projectId: "prj-1", environmentId: "env-1", appId: "svc-app", records: recs, cfWritten: true };
-      });
-      expect(gdRecords).toHaveLength(4);
-      deleted.length = 0;
-      const out = await asUs(async () => actions["server-delete"](b, {}));
-      expect(out).toMatchObject({ kind: "ok" });
-      expect(deleted).toEqual(["project"]);
-      expect(gdRecords).toEqual([{ type: "A", name: "@", data: "198.51.100.1", ttl: 600 }, { type: "MX", name: "@", data: "mail.example.com.au", ttl: 600, priority: 10 }]);
-      expect(getSetup(b.id).rw).toBeUndefined();
-      expect(getSetup(b.id).phase).toBe("idle");
+describe("Railway: Delete the project", () => {
+  test("removes the app's GoDaddy records it wrote at Install, and keeps the rest of their DNS", async () => {
+    const b = addBuyer("Rail Delete", "raildel@example.com");
+    gdRecords = [{ type: "A", name: "@", data: "198.51.100.1", ttl: 600 }, { type: "MX", name: "@", data: "mail.example.com.au", ttl: 600, priority: 10 }];
+    putSecret(b.id, "railway_token", "railway-test-token-0001");
+    putSecret(b.id, "godaddy_key", "gd-key-0001"); putSecret(b.id, "godaddy_secret", "gd-secret-0001");
+    const w = dnsm.godaddyWriter("gd-key-0001", "gd-secret-0001", "example.com.au");
+    const recs = [rec("CNAME", "app.example.com.au", "x1y2.up.railway.app"), rec("TXT", "_railway-verify.app.example.com.au", "railway-verify=abc123")];
+    for (const r of recs) r.cfId = await w.ensure(r); // what tickRailCreate does
+    updateSetup(b.id, (s) => {
+      s.brand = { productName: "Rail Delete", ownerEmail: "o@example.com", ownPhoneAccount: true };
+      s.domain = { mode: "godaddy", zone: "example.com.au", sub: "app", host: "app.example.com.au", confirmed: true };
+      s.step = "install"; s.phase = "create_failed"; s.error = "Railway is having a problem.";
+      s.rw = { projectId: "prj-1", environmentId: "env-1", appId: "svc-app", records: recs, cfWritten: true };
     });
-
-    test("and the Cloudflare ones, as before", async () => {
-      const b = addBuyer("Rail Delete CF", "raildelcf@example.com");
-      cfRecords = [{ id: "keep-me", type: "A", name: "example.com", content: "198.51.100.1" }];
-      putSecret(b.id, "railway_token", "railway-test-token-0001");
-      putSecret(b.id, "cf_token", "cf-token-0001");
-      const w = dnsm.cloudflareWriter("cf-token-0001", "z1");
-      const recs = [rec("CNAME", "app.example.com", "x1y2.up.railway.app")];
-      for (const r of recs) r.cfId = await w.ensure(r);
-      updateSetup(b.id, (s) => {
-        s.brand = { productName: "Rail Delete CF", ownerEmail: "o@example.com", ownPhoneAccount: true };
-        s.domain = { mode: "cloudflare", zone: "example.com", sub: "app", host: "app.example.com", confirmed: true, cf: { zones: [], zoneId: "z1", status: "active" } };
-        s.step = "install"; s.phase = "create_failed";
-        s.rw = { projectId: "prj-2", environmentId: "env-1", appId: "svc-app", records: recs, cfWritten: true };
-      });
-      expect(await asUs(async () => actions["server-delete"](b, {}))).toMatchObject({ kind: "ok" });
-      expect(cfRecords.map((r) => r.id)).toEqual(["keep-me"]);
-    });
+    expect(gdRecords).toHaveLength(4);
+    deleted.length = 0;
+    const out = await asUs(async () => actions["server-delete"](b, {}));
+    expect(out).toMatchObject({ kind: "ok" });
+    expect(deleted).toEqual(["project"]);
+    expect(gdRecords).toEqual([{ type: "A", name: "@", data: "198.51.100.1", ttl: 600 }, { type: "MX", name: "@", data: "mail.example.com.au", ttl: 600, priority: 10 }]);
+    expect(getSetup(b.id).rw).toBeUndefined();
+    expect(getSetup(b.id).phase).toBe("idle");
   });
-} else {
-  describe("DigitalOcean: GoDaddy writes the server's record, and Delete the server takes it back", () => {
-    test("the Domain step takes GoDaddy (from our admin's panel): key checked, sealed, domain set", async () => {
-      const b = addBuyer("Do Gd", "dogd@example.com");
-      updateSetup(b.id, (s) => { s.brand = { productName: "Do Gd", ownerEmail: "o@example.com", ownPhoneAccount: true }; });
-      const bad = await asUs(async () => actions.domain(b, { domain: "example.com.au", mode: "godaddy", gdKey: "gd-key-0001", gdSecret: "wrong" }));
-      expect(bad).toMatchObject({ kind: "err" });
-      expect(String((bad as any).text)).toMatch(/didn't accept that key and secret/);
-      gdRecords = [];
-      const out = await asUs(async () => actions.domain(b, { domain: "example.com.au", mode: "godaddy", gdKey: "gd-key-0001", gdSecret: "gd-secret-0001" }));
-      expect(out).toBeNull();
-      expect(getSetup(b.id).domain).toMatchObject({ mode: "godaddy", zone: "example.com.au", host: "app.example.com.au", confirmed: true });
-      expect(JSON.stringify(getSetup(b.id))).not.toContain("gd-secret-0001");
-    });
 
-    test("an address already in use is refused unless replace is ticked", async () => {
-      const b = addBuyer("Do Gd Clash", "dogdclash@example.com");
-      updateSetup(b.id, (s) => { s.brand = { productName: "Do Gd Clash", ownerEmail: "o@example.com", ownPhoneAccount: true }; });
-      gdRecords = [{ type: "A", name: "app", data: "203.0.113.50", ttl: 600 }];
-      const out = await asUs(async () => actions.domain(b, { domain: "example.com.au", mode: "godaddy", gdKey: "gd-key-0001", gdSecret: "gd-secret-0001" }));
-      expect(String((out as any)?.text)).toMatch(/already points somewhere else/);
-      expect(await asUs(async () => actions.domain(b, { domain: "example.com.au", mode: "godaddy", gdKey: "gd-key-0001", gdSecret: "gd-secret-0001", replace: "1" }))).toBeNull();
-      expect(getSetup(b.id).domain?.replace).toBe(true);
+  test("and the Cloudflare ones, as before", async () => {
+    const b = addBuyer("Rail Delete CF", "raildelcf@example.com");
+    cfRecords = [{ id: "keep-me", type: "A", name: "example.com", content: "198.51.100.1" }];
+    putSecret(b.id, "railway_token", "railway-test-token-0001");
+    putSecret(b.id, "cf_token", "cf-token-0001");
+    const w = dnsm.cloudflareWriter("cf-token-0001", "z1");
+    const recs = [rec("CNAME", "app.example.com", "x1y2.up.railway.app")];
+    for (const r of recs) r.cfId = await w.ensure(r);
+    updateSetup(b.id, (s) => {
+      s.brand = { productName: "Rail Delete CF", ownerEmail: "o@example.com", ownPhoneAccount: true };
+      s.domain = { mode: "cloudflare", zone: "example.com", sub: "app", host: "app.example.com", confirmed: true, cf: { zones: [], zoneId: "z1", status: "active" } };
+      s.step = "install"; s.phase = "create_failed";
+      s.rw = { projectId: "prj-2", environmentId: "env-1", appId: "svc-app", records: recs, cfWritten: true };
     });
-
-    test("Install: the A record goes to GoDaddy; Delete the server removes it and nothing else", async () => {
-      const b = addBuyer("Do Gd Install", "dogdinst@example.com");
-      gdRecords = [{ type: "MX", name: "@", data: "mail.example.com.au", ttl: 600, priority: 10 }];
-      putSecret(b.id, "do_token", "do-token-0001");
-      putSecret(b.id, "godaddy_key", "gd-key-0001"); putSecret(b.id, "godaddy_secret", "gd-secret-0001");
-      updateSetup(b.id, (s) => {
-        s.brand = { productName: "Do Gd Install", ownerEmail: "o@example.com", ownPhoneAccount: true };
-        s.domain = { mode: "godaddy", zone: "example.com.au", sub: "app", host: "app.example.com.au", confirmed: true };
-        s.step = "install"; s.phase = "dns"; s.dropletId = 4242; s.ip = "203.0.113.77";
-        s.aRecord = { key: "a", purpose: "Your dashboard", type: "A", name: "app.example.com.au", value: "203.0.113.77", ttl: 300 };
-      });
-      await until(b.id, () => !!getSetup(b.id).aRecord?.cfId || getSetup(b.id).phase === "create_failed");
-      const s = getSetup(b.id);
-      expect(s.error).toBeUndefined();
-      expect(s.aRecord?.cfId).toBe("app/A");
-      expect(s.progress?.at(-1)).toBe("Pointed app.example.com.au at your server in GoDaddy");
-      expect(gdRecords).toContainEqual({ type: "A", name: "app", data: "203.0.113.77", ttl: 600 });
-
-      deleted.length = 0;
-      const out = await asUs(async () => actions["server-delete"](b, {}));
-      expect(out).toMatchObject({ kind: "ok" });
-      expect(deleted).toEqual(["droplet 4242"]);
-      expect(gdRecords).toEqual([{ type: "MX", name: "@", data: "mail.example.com.au", ttl: 600, priority: 10 }]);
-      expect(getSetup(b.id).aRecord).toBeUndefined();
-    });
-
-    test("a fresh DigitalOcean install starts with Support access on, like Railway", () => {
-      const b = addBuyer("Do Support", "dosupport@example.com");
-      putSecret(b.id, "telnyx_key", "platform-fake-0001");
-      const s = updateSetup(b.id, (s) => {
-        s.brand = { productName: "Do Support", ownerEmail: "o@example.com", ownPhoneAccount: true };
-        s.domain = { mode: "manual", zone: "example.com.au", sub: "app", host: "app.example.com.au", confirmed: true };
-        s.email = { mode: "smtp", from: "Do Support <hello@example.com.au>", address: "hello@example.com.au", smtp: { host: "smtp.example.com", port: 587, user: "u" } };
-      });
-      const env = setup.buildSettings(b.id, s);
-      expect(env).toMatch(/^SUPPORT_ACCESS_DEFAULT=["']?on["']?$/m);
-      expect(env).toMatch(/^SUPPORT_SYNC_TOKEN=/m);
-    });
-
-    test("no GoDaddy key held at Install: a plain failure, nothing written", async () => {
-      const b = addBuyer("Do Gd Nokey", "dogdnokey@example.com");
-      gdRecords = []; gdCalls.length = 0;
-      updateSetup(b.id, (s) => {
-        s.brand = { productName: "Do Gd Nokey", ownerEmail: "o@example.com", ownPhoneAccount: true };
-        s.domain = { mode: "godaddy", zone: "example.com.au", sub: "app", host: "app.example.com.au", confirmed: true };
-        s.step = "install"; s.phase = "dns"; s.dropletId = 4343;
-        s.aRecord = { key: "a", purpose: "Your dashboard", type: "A", name: "app.example.com.au", value: "203.0.113.78", ttl: 300 };
-      });
-      await until(b.id, () => getSetup(b.id).phase === "create_failed");
-      expect(getSetup(b.id).error).toMatch(/GoDaddy key is missing.*delete the server and start again/);
-      expect(gdCalls).toHaveLength(0);
-    });
+    expect(await asUs(async () => actions["server-delete"](b, {}))).toMatchObject({ kind: "ok" });
+    expect(cfRecords.map((r) => r.id)).toEqual(["keep-me"]);
   });
-}
+});

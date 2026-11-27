@@ -1,23 +1,19 @@
 // The wizard's engine: one state machine per buyer, kept in SQLite, so any number of
 // buyers can be part-way through at once and a closed tab (or a restarted site) loses nothing.
 //   actions   one function per form the buyer can submit
-//   tick()    background work (create the droplet, write DNS, watch DNS, watch Resend)
-//   p*()      the endpoints the buyer's new server calls (it calls us; we never call it)
+//   tick()    background work (build on Railway, add the custom domain, watch DNS, watch Resend)
 import { randomBytes } from "node:crypto";
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
-import { CONFIG, PACKAGES_DIR, RAILWAY, currentPackage, db, listPackages, now, slug, type Buyer } from "./lib";
+import { CONFIG, currentPackage, db, listPackages, now, type Buyer } from "./lib";
 import {
-  DEFAULT_REGION, DEFAULT_SIZE, ProviderError, cfCanEdit, cfEnsure, cfFindZone, cfRecords, cfZone, checkCloudflare,
-  checkDigitalOcean, checkGoogle, checkMicrosoft, checkRailway, checkResend, checkOpenRouter, checkSmtp, checkTelnyx, checkTwilio, checkVapi, listTelnyxNumbers, doApi, lookup, normalizeDomain,
+  ProviderError, cfCanEdit, cfEnsure, cfFindZone, cfRecords, cfZone, checkCloudflare,
+  checkGoogle, checkMicrosoft, checkRailway, checkResend, checkOpenRouter, checkSmtp, checkTelnyx, checkTwilio, checkVapi, listTelnyxNumbers, lookup, normalizeDomain,
   RAILWAY_API, RAILWAY_TOKEN_MSG, publicSmtpAddress, railway, railwayUpload, recordLive, resendDomain, resendSend, resendSendingKey, resendStatus, resendVerify, smtpSend, smtpUrl,
 } from "./providers";
 import {
-  STEPS, OPTIONAL_HUB, isOptional, buyerByAttemptToken, buyerByDropletToken, deleteAllSecrets, getSecret, getSetup, hasSecret, logAppend, logBytes,
-  logClear, logRead, newToken, putSecret, redact, saveSetup, secretValues, setAttemptToken, setDropletToken, updateSetup,
+  STEPS, OPTIONAL_HUB, isOptional, deleteAllSecrets, getSecret, getSetup, hasSecret,
+  logAppend, logClear, logRead, putSecret, redact, saveSetup, secretValues, updateSetup,
   activeSetups, deleteSecret, staleSecretBuyers, type DnsRecord, type SetupData, type StepId,
 } from "./store";
-import { USER_DATA_LIMIT, buildEnv, buildUserData } from "./userdata";
 import { SYNC_URL, latestSnapshot, newSyncToken } from "./sync";
 import { brokerOn } from "./broker";
 import { appSource } from "./releases";
@@ -30,7 +26,7 @@ const MIN = 60_000;
 const ago = (iso?: string) => (iso ? Date.now() - Date.parse(iso) : Infinity);
 const str = (v: unknown, max = 500) => (typeof v === "string" ? v.trim().slice(0, max) : "");
 const isEmail = (v: string) => /^[^\s@<>"]+@[^\s@<>"]+\.[^\s@<>"]+$/.test(v) && v.length <= 200;
-const LOGO_MAX = 30_000; // characters of PNG data URL: it rides along as one setting (a DigitalOcean server's settings are capped at 64 KB)
+const LOGO_MAX = 30_000; // characters of PNG data URL: it rides along as one setting (the settings ride along as one variable)
 const pngBytes = (dataUrl: string) => { try { const b = Buffer.from(dataUrl.slice(dataUrl.indexOf(",") + 1), "base64"); return b.length > 8 && b[0] === 0x89 && b[1] === 0x50 && b[2] === 0x4e && b[3] === 0x47; } catch { return false; } };
 const errMsg = (e: unknown) => (e instanceof ProviderError ? e.message : "Something went wrong on our side. Try again in a minute.");
 const safeLog = (where: string, e: unknown) => console.error(`[setup] ${where}: ${e instanceof ProviderError ? `provider error ${e.status} ${e.code}` : (e as Error)?.name || "error"}`);
@@ -68,10 +64,9 @@ export function stepDone(b: Buyer, s: SetupData, id: StepId): boolean {
     case "welcome": return s.step !== "welcome" || !!s.brand;
     case "brand": return !!s.brand;
     case "domain": return (!!s.domain?.confirmed && !!s.domain.host) || !!s.skipped?.domain;
-    case "server": return !!s.server?.chosen && (b.demo === 1 || hasSecret(b.id, "do_token") || s.phase !== "idle");
     case "railway": return !!s.railway?.confirmed && (b.demo === 1 || hasSecret(b.id, "railway_token") || s.phase !== "idle");
     // Voice is required on Railway: a Telnyx or Vapi key that passed its check (or an install already under way). "Not now" is not a way through.
-    case "phones": return !!s.phones?.confirmed || (!RAILWAY && !!s.phones?.deferred) || !!s.vapi?.confirmed || s.phase !== "idle";
+    case "phones": return !!s.phones?.confirmed || !!s.vapi?.confirmed || s.phase !== "idle";
     case "vapi": return !!s.vapi?.confirmed || !!s.skipped?.vapi;
     case "twilio": return !!s.twilio?.confirmed || !!s.skipped?.twilio;
     case "email": return !!s.email?.confirmed || !!s.skipped?.email;
@@ -120,7 +115,7 @@ export type Action = (b: Buyer, f: Form) => Promise<Flash | null> | Flash | null
 
 /** Email through Resend and calendar sign-in both need the buyer's own domain. Nothing else does. */
 function extrasProblem(b: Buyer, s: SetupData): string | null {
-  if (!RAILWAY || hostOf(s) || b.demo === 1) return null;
+  if (hostOf(s) || b.demo === 1) return null;
   if (s.email?.mode === "resend" && s.email.confirmed) return "Email through Resend sends from your own domain, so add your domain too, or skip Email for now.";
   if (s.calendars?.google || s.calendars?.microsoft) return "Calendar sign-in needs your own domain, so add your domain too, or skip Calendars for now.";
   return null;
@@ -129,7 +124,7 @@ function extrasProblem(b: Buyer, s: SetupData): string | null {
 /** Telnyx is needed, unless the buyer switched to Vapi in the backup options. */
 function phonesProblem(b: Buyer, s: SetupData): string | null {
   if (s.phones?.confirmed || s.vapi?.confirmed) return null;
-  return RAILWAY ? "Choose a voice provider first: connect Telnyx or Vapi on the Voice step." : "Telnyx is needed for your phones. Go back to Phones and add your Telnyx key, or Vapi + Twilio.";
+  return "Choose a voice provider first: connect Telnyx or Vapi on the Voice step.";
 }
 
 const LOCKED_MSG = "Your server has already been made with these settings. To change them, delete the server on the Install step first.";
@@ -249,53 +244,7 @@ export const actions: Record<string, Action> = {
   // ---- Domain: type it, choose who handles DNS, (Cloudflare) paste a token ----
   async domain(b, f) {
     const g = guard(b, "domain"); if (g) return g;
-    if (RAILWAY) return domainRailway(b, f);
-    const s = getSetup(b.id);
-    const domain = normalizeDomain(str(f.domain, 253) || s.domain?.zone || "");
-    const mode = f.mode === "manual" ? "manual" : f.mode === "godaddy" ? "godaddy" : "cloudflare";
-    if (!domain) return err("Type your domain, like yourcompany.com.", f);
-    const sub = "app";
-    const resetEmail = (s: SetupData) => { if ((s.domain?.zone !== domain || s.domain?.mode !== mode) && s.email) { delete s.email.resend; s.email.confirmed = false; s.email.checked = false; } };
-    if (mode === "manual") {
-      deleteSecret(b.id, "cf_token"); deleteSecret(b.id, "godaddy_key"); deleteSecret(b.id, "godaddy_secret");
-      updateSetup(b.id, (s) => { resetEmail(s); s.domain = { mode: "manual", zone: domain, sub, host: `${sub}.${domain}`, confirmed: true }; nextStep(b, s, "domain"); });
-      return null;
-    }
-    if (mode === "godaddy") {
-      // GoDaddy's DNS API (key + secret), as on Railway: checked now; the server's A record is written at Install (tickDns).
-      const gk = str(f.gdKey, 200) || (s.domain?.mode === "godaddy" ? getSecret(b.id, "godaddy_key") : null) || "";
-      const gs = str(f.gdSecret, 200) || (s.domain?.mode === "godaddy" ? getSecret(b.id, "godaddy_secret") : null) || "";
-      if (!gk || !gs) return err("Paste your GoDaddy API key and secret.", { domain, mode });
-      const wait = checkLimit(b); if (wait) return tooMany(wait);
-      const r = await checkGoDaddy(gk, gs, domain);
-      if (!r.ok) return err(r.message, { domain, mode });
-      const replace = f.replace === "1" || (s.domain?.mode === "godaddy" && !!s.domain.replace);
-      const host = `${sub}.${r.zone}`;
-      try {
-        const existing = await godaddyExisting(gk, gs, r.zone, host);
-        if (existing && !replace) return err(`${host} already points somewhere else (${existing}). Tick "Replace it" to point it at the new server.`, { domain, mode });
-      } catch (e) { safeLog("godaddy", e); return err(errMsg(e), { domain, mode }); }
-      deleteSecret(b.id, "cf_token");
-      putSecret(b.id, "godaddy_key", gk); putSecret(b.id, "godaddy_secret", gs);
-      updateSetup(b.id, (s) => { resetEmail(s); s.domain = { mode: "godaddy", zone: r.zone, sub, host, replace, confirmed: true }; nextStep(b, s, "domain"); });
-      return null;
-    }
-    const token = str(f.token, 300) || (s.domain?.mode === "cloudflare" ? getSecret(b.id, "cf_token") : null) || "";
-    if (!token) return err("Paste your Cloudflare token.", { domain, mode });
-    const wait = checkLimit(b); if (wait) return tooMany(wait);
-    const r = await checkCloudflare(token);
-    if (!r.ok) return err(r.message, { domain, mode });
-    const zone = await cfFindZone(token, domain).catch(() => null);
-    if (!zone) return err(`This token can't see ${domain}. Add it to Cloudflare first, or make the token for it.`, { domain, mode });
-    putSecret(b.id, "cf_token", token);
-    updateSetup(b.id, (s) => { resetEmail(s); s.domain = { mode: "cloudflare", zone: zone.name, sub, cf: { zones: [zone], replace: f.replace === "1" || (s.domain?.cf?.zoneId === zone.id && !!s.domain.cf.replace) } }; });
-    const res = await applyZone(b.id, zone.id, sub, f.replace === "1" || !!getSetup(b.id).domain?.cf?.replace);
-    const d = getSetup(b.id).domain!;
-    if (d.cf?.status === "active" && d.cf.canEdit && (!d.cf.existing || d.cf.replace)) {
-      updateSetup(b.id, (s) => { s.domain!.confirmed = true; nextStep(b, s, "domain"); });
-      return null;
-    }
-    return res && res.kind === "err" ? res : null;
+    return domainRailway(b, f);
   },
   "domain-continue"(b) {
     const g = guard(b, "domain"); if (g) return g;
@@ -306,7 +255,7 @@ export const actions: Record<string, Action> = {
   },
   "domain-edit"(b) {
     const g = guard(b, "domain"); if (g) return g;
-    updateSetup(b.id, (s) => { if (s.domain) { s.domain.confirmed = false; if (RAILWAY && s.domain.mode === "manual") delete s.domain.host; if (s.domain.cf) s.domain.cf = { zones: s.domain.cf.zones }; } });
+    updateSetup(b.id, (s) => { if (s.domain) { s.domain.confirmed = false; if (s.domain.mode === "manual") delete s.domain.host; if (s.domain.cf) s.domain.cf = { zones: s.domain.cf.zones }; } });
     return null;
   },
   async "cf-recheck"(b) {
@@ -315,28 +264,6 @@ export const actions: Record<string, Action> = {
     const s = getSetup(b.id);
     if (!s.domain?.cf?.zoneId) return err("Type your domain first.");
     return applyZone(b.id, s.domain.cf.zoneId, s.domain.sub, !!s.domain.cf.replace);
-  },
-
-  // ---- Server (DigitalOcean): token + where + size, one button ----
-  async server(b, f) {
-    const g = guard(b, "server"); if (g) return g;
-    const s0 = getSetup(b.id);
-    const token = str(f.token, 300) || getSecret(b.id, "do_token") || "";
-    if (!token) return err("Paste your DigitalOcean token.", f);
-    const key = str(f.sshPublicKey, 4000).replace(/\s+/g, " ");
-    if (key && !/^(ssh-ed25519|ssh-rsa|ecdsa-sha2-nistp(256|384|521)) [A-Za-z0-9+/]+=*( [^\s]{0,100})?$/.test(key)) return err("That SSH key doesn't look right: paste the one line from your .pub file.", f);
-    const wait = checkLimit(b); if (wait) return tooMany(wait);
-    const r = await checkDigitalOcean(token);
-    if (!r.ok) return err(r.message, f);
-    putSecret(b.id, "do_token", token);
-    const region = r.regions.find((x) => x.slug === (f.region || s0.server?.region || DEFAULT_REGION)) || r.regions.find((x) => x.slug === DEFAULT_REGION) || r.regions[0];
-    const size = r.sizes.find((x) => x.slug === (f.size || s0.server?.size || DEFAULT_SIZE)) || r.sizes.find((x) => x.slug === DEFAULT_SIZE) || r.sizes[0];
-    const fits = !size.regions.length || size.regions.includes(region.slug);
-    updateSetup(b.id, (s) => {
-      s.server = { accountEmail: r.accountEmail, regions: r.regions, sizes: r.sizes, region: region.slug, size: size.slug, price: size.price, sshPublicKey: key || undefined, chosen: fits };
-      if (fits) nextStep(b, s, "server");
-    });
-    return fits ? null : err("That size isn't offered in that location. Pick another.", f);
   },
 
   // ---- Railway: "Login with Railway" (oauthComplete), or an account token; we check it and the plan ----
@@ -359,7 +286,7 @@ export const actions: Record<string, Action> = {
   // No Telnyx account yet: go on to the backup options (Vapi) instead. Install still needs one of the two.
   "phones-backup"(b) {
     const g = guard(b, "phones"); if (g) return g;
-    updateSetup(b.id, (s) => { s.phones = { ...s.phones, deferred: true }; s.step = RAILWAY ? "phones" : OPTIONAL_HUB; });
+    updateSetup(b.id, (s) => { s.phones = { ...s.phones, deferred: true }; s.step = "phones"; });
     return null;
   },
 
@@ -495,7 +422,7 @@ export const actions: Record<string, Action> = {
   async email(b, f) {
     const g = guard(b, "email"); if (g) return g;
     const s = getSetup(b.id);
-    if (RAILWAY && !s.domain?.confirmed) return emailBeforeDomain(b, f);
+    if (!s.domain?.confirmed) return emailBeforeDomain(b, f);
     const zone = zoneOf(s);
     const key = str(f.key, 300) || getSecret(b.id, "resend_key") || "";
     const address = (str(f.address, 200) || `hello@mail.${zone}`).toLowerCase();
@@ -654,10 +581,10 @@ export const actions: Record<string, Action> = {
     const missing = STEPS.slice(0, STEPS.indexOf("install")).find((id) => id !== "extras" && !isOptional(id) && !stepDone(b, s, id));
     if (missing) return err("Finish the earlier steps first.");
     const p = phonesProblem(b, s) || extrasProblem(b, s); if (p) return err(p);
-    if (RAILWAY ? !hasSecret(b.id, "railway_token") : !hasSecret(b.id, "do_token")) return err(RAILWAY ? "Your Railway token is missing. Go back to the Railway step and check it again." : "Your DigitalOcean token is missing. Go back to the Server step and check it again.");
+    if (!hasSecret(b.id, "railway_token")) return err("Your Railway token is missing. Go back to the Railway step and check it again.");
     if (!currentPackage()) return err("The app isn't ready to install yet. Please try again later.");
     const wait = allow(`install:${b.id}`, 6, 10 * MIN); if (wait) return tooMany(wait);
-    updateSetup(b.id, (s) => { s.phase = "creating"; s.error = undefined; if (!s.dropletId && !s.rw?.projectId) s.progress = []; s.step = "install"; });
+    updateSetup(b.id, (s) => { s.phase = "creating"; s.error = undefined; if (!s.rw?.projectId) s.progress = []; s.step = "install"; });
     kick(b.id);
     return null;
   },
@@ -665,53 +592,24 @@ export const actions: Record<string, Action> = {
   "install-finish"(b) {
     const g = guard(b, "install"); if (g) return g;
     const s = getSetup(b.id);
-    if (!RAILWAY || s.phase !== "domain" || !hostOf(s)) return null;
+    if (s.phase !== "domain" || !hostOf(s)) return null;
     if (busy.has(b.id)) return err("One moment: we're still checking. Try again in a few seconds.");
     finish(b.id, `https://${hostOf(s)}`);
     return null;
-  },
-  "dns-skip"(b) {
-    const g = guard(b, "install"); if (g) return g;
-    const s = getSetup(b.id);
-    if (s.phase !== "dns") return null;
-    if ((s.dnsChecks || 0) < 3) return err("Give it a minute: we're still checking.");
-    updateSetup(b.id, (s) => { s.dnsSkipped = true; startAttempt(s); });
-    return { kind: "info", text: "Starting the install. If your address still doesn't point at the server, the install will stop and tell you, and you can try again." };
   },
   "install-retry"(b) {
     const g = guard(b, "install"); if (g) return g;
     const s = getSetup(b.id);
     if (s.phase !== "failed") return null;
     const wait = allow(`install:${b.id}`, 6, 10 * MIN); if (wait) return tooMany(wait);
-    if (RAILWAY) {
-      // Same project, database and settings: send the app again for a fresh build.
-      updateSetup(b.id, (s) => { s.phase = "creating"; s.error = undefined; s.attempt = (s.attempt || 1) + 1; if (s.rw) { delete s.rw.deploymentId; delete s.rw.deployStatus; } });
-      kick(b.id);
-      return { kind: "info", text: "Building the app again in the same Railway project." };
-    }
-    if (ago(s.lastSeenAt) > 3 * MIN) return err("Your server stopped checking in, so it can't try again. Delete it, then press Install.");
-    updateSetup(b.id, (s) => { startAttempt(s); s.error = undefined; });
-    return { kind: "info", text: "Trying the install again on the same server." };
+    // Same project, database and settings: send the app again for a fresh build.
+    updateSetup(b.id, (s) => { s.phase = "creating"; s.error = undefined; s.attempt = (s.attempt || 1) + 1; if (s.rw) { delete s.rw.deploymentId; delete s.rw.deployStatus; } });
+    kick(b.id);
+    return { kind: "info", text: "Building the app again in the same Railway project." };
   },
   async "server-delete"(b) {
     const g = guard(b, "install"); if (g) return g;
-    if (RAILWAY) return deleteRailwayProject(b);
-    const s = getSetup(b.id);
-    const token = getSecret(b.id, "do_token");
-    if (!token) return err("We no longer hold your DigitalOcean token: delete the server in DigitalOcean, under Droplets.");
-    if (busy.has(b.id)) return err("One moment: we're still working on your server. Try again in a few seconds.");
-    busy.add(b.id);
-    try {
-      if (s.dropletId) await doApi(token, "DELETE", `/v2/droplets/${s.dropletId}`).catch((e) => { if (!(e instanceof ProviderError && e.status === 404)) throw e; });
-      // The A record we wrote (Cloudflare or GoDaddy). Best effort: the server is already gone.
-      if (s.aRecord?.cfId) await writerFor(b.id, s)?.remove(s.aRecord).catch((e) => safeLog("dns delete", e));
-    } catch (e) { return err(errMsg(e)); } finally { busy.delete(b.id); }
-    setDropletToken(b.id, null); setAttemptToken(b.id, null); logClear(b.id);
-    updateSetup(b.id, (s) => {
-      for (const k of ["dropletId", "ip", "aRecord", "dnsChecks", "dnsSkipped", "attempt", "attemptIssuedAt", "bundleFetches", "lastSeenAt", "lastLogAt", "installStep", "error", "serverCreatedAt", "pendingAttempt"] as const) delete (s as any)[k];
-      s.phase = "idle"; s.progress = [];
-    });
-    return ok("Server deleted. Press Install to make a new one.");
+    return deleteRailwayProject(b);
   },
 };
 
@@ -725,11 +623,6 @@ const demoActions: Record<string, Action> = {
   railway(b) {
     const g = guard(b, "railway"); if (g) return g;
     updateSetup(b.id, (s) => { s.railway = { email: s.brand?.ownerEmail, workspaceName: "Test workspace", plan: "hobby", confirmed: true }; nextStep(b, s, "railway"); });
-    return null;
-  },
-  server(b) {
-    const g = guard(b, "server"); if (g) return g;
-    updateSetup(b.id, (s) => { s.server = { region: DEFAULT_REGION, size: DEFAULT_SIZE, price: 18, chosen: true }; nextStep(b, s, "server"); });
     return null;
   },
   phones(b) {
@@ -852,13 +745,6 @@ async function applyZone(id: number, zoneId: string, sub: string, replace: boole
   } catch (e) { return err(errMsg(e)); }
 }
 
-function startAttempt(s: SetupData) {
-  s.phase = "starting";
-  s.pendingAttempt = (s.attempt || 0) + 1;
-  s.lastLogAt = undefined;
-  s.installStep = undefined;
-}
-
 // ======================= background work =======================
 const busy = new Set<number>();
 const lastRun = new Map<string, number>();
@@ -868,7 +754,7 @@ const due = (key: string, everyMs: number) => {
   lastRun.set(key, t);
   return true;
 };
-const fast = CONFIG.mockDO; // the fakes answer instantly, so check more often in test mode
+const fast = CONFIG.mockFast; // the fakes answer instantly, so check more often in test mode
 
 /** Run this buyer's background step now (e.g. right after they click Install). */
 export function kick(buyerId: number) { lastRun.delete(`do:${buyerId}`); void tickOne(buyerId); }
@@ -899,17 +785,14 @@ async function tickOne(id: number) {
   const wantsEmail = s.email?.mode === "resend" && s.email.resend && s.email.resend.status !== "verified" && !!s.email.resend.records?.length && hasSecret(id, "resend_key");
   const wantsDomain = s.step === "domain" && s.domain?.mode === "cloudflare" && s.domain.cf?.zoneId && ["pending", "initializing"].includes(s.domain.cf.status || "");
   const updating = s.update?.phase === "running";
-  if (!["creating", "dns", "starting", "installing", "deploying", "domain"].includes(s.phase) && !wantsEmail && !wantsDomain && !updating) return;
+  if (!["creating", "deploying", "domain"].includes(s.phase) && !wantsEmail && !wantsDomain && !updating) return;
   busy.add(id);
   try {
     if (updating) await tickUpdate(id);
     else if (isDemoBuyer(id)) { if (["creating", "deploying"].includes(s.phase)) await tickDemoInstall(id); }
-    else if (RAILWAY && s.phase === "creating") await tickRailCreate(id);
+    else if (s.phase === "creating") await tickRailCreate(id);
     else if (s.phase === "deploying") await tickRailDeploy(id);
     else if (s.phase === "domain") await tickRailDomain(id);
-    else if (s.phase === "creating") await tickCreate(id);
-    else if (s.phase === "dns") await tickDns(id);
-    else if (s.phase === "starting" || s.phase === "installing") tickWatch(id);
     if (wantsEmail) await checkEmailDns(id, false);
     if (wantsDomain) await tickZone(id);
   } catch (e) {
@@ -1027,125 +910,6 @@ function supportSettings(id: number): Record<string, string> {
   return { SUPPORT_SYNC_URL: SYNC_URL(), SUPPORT_SYNC_TOKEN: token, SUPPORT_CALL_TOKEN: callToken, SUPPORT_SELLER_NAME: CONFIG.sellerName, APP_VERSION: currentPackage()?.version || "", ...(brokerOn() ? { OAUTH_BROKER: "1" } : {}) };
 }
 
-export function buildSettings(id: number, s: SetupData): string {
-  const resendKey = getSecret(id, "resend_key");
-  const smtp = s.email?.mode === "resend" ? `smtp://resend:${resendKey}@smtp.resend.com:2587` : smtpUrl(s.email!.smtp!.host, s.email!.smtp!.port, s.email!.smtp!.user, getSecret(id, "smtp_password") || "");
-  return buildEnv({
-    PRODUCT_NAME: s.brand!.productName,
-    DOMAIN: hostOf(s),
-    FIRST_ADMIN_EMAIL: s.brand!.ownerEmail,
-    ...firstRunSettings(id, s),
-    ...phoneSettings(id, s),
-    ...brandSettings(s),
-    ...supportSettings(id),
-    ...(getSecret(id, "openrouter_key") ? { OPENROUTER_API_KEY: getSecret(id, "openrouter_key")! } : {}),
-    // Fresh installs only (a droplet is made once): Support access starts ON, as on Railway. The owner can switch it off.
-    SUPPORT_ACCESS_DEFAULT: "on",
-    OWN_PHONE_ACCOUNT: "", // the buyer is the agency: every client runs on their Telnyx key
-    SMTP_URL: smtp,
-    MAIL_FROM: s.email!.from || "",
-    GOOGLE_CLIENT_ID: s.calendars?.google?.clientId || "",
-    GOOGLE_CLIENT_SECRET: s.calendars?.google ? getSecret(id, "google_secret") || "" : "",
-    MICROSOFT_CLIENT_ID: s.calendars?.microsoft?.clientId || "",
-    MICROSOFT_CLIENT_SECRET: s.calendars?.microsoft ? getSecret(id, "microsoft_secret") || "" : "",
-  });
-}
-
-async function tickCreate(id: number) {
-  let s = getSetup(id);
-  const token = getSecret(id, "do_token");
-  if (!token) return fail(id, "create_failed", "Your DigitalOcean token is missing. Go back to the Server step and check it again.");
-  try {
-    if (!s.dropletId) {
-      let sshKeys: number[] = [];
-      if (s.server?.sshPublicKey && !s.sshKeyAdded) {
-        progress(id, "Adding your SSH key to DigitalOcean");
-        try {
-          const r = await doApi(token, "POST", "/v2/account/keys", { name: `${slug(s.brand!.productName)} owner key`, public_key: s.server.sshPublicKey });
-          sshKeys = [r.ssh_key.id];
-        } catch (e) {
-          if (!(e instanceof ProviderError && e.status === 422)) throw e;
-          const all = await doApi(token, "GET", "/v2/account/keys?per_page=200");
-          const k = (all.ssh_keys || []).find((k: any) => String(k.public_key).trim().split(" ").slice(0, 2).join(" ") === s.server!.sshPublicKey!.split(" ").slice(0, 2).join(" "));
-          if (!k) throw e;
-          sshKeys = [k.id];
-        }
-      }
-      const dtok = newToken("d");
-      const userData = buildUserData({ dropletToken: dtok, env: buildSettings(id, s), productName: s.brand!.productName, testMode: CONFIG.mockDO });
-      if (Buffer.byteLength(userData) > USER_DATA_LIMIT) return fail(id, "create_failed", "Your settings are too long to send to DigitalOcean (64 KB limit).");
-      progress(id, `Creating your server in DigitalOcean (${s.server!.size}, ${s.server!.regions?.find((r) => r.slug === s.server!.region)?.name || s.server!.region})`);
-      setDropletToken(id, dtok);
-      const r = await doApi(token, "POST", "/v2/droplets", {
-        name: `${slug(s.brand!.productName)}-server`.replace(/[^a-z0-9.-]/g, "-").slice(0, 60),
-        region: s.server!.region, size: s.server!.size, image: "ubuntu-24-04-x64",
-        ssh_keys: sshKeys, tags: ["receptionist"], monitoring: true, ipv6: false, backups: false, user_data: userData,
-      });
-      updateSetup(id, (s) => { s.dropletId = r.droplet.id; s.serverCreatedAt = now(); s.sshKeyAdded = sshKeys.length > 0; });
-      progress(id, "Waiting for DigitalOcean to switch it on (usually about a minute)");
-      return;
-    }
-    if (!due(`do-poll:${id}`, fast ? 1000 : 5000)) return;
-    let d: any;
-    try {
-      d = (await doApi(token, "GET", `/v2/droplets/${s.dropletId}`)).droplet;
-    } catch (e) {
-      if (e instanceof ProviderError && e.status === 404) {
-        updateSetup(id, (s) => { delete s.dropletId; s.progress = [...(s.progress || []), "The server we made earlier is gone, so we'll make a new one"]; });
-        return;
-      }
-      throw e;
-    }
-    const ip = d?.networks?.v4?.find((n: any) => n.type === "public")?.ip_address;
-    if (d.status === "errored") return fail(id, "create_failed", "DigitalOcean couldn't start the server. Delete it and try again, or pick another region.");
-    if (d.status !== "active" || !ip) {
-      if (ago(s.serverCreatedAt) > 15 * MIN) return fail(id, "create_failed", "DigitalOcean is taking unusually long to start your server. Wait a few minutes and press Try again, or delete it.");
-      return;
-    }
-    s = updateSetup(id, (s) => {
-      s.ip = ip;
-      s.aRecord = { key: "a", purpose: "Your dashboard", type: "A", name: hostOf(s), value: ip, ttl: s.domain?.mode === "cloudflare" ? "Auto" : 300 };
-      s.phase = "dns"; s.dnsChecks = 0;
-      s.progress = [...(s.progress || []), `Your server is on, at ${ip}`];
-    });
-  } catch (e) {
-    safeLog("create", e);
-    fail(id, "create_failed", errMsg(e));
-  }
-}
-
-async function tickDns(id: number) {
-  const s = getSetup(id);
-  if ((s.domain?.mode === "cloudflare" || s.domain?.mode === "godaddy") && !s.aRecord?.cfId) {
-    const writer = writerFor(id, s);
-    const name = s.domain.mode === "godaddy" ? "GoDaddy" : "Cloudflare";
-    if (!writer) return fail(id, "create_failed", `${dnsKeyMissing(s).replace(/\.$/, "")}, then delete the server and start again.`);
-    try {
-      const cfId = await writer.ensure(s.aRecord!);
-      updateSetup(id, (s) => { s.aRecord!.cfId = cfId; s.progress = [...(s.progress || []), `Pointed ${hostOf(s)} at your server in ${name}`]; });
-    } catch (e) {
-      safeLog("dns A", e);
-      return fail(id, "create_failed", `We couldn't add the DNS record in ${name}: ${errMsg(e)}`);
-    }
-    return;
-  }
-  if (!due(`dns:${id}`, fast ? 1500 : 10_000)) return;
-  const live = await recordLive(s.aRecord!, zoneOf(s));
-  updateSetup(id, (s) => {
-    s.dnsChecks = (s.dnsChecks || 0) + 1;
-    s.aRecord!.ok = live.ok; s.aRecord!.seen = live.seen;
-    if (live.ok) { s.progress = [...(s.progress || []), `${hostOf(s)} now points at your server`]; startAttempt(s); }
-  });
-}
-
-function tickWatch(id: number) {
-  const s = getSetup(id);
-  if (s.phase === "starting" && ago(s.serverCreatedAt) > 20 * MIN && ago(s.lastSeenAt) > 15 * MIN)
-    return fail(id, "failed", "Your server hasn't checked in with us. It may not have started properly. Delete the server and start the install again.");
-  if (s.phase === "installing" && ago(s.lastLogAt) > 25 * MIN)
-    return fail(id, "failed", "Your server stopped sending progress. If it doesn't come back in a few minutes, delete the server and start again.");
-}
-
 /** Resend domain + (manual path) each record in public DNS. */
 export async function checkEmailDns(id: number, force: boolean) {
   const s = getSetup(id);
@@ -1192,100 +956,26 @@ async function sendTest(id: number) {
   return r;
 }
 
-// ======================= the server calls these =======================
-const plain = (body: string, status = 200) => new Response(body, { status, headers: { "Content-Type": "text/plain; charset=utf-8", "Cache-Control": "no-store" } });
-
-export function pNext(dtok: string): Response {
-  const id = buyerByDropletToken(dtok);
-  if (!id) return plain("stop\n");
-  const s = getSetup(id);
-  updateSetup(id, (s) => { s.lastSeenAt = now(); });
-  if (s.phase === "done" || s.phase === "idle") return plain("stop\n");
-  if (s.phase !== "starting") return plain("wait\n");
-  const pkg = currentPackage();
-  if (!pkg) return plain("wait\n");
-  // A fresh one-time attempt token each time we hand out work (an earlier one that got lost stops working).
-  const atok = newToken("a");
-  setAttemptToken(id, atok);
-  logClear(id);
-  const n = s.pendingAttempt || (s.attempt || 0) + 1;
-  updateSetup(id, (s) => { s.attempt = n; s.attemptIssuedAt = now(); s.attemptVersion = pkg.version; s.bundleFetches = 0; s.progress = [...(s.progress || []).filter((p) => !/^Install attempt/.test(p))]; });
-  return plain(`go ${atok} ${pkg.sha256} ${n}\n`);
-}
-
-export function pBundle(atok: string): Response {
-  const id = buyerByAttemptToken(atok);
-  if (!id) return plain("This link has expired.\n", 410);
-  const s = getSetup(id);
-  if (!["starting", "installing"].includes(s.phase) || ago(s.attemptIssuedAt) > 2 * 60 * MIN || (s.bundleFetches || 0) >= 3) return plain("This link has expired.\n", 410);
-  const pkg = currentPackage();
-  const file = pkg && /^[a-z0-9-]+-server-[0-9A-Za-z.+-]+\.tgz$/.test(pkg.file) ? join(PACKAGES_DIR, pkg.file) : "";
-  if (!file || !existsSync(file) || pkg!.version !== s.attemptVersion) return plain("The app bundle changed; ask again.\n", 410);
-  updateSetup(id, (s) => { s.bundleFetches = (s.bundleFetches || 0) + 1; s.phase = "installing"; s.lastLogAt = now(); });
-  const f = Bun.file(file);
-  return new Response(f, { headers: { "Content-Type": "application/gzip", "Content-Length": String(f.size), "Cache-Control": "no-store" } });
-}
-
-export async function pLog(atok: string, offset: number, req: Request): Promise<Response> {
-  const id = buyerByAttemptToken(atok);
-  if (!id) return plain("gone\n", 410);
-  const s = getSetup(id);
-  if (s.phase !== "installing" || ago(s.attemptIssuedAt) > 6 * 60 * MIN) return plain("gone\n", 410);
-  const buf = new Uint8Array(await req.arrayBuffer());
-  const have = logBytes(id);
-  if (offset !== have || !buf.length) return plain(`ok ${have}\n`); // duplicate or out of step: tell it where we are
-  const text = redact(new TextDecoder().decode(buf), secretValues(id));
-  logAppend(id, text, buf.length);
-  const steps = [...text.matchAll(/^==> (?:\[(\d+)\/(\d+)\] )?(.*)$/gm)];
-  updateSetup(id, (s) => {
-    s.lastLogAt = now();
-    if (steps.length) { const m = steps[steps.length - 1]; s.installStep = m[1] ? `${m[1]}/${m[2]} ${m[3]}` : m[3]; }
-  });
-  return plain(`ok ${have + buf.length}\n`);
-}
-
-export function pExit(atok: string, code: number): Response {
-  const id = buyerByAttemptToken(atok);
-  if (!id) return plain("ok\n");
-  const s = getSetup(id);
-  if (s.phase !== "installing") return plain("ok\n");
-  const { text } = logRead(id);
-  const okLine = text.match(/^INSTALL OK (https?:\/\/\S+)\s*$/m);
-  const failLine = [...text.matchAll(/^INSTALL FAILED:\s*(.*)$/gm)].pop();
-  setAttemptToken(id, null);
-  if (okLine && code === 0) {
-    finish(id, okLine[1]);
-  } else {
-    const reason = failLine ? failLine[1].trim() : `the installer stopped (code ${code}) without saying why`;
-    updateSetup(id, (s) => { s.phase = "failed"; s.error = reason; });
-    console.log(`[setup] buyer ${id}: install attempt ${s.attempt} failed`);
-  }
-  return plain("ok\n");
-}
-
 /** Success: forget every secret, keep only what the buyer's Done page and our records need. */
 export function finish(id: number, url: string) {
   const removed = deleteAllSecrets(id);
-  setDropletToken(id, null);
-  setAttemptToken(id, null);
   const s = getSetup(id);
   const demo = isDemoBuyer(id); // a demo keeps its logo and colour: the demo dashboard is built from them
   const kept: SetupData = {
     step: "done", phase: "done",
     brand: s.brand ? { productName: s.brand.productName, ownerEmail: s.brand.ownerEmail, ...(s.brand.ownerName ? { ownerName: s.brand.ownerName } : {}), ownPhoneAccount: s.brand.ownPhoneAccount, ...(demo ? { logo: s.brand.logo, colour: s.brand.colour } : {}) } : undefined,
     domain: s.domain ? { mode: s.domain.mode, zone: s.domain.zone, sub: s.domain.sub, host: s.domain.host, confirmed: true } : undefined,
-    server: s.server ? { region: s.server.region, size: s.server.size, price: s.server.price, chosen: true, sshPublicKey: s.server.sshPublicKey ? "yes" : undefined } : undefined,
     phones: phoneSkipped(s) ? { deferred: true, provider: "telnyx" } : { confirmed: true, provider: hasTelnyx(id, s) || !useVapi(s) ? "telnyx" : "vapi" }, email: s.email ? { mode: s.email.mode, address: s.email.address, from: s.email.from, confirmed: true, resend: s.email.resend ? { status: s.email.resend.status } : undefined } : undefined,
     calendars: s.calendars ? { google: s.calendars.google, microsoft: s.calendars.microsoft, done: true } : undefined,
     skipped: s.skipped, extrasDone: s.extrasDone,
     assist: s.assist ? { steps: s.assist.steps, keepDns: s.assist.keepDns, dnsBy: s.assist.dnsBy, installBy: s.assist.installBy, openrouter: s.assist.openrouter } : undefined,
-    dropletId: s.dropletId, ip: s.ip, attempt: s.attempt, attemptVersion: s.attemptVersion,
-    serverCreatedAt: s.serverCreatedAt, installedAt: now(), purgedAt: now(), resultUrl: url, sshKeyAdded: s.sshKeyAdded, firstLogin: s.firstLogin,
+    attempt: s.attempt, attemptVersion: s.attemptVersion,
+    installedAt: now(), purgedAt: now(), resultUrl: url, firstLogin: s.firstLogin,
     railway: s.railway ? { workspaceName: s.railway.workspaceName, confirmed: true } : undefined,
     rw: s.rw ? { projectId: s.rw.projectId, serviceDomain: s.rw.serviceDomain, certStatus: s.rw.certStatus, domainOk: s.rw.domainOk } : undefined,
     tempUrl: s.rw?.serviceDomain ? webUrl(s.rw.serviceDomain) : undefined,
-    domainPending: RAILWAY && !demo && !!s.domain?.host ? !s.rw?.domainOk : undefined,
-    finishRecords: RAILWAY && !demo && !!s.domain?.host && !s.rw?.domainOk ? (s.rw?.records || []).map(({ cfId, ...r }) => r) : undefined,
+    domainPending: !demo && !!s.domain?.host ? !s.rw?.domainOk : undefined,
+    finishRecords: !demo && !!s.domain?.host && !s.rw?.domainOk ? (s.rw?.records || []).map(({ cfId, ...r }) => r) : undefined,
   };
   saveSetup(id, kept);
   console.log(`[setup] buyer ${id}: installed; ${removed} secrets deleted`);
@@ -1694,7 +1384,7 @@ const notesLines = (n: string | null | undefined) => String(n || "").split("\n")
 
 /** What version this agency is on, what's newest, and what changed in between. null when updating isn't possible (not a finished Railway install). */
 export function updateInfo(b: { demo: number }, s: SetupData): UpdateInfo | null {
-  if (s.phase !== "done" || !RAILWAY) return null;
+  if (s.phase !== "done") return null;
   const demo = b.demo === 1;
   if (!demo && !s.rw?.projectId) return null;
   const pkgs = listPackages().filter((p) => p.file.endsWith(".tgz"));

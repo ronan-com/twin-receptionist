@@ -27,7 +27,7 @@ const base = {
   DNS_SERVERS: `127.0.0.1:${PORT + 5}`, MOCK_RAILWAY: "1", MOCK_CF: "1", MOCK_RESEND: "1", MOCK_TELNYX: "1", MOCK_OAUTH: "1",
   SELLER_NAME: "Twin Technologies", SUPPORT_EMAIL: "support@twin.example",
 };
-delete base.PREVIEW_JUMP; delete base.HOSTING;
+delete base.PREVIEW_JUMP;
 const hash = execFileSync("bun", ["admin.ts", "admin-hash"], { cwd: SITE_DIR, env: base, input: PASSWORD + "\n" }).toString().trim().replace(/^ADMIN_PASSWORD_HASH=/, "");
 const env = { ...base, ADMIN_EMAILS: `${ADMIN},second@twin.example`, ADMIN_PASSWORD_HASH: hash, SITE_SMTP_URL: `smtp://test:test-pass@127.0.0.1:${PORT + 2}`, SITE_MAIL_FROM: "Twin Technologies <hello@twin.example>" };
 const admin = (...a) => execFileSync("bun", ["admin.ts", ...a], { cwd: SITE_DIR, env }).toString();

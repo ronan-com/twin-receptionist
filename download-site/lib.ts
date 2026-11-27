@@ -21,14 +21,10 @@ export const CONFIG = {
   productName: env("PRODUCT_NAME", "AI Receptionist"),
   supportEmail: env("SUPPORT_EMAIL", ""),
   siteUrl,
-  // The address new servers use to download the app and report progress. Normally SITE_URL.
-  provisionUrl: env("PROVISION_URL", siteUrl).replace(/\/+$/, ""),
   // Where "Download your full source code" points, with {version} filled in (e.g. a GitHub release). Empty: our own signed download.
   sourceDownloadUrl: env("SOURCE_DOWNLOAD_URL", ""),
   host: env("HOST", "127.0.0.1"),
   port: int("PORT", 4500),
-  // Test mode only: a second address to listen on (the fake droplets' network gateway).
-  extraListen: env("EXTRA_LISTEN", ""),
   dataDir: resolve(env("DATA_DIR", join(import.meta.dir, "data"))),
   contentDir: env("CONTENT_DIR", ""),
   lookupsPerMinute: int("LOOKUPS_PER_MINUTE", 20), // failed code lookups per IP per minute
@@ -38,11 +34,10 @@ export const CONFIG = {
   secretsIdleDays: int("SECRETS_IDLE_DAYS", 14), // stored keys of an untouched setup are deleted after this
   trustProxy: env("TRUST_PROXY", "0") === "1",
   secretKey: env("SETUP_SECRET_KEY", ""),
-  // Where buyers' agencies run: "railway" (the default, easiest) or "digitalocean" (own server).
-  hosting: (env("HOSTING", "railway") === "digitalocean" ? "digitalocean" : "railway") as "railway" | "digitalocean",
   // Test switches. Each one replaces a provider with a local fake; none of them is ever set in production.
-  mockDO: on("MOCK_DO"),
   mockRailway: on("MOCK_RAILWAY"),
+  // Test mode: the fakes answer instantly, so the background steps check on every tick instead of every few seconds.
+  mockFast: on("MOCK_FAST"),
   // Test sites only: every step can be opened and skipped, to look at the whole flow.
   previewJump: on("PREVIEW_JUMP"),
   mockCF: on("MOCK_CF"),
@@ -54,9 +49,8 @@ export const CONFIG = {
   dnsServers: env("DNS_SERVERS", "1.1.1.1,8.8.8.8").split(",").map((s) => s.trim()).filter(Boolean),
 };
 // A test site never calls the real Railway: with any other fake on, the Railway fake is on too (unless MOCK_RAILWAY=0).
-if (!CONFIG.mockRailway && env("MOCK_RAILWAY", "") === "" && (CONFIG.mockDO || CONFIG.mockCF || CONFIG.mockResend || CONFIG.mockTelnyx || CONFIG.mockOAuth)) CONFIG.mockRailway = true;
-export const ANY_MOCK = CONFIG.mockDO || CONFIG.mockRailway || CONFIG.mockCF || CONFIG.mockResend || CONFIG.mockTelnyx || CONFIG.mockOAuth;
-export const RAILWAY = CONFIG.hosting === "railway";
+if (!CONFIG.mockRailway && env("MOCK_RAILWAY", "") === "" && (CONFIG.mockCF || CONFIG.mockResend || CONFIG.mockTelnyx || CONFIG.mockOAuth)) CONFIG.mockRailway = true;
+export const ANY_MOCK = CONFIG.mockFast || CONFIG.mockRailway || CONFIG.mockCF || CONFIG.mockResend || CONFIG.mockTelnyx || CONFIG.mockOAuth;
 // Never on without a fake provider: a real site must not let anyone skip steps.
 if (CONFIG.previewJump && !ANY_MOCK) CONFIG.previewJump = false;
 
@@ -72,7 +66,6 @@ export function siteUrlWarnings(): string[] {
   if (!local && u.protocol !== "https:") out.push(`SITE_URL ${CONFIG.siteUrl} is not https. Put the site behind Caddy (deploy/) and use the https address.`);
   if (u.pathname !== "/" || u.search || u.hash) out.push(`SITE_URL should be just the address with no path (got ${CONFIG.siteUrl}).`);
   if (!local && !CONFIG.trustProxy && CONFIG.host !== "127.0.0.1") out.push("TRUST_PROXY is off: behind Caddy set TRUST_PROXY=1 so rate limits see the visitor's address, not the proxy's.");
-  if (!RAILWAY && !/^https:/.test(CONFIG.provisionUrl) && !ANY_MOCK) out.push(`PROVISION_URL ${CONFIG.provisionUrl} is not https: new servers download the app and report progress over it.`);
   return out;
 }
 
@@ -82,7 +75,7 @@ export function siteUrlWarnings(): string[] {
  * (*.trycloudflare.com) and TEST_SITE=1 are the only exceptions: those are test sites.
  */
 export function productionGuard(): string | null {
-  const flags = ["MOCK_DO", "MOCK_RAILWAY", "MOCK_CF", "MOCK_RESEND", "MOCK_TELNYX", "MOCK_OAUTH", "PREVIEW_JUMP", "DO_API_BASE", "CF_API_BASE", "RESEND_API_BASE", "RAILWAY_API_BASE", "GODADDY_API_BASE"]
+  const flags = ["MOCK_FAST", "MOCK_RAILWAY", "MOCK_CF", "MOCK_RESEND", "MOCK_TELNYX", "MOCK_OAUTH", "PREVIEW_JUMP", "CF_API_BASE", "RESEND_API_BASE", "RAILWAY_API_BASE", "GODADDY_API_BASE"]
     .filter((k) => (process.env[k] ?? "").trim() && (process.env[k] ?? "").trim() !== "0");
   if (!flags.length) return null;
   let u: URL;
@@ -206,8 +199,6 @@ export function db(): Database {
     CREATE TABLE IF NOT EXISTS setups (
       buyer_id INTEGER PRIMARY KEY REFERENCES buyers(id),
       data TEXT NOT NULL DEFAULT '{}',
-      droplet_token_hash BLOB UNIQUE,
-      attempt_token_hash BLOB UNIQUE,
       log TEXT NOT NULL DEFAULT '',
       log_bytes INTEGER NOT NULL DEFAULT 0,
       created_at TEXT NOT NULL,

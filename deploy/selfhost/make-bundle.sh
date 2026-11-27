@@ -13,7 +13,7 @@ STAGE=$(mktemp -d); trap 'rm -rf "$STAGE"' EXIT; chmod 755 "$STAGE"
 # App source. Never the setup site (download-site/ holds its database and old bundles). Anchored (./x) excludes are top-level folders only; the rest match anywhere.
 tar -czf "$STAGE/app-src.tgz" -C "$REPO" \
   --owner=0 --group=0 --numeric-owner --sort=name \
-  --exclude=./.git --exclude=./.claude --exclude=./dist --exclude=./data --exclude=./installer \
+  --exclude=./.git --exclude=./.claude --exclude=./dist --exclude=./data \
   --exclude=./.tanstack --exclude=./deploy/selfhost/out \
   --exclude=./download-site \
   --exclude=node_modules --exclude=.git --exclude=.env --exclude='.env.*' --exclude='*.env' \

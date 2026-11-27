@@ -2,7 +2,7 @@
 //   setups.data   JSON, never holds a secret
 //   secrets       AES-256-GCM, key = SETUP_SECRET_KEY, bound to (buyer, name) so rows can't be swapped
 import { createCipheriv, createDecipheriv, createHash, createHmac, randomBytes, timingSafeEqual } from "node:crypto";
-import { CONFIG, RAILWAY, db, now, sha256 } from "./lib";
+import { CONFIG, db, now } from "./lib";
 
 // ---------------- the site key ----------------
 let KEY: Buffer | null = null;
@@ -32,8 +32,8 @@ function decrypt(box: string, aad: string): string {
   return Buffer.concat([d.update(b.subarray(28)), d.final()]).toString("utf8");
 }
 
-export type SecretName = "do_token" | "railway_token" | "cf_token" | "telnyx_key" | "vapi_key" | "vapi_public" | "twilio_token" | "resend_key" | "smtp_password" | "google_secret" | "microsoft_secret" | "godaddy_key" | "godaddy_secret" | "openrouter_key" | "railway_refresh" | "telnyx_refresh";
-export const ALL_SECRETS: SecretName[] = ["do_token", "railway_token", "cf_token", "telnyx_key", "vapi_key", "vapi_public", "twilio_token", "resend_key", "smtp_password", "google_secret", "microsoft_secret", "godaddy_key", "godaddy_secret", "openrouter_key", "railway_refresh", "telnyx_refresh"];
+export type SecretName = "railway_token" | "cf_token" | "telnyx_key" | "vapi_key" | "vapi_public" | "twilio_token" | "resend_key" | "smtp_password" | "google_secret" | "microsoft_secret" | "godaddy_key" | "godaddy_secret" | "openrouter_key" | "railway_refresh" | "telnyx_refresh";
+export const ALL_SECRETS: SecretName[] = ["railway_token", "cf_token", "telnyx_key", "vapi_key", "vapi_public", "twilio_token", "resend_key", "smtp_password", "google_secret", "microsoft_secret", "godaddy_key", "godaddy_secret", "openrouter_key", "railway_refresh", "telnyx_refresh"];
 /** DNS logins: the only keys that may outlive the install, and only when our admin ticked "keep for later changes". */
 export const DNS_SECRETS: SecretName[] = ["cf_token", "godaddy_key", "godaddy_secret"];
 
@@ -89,31 +89,25 @@ export function redact(text: string, values: string[]): string {
 }
 
 // ---------------- wizard state ----------------
-export type StepId = "welcome" | "brand" | "railway" | "domain" | "server" | "phones" | "ai" | "email" | "calendars" | "extras" | "vapi" | "twilio" | "install" | "done";
+export type StepId = "welcome" | "brand" | "railway" | "domain" | "phones" | "ai" | "email" | "calendars" | "extras" | "vapi" | "twilio" | "install" | "done";
 /**
- * Railway (the default): only Brand, Railway and Telnyx are needed. "extras" is one screen of
- * optional cards (email, your own domain, calendars); each opens its own step, which can be skipped.
- * DigitalOcean still needs a domain (its server gets an https certificate for it), so it keeps the long path.
+ * Only Brand, Railway and Telnyx are needed. "extras" is one screen of optional cards (email, your own domain,
+ * calendars); each opens its own step, which can be skipped.
  */
-export const STEPS: StepId[] = RAILWAY
-  ? ["welcome", "brand", "railway", "phones", "ai", "extras", "email", "domain", "calendars", "vapi", "twilio", "install", "done"]
-  : ["welcome", "brand", "domain", "server", "phones", "vapi", "twilio", "email", "calendars", "install", "done"];
-/**
- * Steps that are never required. Railway: the pages behind the "Connect more" screen (extras): email, your own domain and Twilio,
- * each skippable. DigitalOcean: the backup phone options.
- */
-export const OPTIONAL_STEPS: StepId[] = RAILWAY ? ["email", "domain", "calendars", "vapi", "twilio"] : ["vapi", "twilio"];
+export const STEPS: StepId[] = ["welcome", "brand", "railway", "phones", "ai", "extras", "email", "domain", "calendars", "vapi", "twilio", "install", "done"];
+/** Steps that are never required: the pages behind the "Connect more" screen (extras), plus the Voice step's backup options. */
+export const OPTIONAL_STEPS: StepId[] = ["email", "domain", "calendars", "vapi", "twilio"];
 /**
  * Railway steps that used to be in the path (extras, email, domain, calendars, Vapi, Twilio). Email, your own domain and
  * calendars are now "later" items on the Done screen; Vapi + Twilio is on the Voice step. Old stored setups may sit on one
  * of these: migrate() moves them on, and what they stored (email, domain, ...) is still installed.
  */
 export const LEGACY_STEPS: StepId[] = ["extras", "email", "domain", "calendars", "vapi", "twilio"];
-/** The backup phone options (Vapi, Twilio) are optional in both flows: Telnyx is the main path. */
+/** The backup phone options (Vapi, Twilio) are optional: Telnyx is the main path. */
 export const BACKUP_STEPS: StepId[] = ["vapi", "twilio"];
 export const isOptional = (id: StepId) => OPTIONAL_STEPS.includes(id);
-/** The screen optional steps hang off and go back to: "Connect more" (Railway), or Voice (DigitalOcean). */
-export const OPTIONAL_HUB: StepId = RAILWAY ? "extras" : "phones";
+/** The screen optional steps hang off and go back to: "Connect more". */
+export const OPTIONAL_HUB: StepId = "extras";
 
 export interface DnsRecord {
   key: string; // stable id, e.g. "a", "dkim", "spf-mx"
@@ -128,7 +122,7 @@ export interface DnsRecord {
   cfId?: string; // Cloudflare record id once written
 }
 
-export type Phase = "idle" | "creating" | "create_failed" | "dns" | "starting" | "installing" | "deploying" | "domain" | "failed" | "done";
+export type Phase = "idle" | "creating" | "create_failed" | "deploying" | "domain" | "failed" | "done";
 
 export interface SetupData {
   /** 2 once moved to the short wizard, 3 once it has the "Connect more" step (see migrate). Old rows have none. */
@@ -157,16 +151,6 @@ export interface SetupData {
     };
     confirmed?: boolean; // the buyer pressed Continue with a usable domain
     replace?: boolean; // GoDaddy: replace what is at app.<zone> (Cloudflare keeps this in cf.replace)
-  };
-  server?: {
-    accountEmail?: string;
-    regions?: { slug: string; name: string }[];
-    sizes?: { slug: string; label: string; price: number; regions: string[] }[];
-    region?: string;
-    size?: string;
-    price?: number;
-    sshPublicKey?: string;
-    chosen?: boolean;
   };
   // provider: the voice engine chosen on the phones step (missing means Telnyx).
   // Telnyx is the main path. provider is kept in step with the backup choice below (vapi when Vapi is confirmed).
@@ -217,19 +201,8 @@ export interface SetupData {
   // the install
   phase: Phase;
   progress?: string[];
-  dropletId?: number;
-  ip?: string;
-  aRecord?: DnsRecord;
-  dnsChecks?: number;
-  dnsSkipped?: boolean;
   attempt?: number;
-  pendingAttempt?: number;
-  attemptIssuedAt?: string;
   attemptVersion?: string;
-  bundleFetches?: number;
-  lastSeenAt?: string; // the server last asked us for work
-  lastLogAt?: string;
-  installStep?: string; // "4/10 Keeping the database password..."
   error?: string;
   resultUrl?: string;
   /** The one-time sign-in link's token (the app keeps only its hash). Shown only as the done screen's button, for 23 hours. */
@@ -237,10 +210,8 @@ export interface SetupData {
   tempUrl?: string; // Railway's own https://<x>.up.railway.app address
   domainPending?: boolean; // finished before app.<domain> was ready
   finishRecords?: DnsRecord[]; // kept for the Done page when the domain was still pending
-  serverCreatedAt?: string;
   installedAt?: string;
   purgedAt?: string;
-  sshKeyAdded?: boolean;
   flash?: { kind: "ok" | "err" | "info"; text: string; form?: Record<string, string>; link?: string };
   /** The last error message each step showed (kept after the flash is gone), for "I need a person" (wizhelp.ts). Never a key. */
   lastErrors?: Partial<Record<StepId, { text: string; at: string }>>;
@@ -282,8 +253,25 @@ export function getSetup(buyerId: number): SetupData {
  * Email through Resend and calendar sign-in need a domain: a half-finished one (the domain step was never completed) is
  * dropped, so it can't block the install. Pure and idempotent; the new shape is saved with the next write.
  */
+/**
+ * Setups saved while a server-hosting mode existed (a droplet, its IP, a "server" step) carry fields nothing reads any more:
+ * they're dropped. A buyer parked on that step, or in the middle of such an install, goes back to the Railway step to
+ * start again; a finished install stays finished.
+ */
+function dropServerMode(s: SetupData) {
+  const o = s as any;
+  const wasServer = o.dropletId !== undefined || o.server !== undefined || o.hosting === "digitalocean" || ["dns", "starting", "installing"].includes(o.phase) || o.step === "server";
+  if (!wasServer) return;
+  for (const k of ["dropletId", "ip", "aRecord", "dnsChecks", "dnsSkipped", "pendingAttempt", "attemptIssuedAt", "bundleFetches", "lastSeenAt", "lastLogAt", "installStep", "serverCreatedAt", "sshKeyAdded", "server", "hosting"]) delete o[k];
+  if (o.step === "server") s.step = "railway";
+  if (s.phase !== "done" && s.phase !== "idle") {
+    s.phase = "idle"; s.progress = []; s.error = undefined;
+    if (s.step === "install") s.step = "railway";
+  }
+}
 export function migrate(s: SetupData): SetupData {
-  if (!RAILWAY || s.schema === 3) return s;
+  dropServerMode(s);
+  if (s.schema === 3) return s;
   if (s.schema === 2) {
     // The "Connect more" step is new: anyone already at Install (or past it) has nothing left to do there.
     s.schema = 3;
@@ -342,26 +330,6 @@ export function logAppend(buyerId: number, text: string, bytes = 0) {
 export function logClear(buyerId: number) {
   db().query("UPDATE setups SET log = '', log_bytes = 0 WHERE buyer_id = ?").run(buyerId);
 }
-export const logBytes = (buyerId: number) => (db().query("SELECT log_bytes FROM setups WHERE buyer_id = ?").get(buyerId) as { log_bytes: number } | null)?.log_bytes ?? 0;
-
-// ---------------- provisioning tokens ----------------
-// The droplet token lives in the server's user_data and only lets it ask "anything for me?".
-// Each install attempt gets a fresh attempt token (bundle download + progress reports).
-export const newToken = (prefix: string) => `${prefix}_${randomBytes(24).toString("base64url")}`;
-export function setDropletToken(buyerId: number, token: string | null) {
-  db().query("UPDATE setups SET droplet_token_hash = ? WHERE buyer_id = ?").run(token ? sha256(token) : null, buyerId);
-}
-export function setAttemptToken(buyerId: number, token: string | null) {
-  db().query("UPDATE setups SET attempt_token_hash = ? WHERE buyer_id = ?").run(token ? sha256(token) : null, buyerId);
-}
-function byToken(col: "droplet_token_hash" | "attempt_token_hash", token: string): number | null {
-  if (!/^[da]_[A-Za-z0-9_-]{32}$/.test(token)) return null;
-  const h = sha256(token);
-  const r = db().query(`SELECT buyer_id, ${col} AS h FROM setups WHERE ${col} = ?`).get(h) as { buyer_id: number; h: Buffer } | null;
-  return r && timingSafeEqual(Buffer.from(r.h), h) ? r.buyer_id : null;
-}
-export const buyerByDropletToken = (t: string) => byToken("droplet_token_hash", t);
-export const buyerByAttemptToken = (t: string) => byToken("attempt_token_hash", t);
 
 // ---------------- sessions / CSRF ----------------
 export const newSessionId = () => randomBytes(18).toString("base64url");

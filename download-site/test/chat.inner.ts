@@ -14,7 +14,7 @@ const KEY = "sk-or-v1-fake-test-key-0123456789abcdef";
 process.env.DATA_DIR = dir;
 process.env.SETUP_SECRET_KEY = Buffer.alloc(32, 9).toString("base64");
 process.env.SITE_URL = SITE;
-for (const k of ["MOCK_DO", "MOCK_RAILWAY", "MOCK_CF", "MOCK_RESEND", "MOCK_TELNYX", "MOCK_OAUTH", "HOSTING", "PREVIEW_JUMP", "OPENROUTER_API_KEY", "SETUP_CHAT_MODEL"]) delete process.env[k];
+for (const k of ["MOCK_FAST", "MOCK_RAILWAY", "MOCK_CF", "MOCK_RESEND", "MOCK_TELNYX", "MOCK_OAUTH", "PREVIEW_JUMP", "OPENROUTER_API_KEY", "SETUP_CHAT_MODEL"]) delete process.env[k];
 
 const { addBuyer } = await import("../lib");
 const { putSecret, updateSetup, csrfToken } = await import("../store");

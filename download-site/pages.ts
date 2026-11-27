@@ -1,6 +1,5 @@
 // HTML for the public pages (/, /guide, errors) and the shared layout. The wizard's
 // screens are in wizard.ts. The only script is /wizard.js, on wizard pages only.
-import { CONFIG, RAILWAY } from "./lib";
 import { allHowTos, howTo } from "./content";
 import { chatBubble, chatHead, type ChatMount } from "./chat";
 
@@ -48,27 +47,20 @@ const codeBox = (error = "", value = "") => `
   ${error ? `<p class="err" role="alert">${esc(error)}</p>` : ""}
 </section>`;
 
-const NEEDS: [string, string][] = RAILWAY ? [
+const NEEDS: [string, string][] = [
   ["A Railway account", "On the Hobby plan (US$5 a month including US$5 of usage; it needs a card). Your agency and its database run here, in your name."],
   ["A Telnyx account", "The phone company that carries your calls. Upgrade it from trial before real callers ring."],
   ["Optional: your own email", "A Resend account (free to start) so invites and notices come from your address. Without it, invite links show on screen for you to copy and send."],
   ["Optional: your own domain", "From any registrar, so your agency lives at app.yourcompany.com. Without it, it runs at the https address Railway gives it."],
   ["Optional: calendar keys", "Google or Microsoft keys so receptionists can book into calendars."],
   ["About 15 minutes", "In any browser, on a computer or a phone. There's nothing to download or install."],
-] : [
-  ["A domain", "From any registrar. Your dashboard lives at an address like app.yourcompany.com."],
-  ["A DigitalOcean account", "With a payment method. Your server is rented here, in your name, from about US$18 a month."],
-  ["A Telnyx account", "The phone company that carries your calls. Upgrade it from trial before real callers ring."],
-  ["A Resend account", "Free to start. Sends your sign-in links, invites and call notices. Other SMTP services work too."],
-  ["Google or Microsoft keys", "Optional, so receptionists can book into calendars. You can add them later."],
-  ["About 20 minutes", "In any browser, on a computer or a phone. There's nothing to download or install."],
 ];
 
 const FOUR = [
   ["Open your private link", "It came in your purchase email and opens your own setup page."],
-  ["Connect your accounts", RAILWAY ? "Two accounts, one at a time: Railway (hosting) and Telnyx (phones). Each is checked before you move on. Email and your own domain are optional extras." : "One at a time: domain, server, phones, email. Each is checked before you move on."],
-  ["Click Install", RAILWAY ? "We set up your agency and its database in your Railway account. It's live at an https address straight away; your own domain is optional." : "We create a server in your DigitalOcean account and set up your agency on it, with https on your own domain."],
-  ["It's yours", `Your brand, your clients, your ${RAILWAY ? "hosting" : "server"}. Your keys are stored encrypted, and we have no login to your accounts. Your agency shares health counts with us, and we can sign in to help (never to see your keys or billing), unless you switch those off in Settings. It also updates itself overnight unless you turn that off.`],
+  ["Connect your accounts", "Two accounts, one at a time: Railway (hosting) and Telnyx (phones). Each is checked before you move on. Email and your own domain are optional extras."],
+  ["Click Install", "We set up your agency and its database in your Railway account. It's live at an https address straight away; your own domain is optional."],
+  ["It's yours", `Your brand, your clients, your hosting. Your keys are stored encrypted, and we have no login to your accounts. Your agency shares health counts with us, and we can sign in to help (never to see your keys or billing), unless you switch those off in Settings. It also updates itself overnight unless you turn that off.`],
 ];
 
 export function homePage(error = "", value = "") {
@@ -76,7 +68,7 @@ export function homePage(error = "", value = "") {
 <section class="hero">
   <p class="eyebrow">Your agency, packaged</p>
   <h1>Your own AI receptionist agency, under your brand</h1>
-  <p class="lead">A guided setup page builds your agency in <b>your</b> ${RAILWAY ? "Railway account, with <b>your</b> Telnyx phone account. Email and your own domain are optional extras you can add now or later" : "DigitalOcean account, on <b>your</b> domain, with <b>your</b> phone and email accounts"}. You sell AI receptionists to your clients. Nothing to download, and we have no login to your accounts.</p>
+  <p class="lead">A guided setup page builds your agency in <b>your</b> Railway account, with <b>your</b> Telnyx phone account. Email and your own domain are optional extras you can add now or later. You sell AI receptionists to your clients. Nothing to download, and we have no login to your accounts.</p>
   <div class="row"><a class="btn" href="#code">Open my setup</a><a class="btn ghost" href="/guide">Read the guide</a></div>
 </section>
 <section>

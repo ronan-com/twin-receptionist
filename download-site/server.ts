@@ -8,10 +8,6 @@
 //   POST /setup/<code>/a/<action>   every wizard form (same-origin + per-session CSRF token)
 //   POST /setup/<code>/chat         "Need help?" question (JSON; same checks; only when OPENROUTER_API_KEY is set)
 //   POST /chat                      the same from the public /guide page (same-origin only; no code, so no setup context)
-//   GET  /p/<droplet token>/next    the buyer's new server asks for work ("wait", "go ...", "stop")
-//   GET  /p/<attempt token>/bundle  one-time app download for that install attempt
-//   POST /p/<attempt token>/log     install output, in order (?offset=<bytes already sent>)
-//   POST /p/<attempt token>/exit    install.sh finished (?code=<exit code>)
 //   POST /api/sync                  the buyer's app sends its health snapshot (Bearer sync token; sync.ts)
 //   POST /api/tickets               a help ticket from the agency's app; GET /api/tickets/updates: our replies (Bearer sync token; tickets.ts)
 //   GET  /api/tls-allowed?domain=X  Caddy only: 200 for a host registered to a buyer (hosts.ts); a buyer's own domain serves their wizard at /
@@ -24,7 +20,7 @@ import { ANY_MOCK, CODE_RE, CONFIG, db, extractCode, findBuyer, productionGuard,
 import { loadContent } from "./content";
 import { chatEnabled, chatReply, parseChatBody } from "./chat";
 import { badCodePage, demoOfflinePage, forbiddenPage, guidePage, homePage, limitedPage, notFoundPage, oauthLostPage, revokedPage } from "./pages";
-import { actions, allow, appUrlOf, canView, firstOpen, pBundle, pExit, pLog, pNext, startTicker } from "./setup";
+import { actions, allow, appUrlOf, canView, firstOpen, startTicker } from "./setup";
 import { STEPS, csrfOk, getSetup, logRead, newSessionId, redact, secretValues, siteKey, updateSetup, type SetupData, type StepId, isOptional } from "./store";
 import { noteStepError } from "./wizhelp";
 import { statusRev, wizardPage } from "./wizard";
@@ -184,7 +180,6 @@ const SETUP = /^\/setup\/([^/]*)\/?$/;
 const STATUS = /^\/setup\/([^/]*)\/status$/;
 const CHAT = /^\/setup\/([^/]*)\/chat$/;
 const ACTION = /^\/setup\/([^/]*)\/a\/([a-z-]{2,40})$/;
-const PROV = /^\/p\/([ad]_[A-Za-z0-9_-]{32})\/(next|bundle|log|exit)$/;
 const OLD = /^\/download\/([^/]*)(?:\/.*)?$/;
 
 async function handle(req: Request, srv: Bun.Server<unknown>): Promise<Response> {
@@ -374,20 +369,7 @@ async function handle(req: Request, srv: Bun.Server<unknown>): Promise<Response>
   // ---- our admin dashboard ----
   if (path === "/admin" || path.startsWith("/admin/")) return adminRoute(req, url, { ip, sameOrigin, readForm, html, redirect });
 
-  // ---- the buyer's server calling in ----
-  let m = path.match(PROV);
-  if (m) {
-    const [, tok, what] = m;
-    if (what === "next" && isGet && tok.startsWith("d_")) return pNext(tok);
-    if (what === "bundle" && isGet && tok.startsWith("a_")) return pBundle(tok);
-    if (what === "log" && method === "POST" && tok.startsWith("a_")) return pLog(tok, Number(url.searchParams.get("offset") ?? -1), req);
-    if (what === "exit" && method === "POST" && tok.startsWith("a_")) return pExit(tok, Number(url.searchParams.get("code") ?? 1));
-    return respond("no\n", 405);
-  }
-  if (path.startsWith("/p/")) {
-    const retry = allow(`bad:${ip}`, CONFIG.lookupsPerMinute, 60_000);
-    return retry ? tooMany(retry) : respond("stop\n", 404, { "Content-Type": "text/plain" });
-  }
+  let m: RegExpMatchArray | null;
 
   // ---- a generic onboarding link: anyone with it can start their own agency (genericlink.ts) ----
   const sm = path.match(/^\/start\/([^/]*)\/?$/);
@@ -533,13 +515,8 @@ const opts = {
   },
 };
 const server = Bun.serve({ ...opts, hostname: CONFIG.host });
-if (CONFIG.extraListen) {
-  // Test mode: also listen where the fake droplets can reach us (their network's gateway).
-  const [h, p] = CONFIG.extraListen.split(":");
-  Bun.serve({ ...opts, hostname: h, port: Number(p || CONFIG.port) });
-}
 startTicker();
 startAlerts();
 
-console.log(`AI agency setup site on http://${server.hostname}:${server.port}${CONFIG.extraListen ? ` and ${CONFIG.extraListen}` : ""}  data: ${CONFIG.dataDir}`);
-if (ANY_MOCK) console.log(`TEST MODE: ${Object.entries({ PREVIEW_JUMP: CONFIG.previewJump, MOCK_RAILWAY: CONFIG.mockRailway, MOCK_DO: CONFIG.mockDO, MOCK_CF: CONFIG.mockCF, MOCK_RESEND: CONFIG.mockResend, MOCK_TELNYX: CONFIG.mockTelnyx, MOCK_OAUTH: CONFIG.mockOAuth }).filter(([, v]) => v).map(([k]) => k).join(" ")} (fake providers; nothing real is called)`);
+console.log(`AI agency setup site on http://${server.hostname}:${server.port}  data: ${CONFIG.dataDir}`);
+if (ANY_MOCK) console.log(`TEST MODE: ${Object.entries({ PREVIEW_JUMP: CONFIG.previewJump, MOCK_RAILWAY: CONFIG.mockRailway, MOCK_CF: CONFIG.mockCF, MOCK_RESEND: CONFIG.mockResend, MOCK_TELNYX: CONFIG.mockTelnyx, MOCK_OAUTH: CONFIG.mockOAuth }).filter(([, v]) => v).map(([k]) => k).join(" ")} (fake providers; nothing real is called)`);

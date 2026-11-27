@@ -207,10 +207,10 @@ async function startLocal() {
   const base = {
     ...process.env, DATA_DIR: data, SITE_URL: SITE, PORT: String(PORT_BASE), HOST: "127.0.0.1", TMPDIR: data,
     SETUP_SECRET_KEY: randomBytes(32).toString("base64"), MOCK_PORT_BASE: String(PORT_BASE), MOCK_APP_PORTS: `${PORT_BASE + 30}-${PORT_BASE + 39}`,
-    DNS_SERVERS: DNS_LOCAL, MOCK_RAILWAY: "1", MOCK_DO: "1", MOCK_CF: "1", MOCK_RESEND: "1", MOCK_TELNYX: "1", MOCK_OAUTH: "1",
+    DNS_SERVERS: DNS_LOCAL, MOCK_RAILWAY: "1", MOCK_FAST: "1", MOCK_CF: "1", MOCK_RESEND: "1", MOCK_TELNYX: "1", MOCK_OAUTH: "1",
     SUPPORT_EMAIL: "support@example.com", PRODUCT_NAME: "AI Receptionist", CHECKS_PER_10_MIN: "30",
   };
-  delete base.PREVIEW_JUMP; delete base.HOSTING; delete base.TEST_SITE;
+  delete base.PREVIEW_JUMP; delete base.TEST_SITE;
   // Nothing inherited may point the local site at a real provider: every base address comes from the fakes.
   for (const k of ["DO_API_BASE", "CF_API_BASE", "RESEND_API_BASE", "RAILWAY_API_BASE", "GODADDY_API_BASE", "DEMO_APP_URL", "MOCK_BASE", "SITE_SMTP_URL", "ALERT_WEBHOOK_URL", "OPENROUTER_API_KEY"]) delete base[k];
   const hash = execFileSync(BUN, ["admin.ts", "admin-hash"], { cwd: SITE_DIR, env: base, input: adminPassword() + "\n" }).toString().trim().replace(/^ADMIN_PASSWORD_HASH=/, "");

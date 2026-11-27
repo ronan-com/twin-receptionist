@@ -1,12 +1,12 @@
 # Self-hosting on one Ubuntu server
 
-This bundle runs a complete, private copy of the app on a single Ubuntu server (for example a DigitalOcean droplet): the app, its own Postgres database, automatic https, and nightly backups. One script installs it, and the same script updates or repairs it.
+This bundle runs a complete, private copy of the app on a single Ubuntu server (any cloud or home server): the app, its own Postgres database, automatic https, and nightly backups. One script installs it, and the same script updates or repairs it.
 
 ## Server size
 
 | | |
 |---|---|
-| **Recommended** | 2 GB memory, 1 or 2 vCPU, 50 GB disk (DigitalOcean Basic, $12 to $18/month), Ubuntu 22.04 or 24.04 LTS |
+| **Recommended** | 2 GB memory, 1 or 2 vCPU, 50 GB disk (a basic cloud server, about $12 to $18/month), Ubuntu 22.04 or 24.04 LTS |
 | **Minimum** | 1 GB memory. This works because install.sh adds swap, but every install and update rebuilds the app and takes much longer. |
 
 The app image is built on the server. Measured: `bun install` peaks at about 1.1 GB and the Vite build at about 1 GB (it is killed at 768 MB). At runtime the stack is small: idle, the app, Postgres and Caddy together used about 170 MB in testing. On a server with less than 3.5 GB of memory and no swap, install.sh adds a 2 GB swap file at `/swapfile`.
@@ -100,7 +100,7 @@ Always go through `dc.sh` (or install.sh). Running plain `docker compose` here w
 - `receptionist-backup.timer` runs `backup.sh` every night at about 03:30 server time (`systemctl list-timers receptionist-backup.timer`, logs in `journalctl -u receptionist-backup`).
 - It writes `backups/receptionist-YYYYmmdd-HHMMSS.dump` (pg_dump custom format) and deletes dumps older than 14 days. Pre-update and pre-restore dumps follow the same rule.
 - To take a backup now, run `sudo bash backup.sh`.
-- Backups stay on the same server. Copy them off it regularly, together with `secrets.env`, for example with `rsync` or a DigitalOcean droplet backup.
+- Backups stay on the same server. Copy them off it regularly, together with `secrets.env`, for example with `rsync` or your server provider's snapshot backup.
 
 ## Restoring
 

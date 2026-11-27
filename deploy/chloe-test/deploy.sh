@@ -13,7 +13,7 @@ INSTANCE=$(aws ec2 describe-instances --region $R --filters Name=tag:Name,Values
 STAMP=$(date -u +%Y%m%dT%H%M%SZ)
 TMP=$(mktemp -d); trap 'rm -rf "$TMP"' EXIT
 
-tar -czf "$TMP/bundle.tgz" -C "$ROOT" --exclude=node_modules --exclude=dist --exclude=./data --exclude=.env --exclude='*.log' --exclude=.git --exclude=.claude --exclude=./download-site --exclude=./installer --exclude=./deploy/selfhost/out --exclude=test-shots .
+tar -czf "$TMP/bundle.tgz" -C "$ROOT" --exclude=node_modules --exclude=dist --exclude=./data --exclude=.env --exclude='*.log' --exclude=.git --exclude=.claude --exclude=./download-site --exclude=./deploy/selfhost/out --exclude=test-shots .
 aws s3 cp --only-show-errors "$TMP/bundle.tgz" "s3://$BUCKET/bundles/chloe-test-$STAMP.tgz"
 aws s3 cp --only-show-errors "$ROOT/deploy/chloe-test/remote-deploy.sh" "s3://$BUCKET/chloe-test-remote-deploy.sh"
 echo "[chloe-test] bundle $STAMP uploaded; deploying to $INSTANCE"

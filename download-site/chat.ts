@@ -6,7 +6,7 @@
 // this buyer is on (read here from their saved setup, never from the browser). What it is never told:
 // keys, tokens, the buyer's email, their setup code, or anything from the secrets vault. Their own typed
 // questions are scrubbed of anything key-shaped (and of any key we hold for them) before they leave.
-import { CONFIG, RAILWAY, unbrand, type Buyer } from "./lib";
+import { CONFIG, unbrand, type Buyer } from "./lib";
 import { allGuidesForHelper, guideTitlesForStep } from "./guides";
 import { STEPS, redact, secretValues, type SetupData, type StepId } from "./store";
 import { stepDone } from "./setup";
@@ -45,11 +45,10 @@ const STEP_NAMES: Record<StepId, string> = {
   welcome: "Welcome",
   brand: "Brand (your brand name and owner email)",
   railway: "Hosting (open Railway's Tokens page, create a token with No workspace, paste it here)",
-  server: "Server (not used: hosting is Railway)",
-  domain: RAILWAY ? "Domain (optional: your own address)" : "Domain",
+  domain: "Domain (optional: your own address)",
   phones: "Voice (required: choose Telnyx or Vapi and paste that provider's key; if Telnyx's ID check is slow, use Vapi now and add Telnyx later in the dashboard)",
   ai: "AI (required: open OpenRouter's keys page, create a key and paste it)",
-  email: RAILWAY ? "Email (optional)" : "Email",
+  email: "Email (optional)",
   calendars: "Calendars (optional)",
   extras: "Connect more (optional: your own email, your own domain, Twilio; skip any)",
   vapi: "Vapi (optional backup voice provider; Telnyx is the main one)",
@@ -78,7 +77,7 @@ function whereTheyAre(c: ChatContext): string {
   if (!b || !s) return "This person is reading the public guide and has not opened a setup link, so you don't know where they are. If it helps, ask which step they're on.";
   const view = c.view && (STEPS as string[]).includes(c.view) ? (c.view as StepId) : null;
   const done = STEPS.filter((id) => id !== "done" && stepDone(b, s, id)).map((id) => STEP_NAMES[id]);
-  const todo = STEPS.filter((id) => id !== "done" && !stepDone(b, s, id) && !(RAILWAY && ["email", "domain", "calendars", "twilio", "extras"].includes(id))).map((id) => STEP_NAMES[id]);
+  const todo = STEPS.filter((id) => id !== "done" && !stepDone(b, s, id) && !["email", "domain", "calendars", "twilio", "extras"].includes(id)).map((id) => STEP_NAMES[id]);
   const skipped = Object.entries(s.skipped || {}).filter(([, v]) => v).map(([k]) => k);
   const lines = [
     `Their saved step: ${STEP_NAMES[s.step]}.`,

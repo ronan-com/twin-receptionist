@@ -9,7 +9,7 @@ const dir = mkdtempSync(join(tmpdir(), "skipphone-test-"));
 process.env.DATA_DIR = dir;
 process.env.SETUP_SECRET_KEY = Buffer.alloc(32, 7).toString("base64");
 process.env.SITE_URL = "http://localhost:4500";
-for (const k of ["MOCK_DO", "MOCK_RAILWAY", "MOCK_CF", "MOCK_RESEND", "MOCK_TELNYX", "MOCK_OAUTH", "HOSTING"]) delete process.env[k];
+for (const k of ["MOCK_FAST", "MOCK_RAILWAY", "MOCK_CF", "MOCK_RESEND", "MOCK_TELNYX", "MOCK_OAUTH"]) delete process.env[k];
 
 const { addBuyer } = await import("../lib");
 const { actions, phoneSettings, railwayVars, firstOpen } = await import("../setup");
@@ -54,11 +54,10 @@ describe("Voice and AI are required", () => {
     expect((actions as any)["phones-skip"]).toBeUndefined();
   });
 
-  test("no voice key: Install is refused and the wizard stays on Voice (also with the backup-options shortcut)", async () => {
+  test("no voice key: Install is refused and the wizard stays on Voice ", async () => {
     const b = await buyer("b");
     expect(firstOpen(b, getSetup(b.id))).toBe("phones");
     expect((await run(b, "install-start"))?.kind).toBe("err");
-    await run(b, "phones-backup"); // the DigitalOcean-era "no Telnyx yet" shortcut must not count on Railway
     expect(firstOpen(b, getSetup(b.id))).toBe("phones");
     expect((await run(b, "install-start"))?.text).toMatch(/earlier steps|voice|Telnyx/i);
     expect(await run(b, "phones-continue")).toBeNull();

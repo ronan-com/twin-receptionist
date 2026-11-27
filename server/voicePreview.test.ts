@@ -94,9 +94,19 @@ describe("browser test call", () => {
     expect(calls.map((c) => `${c.method} ${c.url.replace("https://api.telnyx.com/v2", "")}`)).toEqual(["GET /ai/assistants/assistant-1"]);
   });
 
-  test("Telnyx: browser calls switched off are a plain message, and the check changes nothing (a GET has no side effects)", async () => {
+  test("Telnyx: browser calls switched off are reported (enabled: false) and the check changes nothing (a GET has no side effects)", async () => {
     stub((m) => (m === "GET" ? reply(200, { data: { telephony_settings: { default_texml_app_id: "app-9", supports_unauthenticated_web_calls: false } } }) : reply(200, {})));
-    await expect(telnyxProvider.webCall("assistant-2")).rejects.toThrow(/Save the receptionist once/);
+    expect(await telnyxProvider.webCall("assistant-2")).toEqual({ provider: "telnyx", assistantId: "assistant-2", enabled: false });
+    expect(calls.map((c) => c.method)).toEqual(["GET"]);
+  });
+
+  test("Telnyx: the explicit enable POST keeps the other telephony settings and switches browser calls on; already on is left alone", async () => {
+    stub((m) => (m === "GET" ? reply(200, { data: { telephony_settings: { default_texml_app_id: "app-9", supports_unauthenticated_web_calls: false } } }) : reply(200, {})));
+    await telnyxProvider.enableWebCall!("assistant-2");
+    expect(calls.map((c) => c.method)).toEqual(["GET", "POST"]);
+    expect(calls[1].body).toEqual({ telephony_settings: { default_texml_app_id: "app-9", supports_unauthenticated_web_calls: true } });
+    stub(() => reply(200, { data: { telephony_settings: { supports_unauthenticated_web_calls: true } } }));
+    await telnyxProvider.enableWebCall!("assistant-1");
     expect(calls.map((c) => c.method)).toEqual(["GET"]);
   });
 

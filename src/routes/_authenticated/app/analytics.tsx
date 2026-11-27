@@ -181,7 +181,7 @@ function AnalyticsPage() {
         </Panel>
         <Panel title="Efficiency" description="What the receptionist saved you">
           <div className="space-y-3">
-            <div data-hue="green" className="rounded-[8px] border border-[var(--hue-line)] bg-[linear-gradient(150deg,var(--hue-soft),#fff_75%)] p-3">
+            <div data-hue="green" className="rounded-[8px] border border-[var(--hue-line)] bg-[linear-gradient(150deg,var(--hue-soft),var(--card)_75%)] p-3">
               <div className="flex items-center gap-2 text-[12px] text-ink-muted">
                 <span className="hue-icon flex h-6 w-6 items-center justify-center rounded-[6px]" aria-hidden>
                   <Clock className="h-3.5 w-3.5" />

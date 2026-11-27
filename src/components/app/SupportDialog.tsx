@@ -118,7 +118,7 @@ export function TicketThread({ id, onBack }: { id: string; onBack?: () => void }
         {c.messages.map((m) => {
           const mine = c.side === "agency" ? m.author === "agency" : m.author === "requester";
           return (
-            <li key={m.id} className={cn("max-w-[88%] rounded-lg border px-3 py-2 text-[13px]", mine ? "self-end border-[color-mix(in_srgb,var(--indigo)_25%,#fff)] bg-[color-mix(in_srgb,var(--indigo)_8%,#fff)]" : "self-start border-hairline bg-white")}>
+            <li key={m.id} className={cn("max-w-[88%] rounded-lg border px-3 py-2 text-[13px]", mine ? "self-end border-[color-mix(in_srgb,var(--indigo)_25%,#fff)] bg-[color-mix(in_srgb,var(--indigo)_8%,var(--card))]" : "self-start border-hairline bg-white")}>
               <div className="mb-0.5 text-[11.5px] text-ink-muted"><b className="font-semibold text-ink">{m.author === "support" ? `${c.otherParty} support` : m.name || "You"}</b> · {fmtRelative(m.at)}</div>
               <p className="whitespace-pre-wrap break-words">{m.body}</p>
               {m.shot ? <a href={m.shot} target="_blank" rel="noopener noreferrer"><img src={m.shot} alt={m.shotName || "Screenshot"} className="mt-2 max-h-48 rounded border border-hairline" /></a> : null}

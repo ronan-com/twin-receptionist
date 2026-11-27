@@ -498,7 +498,7 @@
   .auth-ribbon__fade {
     position: absolute;
     inset: 0;
-    background: linear-gradient(180deg, rgba(246, 249, 252, 0) 30%, rgba(246, 249, 252, 0.9) 50%, #f6f9fc 60%);
+    background: linear-gradient(180deg, color-mix(in srgb, var(--canvas-2) 0%, transparent) 30%, color-mix(in srgb, var(--canvas-2) 90%, transparent) 50%, var(--canvas-2) 60%);
   }
 }
 
@@ -614,6 +614,7 @@
 }
 .dark [data-hue].hue-solid, .dark .hue-solid[data-hue] { background: color-mix(in srgb, var(--hue) 75%, #000); color: #fff; }
 .dark .bg-white { background-color: var(--card); }
+.dark .bg-white\/90, .dark .bg-white\/80, .dark .bg-white\/70 { background-color: color-mix(in srgb, var(--surface) 88%, transparent); }
 .dark .bg-white\/95 { background-color: color-mix(in srgb, var(--surface) 92%, transparent); }
 .dark [data-app-shell] header, .dark [data-app-shell] aside { background-color: var(--surface); }
 .dark .text-slate-deep { color: var(--ink); }

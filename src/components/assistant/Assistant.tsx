@@ -294,7 +294,7 @@ function AssistantPanel({ userId, open, onOpenChange, prefs, onPrefs }: { userId
           open ? "visible translate-x-0" : "invisible translate-x-full",
         )}
       >
-        <header className="relative flex items-center gap-3 border-b border-hairline bg-[linear-gradient(135deg,color-mix(in_srgb,var(--indigo)_10%,#fff),#fff_70%)] px-4 py-3 max-sm:gap-2">
+        <header className="relative flex items-center gap-3 border-b border-hairline bg-[linear-gradient(135deg,color-mix(in_srgb,var(--indigo)_10%,var(--card)),var(--card)_70%)] px-4 py-3 max-sm:gap-2">
           <span className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-indigo text-white shadow-sm" aria-hidden>
             <Sparkles className="h-[18px] w-[18px]" />
           </span>
@@ -353,7 +353,7 @@ function AssistantPanel({ userId, open, onOpenChange, prefs, onPrefs }: { userId
                     role="listitem"
                     onClick={() => send(q)}
                     data-assistant-starter
-                    className="group flex items-center justify-between gap-3 rounded-xl border border-hairline bg-white px-3.5 py-2.5 text-left text-[13.5px] font-medium text-ink transition hover:border-indigo hover:bg-[color-mix(in_srgb,var(--indigo)_5%,#fff)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-indigo"
+                    className="group flex items-center justify-between gap-3 rounded-xl border border-hairline bg-white px-3.5 py-2.5 text-left text-[13.5px] font-medium text-ink transition hover:border-indigo hover:bg-[color-mix(in_srgb,var(--indigo)_5%,var(--card))] focus-visible:outline focus-visible:outline-2 focus-visible:outline-indigo"
                   >
                     {q}
                     <ArrowUp className="h-3.5 w-3.5 shrink-0 rotate-45 text-ink-muted transition group-hover:text-indigo" aria-hidden />
@@ -458,7 +458,7 @@ function Answer({ msg, streaming, onLink, onRetry, onCard }: { msg: Msg; streami
   };
   return (
     <div className="group flex gap-2.5">
-      <span className="mt-0.5 inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-lg bg-[color-mix(in_srgb,var(--indigo)_12%,#fff)] text-indigo" aria-hidden>
+      <span className="mt-0.5 inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-lg bg-[color-mix(in_srgb,var(--indigo)_12%,var(--card))] text-indigo" aria-hidden>
         <Sparkles className="h-3.5 w-3.5" />
       </span>
       <div className="min-w-0 flex-1">

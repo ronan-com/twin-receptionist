@@ -224,6 +224,15 @@ async function brandClient(ctx: Ctx): Promise<string | null> {
   return c?.client_id ?? null;
 }
 
+/**
+ * An owner with no password yet: how can they set one? Right now, in the session the one-time link opened (first 24 hours), or
+ * by an email reset when this server can send email, or else through the setup link's "Reset your owner password".
+ */
+async function passwordRoute(ctx: Ctx): Promise<{ passwordNow: boolean; passwordByEmail: boolean }> {
+  const [s] = await sql`select 1 from sessions where token_hash = ${ctx.tokenHash} and first_login and created_at > now() - ${FIRST_LOGIN_HOURS + " hours"}::interval`;
+  return { passwordNow: Boolean(s), passwordByEmail: mailerReady() };
+}
+
 export async function account(ctx: Ctx): Promise<Account> {
   const orgs = await sql`
     select o.id, o.name, m.role from memberships m join orgs o on o.id = m.org_id
@@ -237,7 +246,7 @@ export async function account(ctx: Ctx): Promise<Account> {
   return {
     user: ctx.user,
     // An owner the install made, who hasn't chosen a password yet (Settings asks for no current password).
-    ...(pw?.password_unset ? { needsPassword: true } : {}),
+    ...(pw?.password_unset ? { needsPassword: true, ...(await passwordRoute(ctx)) } : {}),
     org: ctx.org,
     role: ctx.role,
     orgs: orgs.map((o: any) => ({ id: o.id, name: o.name, role: o.role })),

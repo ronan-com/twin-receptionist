@@ -47,7 +47,12 @@ function TelnyxTestCall({ assistantId, clientId, big }: { assistantId: string; c
     let cancelled = false;
     const fail = (m: string) => !cancelled && setFailed(m);
     // Asks our server first: it checks the receptionist exists on the phone service and can take a browser call.
-    const check = clientId ? api.get(`/api/clients/${clientId}/web-call`).catch((e: Error) => fail(e.message || "The test call can't start right now.")) : Promise.resolve();
+    // An older receptionist with browser calls off is switched on here (an explicit POST), then the call goes ahead.
+    const check = clientId
+      ? api.get<{ enabled?: boolean }>(`/api/clients/${clientId}/web-call`)
+          .then((r) => (r?.enabled === false ? api.post(`/api/clients/${clientId}/web-call/enable`) : r))
+          .catch((e: Error) => fail(e.message || "The test call can't start right now."))
+      : Promise.resolve();
     // Registers the call button element, only when someone asks for it.
     const load = Promise.race([
       // @ts-expect-error the widget ships without type definitions

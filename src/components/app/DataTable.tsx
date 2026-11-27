@@ -115,8 +115,8 @@ export function DataTable<T>({
                       aria-selected={selected || undefined}
                       className={cn(
                         "row-hover border-b border-hairline last:border-b-0",
-                        onRowClick && "cursor-pointer outline-none focus-visible:bg-[color-mix(in_srgb,var(--indigo)_7%,#fff)] focus-visible:shadow-[inset_3px_0_0_var(--indigo)]",
-                        selected && "bg-[color-mix(in_srgb,var(--indigo)_8%,#fff)] shadow-[inset_3px_0_0_var(--indigo)]",
+                        onRowClick && "cursor-pointer outline-none focus-visible:bg-[color-mix(in_srgb,var(--indigo)_7%,var(--card))] focus-visible:shadow-[inset_3px_0_0_var(--indigo)]",
+                        selected && "bg-[color-mix(in_srgb,var(--indigo)_8%,var(--card))] shadow-[inset_3px_0_0_var(--indigo)]",
                         rowClassName?.(row),
                       )}
                     >

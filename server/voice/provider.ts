@@ -29,7 +29,7 @@ export type Conversation = CallSummary & {
 
 /** What the browser needs to start a test call without a phone. */
 export type WebCallConfig =
-  | { provider: "telnyx"; assistantId: string }
+  | { provider: "telnyx"; assistantId: string; /** false: browser calls are switched off on an older receptionist; the Test call button switches them on (POST web-call/enable) first. */ enabled?: boolean }
   | { provider: "vapi"; assistantId: string; publicKey: string };
 
 export type NumbersState = { numbers: ConnectedNumber[]; pending: NumberOrder[]; balance: { amount: number; currency: string } | null };
@@ -79,4 +79,6 @@ export interface VoiceProvider {
 
   /** What the browser test call needs. */
   webCall(assistantId: string): Promise<WebCallConfig>;
+  /** Switches browser (test) calls on for an older receptionist that was made without them. An explicit owner/admin action, never a side effect of a GET. */
+  enableWebCall?(assistantId: string): Promise<void>;
 }

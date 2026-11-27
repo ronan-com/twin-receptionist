@@ -13,6 +13,7 @@ import { StatusBadge } from "@/components/app/StatusBadge";
 import { Field } from "@/components/app/forms";
 import { fmtDate } from "@/lib/app/format";
 import { brandApi, getInternalAdmins, grantPlatformAdmin, platformApi, revokePlatformAdmin, teamApi, type AccountRow } from "@/lib/api/console";
+import { authApi } from "@/lib/api/auth";
 import { DeleteDialog } from "@/components/app/DeleteDialog";
 import { LinkBox, READ_ONLY_HINT, useConsole } from "./-shared";
 import { PRODUCT } from "@/lib/app/product";
@@ -51,8 +52,12 @@ function AdminSettingsPage() {
     <div className="space-y-5" data-page="admin-settings">
       <PageHeader eyebrow={platform ? "Platform console" : "Agency console"} title="Settings" description={orgName || "Your team"} />
       {ws.session?.needsPassword && tab !== "account" ? (
-        <Notice tone="warning" title="Choose a password" action={<Button size="sm" variant="outline" className="h-7 bg-white text-[12px]" onClick={() => setTab("account")} data-action="choose-password">Set password</Button>}>
-          You signed in with a one-time link. Set a password to sign in next time.
+        <Notice tone="warning" title="Choose a password" action={<Button size="sm" variant="outline" className="h-7 bg-white text-[12px]" onClick={() => setTab("account")} data-action="choose-password">{ws.session.passwordNow === false && !ws.session.passwordByEmail ? "How" : "Set password"}</Button>}>
+          {ws.session.passwordNow === false
+            ? ws.session.passwordByEmail
+              ? "You don't have a password yet. Send yourself a reset email to choose one."
+              : "You don't have a password yet. Open your setup link and press \"Reset your owner password\"."
+            : "You signed in with a one-time link. Set a password to sign in next time."}
         </Notice>
       ) : null}
       <Tabs value={tab} onValueChange={setTab}>
@@ -303,6 +308,13 @@ function AccountSection() {
   const [next, setNext] = useState("");
   // The owner the install made signed in with a one-time link: no password yet, so no current one to ask for.
   const noPassword = Boolean(ws.session?.needsPassword);
+  // Past the first 24 hours (or in another session) the password can't be set from here: email a reset link, or use the setup link.
+  const passwordElsewhere = noPassword && ws.session?.passwordNow === false;
+  const sendReset = useMutation({
+    mutationFn: () => authApi.requestReset(ws.session?.user.email ?? ""),
+    onSuccess: () => toast.success("Reset email sent", { description: "Open the link in it to choose your password." }),
+    onError: (e: Error) => toast.error(e.message),
+  });
   const save = useMutation({
     mutationFn: () => teamApi.updateAccount({ name: name.trim(), ...(next ? { currentPassword: current, newPassword: next } : {}) }),
     onSuccess: async () => {
@@ -325,15 +337,30 @@ function AccountSection() {
         <Field label="Your name" htmlFor="acc-name">
           <Input id="acc-name" value={name} onChange={(e) => setName(e.target.value)} maxLength={80} className="h-9" disabled={readOnly} />
         </Field>
+        {passwordElsewhere ? (
+          <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-[13px] text-amber-900" data-account="password-elsewhere">
+            <b>You don't have a password yet.</b>{" "}
+            {ws.session?.passwordByEmail ? (
+              <>
+                We can email you a link to choose one.{" "}
+                <Button type="button" size="sm" variant="outline" className="ml-1 h-7 bg-white text-[12px]" disabled={readOnly || sendReset.isPending} onClick={() => sendReset.mutate()} data-action="send-password-reset">
+                  {sendReset.isPending ? "Sending…" : "Email me a reset link"}
+                </Button>
+              </>
+            ) : (
+              <>Open your setup link and press <b>Reset your owner password</b> to get a one-time link.</>
+            )}
+          </div>
+        ) : null}
         <div className="grid gap-3 sm:grid-cols-2">
           {noPassword ? null : (
             <Field label="Current password" htmlFor="acc-cur">
               <Input id="acc-cur" type="password" autoComplete="current-password" value={current} onChange={(e) => setCurrent(e.target.value)} className="h-9" disabled={readOnly} />
             </Field>
           )}
-          <Field label={noPassword ? "Choose a password" : "New password"} htmlFor="acc-new" hint={noPassword ? "You signed in with a one-time link. Choose a password (at least 10 characters) so you can sign in next time." : "At least 10 characters. Leave blank to keep it."}>
+          {passwordElsewhere ? null : <Field label={noPassword ? "Choose a password" : "New password"} htmlFor="acc-new" hint={noPassword ? "You signed in with a one-time link. Choose a password (at least 10 characters) so you can sign in next time." : "At least 10 characters. Leave blank to keep it."}>
             <Input id="acc-new" type="password" autoComplete="new-password" value={next} onChange={(e) => setNext(e.target.value)} className="h-9" disabled={readOnly} />
-          </Field>
+          </Field>}
         </div>
         {!readOnly ? (
           <div>

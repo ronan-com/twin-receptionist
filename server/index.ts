@@ -1054,6 +1054,18 @@ async function route(req: Request, server?: { requestIP(r: Request): { address: 
     }
   }
 
+  // An older receptionist with browser calls off: the Test call button switches them on here (a GET never changes anything).
+  const webCallOn = path.match(/^\/api\/clients\/([a-f0-9-]{36})\/web-call\/enable$/);
+  if (webCallOn && method === "POST") {
+    if (ctx.role === "customer") return json({ error: "This test call needs one more switch turned on by your agency. Ask them to open the receptionist and try again." }, 403);
+    const found = await clientAccessFor(ctx, orgId, webCallOn[1]);
+    if (!found) return json({ error: "That business isn't shared with you." }, 404);
+    if (found.orgId !== orgId) enterOrg(found.orgId);
+    const voice = voiceFor(found.client);
+    await withinSeconds(12, "The phone service took too long to answer. Try the test call again in a moment.", async () => { await voice.enableWebCall?.(found.client.assistantId); });
+    return json({ ok: true });
+  }
+
   if (ctx.role === "customer") return json({ error: "Not allowed." }, 403);
 
   // Logo and background: for this team's own screens...

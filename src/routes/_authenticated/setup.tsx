@@ -269,7 +269,7 @@ function Welcome({ name, onNext }: { name: string; onNext: () => void }) {
     <StepShell step={0} title={`Let's get ${name} live`} lead="Your receptionists answer real phone calls, so the first job is to connect Telnyx, the phone service they run on. We'll walk you through it, then you can start adding clients.">
       <div className="grid gap-3 sm:grid-cols-3">
         {tiles.map((t) => (
-          <div key={t.title} data-hue={t.hue} className="rounded-[12px] border border-[var(--hue-line)] bg-[linear-gradient(160deg,var(--hue-faint),#fff_70%)] p-4">
+          <div key={t.title} data-hue={t.hue} className="rounded-[12px] border border-[var(--hue-line)] bg-[linear-gradient(160deg,var(--hue-faint),var(--card)_70%)] p-4">
             <span className="hue-icon mb-3 flex h-8 w-8 items-center justify-center rounded-[8px]" aria-hidden>
               <t.icon className="h-4 w-4" />
             </span>
@@ -536,7 +536,7 @@ function Done({ account, onBack }: { account: PhoneAccount; onBack: () => void }
   return (
     <StepShell step={LAST} title="You're connected" lead={`Your ${engineName(account.provider)} account is linked. Add your first client and you can hear its receptionist from the browser in a couple of minutes.`}>
       <div className="grid gap-3 sm:grid-cols-2">
-        <div className="animate-in zoom-in-95 fade-in rounded-[12px] border border-[#c8eedf] bg-[linear-gradient(160deg,#f1fbf7,#fff_75%)] p-4 duration-500" data-card="connected">
+        <div className="animate-in zoom-in-95 fade-in rounded-[12px] border border-[#c8eedf] bg-[linear-gradient(160deg,#f1fbf7,var(--card)_75%)] p-4 duration-500" data-card="connected">
           <div className="flex items-center gap-2 text-[13px] font-semibold text-[#0e6245]">
             <span className="flex h-6 w-6 items-center justify-center rounded-full bg-[#0e9f6e] text-white">
               <Check className="h-3.5 w-3.5" />

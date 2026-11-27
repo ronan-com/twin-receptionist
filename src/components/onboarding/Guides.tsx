@@ -148,7 +148,7 @@ function Pill({ children, on, className }: { children: ReactNode; on?: boolean; 
     <span
       className={cn(
         "inline-flex items-center gap-1 rounded-full border px-2 py-1 text-[10px] font-medium transition-colors sm:text-[11px]",
-        on ? "border-indigo bg-[color-mix(in_srgb,var(--indigo)_12%,#fff)] text-[var(--primary-ink,var(--indigo))]" : "border-hairline bg-white text-ink-muted",
+        on ? "border-indigo bg-[color-mix(in_srgb,var(--indigo)_12%,var(--card))] text-[var(--primary-ink,var(--indigo))]" : "border-hairline bg-white text-ink-muted",
         className,
       )}
     >
@@ -180,7 +180,7 @@ function ReceptionistScene({ step }: { step: number }) {
         <div className="grid grid-cols-2 gap-2">
           {["Dental clinic", "Salon", "Plumber", "Childcare"].map((t, i) => (
             <div key={t} className={cn("rounded-lg border bg-white p-2.5", i === 1 ? "gs-pick border-indigo ring-2 ring-[color-mix(in_srgb,var(--indigo)_25%,transparent)]" : "border-hairline")}>
-              <div className="mb-1.5 flex h-5 w-5 items-center justify-center rounded-md bg-[color-mix(in_srgb,var(--indigo)_12%,#fff)]">
+              <div className="mb-1.5 flex h-5 w-5 items-center justify-center rounded-md bg-[color-mix(in_srgb,var(--indigo)_12%,var(--card))]">
                 <Sparkles className="h-3 w-3 text-indigo" />
               </div>
               <div className="text-[11px] font-medium text-ink">{t}</div>
@@ -265,7 +265,7 @@ function TestCallScene({ step }: { step: number }) {
       <div className="flex h-full flex-col justify-center gap-3">
         <div className="rounded-lg border border-hairline bg-white p-3">
           <div className="mb-2 flex items-center gap-2">
-            <span className="flex h-7 w-7 items-center justify-center rounded-full bg-[color-mix(in_srgb,var(--indigo)_14%,#fff)] text-[11px] font-semibold text-indigo">C</span>
+            <span className="flex h-7 w-7 items-center justify-center rounded-full bg-[color-mix(in_srgb,var(--indigo)_14%,var(--card))] text-[11px] font-semibold text-indigo">C</span>
             <div>
               <div className="text-[11px] font-semibold text-ink">Receptionist</div>
               <Bar w="60px" className="mt-1" />

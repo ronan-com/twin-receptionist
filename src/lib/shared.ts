@@ -903,6 +903,10 @@ export type Account = {
   user: { id: string; email: string; name: string; platformAdmin: boolean };
   /** The install made this owner and no password is set yet: Settings asks only for a new one. */
   needsPassword?: boolean;
+  /** With needsPassword: true when this session (the one-time link's, in its first 24 hours) may set the password right now. */
+  passwordNow?: boolean;
+  /** With needsPassword and not passwordNow: true when this server can email a reset link; false means the setup link's "Reset your owner password". */
+  passwordByEmail?: boolean;
   org: { id: string; name: string } | null;
   role: OrgRole | null;
   orgs: { id: string; name: string; role: OrgRole }[];

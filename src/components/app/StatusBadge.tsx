@@ -37,7 +37,7 @@ const TONES: Record<Tone, string> = {
   info: "bg-[#e6f6ff] text-[#0b5d87] border-[#c5e7fb]",
   warning: "bg-[#fff3dc] text-[#7f4a00] border-[#ffdfa6]",
   danger: "bg-[#ffeceb] text-[#a3231b] border-[#ffcfcb]",
-  indigo: "bg-[color-mix(in_srgb,var(--indigo)_11%,#fff)] text-[var(--primary-ink)] border-[color-mix(in_srgb,var(--indigo)_24%,#fff)]",
+  indigo: "bg-[color-mix(in_srgb,var(--indigo)_11%,var(--card))] text-[var(--primary-ink)] border-[color-mix(in_srgb,var(--indigo)_24%,#fff)]",
   live: "bg-[#e3f7ee] text-[#0b6142] border-[#c3ecd9]",
   cyan: "bg-[#e0f8ff] text-[#0a6680] border-[#b8ecfa]",
   magenta: "bg-[#ffebf4] text-[#a8125b] border-[#ffcfe4]",

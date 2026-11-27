@@ -57,7 +57,7 @@ function inline(text: string, onLink: LinkHandler, key = "i"): ReactNode[] {
               e.preventDefault();
               onLink(href);
             }}
-            className="mx-0.5 inline-flex items-center gap-1 whitespace-nowrap rounded-full border border-[color-mix(in_srgb,var(--indigo)_30%,#fff)] bg-[color-mix(in_srgb,var(--indigo)_8%,#fff)] px-2.5 py-0.5 align-baseline text-[12.5px] font-medium text-[var(--primary-ink,var(--indigo))] no-underline transition-colors hover:bg-indigo hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-indigo"
+            className="mx-0.5 inline-flex items-center gap-1 whitespace-nowrap rounded-full border border-[color-mix(in_srgb,var(--indigo)_30%,#fff)] bg-[color-mix(in_srgb,var(--indigo)_8%,var(--card))] px-2.5 py-0.5 align-baseline text-[12.5px] font-medium text-[var(--primary-ink,var(--indigo))] no-underline transition-colors hover:bg-indigo hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-indigo"
           >
             {label}
             <ArrowRight className="h-3 w-3" aria-hidden />

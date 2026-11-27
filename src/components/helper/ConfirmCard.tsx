@@ -11,7 +11,7 @@ export function ConfirmCard({ card, state, onDo, onCancel }: { card: Confirm; st
   const waiting = !state;
   return (
     <div data-helper-card className="mt-2 overflow-hidden rounded-xl border border-hairline bg-white shadow-sm" role="group" aria-label={card.title}>
-      <div className="border-b border-hairline bg-[color-mix(in_srgb,var(--indigo)_6%,#fff)] px-3 py-2 text-[13px] font-semibold text-ink">{card.title}</div>
+      <div className="border-b border-hairline bg-[color-mix(in_srgb,var(--indigo)_6%,var(--card))] px-3 py-2 text-[13px] font-semibold text-ink">{card.title}</div>
       <ul className="space-y-1 px-3 py-2.5 text-[12.5px] leading-snug text-ink-muted">
         {card.lines.map((l, i) => (
           <li key={i} className="break-words">

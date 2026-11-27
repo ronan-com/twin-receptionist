@@ -113,7 +113,7 @@ export function CallList({
                 className={cn(
                   "row-hover grid w-full min-w-0 gap-2.5 px-4 py-4 text-left outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-indigo motion-reduce:transition-none md:items-center md:gap-4",
                   columns,
-                  selectedId === call.id && "bg-[color-mix(in_srgb,var(--indigo)_8%,#fff)]",
+                  selectedId === call.id && "bg-[color-mix(in_srgb,var(--indigo)_8%,var(--card))]",
                 )}
               >
                 <span className="flex min-w-0 items-center gap-2.5">

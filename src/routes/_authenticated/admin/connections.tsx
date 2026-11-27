@@ -162,7 +162,7 @@ function PhoneCard({ account: a, platform, backup }: { account: PhoneAccount; pl
 
   return (
     <>
-    <section data-hue={hue} data-card="phone-account" data-mode={a.mode} className="overflow-hidden rounded-[12px] border border-[var(--hue-line)] bg-[linear-gradient(135deg,var(--hue-faint),#fff_55%)]">
+    <section data-hue={hue} data-card="phone-account" data-mode={a.mode} className="overflow-hidden rounded-[12px] border border-[var(--hue-line)] bg-[linear-gradient(135deg,var(--hue-faint),var(--card)_55%)]">
       <div className="flex flex-col gap-5 p-5 lg:flex-row lg:items-center lg:justify-between">
         <div className="flex min-w-0 gap-4">
           <span className="hue-icon flex h-12 w-12 shrink-0 items-center justify-center rounded-[12px]" aria-hidden>

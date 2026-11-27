@@ -233,7 +233,7 @@ function Welcome({
   const first = userName.trim().split(/\s+/)[0];
   return (
     <div data-welcome>
-      <div className="border-b border-hairline bg-[linear-gradient(135deg,color-mix(in_srgb,var(--indigo)_14%,#fff),#fff_75%)] px-6 pb-5 pt-7 sm:px-8">
+      <div className="border-b border-hairline bg-[linear-gradient(135deg,color-mix(in_srgb,var(--indigo)_14%,var(--card)),var(--card)_75%)] px-6 pb-5 pt-7 sm:px-8">
         <div className="flex items-center gap-3">
           {logo ? (
             <img src={logo} alt="" className="h-12 max-w-[120px] rounded-lg bg-white object-contain p-1 ring-1 ring-hairline" />
@@ -260,7 +260,7 @@ function Welcome({
           data-action="take-tour"
           className="group flex flex-col items-start gap-2 rounded-xl border border-hairline bg-white p-4 text-left transition hover:border-indigo hover:shadow-md focus-visible:outline focus-visible:outline-2 focus-visible:outline-indigo"
         >
-          <span className="inline-flex h-9 w-9 items-center justify-center rounded-lg bg-[color-mix(in_srgb,var(--indigo)_12%,#fff)] text-indigo">
+          <span className="inline-flex h-9 w-9 items-center justify-center rounded-lg bg-[color-mix(in_srgb,var(--indigo)_12%,var(--card))] text-indigo">
             <Compass className="h-5 w-5" />
           </span>
           <span className="text-[15px] font-semibold text-ink">Take the tour</span>

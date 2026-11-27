@@ -93,7 +93,7 @@ function SideNav({ nav }: { nav: NavItem[] }) {
             aria-current={active ? "page" : undefined}
             className={cn(
               "flex h-11 items-center gap-3 rounded-[8px] px-3 text-[14.5px] font-medium outline-none transition-colors",
-              active ? "bg-[color-mix(in_srgb,var(--indigo)_10%,#fff)] font-semibold text-[var(--primary-ink)]" : "text-ink-muted hover:bg-canvas-2 hover:text-ink",
+              active ? "bg-[color-mix(in_srgb,var(--indigo)_10%,var(--card))] font-semibold text-[var(--primary-ink)]" : "text-ink-muted hover:bg-canvas-2 hover:text-ink",
             )}
           >
             <Icon className="h-[19px] w-[19px] shrink-0" strokeWidth={active ? 2.2 : 1.8} />

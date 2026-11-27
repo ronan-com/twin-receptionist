@@ -250,7 +250,7 @@ function GuidePage() {
 
 function Fact({ icon: Icon, hue, title, body }: { icon: LucideIcon; hue: Hue; title: string; body: string }) {
   return (
-    <div data-hue={hue} className="rounded-[12px] border border-[var(--hue-line)] bg-[linear-gradient(160deg,var(--hue-faint),#fff_70%)] p-4">
+    <div data-hue={hue} className="rounded-[12px] border border-[var(--hue-line)] bg-[linear-gradient(160deg,var(--hue-faint),var(--card)_70%)] p-4">
       <span className="hue-icon mb-2 flex h-8 w-8 items-center justify-center rounded-[8px]" aria-hidden>
         <Icon className="h-4 w-4" />
       </span>

@@ -70,5 +70,7 @@ test("explicitly branded installations retain their existing validation and styl
   expect((await actions.brand(b, { ownerEmail: b.email }))?.text).toBe("Give your brand a name.");
   expect(await actions.brand(b, { ownerEmail: b.email, productName: "Existing Brand" })).toBeNull();
   expect(getSetup(b.id).brand?.deferred).not.toBe(true);
+  expect((await actions.brand(b, { ownerEmail: "changed@example.com" }))?.kind).toBe("err");
+  expect(getSetup(b.id).brand?.ownerEmail).toBe(b.email);
   expect(wizardPage(b, getSetup(b.id), b.code, "sid", "brand")).toContain('name="productName"');
 });

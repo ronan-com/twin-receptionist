@@ -131,7 +131,7 @@ describe("admin fills steps, the buyer's wizard sees them", () => {
 
   test("validation errors surface in admin, and nothing is marked or stored", async () => {
     expect((await A.fillStep(b, ADMIN, "phones", { key: "platform-fake-1234567890" })).message).toMatch(/Brand first/);
-    expect(await A.fillStep(b, ADMIN, "brand", { productName: "", ownerEmail: "o@acme.test" })).toMatchObject({ ok: false, message: "Give your brand a name." });
+    expect(await A.fillStep(b, ADMIN, "brand", { productName: "", ownerEmail: "not an email" })).toMatchObject({ ok: false, message: "Enter a real email address." });
     expect((await A.fillStep(b, ADMIN, "brand", { productName: "Acme", ownerEmail: "not an email" })).ok).toBe(false);
     expect(getSetup(b.id).brand).toBeUndefined();
     await A.fillStep(b, ADMIN, "brand", { productName: "Acme AI", ownerEmail: "o@acme.test", logo: PNG, colour: "#AA2244" });

@@ -140,7 +140,7 @@ export const actions: Record<string, Action> = {
     const productName = requestedName || previous?.productName || PLAIN_AGENCY_NAME;
     const ownerEmail = str(f.ownerEmail, 200).toLowerCase();
     const keep = { productName: f.productName || "", ownerEmail: f.ownerEmail || "" };
-    if (!requestedName && !previous && b.style === "branded") return err("Give your brand a name.", keep);
+    if (!requestedName && b.style === "branded") return err("Give your brand a name.", keep);
     if (!isEmail(ownerEmail)) return err("Enter a real email address.", keep);
     // The logo arrives already shrunk by the page (wizard.js) as a PNG data URL. It travels to the
     // agency's own server as one setting, so it has to stay small.

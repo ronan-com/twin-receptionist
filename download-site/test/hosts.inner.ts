@@ -101,7 +101,7 @@ describe("serving a buyer's wizard on their own domain", () => {
     const r = await onHost(OWN, "/");
     expect(r.status).toBe(200);
     const html = await r.text();
-    expect(html).toContain("Let's set up your AI receptionist agency");
+    expect(html).toContain("Set up your agency");
     expect(html).not.toContain(`/setup/${b.code}`);
     expect(html).toContain('action="/a/start"');
     expect(html).toContain('data-status="/status"');

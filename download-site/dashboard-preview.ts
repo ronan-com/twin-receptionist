@@ -18,6 +18,7 @@ export function dashboardPreview(base: string, section: string | null = null): s
   return `<!doctype html>
 <html lang="en-AU"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex, nofollow"><title>Your agency | Dashboard preview</title>
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
 <link rel="stylesheet" href="/wizard.css"></head>
 <body data-neutral-onboarding class="preview-dashboard">
 <div class="preview-layout">

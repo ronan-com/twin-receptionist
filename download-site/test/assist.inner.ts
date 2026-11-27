@@ -173,7 +173,7 @@ describe("admin fills steps, the buyer's wizard sees them", () => {
     const welcome = page(b, "welcome");
     expect(welcome).toContain("Your provider helped set this up.");
     expect(welcome).toContain("Done for you: Brand, Hosting (Railway).");
-    expect(welcome).toContain("Left for you: Phones (Telnyx).");
+    expect(welcome).toContain("Left for you: Phones (Telnyx, or Vapi + Twilio).");
     expect(welcome).toContain("Done by your provider"); // the rail
     expect(page(b, "phones")).toContain('name="key"'); // theirs: the normal form
     expect(page(b, "phones")).not.toContain("set up by your provider");

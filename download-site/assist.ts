@@ -30,12 +30,12 @@ export type AssistId = "brand" | "railway" | "server" | "phones" | "email" | "do
 export const ASSIST_STEPS: { id: AssistId; title: string; optional: boolean }[] = [
   { id: "brand", title: "Brand", optional: false },
   ...(RAILWAY ? [{ id: "railway" as const, title: "Hosting (Railway)", optional: false }] : [{ id: "server" as const, title: "Server (DigitalOcean)", optional: false }]),
-  { id: "phones", title: "Phones (Telnyx)", optional: false },
+  { id: "phones", title: "Phones (Telnyx, or Vapi + Twilio)", optional: false },
   { id: "email", title: "Email", optional: true },
   { id: "domain", title: "Own domain and DNS", optional: true },
   { id: "calendars", title: "Calendars", optional: true },
-  { id: "vapi", title: "Backup: Vapi", optional: true },
-  { id: "twilio", title: "Backup: Twilio", optional: true },
+  { id: "vapi", title: "Vapi (voice)", optional: true },
+  { id: "twilio", title: "Twilio (numbers and texts)", optional: true },
 ];
 /** Did the step really get filled in (as opposed to skipped)? */
 export function didStep(s: SetupData, id: AssistId): boolean {
@@ -86,7 +86,7 @@ export function installBlockers(b: Buyer, s: SetupData): string[] {
     if (OPTIONAL_STEPS.includes(id) || id === "welcome" || id === "extras") continue;
     if (!stepDone(b, s, id)) out.push(ASSIST_STEPS.find((x) => x.id === id)?.title || id);
   }
-  if (!s.phones?.confirmed && !s.vapi?.confirmed && !s.skipped?.phones && !out.some((x) => /Phones/.test(x))) out.push("Phones (Telnyx)");
+  if (!s.phones?.confirmed && !s.vapi?.confirmed && !s.skipped?.phones && !out.some((x) => /Phones/.test(x))) out.push("Phones (Telnyx, or Vapi + Twilio)");
   return out;
 }
 

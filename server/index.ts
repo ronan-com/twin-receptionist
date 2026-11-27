@@ -1,3 +1,4 @@
+import { backupsRoute, startBackups } from "./backup";
 import { countryForTimezone, defaultHours, typeOfNumber, type Business, type IndustryKey, type NumberState, type Settings, type Voice } from "../src/lib/shared";
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { join, normalize } from "node:path";
@@ -689,6 +690,8 @@ async function route(req: Request, server?: { requestIP(r: Request): { address: 
   if (path === "/api/tickets" || path.startsWith("/api/tickets/")) return (await ticketRoutes({ req, url, path, method, ctx, orgId: ctx.org?.id ?? "", appUrl: appUrl(req) })) ?? json({ error: "Not found" }, 404);
   // Settings, "Updates": the owner's automatic-updates switch (server/autoUpdate.ts).
   if (path === "/api/updates/settings" || path === "/api/updates/check") return updatesRoute(req, method, path, ctx);
+  // Settings, "Backups": the daily backup, the off-site copy and how long transcripts are kept (server/backup.ts).
+  if (path === "/api/backups" || path.startsWith("/api/backups/")) return backupsRoute(req, method, path, ctx);
 
   // The Answered workspace: the businesses this person works with, in Answered's shapes.
   if (path === "/api/session/businesses" && method === "GET") return json(await workspaceBusinesses(ctx));
@@ -1365,6 +1368,8 @@ startSupportSync();
 startTicketSync();
 // The owner's automatic updates, with this agency's own Railway project token (server/autoUpdate.ts).
 startAutoUpdate();
+// A daily backup of this agency's own database (and the transcript clean-up), kept on its volume (server/backup.ts).
+startBackups();
 // Account emails that failed on every sender are tried again (server/mailer.ts).
 startOutbox();
 

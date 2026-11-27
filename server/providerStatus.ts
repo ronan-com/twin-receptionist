@@ -41,8 +41,13 @@ const num = (name: string, fallback: number) => {
 };
 /** What counts as low, per service, in the service's own currency (US dollars). Override with LOW_BALANCE_<SERVICE>. */
 export const lowAt = (p: "telnyx" | "openrouter" | "twilio") => num(`LOW_BALANCE_${p.toUpperCase()}`, p === "openrouter" ? 5 : 10);
-/** The storage the database plan allows, in MB (DATABASE_LIMIT_MB). 0 = not set: the size is shown, never flagged. */
-export const databaseLimitMb = () => num("DATABASE_LIMIT_MB", 0);
+/** What a Railway Hobby volume holds (its database lives on one). Pro raises it: set DATABASE_LIMIT_MB then. */
+export const RAILWAY_HOBBY_DB_MB = 5000;
+/**
+ * The storage the database plan allows, in MB (DATABASE_LIMIT_MB). Unset: a single agency's copy on Railway assumes
+ * the Hobby volume size; anywhere else 0 = not set, so the size is shown and never flagged.
+ */
+export const databaseLimitMb = () => num("DATABASE_LIMIT_MB", singleAgency() && process.env.RAILWAY_ENVIRONMENT_ID ? RAILWAY_HOBBY_DB_MB : 0);
 /** The share of that limit at which the database counts as nearly full. */
 export const DB_FULL_SHARE = 0.85;
 

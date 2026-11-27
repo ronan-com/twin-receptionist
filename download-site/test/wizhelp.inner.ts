@@ -92,7 +92,7 @@ describe("the wizard", () => {
     expect(t[0].source).toBe("wizard");
     expect(t[0].status).toBe("open");
     const c = JSON.parse(t[0].context);
-    expect(c).toMatchObject({ source: "wizard", step: "brand", stepLabel: "Brand", lastError: "Give your brand a name.", brand: "Acme Calls", contactEmail: "dana@acme.test", contactPhone: "+61 400 000 000", browser: UA });
+    expect(c).toMatchObject({ source: "wizard", step: "brand", stepLabel: "Brand", lastError: "Enter a real email address.", brand: "Acme Calls", contactEmail: "dana@acme.test", contactPhone: "+61 400 000 000", browser: UA });
     expect(c.keysSet).toEqual(["do_token"]);
     const all = JSON.stringify([db().query("SELECT * FROM tickets").all(), db().query("SELECT * FROM ticket_messages").all()]);
     expect(all).not.toContain(TOKEN_VALUE);
@@ -110,7 +110,7 @@ describe("the wizard", () => {
     expect(ms).toHaveLength(2);
     expect(ms[1].body.length).toBe(1000);
     expect(JSON.parse(T.ticketById(ticketId)!.context).contactEmail).toBe("dana@acme.test");
-    expect(JSON.parse(T.ticketById(ticketId)!.context).lastError).toBe("Give your brand a name.");
+    expect(JSON.parse(T.ticketById(ticketId)!.context).lastError).toBe("Enter a real email address.");
   });
 
   test("the alert goes out: Help request from <agency> at step <step>", async () => {
@@ -154,10 +154,10 @@ describe("the admin", () => {
     csrf = list.match(/name="t" value="([^"]+)"/)![1];
     expect(list).toContain(`/admin/tickets/${ticketId}`);
     expect(list).toMatch(/<span class="pill in-setup"[^>]*>Setup<\/span>/);
-    expect(list).toContain("Give your brand a name.");
+    expect(list).toContain("Enter a real email address.");
     const view = await (await get(`/admin/tickets/${ticketId}`)).text();
     expect(view).toContain("step: Brand");
-    expect(view).toContain("Give your brand a name.");
+    expect(view).toContain("Enter a real email address.");
     expect(view).toContain("do_token");
     expect(view).toContain("dana@acme.test");
     expect(view).toContain(`href="/admin/b/${acme.id}"`);

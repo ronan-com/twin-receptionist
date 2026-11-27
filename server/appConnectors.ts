@@ -236,7 +236,7 @@ export function cliniko(key: string, config: Record<string, string>, f: Doer) {
 const XERO = "https://api.xero.com";
 const tokens = new Map<string, { token: string; tenant: string; until: number }>();
 /** The key is either "clientId:clientSecret" of a Xero custom connection (exchanged for a 30 minute token) or an access token. */
-async function xeroAuth(key: string, f: Doer): Promise<{ token: string; tenant: string }> {
+export async function xeroAuth(key: string, f: Doer): Promise<{ token: string; tenant: string }> {
   const hit = tokens.get(key);
   if (hit && hit.until > Date.now()) return hit;
   let token = key;

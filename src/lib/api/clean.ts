@@ -50,7 +50,15 @@ export type McpView = { mcp: { url: string; headerName: string; hasHeader: boole
 export const getMcp = (id: string) => api.get<McpView>(`${base(id)}/mcp`);
 export const putMcp = (id: string, body: { url: string; headerName?: string; headerValue?: string }) => api.put<McpView>(`${base(id)}/mcp`, body);
 
-export type AppCard = { provider: string; name: string; hint: string; connected: boolean; savedAt: string | null };
+export type AppCard = {
+  provider: string; name: string; hint: string; connected: boolean; savedAt: string | null;
+  /** false for Tradify (no public API). */
+  syncable: boolean; enabled: boolean; config: Record<string, string>;
+  last: { at: string; ok: boolean; error: string | null; what: string } | null;
+};
+export type AppOptions = { businesses?: { id: string; name: string }[]; practitioners?: { id: string; name: string }[]; appointmentTypes?: { id: string; name: string }[]; staff?: { id: string; name: string }[] };
+export const getAppOptions = (id: string, provider: string) => api.get<AppOptions>(`${base(id)}/apps/${provider}/options`);
+export const saveAppSettings = (id: string, provider: string, body: { enabled?: boolean; config?: Record<string, string> }) => api.put<AppsView>(`${base(id)}/apps/${provider}/settings`, body);
 export type AppsView = { apps: AppCard[]; pipedream: boolean };
 export const getApps = (id: string) => api.get<AppsView>(`${base(id)}/apps`);
 export const saveAppKey = (id: string, provider: string, key: string) => api.put<AppsView>(`${base(id)}/apps/${provider}`, { key });

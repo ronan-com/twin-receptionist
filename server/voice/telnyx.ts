@@ -8,6 +8,7 @@ import { TelnyxError, telnyx } from "../telnyx";
 import { telnyxSettings } from "../agencies";
 import { availableNumbers, buyNumber, callSummary, connectedNumbers, openOrders, voiceAppFor } from "../numbers";
 import { ValidationError } from "../prompt";
+import { getSetting, putSetting } from "../store";
 import { migrateTexting, removeTextingProfile, textingProfileId } from "../texting";
 import type { Conversation, VoiceProvider } from "./provider";
 
@@ -75,6 +76,43 @@ export async function telnyxVoicePreview(voiceId: string): Promise<Buffer> {
   return audio;
 }
 
+/**
+ * The business's MCP link, given to the assistant as a Telnyx MCP server: POST /ai/mcp_servers makes the
+ * record, then the assistant lists it in `mcp_servers: [{ id }]` (Telnyx updates an assistant with POST).
+ *   https://developers.telnyx.com/api-reference/mcp-servers/create-mcp-server
+ *   https://developers.telnyx.com/api-reference/assistants/update-an-assistant
+ * Unverified against a live account: the accepted `type` value ("http" assumed), and a header secret
+ * (Telnyx takes only an `api_key_ref` to a stored Integration Secret), so a link that needs a header is
+ * not attached here; Vapi does take headers. Never throws: the script and tools sync matters more.
+ */
+export async function telnyxMcpFields(client: Business, doCall: typeof telnyx = telnyx): Promise<Record<string, unknown>> {
+  const key = `telnyxmcp:${client.id}`;
+  try {
+    const stored = await getSetting<{ url: string; serverId: string }>(key);
+    const mcp = client.mcp;
+    if (!mcp?.url) {
+      if (!stored) return {};
+      await putSetting(key, null);
+      return { mcp_servers: [] };
+    }
+    if (mcp.headerName && mcp.headerValue) {
+      console.error(`[telnyx ${client.id}] MCP link needs a header; Telnyx assistants can't send it, so it is not attached`);
+      return {};
+    }
+    let serverId = stored?.url === mcp.url ? stored.serverId : "";
+    if (!serverId) {
+      const r = await doCall<{ data?: { id?: string }; id?: string }>("POST", "/ai/mcp_servers", { name: `${UI_PRODUCT} ${client.id}`.slice(0, 60), type: "http", url: mcp.url });
+      serverId = r.data?.id ?? r.id ?? "";
+      if (!serverId) throw new Error("no id returned");
+      await putSetting(key, { url: mcp.url, serverId });
+    }
+    return { mcp_servers: [{ id: serverId }] };
+  } catch (err) {
+    console.error(`[telnyx ${client.id}] MCP link not attached:`, (err as Error).message);
+    return {};
+  }
+}
+
 export const telnyxProvider: VoiceProvider = {
   id: "telnyx",
   label: "Telnyx",
@@ -100,7 +138,7 @@ export const telnyxProvider: VoiceProvider = {
     // Paused by the business: only the take-a-message tool stays (server/prompt.ts).
     const booking = bookingLive(client) ? bookingTools(client, publicUrl()).filter((t: any) => allowedTools.includes(t.webhook?.name)) : [];
     const tools = [HANGUP, ...booking];
-    await telnyx("POST", `/ai/assistants/${client.assistantId}`, await withAutomations(client, { instructions, tools }));
+    await telnyx("POST", `/ai/assistants/${client.assistantId}`, await withAutomations(client, { instructions, tools, ...(await telnyxMcpFields(client)) }));
   },
 
   async updateAssistant(client, settings, instructions) {

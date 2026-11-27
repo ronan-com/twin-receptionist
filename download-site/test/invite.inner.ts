@@ -94,9 +94,10 @@ describe("no Chloe branding by default", () => {
     expect(html).toContain(`<option value="neutral" selected>Generic (no Chloe branding)</option><option value="branded">Chloe branded</option>`);
     expect(html).toMatch(/<input type="checkbox" name="welcome" value="1"> <b>Email them now<\/b>/);
     expect(html).not.toMatch(/name="welcome" value="1" checked/);
-    const g = html.indexOf("Generic onboarding link (default)"), c = html.indexOf("Chloe-branded onboarding link");
-    expect(g).toBeGreaterThan(0);
-    expect(c).toBeGreaterThan(g);
+    // The onboarding links form makes new links Generic by default.
+    expect(html).toContain(`action="/admin/links/add"`);
+    const form = html.slice(html.indexOf(`action="/admin/links/add"`));
+    expect(form).toContain(`<option value="neutral" selected>Generic (no Chloe branding)</option>`);
   });
 
   test("Add agency with the defaults: neutral style, and nobody is emailed (even with site email set up)", async () => {

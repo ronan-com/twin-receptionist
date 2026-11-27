@@ -61,7 +61,7 @@ bash src/deploy/aws/ensure-ondemand-tls.sh
 
 # Route the address through the main Caddy (https certificate is automatic).
 sed "s/__DOMAIN__/$DOMAIN/" src/deploy/aws/setupsite.caddy.tmpl > /opt/twin/sites/setupsite.caddy
-# setup.chloeeai.co keeps serving the APIs installed agencies call (sync, tickets, releases). It is also the owner's
+# setup.chloeeai.co keeps serving the APIs installed agencies call (sync, tickets, releases, broker) and the shared Google/Microsoft sign-in callback (/oauth/broker/*; BROKER_URL). It is also the owner's
 # master admin address (ADMIN_DOMAIN): /admin and its assets are served there directly. Every other page there goes to /admin;
 # on other hosts it forwards to the generic $DOMAIN, which is what buyer setup links use. To move admin later, change ADMIN_DOMAIN's default here.
 ADMIN_DOMAIN=${7:-setup.sageai.agency}
@@ -73,9 +73,9 @@ site_block() { # <host> <paths served here> [redirect target for everything else
 }
 if [ "$DOMAIN" != "setup.chloeeai.co" ]; then
   if [ "$ADMIN_DOMAIN" = "setup.chloeeai.co" ]; then
-    site_block setup.chloeeai.co "/api/* /healthz $ADMIN_PATHS" >> /opt/twin/sites/setupsite.caddy
+    site_block setup.chloeeai.co "/api/* /oauth/broker/* /healthz $ADMIN_PATHS" >> /opt/twin/sites/setupsite.caddy
   else
-    site_block setup.chloeeai.co "/api/* /healthz" >> /opt/twin/sites/setupsite.caddy
+    site_block setup.chloeeai.co "/api/* /oauth/broker/* /healthz" >> /opt/twin/sites/setupsite.caddy
   fi
 fi
 if [ "$ADMIN_DOMAIN" != "$DOMAIN" ] && [ "$ADMIN_DOMAIN" != "setup.chloeeai.co" ]; then

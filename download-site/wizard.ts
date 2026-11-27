@@ -8,6 +8,7 @@ import { esc } from "./pages";
 import { howTo } from "./content";
 import { chatBubble, chatHead } from "./chat";
 import { oauthEnabled, type OAuthProvider } from "./oauth";
+import { brokerOn, offered } from "./broker";
 import { PHONE_LATER, agencyUrl, canView, firstOpen, hostOf, locked, oauthRedirect, phoneSkipped, stepDone, updateInfo, webUrl, zoneOf } from "./setup";
 import { detailOf, hasAssist, helpedStep, stepRows, type AssistId } from "./assist";
 import { personHelpHtml } from "./wizhelp";
@@ -384,6 +385,15 @@ function calendars(c: Ctx) {
   <input name="${p}Id" aria-label="${title} client ID" autocapitalize="off" spellcheck="false" maxlength="300" placeholder="${ph}" value="${val(c, `${p}Id`, cal[p]?.clientId || "")}">
   <input name="${p}Secret" type="password" aria-label="${title} client secret" autocomplete="off" maxlength="500" placeholder="${saved ? `Secret saved (${esc(saved)})` : "Client secret"}"></div>`;
   };
+  // The shared Google / Microsoft sign-in is on (broker.ts): nothing to register, and no domain needed.
+  const shared = brokerOn() && (offered().google.calendar || offered().microsoft.calendar);
+  if (shared) {
+    return `${head(c, "Calendar booking", "Let receptionists book into Google or Outlook calendars.")}
+<div class="body">${notice("info", "Nothing to set up here. Connecting Google Calendar or Outlook is one click from your dashboard. Only fill in the keys below if you would rather use your own Google or Microsoft app.")}
+${mainForm(c, "calendars", `<div class="choice">${card("google", "Google", "Client ID")}${card("microsoft", "Microsoft", "Application (client) ID")}</div>
+  ${showMeHow(["google-oauth", "microsoft-oauth"])}`)}</div>
+${nav(c, `${mini(c, "cal-skip", "Continue without my own keys")}${primary("Check and save my keys")}`)}`;
+  }
   if (RAILWAY && !hostOf(c.s)) {
     return `${head(c, "Calendar booking (optional)", "Let receptionists book into Google or Outlook calendars.")}
 ${notice("info", "Calendar sign-in needs a web address of your own to send people back to. Add your domain first, or skip this and add calendars later in your dashboard's Settings.")}

@@ -2,6 +2,8 @@ import { createFileRoute, Link, Outlet, redirect } from "@tanstack/react-router"
 import { ClientShell } from "@/components/app/ClientShell";
 import { Notice, ErrorState } from "@/components/app/primitives";
 import { SetupPrompt } from "@/components/app/SetupPrompt";
+import { SettingsTabs } from "@/components/app/SettingsTabs";
+import { ProviderWarnings } from "@/components/app/ProviderWarnings";
 import { WorkspaceBrand } from "@/components/app/WorkspaceBrand";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -28,7 +30,7 @@ export const Route = createFileRoute("/_authenticated/app")({
 
 function ShellSkeleton() {
   return (
-    <div className="min-h-screen bg-canvas-2">
+    <div className="min-h-screen bg-white">
       <div className="hidden h-screen w-[232px] border-r border-hairline bg-white lg:fixed lg:block" />
       <div className="lg:pl-[232px]">
         <div className="h-14 border-b border-hairline bg-white" />
@@ -107,11 +109,12 @@ function ClientAppLayout() {
   })();
 
   return (
-    <ClientShell nav={CLIENT_NAV} banner={banner}>
+    <ClientShell nav={CLIENT_NAV} banner={<>{ws.access.kind === "staff_view" || ws.console ? <ProviderWarnings /> : null}{banner}</>}>
       {ws.business ? (
         <>
           <WorkspaceBrand />
           <SetupPrompt />
+          <SettingsTabs />
           <Outlet />
         </>
       ) : (

@@ -155,7 +155,7 @@ export const AppointmentBadge = ({ status }: { status: AppointmentStatus }) => {
 };
 
 export const IntegrationBadge = ({ status }: { status: IntegrationStatus }) => {
-  const tone: Tone = status === "connected" ? "success" : status === "error" ? "danger" : status === "coming_soon" ? "muted" : "neutral";
+  const tone: Tone = status === "connected" ? "success" : status === "error" ? "danger" : "neutral";
   return <StatusBadge tone={tone} dot={status === "connected"}>{INTEGRATION_STATUS_LABELS[status]}</StatusBadge>;
 };
 

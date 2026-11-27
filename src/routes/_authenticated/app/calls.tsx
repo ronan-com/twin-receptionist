@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, redirect } from "@tanstack/react-router";
 import { Search } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { ErrorState } from "@/components/app/primitives";
@@ -16,6 +16,10 @@ export const Route = createFileRoute("/_authenticated/app/calls")({
   validateSearch: (search: Record<string, unknown>): { call?: string } => ({
     call: typeof search["call"] === "string" && search["call"] ? String(search["call"]) : undefined,
   }),
+  // Calls are part of the Inbox now; old links land there.
+  beforeLoad: ({ search }) => {
+    throw redirect({ to: "/app/inbox", search: { call: (search as { call?: string }).call }, replace: true });
+  },
   head: () => ({
     meta: [{ title: OTHER_BRAND ? `Calls | ${PRODUCT}` : "Calls" }, { name: "description", content: "Every call your receptionist answered, with a summary and transcript." }],
   }),

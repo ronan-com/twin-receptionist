@@ -9,7 +9,7 @@ import {
 } from "../src/lib/shared";
 import { sql } from "./db";
 import { CalendarError, busyTimes, createEvent, type Busy } from "./calendars";
-import { confirmToCaller, notifyBusiness } from "./notify";
+import { confirmToCaller, declineToCaller, notifyBusiness } from "./notify";
 import { mailerReady } from "./mailer";
 import { getSetting, putSetting } from "./store";
 
@@ -52,6 +52,21 @@ async function record(clientId: string, entry: BookingRequest): Promise<void> {
 export async function requestsFor(clientId: string): Promise<BookingRequest[]> {
   const rows = await sql`select data from booking_requests where client_id = ${clientId} order by id desc limit 200`;
   return rows.map((r: any) => r.data);
+}
+
+// Bookings waiting for the business's approval hold their time, so nobody else is offered it.
+export async function pendingBusy(clientId: string, from: number, to: number, exceptId = ""): Promise<Busy[]> {
+  const rows = await sql`select data from booking_requests where client_id = ${clientId} and data->>'kind' = 'booking' and data->>'status' = 'pending'`;
+  const out: Busy[] = [];
+  for (const r of rows as any[]) {
+    const d = r.data as BookingRequest & { minutes?: number };
+    if (d.id === exceptId) continue;
+    const start = Date.parse(d.start);
+    if (!Number.isFinite(start)) continue;
+    const end = start + (d.minutes ?? 30) * 60000;
+    if (start < to && end > from) out.push({ start, end });
+  }
+  return out;
 }
 
 // ---- Time zones ----------------------------------------------------------------
@@ -146,7 +161,7 @@ function lastBookableDate(client: Business): string {
 export async function freeSlots(
   client: Business,
   date: string,
-  opts: { ignore?: Busy; busy?: typeof busyTimes } = {},
+  opts: { ignore?: Busy; busy?: typeof busyTimes; pending?: typeof pendingBusy } = {},
 ): Promise<{ open: boolean; slots: Slot[]; starts: number[] }> {
   const s = client.settings;
   const setup = client.booking!;
@@ -162,7 +177,7 @@ export async function freeSlots(
   const gap = rules.buffer * 60000;
 
   const ignore = opts.ignore;
-  const taken = (await (opts.busy ?? busyTimes)(client, opens - gap, closes + gap))
+  const taken = [...(await (opts.busy ?? busyTimes)(client, opens - gap, closes + gap)), ...(await (opts.pending ?? pendingBusy)(client.id, opens - gap, closes + gap))]
     .filter((b) => !(ignore && b.start === ignore.start && b.end === ignore.end))
     .map((b) => [b.start, b.end] as const);
 
@@ -223,6 +238,95 @@ export function withBookingLock<T>(clientId: string, job: () => Promise<T>): Pro
   return next;
 }
 
+function bookingEvent(client: Business, r: { name: string; phone: string; email?: string; service: string; note?: string }, start: number, end: number, channel: string) {
+  const { name, phone, email, service } = r;
+  const notes = r.note ?? "";
+  return {
+    start,
+    end,
+    title: `${service || "Appointment"} · ${name}`,
+    description: `Name: ${name}\nPhone: ${phone}\n${email ? `Email: ${email}\n` : ""}Service: ${service || "not given"}\n${notes ? `Notes: ${notes}\n` : ""}Booked by the AI receptionist ${channel === "sms" ? "by text" : channel === "web" ? "in the website chat" : "by phone"}.`,
+  };
+}
+
+// ---- Pending bookings: the business's decision -------------------------------------
+
+type PendingRow = BookingRequest & { minutes?: number; apptStatus?: string };
+export type Decision = { ok: true; request: PendingRow } | { ok: false; reason: string };
+export type DecisionDeps = {
+  createEvent: typeof createEvent;
+  confirm: (c: Business, r: BookingRequest) => Promise<unknown>;
+  decline: (c: Business, r: BookingRequest) => Promise<unknown>;
+  text: (c: Business, to: string, text: string) => Promise<unknown>;
+};
+
+// Texts the caller from the receptionist's mobile number, when it has one. Never throws.
+async function textCaller(client: Business, to: string, text: string): Promise<void> {
+  try {
+    const { smsNumberOf } = await import("./automations");
+    const { sendSms } = await import("./sms");
+    const from = await smsNumberOf(client);
+    if (from && to) await sendSms(client, { from, to, text, meta: { twin_booking: "decision" } });
+  } catch (err) {
+    console.error(`[booking ${client.id}] text to caller`, (err as Error).message);
+  }
+}
+
+const decisionDeps: DecisionDeps = { createEvent, confirm: confirmToCaller, decline: declineToCaller, text: textCaller };
+
+async function pendingRequest(clientId: string, id: string): Promise<PendingRow | null> {
+  const [row] = await sql`select data from booking_requests where client_id = ${clientId} and data->>'id' = ${id} and data->>'kind' = 'booking'`;
+  return (row?.data as PendingRow) ?? null;
+}
+
+async function saveRequestData(clientId: string, id: string, patch: Record<string, unknown>): Promise<PendingRow> {
+  const [row] = await sql`
+    update booking_requests set data = data || ${{ ...patch, changedAt: new Date().toISOString() } as any}::jsonb
+    where client_id = ${clientId} and data->>'id' = ${id} returning data`;
+  return row.data as PendingRow;
+}
+
+/** The business approves a pending booking: it goes in the calendar and the caller is told. */
+export function approveBooking(client: Business, id: string, deps: DecisionDeps = decisionDeps): Promise<Decision> {
+  return withBookingLock(client.id, async (): Promise<Decision> => {
+    const r = await pendingRequest(client.id, id);
+    if (!r) return { ok: false, reason: "Unknown booking." };
+    if (r.status !== "pending") return { ok: false, reason: r.status === "booked" ? "That booking is already confirmed." : "That booking isn't waiting for approval." };
+    const start = Date.parse(r.start);
+    if (!Number.isFinite(start)) return { ok: false, reason: "That booking has no valid time." };
+    const end = start + (r.minutes ?? client.booking?.minutes ?? 30) * 60000;
+    let eventId = "";
+    try {
+      eventId = await deps.createEvent(client, bookingEvent(client, r, start, end, r.channel));
+    } catch (err) {
+      return { ok: false, reason: err instanceof CalendarError ? err.message : "The calendar couldn't be reached. Try again in a moment." };
+    }
+    const saved = await saveRequestData(client.id, id, { status: "booked", ...(eventId ? { eventId } : {}), apptStatus: "confirmed" });
+    if (saved.email) deps.confirm(client, saved).catch((err) => console.error(`[booking ${client.id}] confirmation email`, err.message));
+    if (saved.channel === "sms" || !saved.email) {
+      const tz = client.settings.timezone;
+      const when = `${sayDay(localDate(start, tz))} at ${sayTime(isoLocal(start, tz).slice(11, 16))}`;
+      deps.text(client, saved.phone, `${client.settings.businessName}: you're booked for ${when}.`).catch(() => {});
+    }
+    return { ok: true, request: saved };
+  });
+}
+
+/** The business declines a pending booking: the time is free again and the caller is told. */
+export function declineBooking(client: Business, id: string, deps: DecisionDeps = decisionDeps): Promise<Decision> {
+  return withBookingLock(client.id, async (): Promise<Decision> => {
+    const r = await pendingRequest(client.id, id);
+    if (!r) return { ok: false, reason: "Unknown booking." };
+    if (r.status !== "pending") return { ok: false, reason: "That booking isn't waiting for approval." };
+    const saved = await saveRequestData(client.id, id, { status: "declined", declinedAt: new Date().toISOString(), apptStatus: "declined" });
+    if (saved.email) deps.decline(client, saved).catch((err) => console.error(`[booking ${client.id}] decline email`, err.message));
+    if (saved.channel === "sms" || !saved.email) {
+      deps.text(client, saved.phone, `${client.settings.businessName}: sorry, we can't do the time you asked for. Please call us to find another time.`).catch(() => {});
+    }
+    return { ok: true, request: saved };
+  });
+}
+
 export function book(client: Business, input: any): Promise<unknown> {
   return withBookingLock(client.id, () => bookNow(client, input));
 }
@@ -264,13 +368,20 @@ async function bookNow(client: Business, input: any): Promise<unknown> {
       return { booked: false, reason: "That time is no longer free. Check availability again and offer other times." };
     }
     const end = start + client.booking!.minutes * 60000;
-    const eventId = await createEvent(client, {
-      start,
-      end,
-      title: `${service || "Appointment"} · ${name}`,
-      description: `Name: ${name}\nPhone: ${phone}\n${email ? `Email: ${email}\n` : ""}Service: ${service || "not given"}\n${notes ? `Notes: ${notes}\n` : ""}Booked by the AI receptionist ${channel === "sms" ? "by text" : channel === "web" ? "in the website chat" : "by phone"}.`,
-    });
     const when = `${sayDay(date)} at ${sayTime(isoLocal(start, s.timezone).slice(11, 16))}`;
+    if (client.booking!.requireApproval) {
+      // Held, not booked: the business approves or declines it in its calendar.
+      const pending: BookingRequest & { minutes: number } = { ...entry, status: "pending", note: notes, minutes: client.booking!.minutes };
+      await record(client.id, pending);
+      notifyBusiness(client, pending).catch(() => {});
+      return {
+        booked: false,
+        pending: true,
+        when,
+        message: `That time is held for them, but it is NOT confirmed yet. Tell them this is a request for ${when}, that the team will confirm it shortly${email || channel === "sms" ? " by message" : ""}, and do not say it is booked.`,
+      };
+    }
+    const eventId = await createEvent(client, bookingEvent(client, { ...entry, note: notes }, start, end, channel));
     const booked: BookingRequest = { ...entry, status: "booked", note: notes, ...(eventId ? { eventId } : {}) };
     await record(client.id, booked).catch((err) => console.error(`[booking ${client.id}] couldn't log`, err.message));
     // Email the business and send it to their CRM. Never let that undo a booking that worked.

@@ -3,6 +3,7 @@ import { useMutation } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { ImageUp } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Switch } from "@/components/ui/switch";
 import { brandVars, textOn } from "@/components/app/WorkspaceBrand";
 import type { BrandChange } from "@/lib/api/console";
 import type { Brand } from "@/lib/shared";
@@ -20,6 +21,8 @@ type Props = {
   upload: (kind: "logo" | "background", file: File) => Promise<Brand>;
   save: (change: BrandChange) => Promise<Brand>;
   onSaved: (b: Brand) => void | Promise<void>;
+  /** Show the "client can't change its own branding" switch (a client's brand, not the agency's). */
+  lockable?: boolean;
 };
 
 const COLOURS = [
@@ -30,7 +33,7 @@ const COLOURS = [
 ] as const;
 type ColourKey = (typeof COLOURS)[number]["key"];
 
-export function BrandEditor({ brand, fallback, canManage, previewName, upload, save, onSaved }: Props) {
+export function BrandEditor({ brand, fallback, canManage, previewName, upload, save, onSaved, lockable }: Props) {
   const [draft, setDraft] = useState<Record<ColourKey, string>>({ primaryColor: "", accentColor: "", sidebarColor: "", bgColor: "" });
   const logoInput = useRef<HTMLInputElement>(null);
   const bgInput = useRef<HTMLInputElement>(null);
@@ -71,6 +74,12 @@ export function BrandEditor({ brand, fallback, canManage, previewName, upload, s
   return (
     <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(0,340px)]" data-brand-editor>
       <div className="min-w-0 space-y-5">
+        {lockable ? (
+          <div className="flex items-center justify-between gap-3 rounded-lg border border-hairline px-3 py-2.5" data-brand-lock>
+            <span className="text-[13px] text-ink">Lock: the client can't change its own logo or colours</span>
+            <Switch checked={Boolean(brand?.lockClient)} disabled={!canManage || busy} onCheckedChange={(v) => change.mutate({ body: { lockClient: v }, message: v ? "Locked" : "Unlocked" })} aria-label="Lock client branding" />
+          </div>
+        ) : null}
         <section className="space-y-2">
           <h3 className="text-[13px] font-semibold text-ink">Logo</h3>
           <p className="text-[12px] text-ink-muted">PNG, JPEG or WebP, up to 400 KB.</p>

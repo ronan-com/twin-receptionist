@@ -245,3 +245,34 @@ export async function removeEvent(client: Business, eventId: string): Promise<vo
     throw err;
   }
 }
+
+// ---- Reading the events on a linked calendar (for the dashboard's calendar view) ----
+
+export type LinkedEvent = { id: string; start: number; end: number; title: string; description: string };
+
+// Every event on the connected Google/Outlook calendar between two times. Empty for the
+// built-in calendar (those are read from our own tables). Errors are thrown as CalendarError.
+export async function linkedEvents(client: Business, from: number, to: number): Promise<LinkedEvent[]> {
+  if (providerOf(client) === "builtin") return [];
+  const link = linkedOrFail(client, await linkFor(client.id));
+  if (link.provider === "google") {
+    const params = new URLSearchParams({ timeMin: new Date(from).toISOString(), timeMax: new Date(to).toISOString(), singleEvents: "true", orderBy: "startTime", maxResults: "250" });
+    const data = await call(client.id, link, "GET", `${GOOGLE}/calendars/${encodeURIComponent(link.calendar_id)}/events?${params}`);
+    return (data?.items ?? [])
+      .filter((e: any) => e.status !== "cancelled")
+      .map((e: any) => ({
+        id: String(e.id ?? ""),
+        start: Date.parse(e.start?.dateTime ?? e.start?.date ?? ""),
+        end: Date.parse(e.end?.dateTime ?? e.end?.date ?? ""),
+        title: String(e.summary ?? "Busy"),
+        description: String(e.description ?? ""),
+      }))
+      .filter((e: LinkedEvent) => Number.isFinite(e.start) && Number.isFinite(e.end));
+  }
+  const params = new URLSearchParams({ startDateTime: new Date(from).toISOString(), endDateTime: new Date(to).toISOString(), $select: "id,subject,bodyPreview,start,end,isCancelled", $top: "250" });
+  const data = await call(client.id, link, "GET", `${GRAPH}/me/calendarView?${params}`);
+  return (data?.value ?? [])
+    .filter((e: any) => !e.isCancelled)
+    .map((e: any) => ({ id: String(e.id ?? ""), start: fromGraph(e.start), end: fromGraph(e.end), title: String(e.subject ?? "Busy"), description: String(e.bodyPreview ?? "") }))
+    .filter((e: LinkedEvent) => Number.isFinite(e.start) && Number.isFinite(e.end));
+}

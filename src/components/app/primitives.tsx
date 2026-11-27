@@ -31,28 +31,31 @@ export function MiniSpark({ data, color = HUE_HEX.indigo, className }: { data: n
 
 /* ---------------- Page header ---------------- */
 
+/** Descriptions stay short: only the first sentence is shown. */
+export function brief(text: ReactNode): ReactNode {
+  if (typeof text !== "string") return text;
+  const m = text.match(/^(.+?[.!?])(\s|$)/);
+  const first = m ? m[1] : text;
+  return first.length > 110 ? first.slice(0, 107).trimEnd() + "..." : first;
+}
+
 export function PageHeader({
   title,
   description,
   actions,
-  eyebrow,
   className,
 }: {
+  eyebrow?: ReactNode;
   title: ReactNode;
   description?: ReactNode;
   actions?: ReactNode;
-  eyebrow?: ReactNode;
   className?: string;
 }) {
   return (
     <div className={cn("flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between", className)}>
       <div className="min-w-0">
-        <div className="mb-1.5 flex min-w-0 items-center gap-2">
-          <span className="ribbon-gradient h-[3px] w-7 shrink-0 rounded-full" aria-hidden />
-          {eyebrow ? <span className="truncate text-[12px] font-semibold text-[var(--primary-ink)]">{eyebrow}</span> : null}
-        </div>
-        <h1 className="text-[22px] font-semibold tracking-[-0.02em] text-ink sm:text-[24px]">{title}</h1>
-        {description ? <p className="mt-1 max-w-2xl text-[13px] leading-5 text-ink-muted">{description}</p> : null}
+        <h1 className="text-[24px] font-semibold tracking-[-0.02em] text-ink sm:text-[26px]">{title}</h1>
+        {description ? <p className="mt-1 max-w-2xl text-[13.5px] leading-5 text-ink-muted">{brief(description)}</p> : null}
       </div>
       {actions ? <div className="flex flex-wrap items-center gap-2">{actions}</div> : null}
     </div>
@@ -84,7 +87,7 @@ export function Panel({
         <header className="flex flex-col gap-2 border-b border-hairline px-4 py-3 sm:flex-row sm:items-start sm:justify-between sm:gap-3">
           <div className="min-w-0">
             {title ? <h2 className="text-[14px] font-semibold text-ink">{title}</h2> : null}
-            {description ? <p className="mt-0.5 text-[12px] text-ink-muted">{description}</p> : null}
+            {description ? <p className="mt-0.5 text-[12.5px] text-ink-muted">{brief(description)}</p> : null}
           </div>
           {actions ? <div className="flex min-w-0 flex-wrap items-center gap-2 sm:shrink-0">{actions}</div> : null}
         </header>
@@ -197,11 +200,11 @@ export function EmptyState({
 }) {
   return (
     <div className={cn("flex flex-col items-center justify-center text-center", compact ? "px-4 py-8" : "px-6 py-14", className)}>
-      <div data-hue={hue ?? hueFor(title)} className="hue-icon relative mb-3 flex h-10 w-10 items-center justify-center rounded-[10px] ring-4 ring-[var(--hue-faint)]">
+      <div data-hue={hue ?? hueFor(title)} className="hue-icon relative mb-3 flex h-10 w-10 items-center justify-center rounded-full">
         <Icon className="h-[18px] w-[18px]" strokeWidth={1.75} />
       </div>
       <h3 className="text-[14px] font-semibold text-ink">{title}</h3>
-      {description ? <p className="mt-1 max-w-sm text-[12.5px] leading-5 text-ink-muted">{description}</p> : null}
+      {description ? <p className="mt-1 max-w-sm text-[12.5px] leading-5 text-ink-muted">{brief(description)}</p> : null}
       {action ? <div className="mt-4">{action}</div> : null}
     </div>
   );
@@ -282,7 +285,7 @@ export function Notice({
   className?: string;
 }) {
   const tones = {
-    info: "border-[#c5e7fb] bg-[#f2f9ff] text-[#0b5d87]",
+    info: "border-hairline bg-canvas-2 text-ink",
     warning: "border-[#ffe1b0] bg-[#fff9ee] text-[#8a4b00]",
     danger: "border-[#ffd0d0] bg-[#fff7f7] text-[#a41d1d]",
     success: "border-[#c8eedf] bg-[#f1fbf7] text-[#0e6245]",

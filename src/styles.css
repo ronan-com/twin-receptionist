@@ -72,7 +72,7 @@
   --lime: #a5f3fc;
 
   --canvas: #ffffff;
-  --canvas-2: #f6f9fc;
+  --canvas-2: #f7f8fa;
   --hairline: #e3e8ee;
   --ink: var(--slate-deep);
   --ink-muted: #425466;
@@ -385,13 +385,11 @@
     --hue-line: color-mix(in srgb, var(--hue) 24%, var(--hairline));
   }
   [data-hue="indigo"] { --hue: var(--indigo); --hue-ink: var(--primary-ink); }
-  [data-hue="cyan"] { --hue: var(--cyan); --hue-ink: #0a6680; }
-  [data-hue="magenta"] { --hue: var(--magenta); --hue-ink: #b0135f; }
+  /* One accent: the decorative hues all follow the brand colour; only status colours (green, amber, coral) stay distinct. */
+  [data-hue="cyan"], [data-hue="magenta"], [data-hue="violet"], [data-hue="sky"] { --hue: var(--indigo); --hue-ink: var(--primary-ink); }
   [data-hue="coral"] { --hue: var(--coral); --hue-ink: #b03a17; }
   [data-hue="amber"] { --hue: var(--amber); --hue-ink: #855000; }
   [data-hue="green"] { --hue: var(--green); --hue-ink: #0b6142; }
-  [data-hue="violet"] { --hue: var(--violet); --hue-ink: #6233d1; }
-  [data-hue="sky"] { --hue: var(--sky); --hue-ink: #1b5fc4; }
   [data-hue="slate"] { --hue: var(--slate-hue); --hue-ink: #3c4f63; }
 
   /* coloured icon square */
@@ -402,30 +400,29 @@
   /* solid chip (avatars): white text on the deep hue */
   .hue-solid {
     /* deep end of the hue only, so white initials stay above 6:1 */
-    background: linear-gradient(135deg, var(--hue-ink), color-mix(in srgb, var(--hue-ink) 82%, #061b31));
+    background: var(--hue-ink);
     color: #fff;
   }
   /* KPI tile: a faint wash of its hue and a hue-coloured top rule */
   .hue-tile {
     position: relative;
-    background: linear-gradient(150deg, var(--hue-faint) 0%, #fff 58%);
-    border-color: var(--hue-line);
+    background: #fff;
+    border-color: var(--hairline);
     transition: box-shadow 0.18s ease;
   }
   .hue-tile::before {
     content: "";
     position: absolute;
     inset: 0 0 auto 0;
-    height: 2px;
-    background: linear-gradient(90deg, var(--hue), color-mix(in srgb, var(--hue) 30%, transparent));
+    height: 0;
   }
   .hue-tile:hover {
-    box-shadow: 0 8px 22px -14px color-mix(in srgb, var(--hue) 80%, transparent);
+    box-shadow: 0 6px 20px -14px rgba(10, 37, 64, 0.35);
   }
 
   /* Answered ribbon: brand primary into the accents */
   .ribbon-gradient {
-    background: linear-gradient(90deg, var(--indigo), var(--ribbon-2) 55%, var(--ribbon-3));
+    background: var(--indigo);
   }
 
   /* active sidebar item: a tint of the brand colour and an accent bar */
@@ -434,14 +431,7 @@
     color: var(--ink);
   }
   .nav-active::before {
-    content: "";
-    position: absolute;
-    left: -8px;
-    top: 7px;
-    bottom: 7px;
-    width: 3px;
-    border-radius: 0 3px 3px 0;
-    background: var(--indigo);
+    content: none;
   }
 
   /* row hover in lists and tables: a breath of the brand colour */
@@ -468,12 +458,12 @@
   .auth-ribbon__band--a {
     top: -16%;
     height: 44%;
-    background: linear-gradient(100deg, #635bff 0%, #a78bfa 20%, #ff5caa 44%, #ff7a59 66%, #ffb03d 82%, #00d4ff 100%);
+    background: var(--indigo);
   }
   .auth-ribbon__band--b {
     top: 26%;
     height: 7%;
-    background: linear-gradient(100deg, rgba(0, 212, 255, 0.6), rgba(99, 91, 255, 0.4) 55%, rgba(255, 92, 170, 0));
+    background: color-mix(in srgb, var(--indigo) 30%, transparent);
   }
   .auth-ribbon__fibers {
     position: absolute;
@@ -529,3 +519,6 @@
   .gs-scene, .gs-fade, .gs-pop, .gs-click, .gs-ring, .gs-wave, .gs-press, .gs-type, .gs-pick, .gs-fill, .gs-cursor, .gs-spot, .gs-spot-ring { animation: none !important; transition: none !important; }
   .gs-click { opacity: 0; }
 }
+
+/* Clean pass: dashboards are white, with one accent. */
+[data-app-shell], [data-app-shell] main { background: #fff; }

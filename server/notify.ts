@@ -1,6 +1,8 @@
 import { createHmac } from "node:crypto";
 import { formatNumber, industry, type BookingRequest, type Business } from "../src/lib/shared";
 import { sendAccountEmail } from "./mailer";
+import { resolveBrand } from "./brand";
+import { orgOfClient } from "./store";
 import { isPublicHost } from "./net";
 import { ValidationError } from "./prompt";
 
@@ -38,6 +40,28 @@ export function checkEmailAddress(value: unknown): string {
     throw new ValidationError("Enter one valid email address for booking notices.");
   }
   return email;
+}
+
+
+const esc = (t: string) => t.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+
+/** The caller's email in the business's own look: its logo and colour, else its agency's. Plain text stays the fallback. */
+export async function brandedEmail(client: Business, to: string, subject: string, lines: string[]): Promise<boolean> {
+  const text = lines.join("\n");
+  let html: string | undefined;
+  try {
+    const orgId = await orgOfClient(client.id);
+    if (orgId) {
+      const b = await resolveBrand(orgId, client.id);
+      const base = (process.env.PUBLIC_URL ?? "").replace(/\/$/, "");
+      const colour = /^#[0-9a-f]{6}$/i.test(b.primaryColor ?? "") ? b.primaryColor! : "#111111";
+      const logo = b.logo && base ? `<img src="${esc(base + b.logo)}" alt="" style="max-height:40px;max-width:200px;display:block;margin:0 0 10px">` : "";
+      html = `<div style="font:15px/1.55 -apple-system,Segoe UI,Arial,sans-serif;color:#111;max-width:520px;margin:0 auto;padding:24px"><div style="border-top:4px solid ${colour};padding-top:16px">${logo}<div style="font-weight:600;color:${colour};margin-bottom:12px">${esc(client.settings.businessName)}</div>${lines.map((l) => (l ? `<p style="margin:0 0 8px;white-space:pre-wrap">${esc(l)}</p>` : "")).join("")}</div></div>`;
+    }
+  } catch {
+    html = undefined;
+  }
+  return sendAccountEmail(to, subject, text, html ? { html } : {});
 }
 
 // "an appointment", "a centre tour": what this kind of business calls a booking.
@@ -82,7 +106,7 @@ export async function confirmToCaller(client: Business, r: BookingRequest, chang
             s.businessName,
           ];
     const subject = change.kind === "cancelled" ? `Your ${what} at ${s.businessName} is cancelled` : `Your ${what} at ${s.businessName} has moved: ${whenText(client, r)}`;
-    return sendAccountEmail(r.email, subject, body.join("\n"));
+    return brandedEmail(client, r.email, subject, body);
   }
   const lines = [
     `Hi ${r.name.split(" ")[0] || "there"},`,
@@ -97,7 +121,25 @@ export async function confirmToCaller(client: Business, r: BookingRequest, chang
     "",
     s.businessName,
   ];
-  return sendAccountEmail(r.email, `Your ${what} at ${s.businessName}: ${whenText(client, r)}`, lines.join("\n"));
+  return brandedEmail(client, r.email, `Your ${what} at ${s.businessName}: ${whenText(client, r)}`, lines);
+}
+
+/** The caller's note that the business couldn't take the time they asked for. */
+export async function declineToCaller(client: Business, r: BookingRequest): Promise<boolean> {
+  if (r.kind !== "booking" || !r.email) return false;
+  const s = client.settings;
+  const what = industry(s.industry).booking;
+  const number = client.phoneNumbers?.[0];
+  const lines = [
+    `Hi ${r.name.split(" ")[0] || "there"},`,
+    "",
+    `Sorry, we can't do the ${what} you asked for on ${whenText(client, r)}.`,
+    "",
+    number ? `Please call us on ${formatNumber(number)} and we'll find another time.` : "Please get in touch and we'll find another time.",
+    "",
+    s.businessName,
+  ];
+  return brandedEmail(client, r.email, `Your ${what} request at ${s.businessName}`, lines);
 }
 
 function emailText(client: Business, r: BookingRequest, change?: BookingChange): { subject: string; text: string } {
@@ -117,7 +159,20 @@ function emailText(client: Business, r: BookingRequest, change?: BookingChange):
     return { subject: `${moved ? "Booking moved" : "Booking cancelled"}: ${who}, ${r.service || "appointment"}`, text: lines.join("\n") };
   }
   const lines =
-    r.kind === "booking"
+    r.kind === "booking" && r.status === "pending"
+      ? [
+          `${client.settings.receptionistName || "Your AI receptionist"} took a booking request ${how}. It needs your approval.`,
+          "",
+          `When:     ${whenText(client, r)}`,
+          `Name:     ${who}`,
+          `Phone:    ${formatNumber(r.phone)}`,
+          ...(r.email ? [`Email:    ${r.email}`] : []),
+          `Service:  ${r.service || "not given"}`,
+          ...(r.note ? [`Notes:    ${r.note}`] : []),
+          "",
+          "Approve or decline it in your Calendar. The time is held for them until you do.",
+        ]
+      : r.kind === "booking"
       ? [
           `${client.settings.receptionistName || "Your AI receptionist"} booked ${aBooking(client)} ${how}.`,
           "",
@@ -136,7 +191,7 @@ function emailText(client: Business, r: BookingRequest, change?: BookingChange):
           ...(r.start ? [`Best time:  ${r.start}`] : []),
           ...(r.note ? [`Message:    ${r.note}`] : []),
         ];
-  const subject = r.kind === "booking" ? `New booking: ${who}, ${r.service || "appointment"}` : `Call back: ${who}`;
+  const subject = r.kind === "booking" && r.status === "pending" ? `Approve booking: ${who}, ${r.service || "appointment"}` : r.kind === "booking" ? `New booking: ${who}, ${r.service || "appointment"}` : `Call back: ${who}`;
   return { subject, text: lines.join("\n") };
 }
 

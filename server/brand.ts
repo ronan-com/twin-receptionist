@@ -39,7 +39,17 @@ const asBrand = (b: Record<string, string>): Brand => ({
   primaryColor: b.primaryColor ?? "",
   accentColor: b.accentColor ?? "",
   sidebarColor: b.sidebarColor ?? "",
+  lockClient: b.clientLock === "1",
 });
+
+// True when the agency has locked branding for a business: on its company (all of its
+// businesses) or on the business itself. Business users then can't change their own look.
+export async function isBrandLocked(orgId: string, clientId: string): Promise<boolean> {
+  const c = await raw({ orgId, clientId });
+  if (c.clientLock === "1") return true;
+  const [co] = await sql`select company_id from clients where id = ${clientId} and org_id = ${orgId}`;
+  return co?.company_id ? (await raw({ orgId, clientId: null, companyId: co.company_id })).clientLock === "1" : false;
+}
 
 // What is set at exactly this level (no inheritance), for the editor.
 export async function ownBrand(s: Scope): Promise<Brand> {
@@ -103,6 +113,8 @@ async function saveBrand(s: Scope, input: any): Promise<void> {
     if (c !== "" && !/^#[0-9a-fA-F]{6}$/.test(c)) throw new ValidationError("Pick a colour.");
     await patch(s, { [k]: c.toLowerCase() });
   }
+  // Only the agency's editors reach here (a business user's request has this removed first, see manage.ts).
+  if (typeof input?.lockClient === "boolean") await patch(s, { clientLock: input.lockClient ? "1" : null });
   if (input?.removeLogo === true) {
     await dropAsset(s, "logo");
     await patch(s, { logo: null });

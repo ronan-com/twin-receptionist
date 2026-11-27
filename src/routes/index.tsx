@@ -652,12 +652,11 @@ function EntireOffice() {
 /* -------------------------------------------------------------------------- */
 
 /* Calendars: the built-in calendar works today; Google Calendar and Outlook are
-   built in the engine but not switched on for this site yet, so they say "Coming soon"
-   and their routes are dashed. (Xero and ServiceM8 from the original are not offered.) */
+   connect with a sign-in. (Xero and ServiceM8 from the original are not offered.) */
 const CALENDAR_NODES = [
   { id: "builtin", label: "Built-in calendar", status: "Included", live: true, path: "M174 132 C140 105 116 83 92 72", color: "var(--indigo)", delay: 0, cx: 70, cy: 62 },
-  { id: "outlook", label: "Outlook", status: "Coming soon", live: false, path: "M226 132 C260 105 284 83 308 72", color: "var(--cyan)", delay: 0.8, cx: 330, cy: 62 },
-  { id: "google", label: "Google Calendar", status: "Coming soon", live: false, path: "M200 192 C200 200 200 204 200 208", color: "var(--coral)", delay: 1.6, cx: 200, cy: 238 },
+  { id: "outlook", label: "Outlook", status: "Connects", live: true, path: "M226 132 C260 105 284 83 308 72", color: "var(--cyan)", delay: 0.8, cx: 330, cy: 62 },
+  { id: "google", label: "Google Calendar", status: "Connects", live: true, path: "M200 192 C200 200 200 204 200 208", color: "var(--coral)", delay: 1.6, cx: 200, cy: 238 },
 ] as const;
 
 function Integrations() {
@@ -703,7 +702,7 @@ function Integrations() {
               </Reveal>
               <Reveal delay={0.1}>
                 <p className="mt-4 max-w-md text-[16px] leading-[1.55] text-ink-muted">
-                  {PRODUCT} books into its built-in calendar today, around your business hours. Google Calendar and Outlook connections are coming soon.
+                  {PRODUCT} books into its built-in calendar around your business hours, or straight into your Google Calendar or Outlook.
                 </p>
               </Reveal>
             </div>

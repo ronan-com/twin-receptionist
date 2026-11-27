@@ -12,7 +12,7 @@ import { WorkspaceSwitcher } from "./WorkspaceSwitcher";
 import { useWorkspaceBrand } from "./WorkspaceBrand";
 import { SupportDialog, UnreadDot, useSupportUnread } from "./SupportDialog";
 
-// The business owner's frame: four places (Home, Calls, Bookings, Settings), as a bar
+// The business owner's frame: five places (Home, Inbox, Calendar, Contacts, Settings), as a bar
 // along the bottom on a phone and a plain sidebar on a desk. The brand is the agency's
 // (its logo and name), never ours.
 
@@ -51,8 +51,8 @@ function HelpMenu({ className }: { className?: string }) {
           </button>
         </PopoverTrigger>
         <PopoverContent align="end" className="w-72 text-[13px]">
-          <div className="font-semibold text-ink">Need a hand?</div>
-          <p className="mt-1 text-ink-muted">Contact {who} and they'll help you out. You can always change how your receptionist answers in Settings.</p>
+          <div className="font-semibold text-ink">Help</div>
+          <p className="mt-1 text-ink-muted">Questions? Contact {who}.</p>
           <Link
             to="/app/how-it-works"
             data-action="how-it-works"
@@ -109,7 +109,7 @@ function TabBar({ nav }: { nav: NavItem[] }) {
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   return (
     <nav aria-label="Primary" data-tab-bar className="fixed inset-x-0 bottom-0 z-30 border-t border-hairline bg-white/95 pb-[env(safe-area-inset-bottom)] backdrop-blur lg:hidden">
-      <ul className="mx-auto grid max-w-xl grid-cols-4">
+      <ul className="mx-auto grid max-w-xl grid-cols-5">
         {nav.map((item) => {
           const active = isNavActive(item, pathname);
           const Icon = item.icon;
@@ -138,7 +138,7 @@ export function ClientShell({ nav, banner, children }: ClientShellProps) {
   const several = ws.businesses.length > 1;
 
   return (
-    <div data-app-shell data-client-shell className="min-h-screen bg-canvas-2 text-ink">
+    <div data-app-shell data-client-shell className="min-h-screen bg-white text-ink">
       <aside className="fixed inset-y-0 left-0 z-30 hidden w-[232px] flex-col border-r border-hairline bg-white lg:flex">
         <div className="flex h-16 items-center px-5">
           <Brand />
@@ -163,7 +163,6 @@ export function ClientShell({ nav, banner, children }: ClientShellProps) {
 
       <div className="flex min-h-screen flex-col lg:pl-[232px]">
         <header className="sticky top-0 z-20 flex h-14 items-center gap-2 border-b border-hairline bg-white/95 px-4 backdrop-blur lg:hidden">
-          <span className="ribbon-gradient pointer-events-none absolute inset-x-0 top-0 h-[2px] opacity-90" aria-hidden />
           <div className="min-w-0 flex-1">
             {several ? <WorkspaceSwitcher /> : <Brand />}
           </div>

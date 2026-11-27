@@ -144,6 +144,17 @@ export function ClientSettings() {
     onError: (e: Error) => toast.error("Couldn't save", { description: e.message }),
   });
 
+  /* ---- Bookings need my approval ---- */
+  const needsApproval = asRecord(agent?.booking_rules)["require_approval"] === true;
+  const saveApproval = useMutation({
+    mutationFn: (v: boolean) => saveReceptionist(businessId!, { booking_rules: { require_approval: v } }),
+    onSuccess: (r) => {
+      toast.success(r.applied ? "Saved" : "Saved");
+      refresh();
+    },
+    onError: (e: Error) => toast.error("Couldn't save", { description: e.message }),
+  });
+
   /* ---- Where messages go ---- */
   const savedEmail = String(asRecord(agent?.escalation_rules)["notify_email"] ?? "");
   const [email, setEmail] = useState(savedEmail);
@@ -277,6 +288,16 @@ export function ClientSettings() {
         </Section>
 
         <LinkRow to="/app/knowledge" title="Answers to common questions" summary={knowledgeQ.isPending ? undefined : nKnow ? `${nKnow} answer${nKnow === 1 ? "" : "s"} saved` : "Teach your receptionist what to say"} />
+
+        {bookingSet ? (
+          <div className="flex min-h-[64px] items-center gap-3 border-b border-hairline px-4 py-3" data-setting="approval">
+            <span className="min-w-0 flex-1">
+              <span className="block text-[16px] font-semibold text-ink">Bookings need my approval</span>
+              <span className="mt-0.5 block text-[13.5px] text-ink-muted">{needsApproval ? "On. Approve them in Calendar." : "Off. Bookings are confirmed straight away."}</span>
+            </span>
+            <Switch checked={needsApproval} disabled={!canEdit || saveApproval.isPending} onCheckedChange={(v) => saveApproval.mutate(v)} aria-label="Bookings need my approval" />
+          </div>
+        ) : null}
 
         <Section id="messages" title="Where messages go" summary={savedEmail || "In your dashboard"} open={open === "messages"} onToggle={() => toggle("messages")}>
           <p className="text-[14px] text-ink-muted">Every message and booking is on your Home page. You can also get them by email.</p>

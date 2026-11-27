@@ -25,8 +25,8 @@ function HowItWorksPage() {
         <ChevronLeft className="h-4 w-4" /> Settings
       </Link>
       <div>
-        <h1 className="text-[22px] font-semibold tracking-[-0.02em] text-ink sm:text-[26px]">How it works</h1>
-        <p className="mt-1 text-[14px] text-ink-muted">Quick help for the things you'll do most. Tap one to see the steps.</p>
+        <h1 className="text-[22px] font-semibold tracking-[-0.02em] text-ink sm:text-[26px]">Help</h1>
+        <p className="mt-1 text-[14px] text-ink-muted">Tap one for the steps.</p>
       </div>
       <TutorialList
         tutorials={CLIENT_TUTORIALS}

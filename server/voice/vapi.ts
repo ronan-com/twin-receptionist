@@ -74,6 +74,7 @@ export function buildVapi(client: Business, settings: Settings, instructions: st
     tools: live ? BOOKING_TOOL_DEFS.map((d) => d.name).filter((n) => toolAllowed(settings, n)) : [],
     hookBase: live ? `${base}/hooks/${client.id}` : null,
     toolKey: client.booking?.token ?? "",
+    mcp: client.mcp?.url ? client.mcp : null,
     events: base ? { url: `${base}/hooks/vapi/${client.id}`, secret: eventsSecret(client.id) } : null,
     transfer: a ? transferSpec(a) : null,
     recording: a?.recording.enabled ?? false,

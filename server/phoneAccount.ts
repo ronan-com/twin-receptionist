@@ -6,7 +6,7 @@ import { ValidationError } from "./prompt";
 import { fakeProvider } from "./sandbox";
 import { seal, unseal } from "./secrets";
 import { TelnyxError, forgetKey, telnyx } from "./telnyx";
-import { VapiError, accountMode, asProvider, forgetVapiKey, installProvider, platformVapi, providerOfOrg } from "./voice/config";
+import { VapiError, accountMode, asProvider, forgetVapiKey, installProvider, ownKeyInstall, platformVapi, providerOfOrg } from "./voice/config";
 import { checkVapiKey, vapi } from "./voice/vapi";
 import { TEST_SID, TEST_TOKEN, checkTwilio, clearTwilio, isTestTwilio, parseTwilioInput, saveTwilio, twilioCredsFor } from "./twilio";
 
@@ -16,7 +16,9 @@ import { TEST_SID, TEST_TOKEN, checkTwilio, clearTwilio, isTestTwilio, parseTwil
 // with no phone account and connect their own in Setup before they can do anything
 // that needs one. Without it, new agencies run on the platform's account as before.
 
-// With SINGLE_AGENCY the one agency always runs on the server's own key (from the install).
+// With SINGLE_AGENCY the one agency runs on the server's own key (from the install), unless the
+// install was made with no key (ownKeyInstall: the buyer skipped Phones in setup). Then the agency
+// connects its own key in Connections, like any agency that brings its own account.
 export const ownAccountRequired = () => process.env.OWN_PHONE_ACCOUNT === "required" && !singleAgency();
 
 /** Whether a new agency starts on the platform's phone account. */
@@ -71,7 +73,13 @@ const NAME: Record<VoiceProviderId, string> = { telnyx: "Telnyx", vapi: "Vapi" }
 /** Refuses when the agency has no phone account yet (its own or the platform's). */
 export async function requirePhoneAccount(orgId: string): Promise<void> {
   const { mode, provider } = await modeOf(orgId);
-  if (mode === "none") throw new ValidationError(`Connect your ${NAME[provider]} account first. Open Setup to do it.`);
+  if (mode === "none") {
+    throw new ValidationError(
+      singleAgency()
+        ? `Connect your phone provider first: open Connections and paste your ${NAME[provider]} API key. Then you can make receptionists.`
+        : `Connect your ${NAME[provider]} account first. Open Setup to do it.`,
+    );
+  }
 }
 
 /** Local test servers: this agency's phone account is a pretend one, so nothing reaches Telnyx. */
@@ -140,7 +148,8 @@ export async function phoneAccount(ctx: Ctx): Promise<PhoneAccount> {
     problem,
     lowCredit: balance !== null && balance.amount < LOW_CREDIT,
     required: ownAccountRequired(),
-    installed: singleAgency(),
+    // An install with no key of its own: nothing was set at install, the agency connects its own here.
+    installed: singleAgency() && !ownKeyInstall(),
     counts: { clients: c?.clients ?? 0, numbers: c?.numbers ?? 0, calendars: k?.n ?? 0 },
     ...(fakeProvider() ? { testKey: TEST_KEY } : {}),
   };
@@ -173,7 +182,7 @@ export async function checkVapiKeys(rawKey: unknown, rawPublic: unknown): Promis
 
 export async function connectPhoneAccount(ctx: Ctx, input: any): Promise<PhoneAccount> {
   requireRole(ctx, "admin");
-  if (singleAgency()) throw new ValidationError(INSTALLED);
+  if (singleAgency() && !ownKeyInstall()) throw new ValidationError(INSTALLED);
   const orgId = ctx.org!.id;
   countCheck(orgId);
 
@@ -230,7 +239,7 @@ export async function connectPhoneAccount(ctx: Ctx, input: any): Promise<PhoneAc
 
 export async function disconnectPhoneAccount(ctx: Ctx): Promise<PhoneAccount> {
   requireRole(ctx, "owner");
-  if (singleAgency()) throw new ValidationError(INSTALLED);
+  if (singleAgency() && !ownKeyInstall()) throw new ValidationError(INSTALLED);
   const orgId = ctx.org!.id;
   const provider = asProvider((await modeOf(orgId)).provider);
   if (provider === "vapi") {

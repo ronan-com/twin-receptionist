@@ -1,3 +1,4 @@
+import { NeedsPhone } from "@/components/app/PhoneGate";
 import { useState } from "react";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -173,11 +174,13 @@ function ClientDetailPage() {
         actions={
           !readOnly ? (
             <>
+              <NeedsPhone className="h-8 text-[12.5px]" label={<><Plus className="mr-1.5 h-3.5 w-3.5" /> Add receptionist</>}>
               <Button asChild size="sm" className="h-8 text-[12.5px]">
                 <Link to="/admin/clients/new" search={{ company: co.id }} data-action="add-receptionist">
                   <Plus className="mr-1.5 h-3.5 w-3.5" /> Add receptionist
                 </Link>
               </Button>
+              </NeedsPhone>
               {canManage ? (
                 <Button
                   variant="outline"
@@ -260,9 +263,11 @@ function ClientDetailPage() {
               description="Add one: it answers calls, replies to texts and emails, and books appointments for this client."
               action={
                 !readOnly ? (
+                  <NeedsPhone label="Add receptionist">
                   <Button asChild size="sm">
                     <Link to="/admin/clients/new" search={{ company: co.id }}>Add receptionist</Link>
                   </Button>
+                  </NeedsPhone>
                 ) : undefined
               }
             />

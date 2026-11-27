@@ -9,6 +9,8 @@ import { cn } from "@/lib/utils";
 import { PRODUCT } from "@/lib/app/product";
 import { useGetStarted } from "./GetStarted";
 import type { GuideKind } from "./Guides";
+import { PHONE_NEEDED, usePhoneKeyNeeded } from "@/components/app/PhoneGate";
+import { useWorkspace } from "@/lib/app/workspace";
 
 // The "Get started" card on the agency Overview. Ticks come from the same APIs the
 // rest of the console uses, so doing the thing anywhere ticks it here.
@@ -35,6 +37,10 @@ export function useGetStartedItems(enabled: boolean) {
     staleTime: 30_000,
   });
 
+  // A single-agency install made without a phone key: connecting it comes first.
+  const ws = useWorkspace();
+  const phoneNeeded = usePhoneKeyNeeded();
+  const phoneItem = Boolean(ws.session?.singleAgency);
   const loading = brand.isPending || counts.isPending || companies.isPending || calls.isPending;
   const items = useMemo<Item[]>(() => {
     const list = companies.data ?? [];
@@ -42,6 +48,18 @@ export function useGetStartedItems(enabled: boolean) {
     const look = brand.data;
     const c = counts.data;
     const out: Item[] = [
+      ...(phoneItem
+        ? [
+            {
+              key: "connect-phone",
+              title: "Connect your phone provider",
+              hint: phoneNeeded ? `${PHONE_NEEDED}: paste your Telnyx API key in Connections.` : "Your phone account is connected.",
+              done: !phoneNeeded,
+              to: "/admin/connections",
+              cta: "Open Connections",
+            },
+          ]
+        : []),
       {
         key: "brand",
         title: "Set your brand",
@@ -87,7 +105,7 @@ export function useGetStartedItems(enabled: boolean) {
       },
     ];
     return out;
-  }, [brand.data, counts.data, companies.data, calls.data]);
+  }, [brand.data, counts.data, companies.data, calls.data, phoneItem, phoneNeeded]);
 
   const target = (companies.data ?? []).find((c) => c.receptionists.length > 0)?.id;
   return { items, loading, firstCompanyId: target };
@@ -137,7 +155,7 @@ export function GetStartedChecklist() {
               {all ? "You're all set" : `Get started with ${PRODUCT}`}
             </h2>
             <p className="mt-0.5 text-[12.5px] text-ink-muted">
-              {all ? "Everything on the list is done. You can close this card." : "Five steps to your first live receptionist. We tick each one as you go."}
+              {all ? "Everything on the list is done. You can close this card." : `${items.length} steps to your first live receptionist. We tick each one as you go.`}
             </p>
           </div>
           <button

@@ -12,6 +12,7 @@ import { PRODUCT } from "@/lib/app/product";
 import { GetStartedProvider } from "@/components/onboarding/GetStarted";
 import { AssistantProvider } from "@/components/assistant/Assistant";
 import { useSupportUnread } from "@/components/app/SupportDialog";
+import { ConnectPhoneBanner } from "@/components/app/PhoneGate";
 
 // The console. Variant "platform" (the platform admin: everything) or "agency"
 // (agency staff: their own agency). Business users are sent to their workspace,
@@ -21,7 +22,8 @@ export const Route = createFileRoute("/_authenticated/admin")({
     const s = context.session;
     if (!s.console && !s.user.platformAdmin) throw redirect({ to: "/app", replace: true });
     // An agency that brings its own phone account connects it before anything else.
-    if (s.console === "agency" && s.telnyx === "none" && !s.viewing && !s.user.platformAdmin) throw redirect({ to: "/setup", replace: true });
+    // SINGLE_AGENCY installs made without a key connect it in Connections instead (a banner says so).
+    if (s.console === "agency" && s.telnyx === "none" && !s.singleAgency && !s.viewing && !s.user.platformAdmin) throw redirect({ to: "/setup", replace: true });
     if (!s.user.platformAdmin && isPlatformOnlyPath(location.pathname)) throw redirect({ to: "/admin", replace: true });
     // One agency per server (SINGLE_AGENCY): numbers are bought from each client's page, there's no request queue.
     if (s.singleAgency && location.pathname.startsWith("/admin/number-requests")) throw redirect({ to: "/admin", replace: true });
@@ -119,7 +121,9 @@ function AdminLayout() {
         </div>
       }
       banner={
-        ws.viewing ? (
+        !ws.viewing ? (
+          <ConnectPhoneBanner />
+        ) : ws.viewing ? (
           <div className="border-b border-[#dcdaff] bg-[#f4f3ff] px-4 py-2 text-[12.5px] text-[#4338ca]">
             <div className="mx-auto flex max-w-[1400px] flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
               <span>

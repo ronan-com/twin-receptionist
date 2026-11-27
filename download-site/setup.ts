@@ -57,7 +57,7 @@ export function stepDone(b: Buyer, s: SetupData, id: StepId): boolean {
     case "domain": return (!!s.domain?.confirmed && !!s.domain.host) || !!s.skipped?.domain;
     case "server": return !!s.server?.chosen && (b.demo === 1 || hasSecret(b.id, "do_token") || s.phase !== "idle");
     case "railway": return !!s.railway?.confirmed && (b.demo === 1 || hasSecret(b.id, "railway_token") || s.phase !== "idle");
-    case "phones": return !!s.phones?.confirmed || !!s.phones?.deferred || !!s.vapi?.confirmed;
+    case "phones": return !!s.phones?.confirmed || !!s.phones?.deferred || !!s.vapi?.confirmed || !!s.skipped?.phones;
     case "vapi": return !!s.vapi?.confirmed || !!s.skipped?.vapi;
     case "twilio": return !!s.twilio?.confirmed || !!s.skipped?.twilio;
     case "email": return !!s.email?.confirmed || !!s.skipped?.email;
@@ -82,6 +82,10 @@ const nextStep = (b: Buyer, s: SetupData, from: StepId) => {
 
 /** Telnyx is the default; Vapi only when the buyer added it as the backup option (or an older setup chose it). */
 export const useVapi = (s: SetupData) => !!s.vapi?.confirmed || s.phones?.provider === "vapi";
+/** The buyer skipped the phone provider: the app is installed with no voice key and they connect it in their dashboard (Connections). */
+export const phoneSkipped = (s: SetupData) => !!s.skipped?.phones && !s.phones?.confirmed && !s.vapi?.confirmed;
+/** The words for it, on the step list, the install summary and the Done screen. */
+export const PHONE_LATER = "Not connected yet — connect it in your dashboard (Connections)";
 export const twilioSidOf = (s: SetupData) => s.twilio?.sid || s.phones?.twilioSid || "";
 export const zoneOf = (s: SetupData) => s.domain?.zone || "";
 export const hostOf = (s: SetupData) => s.domain?.host || "";
@@ -107,8 +111,8 @@ function extrasProblem(b: Buyer, s: SetupData): string | null {
 
 /** Telnyx is needed, unless the buyer switched to Vapi in the backup options. */
 function phonesProblem(b: Buyer, s: SetupData): string | null {
-  if (s.phones?.confirmed || s.vapi?.confirmed) return null;
-  return "Telnyx is needed for your phones. Go back to Phones and add your Telnyx key, or add Vapi under Other options (backup).";
+  if (s.phones?.confirmed || s.vapi?.confirmed || phoneSkipped(s)) return null;
+  return RAILWAY ? "Connect a phone account first: go back to Phones and add your Telnyx key or Vapi + Twilio, or press Skip for now." : "Telnyx is needed for your phones. Go back to Phones and add your Telnyx key, or Vapi + Twilio.";
 }
 
 const LOCKED_MSG = "Your server has already been made with these settings. To change them, delete the server on the Install step first.";
@@ -269,6 +273,7 @@ export const actions: Record<string, Action> = {
     updateSetup(b.id, (s) => {
       s.brand!.ownPhoneAccount = false;
       s.phones = { balance: r.balance, checked: true, confirmed: true, provider: useVapi(s) ? "vapi" : "telnyx" };
+      if (s.skipped) delete s.skipped.phones;
       nextStep(b, s, "phones");
     });
     return null;
@@ -280,30 +285,89 @@ export const actions: Record<string, Action> = {
     return null;
   },
 
+  // ---- Phones, the second option: Vapi for voice and Twilio for numbers and texts, both on this step ----
+  // Same checks as the backup steps (checkVapi, checkTwilio). Counts as the phone step being done.
+  async "phones-vapi"(b, f) {
+    const g = guard(b, "phones"); if (g) return g;
+    const s0 = getSetup(b.id);
+    const vKey = str(f.vapiKey, 300) || getSecret(b.id, "vapi_key") || "";
+    const vPublic = str(f.vapiPublic, 300) || getSecret(b.id, "vapi_public") || "";
+    const sid = str(f.twilioSid, 60) || s0.twilio?.sid || "";
+    const token = str(f.twilioToken, 300) || getSecret(b.id, "twilio_token") || "";
+    const keep = { vapiPublic: str(f.vapiPublic, 300), twilioSid: str(f.twilioSid, 60) };
+    if (!vKey) return err("Paste your Vapi private API key.", keep);
+    if (!vPublic) return err("Paste your Vapi public key too.", keep);
+    if (!sid) return err("Paste your Twilio Account SID.", keep);
+    if (!token) return err("Paste your Twilio Auth Token.", keep);
+    const wait = checkLimit(b); if (wait) return tooMany(wait);
+    const r = await checkVapi(vKey, vPublic);
+    if (!r.ok) return err(r.message, keep);
+    const w = await checkTwilio(sid, token);
+    if (!w.ok) return err(w.message, keep);
+    putSecret(b.id, "vapi_key", vKey);
+    putSecret(b.id, "vapi_public", vPublic);
+    putSecret(b.id, "twilio_token", token);
+    // The Vapi path uses nothing from Telnyx.
+    deleteSecret(b.id, "telnyx_key");
+    updateSetup(b.id, (s) => {
+      s.brand!.ownPhoneAccount = false;
+      s.vapi = { confirmed: true };
+      s.twilio = { sid, confirmed: true };
+      s.phones = { checked: true, provider: "vapi" };
+      if (s.skipped) { delete s.skipped.vapi; delete s.skipped.twilio; delete s.skipped.phones; }
+      nextStep(b, s, "phones");
+    });
+    return null;
+  },
+  /** Back to Telnyx: forget the Vapi and Twilio keys and stay on the Phones step. */
+  "phones-vapi-remove"(b) {
+    const g = guard(b, "phones"); if (g) return g;
+    for (const n of ["vapi_key", "vapi_public", "twilio_token"] as const) deleteSecret(b.id, n);
+    updateSetup(b.id, (s) => {
+      delete s.vapi; delete s.twilio;
+      s.phones = { ...s.phones, provider: "telnyx" };
+      s.step = "phones";
+    });
+    return null;
+  },
+
+  // No phone provider yet (a new Telnyx account can take hours to two days to be approved): install
+  // without one. The app starts with no voice key and the owner pastes it later in Connections.
+  // Railway only: there the app is one agency (SINGLE_AGENCY) that brings its own key.
+  "phones-skip"(b) {
+    const g = guard(b, "phones"); if (g) return g;
+    if (!RAILWAY) return err("Add your Telnyx key to continue.");
+    const s0 = getSetup(b.id);
+    if (s0.phones?.confirmed || s0.vapi?.confirmed) return err("Your phone provider is already connected.");
+    // Nothing half-entered goes to the app: it starts with no voice key at all.
+    deleteSecret(b.id, "telnyx_key"); deleteSecret(b.id, "vapi_key"); deleteSecret(b.id, "vapi_public");
+    updateSetup(b.id, (s) => {
+      delete s.vapi;
+      s.phones = { deferred: true, provider: "telnyx" };
+      s.skipped = { ...s.skipped, phones: true, vapi: true };
+      nextStep(b, s, "phones");
+    });
+    return null;
+  },
+
   // ---- Backup option: Vapi instead of Telnyx for voice (added from the last optional screen) ----
   async vapi(b, f) {
     const g = guard(b, "vapi"); if (g) return g;
-    // Vapi: a private and a public key. A Telnyx key is optional here: email replies still use Telnyx's AI service.
+    // Vapi: a private and a public key. Nothing from Telnyx is asked for on this path.
     const vKey = str(f.vapiKey, 300) || getSecret(b.id, "vapi_key") || "";
     const vPublic = str(f.vapiPublic, 300) || getSecret(b.id, "vapi_public") || "";
     if (!vKey) return err("Paste your Vapi private API key.", f);
     if (!vPublic) return err("Paste your Vapi public key too.", f);
-    const tKey = str(f.key, 300);
     const wait = checkLimit(b); if (wait) return tooMany(wait);
     const r = await checkVapi(vKey, vPublic);
     if (!r.ok) return err(r.message, f);
-    if (tKey) {
-      const t = await checkTelnyx(tKey);
-      if (!t.ok) return err(t.message, f);
-      putSecret(b.id, "telnyx_key", tKey);
-    }
     putSecret(b.id, "vapi_key", vKey);
     putSecret(b.id, "vapi_public", vPublic);
     updateSetup(b.id, (s) => {
       s.brand!.ownPhoneAccount = false;
       s.vapi = { confirmed: true };
       s.phones = { ...s.phones, provider: "vapi" };
-      if (s.skipped) delete s.skipped.vapi;
+      if (s.skipped) { delete s.skipped.vapi; delete s.skipped.phones; }
       nextStep(b, s, "vapi");
     });
     return null;
@@ -792,13 +856,14 @@ export function phoneSettings(id: number, s: SetupData): Record<string, string> 
   const sid = twilioSidOf(s);
   // The backup Twilio account: numbers and the texts sent from them.
   const twilio: Record<string, string> = sid && getSecret(id, "twilio_token") ? { TWILIO_ACCOUNT_SID: sid, TWILIO_AUTH_TOKEN: getSecret(id, "twilio_token") || "" } : {};
+  // Skipped: no voice key at all. The app (SINGLE_AGENCY) then expects the owner's own key, pasted in Connections.
+  if (phoneSkipped(s)) return {};
   if (!useVapi(s)) return { TELNYX_API_KEY: getSecret(id, "telnyx_key") || "", ...twilio };
   return {
     VOICE_PROVIDER: "vapi",
     VAPI_API_KEY: getSecret(id, "vapi_key") || "",
     VAPI_PUBLIC_KEY: getSecret(id, "vapi_public") || "",
-    // Optional with Vapi: only email replies use it.
-    TELNYX_API_KEY: getSecret(id, "telnyx_key") || "",
+    // No Telnyx key on the Vapi path (AI email replies stay off for Vapi agencies for now).
     ...twilio,
   };
 }
@@ -1057,7 +1122,7 @@ function finish(id: number, url: string) {
     brand: s.brand ? { productName: s.brand.productName, ownerEmail: s.brand.ownerEmail, ownPhoneAccount: s.brand.ownPhoneAccount, ...(demo ? { logo: s.brand.logo, colour: s.brand.colour } : {}) } : undefined,
     domain: s.domain ? { mode: s.domain.mode, zone: s.domain.zone, sub: s.domain.sub, host: s.domain.host, confirmed: true } : undefined,
     server: s.server ? { region: s.server.region, size: s.server.size, price: s.server.price, chosen: true, sshPublicKey: s.server.sshPublicKey ? "yes" : undefined } : undefined,
-    phones: { confirmed: true, provider: useVapi(s) ? "vapi" : "telnyx" }, email: s.email ? { mode: s.email.mode, address: s.email.address, from: s.email.from, confirmed: true, resend: s.email.resend ? { status: s.email.resend.status } : undefined } : undefined,
+    phones: phoneSkipped(s) ? { deferred: true, provider: "telnyx" } : { confirmed: true, provider: useVapi(s) ? "vapi" : "telnyx" }, email: s.email ? { mode: s.email.mode, address: s.email.address, from: s.email.from, confirmed: true, resend: s.email.resend ? { status: s.email.resend.status } : undefined } : undefined,
     calendars: s.calendars ? { google: s.calendars.google, microsoft: s.calendars.microsoft, done: true } : undefined,
     skipped: s.skipped, extrasDone: s.extrasDone,
     assist: s.assist ? { steps: s.assist.steps, keepDns: s.assist.keepDns, dnsBy: s.assist.dnsBy, installBy: s.assist.installBy, openrouter: s.assist.openrouter } : undefined,
@@ -1221,7 +1286,7 @@ function railRecords(cd: any, host: string, zone: string, old: DnsRecord[] = [])
 }
 const bareValue = (v: unknown) => String(v ?? "").trim().replace(/^"([\s\S]*)"$/, "$1");
 
-async function railwayVars(id: number, s: SetupData, token: string): Promise<Record<string, string>> {
+export async function railwayVars(id: number, s: SetupData, token: string): Promise<Record<string, string>> {
   // Email is optional. Without it the app still works: invite links show on screen for the owner to copy.
   let smtp = "";
   if (!s.email) smtp = "";

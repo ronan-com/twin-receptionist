@@ -51,13 +51,13 @@ export function assistPanel(h: Helpers, sid: string, b: Buyer, s: SetupData): st
   <label class="f" for="colour">Brand colour</label><input id="colour" name="colour" type="color" value="${esc(brand?.colour || "#635bff")}">`);
   const hosting = RAILWAY ? form("railway", pass("token", "Railway account token", secretHint(b.id, "railway_token"), "Their Railway token (No workspace, Hobby plan)"), "Check and save")
     : form("server", pass("token", "DigitalOcean token", secretHint(b.id, "do_token"), "Their DigitalOcean token"), "Check and save");
-  const phones = form("phones", pass("key", "Telnyx API key", secretHint(b.id, "telnyx_key"), "KEY..."), "Check and save");
+  const phones = form("phones", `<h4>Telnyx (recommended)</h4>${pass("key", "Telnyx API key", secretHint(b.id, "telnyx_key"), "KEY...")}`, "Check and save")
+    + form("phones-vapi", `<h4>Or use Vapi + Twilio</h4><p class="hint">Vapi for voice, Twilio for numbers and texts.</p><div class="two"><div>${pass("vapiKey", "Vapi private key", secretHint(b.id, "vapi_key"))}</div><div>${pass("vapiPublic", "Vapi public key", secretHint(b.id, "vapi_public"))}</div></div><div class="two"><div>${text("twilioSid", "Twilio Account SID", s.twilio?.sid)}</div><div>${pass("twilioToken", "Twilio auth token", secretHint(b.id, "twilio_token"))}</div></div>`, "Check and save Vapi + Twilio", "btn o")
+    + (RAILWAY && !s.phones?.confirmed && !s.vapi?.confirmed ? form("phones-skip", `<p class="hint">No phone account yet (Telnyx approval can take hours to two days)? Install without one; they connect it later in their dashboard (Connections).</p>`, "Skip for now", "btn o") : "");
   const email = form("email", `<p class="hint">Resend (the wizard adds the sending domain, and the records go in with their domain's DNS below).</p>${pass("key", "Resend API key", secretHint(b.id, "resend_key"), "re_...")}${text("address", "Send from", s.email?.address || "", "hello@mail.theirbusiness.com")}`, "Check and save")
     + form("email-smtp", `<p class="hint">Or their own SMTP.</p><div class="two"><div>${text("host", "SMTP server", s.email?.smtp?.host, "smtp.example.com")}</div><div>${text("port", "Port", String(s.email?.smtp?.port || 587))}</div></div><div class="two"><div>${text("user", "Username", s.email?.smtp?.user)}</div><div>${pass("pass", "Password", secretHint(b.id, "smtp_password"))}</div></div>${text("address", "Send from", s.email?.address || "", "hello@theirbusiness.com")}`, "Check and save", "btn o");
   const cal = form("calendars", `<p class="hint">Needs their own domain below. Redirect: <code>https://${esc(hostOf(s) || "app.theirdomain")}/api/oauth/google/callback</code> (and /microsoft/).</p><div class="two"><div>${text("googleId", "Google client ID", s.calendars?.google?.clientId)}</div><div>${pass("googleSecret", "Google client secret", secretHint(b.id, "google_secret"))}</div></div><div class="two"><div>${text("microsoftId", "Microsoft client ID", s.calendars?.microsoft?.clientId)}</div><div>${pass("microsoftSecret", "Microsoft client secret", secretHint(b.id, "microsoft_secret"))}</div></div>`, "Check and save");
-  const backups = form("vapi", `<p class="hint">Backup to Telnyx for voice.</p><div class="two"><div>${pass("vapiKey", "Vapi private key", secretHint(b.id, "vapi_key"))}</div><div>${pass("vapiPublic", "Vapi public key", secretHint(b.id, "vapi_public"))}</div></div>`, "Check and save", "btn o")
-    + form("twilio", `<p class="hint">Backup numbers and texts.</p><div class="two"><div>${text("twilioSid", "Twilio Account SID", s.twilio?.sid)}</div><div>${pass("twilioToken", "Twilio auth token", secretHint(b.id, "twilio_token"))}</div></div>`, "Check and save", "btn o")
-    + form("openrouter", `<p class="hint">Switches on "Ask for help" in their dashboard.</p>${pass("key", "OpenRouter API key", secretHint(b.id, "openrouter_key"))}`, "Check and save", "btn o");
+  const backups = form("openrouter", `<p class="hint">Switches on "Ask for help" in their dashboard.</p>${pass("key", "OpenRouter API key", secretHint(b.id, "openrouter_key"))}`, "Check and save", "btn o");
 
   // ---- domain + DNS ----
   const d = s.domain;
@@ -116,10 +116,10 @@ ${flash ? h.notice(flash.kind || (flash.ok ? "ok" : "err"), esc(flash.message)).
 ${table}
 ${box("Brand: name, logo, colour", brandForm)}
 ${box(RAILWAY ? "Hosting: Railway token" : "Server: DigitalOcean token", hosting)}
-${box("Phones: Telnyx key", phones)}
+${box("Phones: Telnyx key, or Vapi + Twilio", phones)}
 ${box("Optional: email (Resend or SMTP)", email)}
 ${box("Optional: calendars (Google, Microsoft)", cal)}
-${box("Optional: backups (Vapi, Twilio) and AI help (OpenRouter)", backups)}
+${box("Optional: AI help (OpenRouter)", backups)}
 ${extrasBtn}
 <h3>Domain and DNS</h3>
 ${dnsState}
@@ -182,6 +182,8 @@ export async function assistRoute(what: string, b: Buyer, f: Record<string, stri
     case "railway": return back(await fillStep(b, c.email, "railway", { token: f.token || "" }));
     case "server": return back(await fillStep(b, c.email, "server", { token: f.token || "" }));
     case "phones": return back(await fillStep(b, c.email, "phones", { key: f.key || "" }));
+    case "phones-vapi": return back(await fillStep(b, c.email, "phones", { vapiKey: f.vapiKey || "", vapiPublic: f.vapiPublic || "", twilioSid: f.twilioSid || "", twilioToken: f.twilioToken || "" }, "phones-vapi"));
+    case "phones-skip": return back(await fillStep(b, c.email, "phones", {}, "phones-skip"));
     case "email": return back(await fillStep(b, c.email, "email", { key: f.key || "", address: f.address || "" }));
     case "email-smtp": return back(await fillStep(b, c.email, "email", { mode: "smtp", host: f.host || "", port: f.port || "", user: f.user || "", pass: f.pass || "", address: f.address || "" }));
     case "calendars": return back(await fillStep(b, c.email, "calendars", { googleId: f.googleId || "", googleSecret: f.googleSecret || "", microsoftId: f.microsoftId || "", microsoftSecret: f.microsoftSecret || "" }));

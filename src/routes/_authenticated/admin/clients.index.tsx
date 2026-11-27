@@ -1,3 +1,4 @@
+import { NeedsPhone, usePhoneKeyNeeded } from "@/components/app/PhoneGate";
 import { useMemo, useState } from "react";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -37,6 +38,8 @@ function ClientsPage() {
   const [agency, setAgency] = useState("all");
   const [showDemo, setShowDemo] = useState(true);
   const [adding, setAdding] = useState(false);
+  // No phone provider yet: a new client opens on its own page, not the receptionist wizard.
+  const phoneNeeded = usePhoneKeyNeeded();
   const [name, setName] = useState("");
   const [kind, setKind] = useState<IndustryKey>("other");
   const [mode, setMode] = useState<"self" | "link">("self");
@@ -59,7 +62,8 @@ function ClientsPage() {
       setAdding(false);
       setName("");
       await qc.invalidateQueries({ queryKey: ["console"] });
-      void navigate({ to: "/admin/clients/new", search: { company: id } });
+      if (phoneNeeded) void navigate({ to: "/admin/clients/$businessId", params: { businessId: id } });
+      else void navigate({ to: "/admin/clients/new", search: { company: id } });
     },
     onError: (e: Error) => toast.error("Couldn't add the client", { description: e.message }),
   });
@@ -168,11 +172,13 @@ function ClientsPage() {
                 <Button variant="outline" size="sm" className="h-8 text-[12.5px]" onClick={() => setAdding(true)} data-action="add-client">
                   <Building2 className="mr-1.5 h-3.5 w-3.5" /> Add client
                 </Button>
+                <NeedsPhone className="h-8 text-[12.5px]" label={<><Plus className="mr-1.5 h-3.5 w-3.5" /> New receptionist</>}>
                 <Button asChild size="sm" className="h-8 text-[12.5px]">
                   <Link to="/admin/clients/new" data-action="new-receptionist">
                     <Plus className="mr-1.5 h-3.5 w-3.5" /> New receptionist
                   </Link>
                 </Button>
+                </NeedsPhone>
               </>
             ) : null}
           </>
@@ -231,9 +237,11 @@ function ClientsPage() {
             icon: Building2,
             action:
               !readOnly && !(q.data ?? []).length ? (
+                <NeedsPhone label="New receptionist">
                 <Button asChild size="sm">
                   <Link to="/admin/clients/new">New receptionist</Link>
                 </Button>
+                </NeedsPhone>
               ) : undefined,
           }}
         />

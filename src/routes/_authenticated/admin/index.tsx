@@ -1,3 +1,4 @@
+import { NeedsPhone } from "@/components/app/PhoneGate";
 import { useMemo, useState } from "react";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
@@ -93,11 +94,13 @@ function AdminOverview() {
               <Link to="/admin/clients">Manage clients</Link>
             </Button>
             {!readOnly ? (
-              <Button asChild size="sm" className="h-8 text-[12.5px]">
-                <Link to="/admin/clients/new" data-cta="new-receptionist">
-                  <Plus className="mr-1.5 h-3.5 w-3.5" /> New receptionist
-                </Link>
-              </Button>
+              <NeedsPhone className="h-8 text-[12.5px]" label={<><Plus className="mr-1.5 h-3.5 w-3.5" /> New receptionist</>}>
+                <Button asChild size="sm" className="h-8 text-[12.5px]">
+                  <Link to="/admin/clients/new" data-cta="new-receptionist">
+                    <Plus className="mr-1.5 h-3.5 w-3.5" /> New receptionist
+                  </Link>
+                </Button>
+              </NeedsPhone>
             ) : null}
           </>
         }
@@ -130,11 +133,13 @@ function AdminOverview() {
             description="Add a business you look after and we'll set up its AI receptionist. You can share it with the business owner afterwards."
             action={
               !readOnly ? (
-                <Button asChild data-cta="first-receptionist">
-                  <Link to="/admin/clients/new">
-                    <Plus className="mr-1.5 h-4 w-4" /> Create your first receptionist
-                  </Link>
-                </Button>
+                <NeedsPhone size="default" label={<><Plus className="mr-1.5 h-4 w-4" /> Create your first receptionist</>}>
+                  <Button asChild data-cta="first-receptionist">
+                    <Link to="/admin/clients/new">
+                      <Plus className="mr-1.5 h-4 w-4" /> Create your first receptionist
+                    </Link>
+                  </Button>
+                </NeedsPhone>
               ) : null
             }
           />

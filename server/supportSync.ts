@@ -11,7 +11,7 @@ import { UI_PRODUCT } from "./product";
 import { ValidationError } from "./prompt";
 import { json, readBody } from "./routes/http";
 import { hasKey } from "./telnyx";
-import { installProvider } from "./voice/config";
+import { installProvider, ownKeyInstall } from "./voice/config";
 import { ACCESS_KEY, DURATIONS, EDIT_KEY, SYNC_KEY, accessOpen, editAllowed, readAccess, readEdit, readSync, supportSeller, syncAllowed, syncEnabled, type AccessSetting, type Duration, type EditSetting, type SyncSetting } from "./supportAccess";
 import { putSetting } from "./store";
 import { checkAndUpdate, updatesStatus } from "./autoUpdate";
@@ -224,12 +224,16 @@ export async function buildSnapshot(): Promise<Record<string, any>> {
     console.error("[support sync] snapshot", (err as Error).message);
   }
   const sharing = syncAllowed(await readSync().catch(() => null));
+  // An install with no key of its own: the phone key is the one the agency pasted in Connections.
+  const phoneKey = ownKeyInstall()
+    ? Boolean((await sql`select 1 from orgs where telnyx_key is not null or vapi_key is not null limit 1`.catch(() => []))[0])
+    : installProvider() === "vapi" ? Boolean(process.env.VAPI_API_KEY) : hasKey();
   const raw = {
     v: 1,
     sentAt: new Date().toISOString(),
     appVersion: appVersion(),
     publicUrl: base,
-    health: { ok: dbOk && (c.open_incidents ?? 0) === 0, db: dbOk, phoneKey: installProvider() === "vapi" ? Boolean(process.env.VAPI_API_KEY) : hasKey(), openIncidents: c.open_incidents ?? 0 },
+    health: { ok: dbOk && (c.open_incidents ?? 0) === 0, db: dbOk, phoneKey, openIncidents: c.open_incidents ?? 0 },
     counts: {
       agencies: c.agencies, clients: c.clients, receptionists: c.receptionists, numbers: c.numbers,
       calls24h: c.calls24h, calls7d: c.calls7d, calls30d: c.calls30d, bookings7d: c.bookings7d, errors24h: c.errors24h,

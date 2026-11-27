@@ -72,7 +72,7 @@ export function buildTourSteps(navPaths: string[], withChecklist: boolean): Tour
   for (const to of Object.keys(NAV_COPY)) {
     if (!navPaths.includes(to)) continue;
     steps.push({ id: to, target: `nav:${to}`, ...NAV_COPY[to] });
-    if (to === "/admin" && withChecklist) steps.push({ id: "checklist", target: "checklist", title: "Your Get started list", body: "Five things to do, ticked off for you as you go. Each one links to where you do it." });
+    if (to === "/admin" && withChecklist) steps.push({ id: "checklist", target: "checklist", title: "Your Get started list", body: "A few things to do, ticked off for you as you go. Each one links to where you do it." });
   }
   steps.push({ id: "help", target: "help", title: "Help is always here", body: "Open this menu to take the tour again, reopen the Get started list or contact us." });
   return steps;

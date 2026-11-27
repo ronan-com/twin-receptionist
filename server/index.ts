@@ -98,7 +98,7 @@ import { platformSettingsRoutes } from "./platformSettingsApi";
 import type { BookingProvider, BookingState } from "../src/lib/shared";
 import { connectNumberForTexts, enableTexting, sendTestText, textingState } from "./texting";
 import { BOOKING_TOOL_DEFS } from "./booking";
-import { VapiError, installProvider, providerOfClient } from "./voice/config";
+import { VapiError, installProvider, ownKeyInstall, providerOfClient } from "./voice/config";
 import { voiceFor, voiceForOrg } from "./voice";
 import type { VoiceProvider } from "./voice/provider";
 import { toolAllowed } from "./voice/tools";
@@ -1212,4 +1212,8 @@ setInterval(async () => {
   }
 }, 60_000);
 
-console.log(`Twin Receptionist on http://${HOST}:${PORT} (voice engine ${installProvider()}; Telnyx key ${hasKey() ? "loaded" : "MISSING"}${installProvider() === "vapi" ? `; Vapi key ${process.env.VAPI_API_KEY ? "loaded" : "MISSING"}` : ""})`);
+console.log(
+  `Twin Receptionist on http://${HOST}:${PORT} (voice engine ${installProvider()}; ${
+    ownKeyInstall() ? "no install phone key: the agency connects its own in Connections" : `Telnyx key ${hasKey() ? "loaded" : "MISSING"}${installProvider() === "vapi" ? `; Vapi key ${process.env.VAPI_API_KEY ? "loaded" : "MISSING"}` : ""}`
+  })`,
+);

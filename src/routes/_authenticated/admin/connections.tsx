@@ -105,9 +105,13 @@ function PhoneCard({ account: a, platform, backup }: { account: PhoneAccount; pl
   const name = engineName(a.provider);
   const portal = a.provider === "vapi" ? VAPI_DASHBOARD : TELNYX_PORTAL;
 
+  // A single-agency install made without a key: the owner connects it here (not in Setup).
+  const connectHere = a.mode === "none" && Boolean(ws.session?.singleAgency);
   const done = async (acct: PhoneAccount) => {
     qc.setQueryData(phoneAccountQuery().queryKey, acct);
     await qc.refetchQueries({ queryKey: ["session"] });
+    // The key works straight away: anything that failed without one (voices, numbers) loads again.
+    if (connectHere) await qc.invalidateQueries();
   };
   const replace = useMutation({
     mutationFn: () => phoneApi.connect(keys.key.trim(), keys.provider === "vapi" ? { provider: "vapi", publicKey: keys.publicKey.trim() } : { provider: "telnyx" }),
@@ -115,7 +119,9 @@ function PhoneCard({ account: a, platform, backup }: { account: PhoneAccount; pl
       await done(acct);
       setReplacing(false);
       setKeys({ provider: acct.provider, key: "", publicKey: "" });
-      toast.success(keys.provider === acct.provider && keys.provider === a.provider ? "Key replaced" : `Now using ${engineName(acct.provider)}`, { description: `Checked with ${engineName(acct.provider)} and saved.` });
+      toast.success(connectHere ? `${engineName(acct.provider)} connected` : keys.provider === acct.provider && keys.provider === a.provider ? "Key replaced" : `Now using ${engineName(acct.provider)}`, {
+        description: connectHere ? "Checked and saved. You can make receptionists now." : `Checked with ${engineName(acct.provider)} and saved.`,
+      });
     },
   });
   const disconnect = useMutation({
@@ -171,6 +177,10 @@ function PhoneCard({ account: a, platform, backup }: { account: PhoneAccount; pl
                   ? `Your ${name} account, set when this server was installed (${a.provider === "vapi" ? "VAPI_API_KEY" : "TELNYX_API_KEY"}). ${a.provider === "vapi" ? "Calls are charged to it." : "Numbers you buy for clients are charged to it."}`
                   : platform ? "The platform's own phone account, set on the server. Agencies that bring their own connect it in Setup." : "Your phone service is set up and run for you. There's nothing to connect here."}
               </p>
+            ) : connectHere ? (
+              <p className="mt-1 max-w-[560px] text-[13px] text-ink-muted">
+                Connect your phone provider to start making receptionists. Paste your {name} API key once {name} has approved your account: it's checked, saved and used straight away.
+              </p>
             ) : (
               <p className="mt-1 max-w-[560px] text-[13px] text-ink-muted">Nothing can answer calls until you connect your {name} account. Set-up walks you through it.</p>
             )}
@@ -188,7 +198,11 @@ function PhoneCard({ account: a, platform, backup }: { account: PhoneAccount; pl
               <div className={cn("text-[26px] font-semibold leading-tight tracking-[-0.02em]", a.lowCredit ? "text-[#b45309]" : "text-ink")}>{a.balance ? fmtCredit(a.balance) : "—"}</div>
             </div>
           </div>
-        ) : a.mode === "none" && !readOnly ? (
+        ) : connectHere && !readOnly && canManage ? (
+          <Button className="h-10 shrink-0 px-5" onClick={() => setReplacing(true)} data-action="connect-key">
+            <KeyRound /> Connect your key
+          </Button>
+        ) : a.mode === "none" && !readOnly && !connectHere ? (
           <Button asChild className="h-10 shrink-0 px-5">
             <Link to="/setup">Finish set-up</Link>
           </Button>
@@ -243,9 +257,15 @@ function PhoneCard({ account: a, platform, backup }: { account: PhoneAccount; pl
       >
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Replace your API key</DialogTitle>
+            <DialogTitle>{connectHere ? "Connect your phone provider" : "Replace your API key"}</DialogTitle>
             <DialogDescription>
+              {connectHere ? (
+                <>Paste your Telnyx API key (Telnyx, then API Keys). Rather use Vapi, a backup option? Choose it below.</>
+              ) : (
+                <>
               Use a key from the same {name} account. Your receptionists live in that account, so a key from another one won't reach them. To use {a.provider === "vapi" ? "Telnyx (recommended)" : "Vapi (a backup option)"} for new receptionists instead, choose it below: receptionists you already have stay on {name}.
+                </>
+              )}
             </DialogDescription>
           </DialogHeader>
           <form
@@ -324,10 +344,11 @@ function CountCard({ icon: Icon, hue, label, count, hint, to, cta }: { icon: Luc
 
 /** A plain checklist: what's done, what's next. */
 function Health({ account: a }: { account: PhoneAccount }) {
+  const { ws } = useConsole();
   if (a.mode === "platform") return null;
   const connected = a.mode === "own" && !a.problem;
   const rows: { ok: boolean; warn?: boolean; label: string; detail: string }[] = [
-    { ok: connected, label: `${engineName(a.provider)} account connected`, detail: connected ? `${engineName(a.provider)} accepts your key.` : a.problem || `Connect your ${engineName(a.provider)} key in Setup.` },
+    { ok: connected, label: `${engineName(a.provider)} account connected`, detail: connected ? `${engineName(a.provider)} accepts your key.` : a.problem || `Connect your ${engineName(a.provider)} key ${ws.session?.singleAgency ? "above" : "in Setup"}.` },
     a.provider === "vapi"
       ? { ok: connected, label: "Credit for calls", detail: "Check your balance in the Vapi dashboard. If it runs out, receptionists stop answering." }
       : {

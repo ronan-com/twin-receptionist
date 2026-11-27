@@ -124,7 +124,7 @@ export function guidePage() {
     ["requirements", "What you need"], ["accounts", "Get your accounts ready"], ["wizard", "The setup page, step by step"],
     ["after", "After the install"], ...(RAILWAY ? [["later", "Adding the extras later"] as [string, string]] : []), ["backups", "Backups and updates"], ["problems", "If something goes wrong"], ["yours", "What's yours now"],
   ];
-  const known = new Set(["cloudflare-domain", "registrar-nameservers", "cloudflare-token", "registrar-dns-records", "digitalocean-token", "railway-token", "telnyx-account", "telnyx-api-key", "vapi-account", "vapi-api-key", "resend", "google-oauth", "microsoft-oauth"]);
+  const known = new Set(["cloudflare-domain", "registrar-nameservers", "cloudflare-token", "registrar-dns-records", "digitalocean-token", "railway-token", "telnyx-account", "telnyx-api-key", "vapi-account", "twilio-account", "resend", "google-oauth", "microsoft-oauth"]);
   const extra = allHowTos().filter((h) => !known.has(h.id) && !h.placeholder);
   return layout(`Buyer guide · ${CONFIG.productName}`, `
 <section class="hero small">
@@ -162,10 +162,10 @@ ${sec("accounts", "2. Get your accounts ready", RAILWAY ? `
 <p>Two ways. <b>Let the setup add the records</b> (easiest): use the three Cloudflare guides in order. <b>Add the records yourself</b>: use the last guide.</p>
 ${ht("cloudflare-domain")}${ht("registrar-nameservers")}${ht("cloudflare-token")}${ht("registrar-dns-records")}
 <h3>Calendars (optional)</h3>${ht("google-oauth")}${ht("microsoft-oauth")}
-<h2 class="gopt">Other options (backup)</h2>
-<p>Telnyx is the recommended way, so most agencies never need these. They're on the last optional screen of the setup page, under <b>Other options (backup)</b>.</p>
-<h3>Vapi instead of Telnyx for voice (backup option)</h3><p>Vapi only gives away US numbers, so for an Australian number you also connect a Twilio account, or bring one from Telnyx.</p>${ht("vapi-account")}${ht("vapi-api-key")}
-<h3>Twilio numbers (backup option)</h3><p>Buy Australian numbers on your own Twilio account, or use ones you already have, and send follow-up texts from them. Paste your Account SID and Auth Token from the front page of the <a href="https://console.twilio.com/" target="_blank" rel="noopener noreferrer">Twilio console</a>. It works with the Vapi backup option.</p>
+<h2 class="gopt">Or: Vapi + Twilio</h2>
+<p>The second option on the Phones step, instead of Telnyx: Vapi for voice, Twilio for numbers and texts.</p>
+<h3>Voice: Vapi</h3>${ht("vapi-account")}
+<h3>Numbers and texts: Twilio</h3>${ht("twilio-account")}
 ${extra.map((h) => ht(h.id)).join("")}` : `
 <h3>Your domain</h3>
 <p>The setup page offers two ways. <b>Let the setup handle DNS</b> (recommended): put your domain on a free Cloudflare account and change its nameservers at your registrar; the setup then adds every record for you. <b>I'll add the records myself</b>: keep DNS where it is, and the setup shows you each record to add.</p>
@@ -174,16 +174,15 @@ ${ht("cloudflare-domain")}${ht("registrar-nameservers")}${ht("cloudflare-token")
 <h3>Phones</h3>${ht("telnyx-account")}${ht("telnyx-api-key")}
 <h3>Email</h3>${ht("resend")}
 <h3>Calendars (optional)</h3>${ht("google-oauth")}${ht("microsoft-oauth")}
-<h3>Other options (backup)</h3><p>Telnyx is the recommended way. Vapi and Twilio are backup options, under <b>Other options (backup)</b> on the Phones step.</p>
-<h3>Vapi instead of Telnyx for voice (backup option)</h3>${ht("vapi-account")}${ht("vapi-api-key")}
+<h3>Or: Vapi + Twilio</h3><p>The second option on the Phones step: Vapi for voice, Twilio for numbers and texts.</p>${ht("vapi-account")}${ht("twilio-account")}
 ${extra.map((h) => ht(h.id)).join("")}`)}
 ${sec("wizard", "3. The setup page, step by step", RAILWAY ? `
 <ol class="glist steps-long">
   <li><b>Welcome.</b> Open the private link from your purchase email. Your progress is saved, so you can stop and come back.</li>
   <li><b>Brand.</b> Type your brand name and owner email. You sign in with that email.</li>
   <li><b>Hosting.</b> Paste your Railway token and press <b>Check</b>.</li>
-  <li><b>Phones.</b> Paste your Telnyx key and press <b>Check</b>.</li>
-  <li><b>Extras (optional).</b> Email, your own domain, calendars, and at the bottom <b>Other options (backup)</b> for Vapi or Twilio. Press <b>Skip all and continue</b> to go straight on.</li>
+  <li><b>Phones.</b> Paste your Telnyx key and press <b>Check</b>. Or, under it, use <b>Vapi + Twilio</b>. No account approved yet? <b>Skip for now</b> and connect it later in your dashboard, under <b>Connections</b>.</li>
+  <li><b>Extras (optional).</b> Email, your own domain and calendars. Press <b>Skip all and continue</b> to go straight on.</li>
   <li><b>Install.</b> Press the install button and wait about 5 minutes. If it stops, press <b>Try again</b>.</li>
   <li><b>Done.</b> Open your address and sign in. Then delete your Railway token (and Cloudflare token, if you made one).</li>
 </ol>` : `
@@ -192,7 +191,7 @@ ${sec("wizard", "3. The setup page, step by step", RAILWAY ? `
   <li><b>Brand.</b> Your brand name, which your clients see on every screen and email, and your owner email (you sign in with it).</li>
   <li><b>Domain.</b> Connect Cloudflare (we wait for your nameserver change, then handle DNS) or choose to add records yourself. Pick the dashboard address, <b>app</b> by default.</li>
   <li><b>Server.</b> Paste your DigitalOcean token, then choose where the server lives and its size. You see the monthly price before anything is made.</li>
-  <li><b>Phones.</b> Paste your Telnyx key. The page shows your credit.</li>
+  <li><b>Phones.</b> Paste your Telnyx key (the page shows your credit), or use Vapi + Twilio under it.</li>
   <li><b>Email.</b> Paste your Resend key. We add your sending domain to Resend, put its records into DNS (or show them to you), and wait until Resend verifies them. Then send yourself a test email.</li>
   <li><b>Calendars</b> (optional). Paste Google or Microsoft keys, or skip.</li>
   <li><b>Install.</b> Click <b>Create my server and install</b>. We create the server in your DigitalOcean account and point your address at it. The server then downloads the app from us with a one-time link and installs it, 5 to 15 minutes. You can close the page. If it stops, the page says why: <b>Try again</b> reuses the same server, or <b>Delete the server</b> removes it.</li>

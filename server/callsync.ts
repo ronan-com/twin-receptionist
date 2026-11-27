@@ -2,7 +2,7 @@ import { demoExtras, recentConversations } from "./calls";
 import { sql } from "./db";
 import { recordIncident, resolveIncidents } from "./incidents";
 import { isDemo } from "./sandbox";
-import { asProvider } from "./voice/config";
+import { accountMode, asProvider } from "./voice/config";
 import { runAsOrg } from "./telnyx";
 
 // Keeps call_log up to date: every minute, for each receptionist, the most recent
@@ -48,7 +48,15 @@ export async function syncAllCalls(): Promise<void> {
     select c.id, c.org_id, c.data->>'assistantId' as assistant_id, c.data->>'voiceProvider' as voice_provider
     from clients c join orgs o on o.id = c.org_id
     where o.suspended_at is null and coalesce(c.data->>'assistantId', '') <> ''`;
+  // An agency with no phone account yet (an install whose owner hasn't pasted a key): nothing to
+  // fetch, so skip it quietly instead of filing an incident every minute.
+  const connected = new Map<string, boolean>();
   for (const c of rows as { id: string; org_id: string; assistant_id: string; voice_provider: string | null }[]) {
+    if (!isDemo(c.assistant_id)) {
+      const k = `${c.org_id}:${asProvider(c.voice_provider)}`;
+      if (!connected.has(k)) connected.set(k, (await accountMode(c.org_id, asProvider(c.voice_provider)).catch(() => "none")) !== "none");
+      if (!connected.get(k)) continue;
+    }
     try {
       await syncReceptionist(c);
       await resolveIncidents("call_sync", c.id);

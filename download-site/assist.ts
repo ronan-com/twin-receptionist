@@ -43,7 +43,7 @@ export function didStep(s: SetupData, id: AssistId): boolean {
     case "brand": return !!s.brand;
     case "railway": return !!s.railway?.confirmed;
     case "server": return !!s.server?.chosen;
-    case "phones": return !!s.phones?.confirmed;
+    case "phones": return !!s.phones?.confirmed || (!!s.vapi?.confirmed && !!s.twilio?.confirmed);
     case "email": return !!s.email?.confirmed;
     case "domain": return !!s.domain?.confirmed && !!s.domain.host;
     case "calendars": return !!s.calendars?.google || !!s.calendars?.microsoft;
@@ -70,7 +70,7 @@ export function detailOf(b: { id: number }, s: SetupData, id: AssistId): string 
     case "brand": return s.brand ? `${s.brand.productName} · ${s.brand.ownerEmail}${s.brand.logo ? " · logo" : ""}${s.brand.colour ? ` · ${s.brand.colour}` : ""}` : "";
     case "railway": return s.railway?.confirmed ? `${s.railway.workspaceName || "workspace"}${s.railway.plan ? ` · ${s.railway.plan}` : ""} ${h("railway_token")}`.trim() : "";
     case "server": return s.server?.chosen ? `${s.server.region || ""} ${s.server.size || ""} ${h("do_token")}`.trim() : "";
-    case "phones": return s.phones?.confirmed ? `Telnyx ${h("telnyx_key")}${s.phones.balance ? ` · ${s.phones.balance}` : ""}`.trim() : "";
+    case "phones": return !s.phones?.confirmed && s.vapi?.confirmed && s.twilio?.confirmed ? `Vapi ${h("vapi_key")} + Twilio ${s.twilio.sid || ""}`.trim() : s.phones?.confirmed ? `Telnyx ${h("telnyx_key")}${s.phones.balance ? ` · ${s.phones.balance}` : ""}`.trim() : s.skipped?.phones && !s.vapi?.confirmed ? "Skipped: the buyer connects it later in their dashboard (Connections)" : "";
     case "email": return s.email?.confirmed ? `${s.email.mode === "smtp" ? "SMTP" : "Resend"} · ${s.email.address || ""}` : "";
     case "domain": return s.domain?.host ? `${s.domain.host} · DNS by ${s.domain.mode === "manual" ? "hand" : s.domain.mode === "godaddy" ? "GoDaddy" : "Cloudflare"}${s.domain.confirmed ? "" : " (not finished)"}` : "";
     case "calendars": return [s.calendars?.google ? "Google" : "", s.calendars?.microsoft ? "Microsoft" : ""].filter(Boolean).join(" + ");
@@ -86,7 +86,7 @@ export function installBlockers(b: Buyer, s: SetupData): string[] {
     if (OPTIONAL_STEPS.includes(id) || id === "welcome" || id === "extras") continue;
     if (!stepDone(b, s, id)) out.push(ASSIST_STEPS.find((x) => x.id === id)?.title || id);
   }
-  if (!s.phones?.confirmed && !s.vapi?.confirmed && !out.some((x) => /Phones/.test(x))) out.push("Phones (Telnyx)");
+  if (!s.phones?.confirmed && !s.vapi?.confirmed && !s.skipped?.phones && !out.some((x) => /Phones/.test(x))) out.push("Phones (Telnyx)");
   return out;
 }
 
@@ -111,11 +111,11 @@ function lockedOut(b: Buyer): Out | null {
 const ACTION_OF: Record<AssistId, string> = { brand: "brand", railway: "railway", server: "server", phones: "phones", email: "email", domain: "domain", calendars: "calendars", vapi: "vapi", twilio: "twilio" };
 
 /** Fill one step for the buyer. `f` holds the same field names the wizard form uses. Never audits a key. */
-export async function fillStep(b: Buyer, admin: string, step: AssistId, f: Record<string, string>): Promise<Out> {
+export async function fillStep(b: Buyer, admin: string, step: AssistId, f: Record<string, string>, as?: "phones-vapi" | "phones-skip"): Promise<Out> {
   const lock = lockedOut(b); if (lock) return lock;
   const s0 = getSetup(b.id);
   if (NEEDS_BRAND.includes(step) && !s0.brand) return bad("Fill in the Brand first: the other steps use the brand name.");
-  let action = ACTION_OF[step];
+  let action = as || ACTION_OF[step];
   const form = { ...f };
   if (step === "email" && f.mode === "smtp") action = "smtp";
   const flash = await run(b, admin, action, form);
@@ -126,7 +126,9 @@ export async function fillStep(b: Buyer, admin: string, step: AssistId, f: Recor
     out = fromFlash(f2, "Domain added. The records to add are listed below.");
     s = getSetup(b.id);
   }
+  if (as === "phones-skip" && flash?.kind !== "err") out = { ...out, message: "Phones skipped: they connect their phone provider later in their dashboard (Connections)." };
   if (didStep(s, step) && flash?.kind !== "err") updateSetup(b.id, mark(step, admin));
+  else if (as === "phones-skip") { /* nothing filled in to mark */ }
   else if (flash?.kind !== "err") out = { ...out, message: out.message || "Saved, but not finished yet." };
   const note = step === "domain" ? `${s.domain?.mode || ""} ${s.domain?.host || ""}`.trim() : step === "brand" ? str(f.productName, 60) : "";
   audit(b, admin, `${out.ok ? "filled" : "tried"}: ${step}`, `${note}${out.ok ? "" : ` · ${out.message.slice(0, 120)}`}`.trim());
@@ -423,7 +425,7 @@ export function dropHost(b: Buyer, admin: string): Out {
 // ---------------- the buyer's side of it ----------------
 // Registered here so every place that loads the admin also has these (server.ts imports admin-web, which imports this).
 const STEP_OF_ACTION: Record<string, AssistId> = { brand: "brand", railway: "railway", server: "server", phones: "phones", email: "email", smtp: "email", domain: "domain", calendars: "calendars", vapi: "vapi", twilio: "twilio",
-  "email-skip": "email", "domain-skip": "domain", "cal-skip": "calendars", "vapi-skip": "vapi", "twilio-skip": "twilio" };
+  "email-skip": "email", "domain-skip": "domain", "cal-skip": "calendars", "vapi-skip": "vapi", "twilio-skip": "twilio", "phones-skip": "phones", "phones-vapi": "phones" };
 for (const [name, step] of Object.entries(STEP_OF_ACTION)) {
   const real = actions[name];
   if (!real) continue;

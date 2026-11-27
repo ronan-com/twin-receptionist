@@ -1,3 +1,4 @@
+import { ConnectPhoneFirst, usePhoneKeyNeeded } from "@/components/app/PhoneGate";
 import { useEffect, useState, type KeyboardEvent } from "react";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -75,6 +76,12 @@ function problem(step: number, s: WithProfile, urgent: Urgent): string {
 }
 
 function NewReceptionistPage() {
+  // A single-agency install with no phone provider yet: nothing can be made until it's connected.
+  if (usePhoneKeyNeeded()) return <ConnectPhoneFirst />;
+  return <NewReceptionistWizard />;
+}
+
+function NewReceptionistWizard() {
   const { ws, readOnly, orgName, platform } = useConsole();
   const navigate = useNavigate();
   const qc = useQueryClient();

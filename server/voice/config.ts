@@ -18,6 +18,18 @@ export const asProvider = (v: unknown): VoiceProviderId => (v === "vapi" ? "vapi
 /** The install's default engine (VOICE_PROVIDER). */
 export const installProvider = (): VoiceProviderId => asProvider((process.env.VOICE_PROVIDER ?? "").trim().toLowerCase());
 
+/** The install was given a phone key of its own (TELNYX_API_KEY, or VAPI_API_KEY for the Vapi backup). */
+export const installHasVoiceKey = (): boolean => Boolean((process.env.TELNYX_API_KEY ?? "").trim() || (process.env.VAPI_API_KEY ?? "").trim());
+
+/**
+ * A buyer's own copy (SINGLE_AGENCY) installed with no phone key: the buyer skipped the Phones
+ * step in setup (Telnyx approval can take a day or two). Its agency connects its own key later in
+ * Connections, which is stored per org like any agency's own key and used straight away.
+ * (Same check as accounts.ts singleAgency, read here to keep this module free of accounts.ts.)
+ */
+export const ownKeyInstall = (): boolean =>
+  ["1", "true", "yes", "on"].includes((process.env.SINGLE_AGENCY ?? "").trim().toLowerCase()) && !installHasVoiceKey();
+
 /** The engine a receptionist runs on. */
 export const providerOfClient = (c: Pick<Business, "voiceProvider"> | null | undefined): VoiceProviderId => asProvider(c?.voiceProvider);
 
@@ -69,5 +81,6 @@ export async function vapiCredsFor(orgId: string | null): Promise<VapiCreds> {
 export async function accountMode(orgId: string, provider: VoiceProviderId): Promise<"own" | "platform" | "none"> {
   const [o] = await sql`select telnyx_key, vapi_key, platform_telnyx from orgs where id = ${orgId}`;
   if (provider === "vapi") return o?.vapi_key ? "own" : o?.platform_telnyx && platformVapi().key ? "platform" : "none";
-  return o?.telnyx_key ? "own" : o?.platform_telnyx ? "platform" : "none";
+  // An install with no key of its own has no platform account to fall back to.
+  return o?.telnyx_key ? "own" : o?.platform_telnyx && !ownKeyInstall() ? "platform" : "none";
 }

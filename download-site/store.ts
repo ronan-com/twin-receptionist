@@ -184,7 +184,8 @@ export interface SetupData {
   /** Railway: the buyer pressed Continue on the optional extras screen (whatever they added or skipped). */
   extrasDone?: boolean;
   /** Railway: extras the buyer chose to leave for later. */
-  skipped?: { email?: boolean; domain?: boolean; calendars?: boolean; vapi?: boolean; twilio?: boolean };
+  /** phones: the buyer skipped the phone provider (Telnyx approval can take a day or two) and connects it later in their dashboard (Connections). Railway only. */
+  skipped?: { email?: boolean; domain?: boolean; calendars?: boolean; vapi?: boolean; twilio?: boolean; phones?: boolean };
   /**
    * "Update your agency" (Railway, after Done): the buyer pastes a Railway token again and we send the newest
    * app to the same project. ask = token screen, running = deploying, failed = nothing changed, done = last result.

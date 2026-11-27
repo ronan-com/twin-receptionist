@@ -69,8 +69,8 @@ describe("Telnyx first, Vapi and Twilio as backup options", () => {
     const s = getSetup(b.id);
     expect(s.vapi?.confirmed).toBe(true);
     expect(s.step).toBe("extras");
-    // Telnyx's key is kept (email replies); re-checking Telnyx afterwards does not undo the Vapi choice.
-    expect(phoneSettings(b.id, s)).toEqual({ VOICE_PROVIDER: "vapi", VAPI_API_KEY: "priv-0123456789abcdef", VAPI_PUBLIC_KEY: "pub-0123456789abcdef", TELNYX_API_KEY: TKEY });
+    // The Vapi path hands the app no Telnyx key; re-checking Telnyx afterwards does not undo the Vapi choice.
+    expect(phoneSettings(b.id, s)).toEqual({ VOICE_PROVIDER: "vapi", VAPI_API_KEY: "priv-0123456789abcdef", VAPI_PUBLIC_KEY: "pub-0123456789abcdef" });
     telnyxOk();
     await run(b, "phones", { key: TKEY });
     expect(phoneSettings(b.id, getSetup(b.id)).VOICE_PROVIDER).toBe("vapi");
@@ -97,7 +97,7 @@ describe("Telnyx first, Vapi and Twilio as backup options", () => {
     expect((await run(b, "extras-continue"))?.kind).toBe("err");
     stub(200);
     expect(await run(b, "vapi", VOK)).toBeNull();
-    expect(phoneSettings(b.id, getSetup(b.id))).toEqual({ VOICE_PROVIDER: "vapi", VAPI_API_KEY: "priv-0123456789abcdef", VAPI_PUBLIC_KEY: "pub-0123456789abcdef", TELNYX_API_KEY: "" });
+    expect(phoneSettings(b.id, getSetup(b.id))).toEqual({ VOICE_PROVIDER: "vapi", VAPI_API_KEY: "priv-0123456789abcdef", VAPI_PUBLIC_KEY: "pub-0123456789abcdef" });
     expect(await run(b, "extras-continue")).toBeNull();
     expect(getSetup(b.id).step).toBe("install");
   });
@@ -120,14 +120,16 @@ describe("Telnyx first, Vapi and Twilio as backup options", () => {
     expect(calls).toHaveLength(0);
   });
 
-  test("with Vapi, a Telnyx key is optional and is kept for email replies", async () => {
+  test("the Vapi path never asks for or keeps a Telnyx key", async () => {
     const b = await buyer("g");
-    globalThis.fetch = (async (url: any) =>
-      new Response(JSON.stringify(String(url).includes("telnyx") ? { data: { available_credit: "5", currency: "USD" } } : []), { status: 200, headers: { "Content-Type": "application/json" } })) as any;
+    stub(200);
     expect(await run(b, "phones-backup")).toBeNull();
     expect(await run(b, "vapi", { ...VOK, key: TKEY })).toBeNull();
-    expect(getSecret(b.id, "telnyx_key")).toBe(TKEY);
-    expect(phoneSettings(b.id, getSetup(b.id)).TELNYX_API_KEY).toBe(TKEY);
+    expect(calls.some((c) => c.url.includes("telnyx"))).toBe(false);
+    expect(getSecret(b.id, "telnyx_key")).toBeNull();
+    expect("TELNYX_API_KEY" in phoneSettings(b.id, getSetup(b.id))).toBe(false);
+    const { wizardPage } = await import("../wizard");
+    expect(wizardPage(b, getSetup(b.id), b.code, "sid", "vapi" as any)).not.toMatch(/Telnyx API key|name="key"/);
   });
 
   test("Twilio is its own backup card: checked with one read, kept, and handed to the install; skip removes it", async () => {
@@ -162,28 +164,34 @@ describe("Telnyx first, Vapi and Twilio as backup options", () => {
     expect((await run(b, "twilio", { twilioSid: "nope", twilioToken: "x" }))?.kind).toBe("err");
   });
 
-  test("the screens: Phones is Telnyx only; Vapi and Twilio sit under Other options (backup) on the extras screen", async () => {
+  test("the screens: Phones has Telnyx (recommended) first and Vapi + Twilio under it; the extras screen no longer repeats them", async () => {
     const { wizardPage } = await import("../wizard");
     const b = await buyer("j");
     const html = (view: string) => wizardPage(b, getSetup(b.id), b.code, "sid", view as any);
     const phones = html("phones");
-    expect(phones).toContain("Telnyx");
-    expect(phones).not.toMatch(/Vapi|Twilio|name="provider"/);
+    expect(phones).toContain("Telnyx <span class=\"tag\">Recommended</span>");
+    expect(phones).toContain("Or use Vapi + Twilio");
+    expect(phones.indexOf("Telnyx API key")).toBeLessThan(phones.indexOf("Or use Vapi + Twilio"));
+    expect(phones).not.toContain('name="provider"');
     updateSetup(b.id, (s) => { s.phones = { confirmed: true, provider: "telnyx" }; s.step = "extras"; });
     const extras = html("extras");
-    expect(extras).toContain("Other options (backup)");
-    expect(extras).toContain("Use Vapi instead of Telnyx for voice");
-    expect(extras).toContain("Connect Twilio numbers");
-    expect(extras.indexOf("Your own email")).toBeLessThan(extras.indexOf("Other options (backup)"));
-    expect(extras.match(/Add now/g)!.length).toBe(5);
-    expect(html("vapi")).toContain("Backup option");
+    expect(extras).not.toContain("Other options (backup)");
+    expect(extras).not.toContain("Use Vapi instead of Telnyx for voice");
+    expect(extras.match(/Add now/g)!.length).toBe(3);
+    expect(html("vapi")).toContain("Vapi for voice");
   });
 
-  test("the guides say Backup option", async () => {
+  test("one Vapi guide (sign up, private key, public key) and a Twilio guide", async () => {
     const { howTo } = await import("../content");
-    expect(howTo("vapi-account").title).toMatch(/^Backup option/);
-    expect(howTo("vapi-account").html).toContain("US");
-    expect(howTo("vapi-api-key").html).toContain("Public Key");
-    expect(howTo("vapi-api-key").placeholder).toBe(false);
+    const v = howTo("vapi-account");
+    expect(v.placeholder).toBe(false);
+    expect(v.html).toContain("https://dashboard.vapi.ai/org/api-keys");
+    expect(v.html).toContain("Private API Keys");
+    expect(v.html).toContain("Public API Keys");
+    expect(v.html).not.toContain("Telnyx");
+    const t = howTo("twilio-account");
+    expect(t.placeholder).toBe(false);
+    expect(t.html).toContain("Account SID");
+    expect(t.html).toContain("regulatory-compliance/bundles");
   });
 });

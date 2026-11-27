@@ -7,7 +7,7 @@ import { DEMO, demoSample, isDemo } from "./demo";
 import { esc } from "./pages";
 import { howTo } from "./content";
 import { chatBubble, chatHead } from "./chat";
-import { agencyUrl, canView, firstOpen, hostOf, locked, oauthRedirect, stepDone, updateInfo, webUrl, zoneOf } from "./setup";
+import { PHONE_LATER, agencyUrl, canView, firstOpen, hostOf, locked, oauthRedirect, phoneSkipped, stepDone, updateInfo, webUrl, zoneOf } from "./setup";
 import { detailOf, hasAssist, helpedStep, stepRows, type AssistId } from "./assist";
 import { servingOwnHost } from "./ctx";
 import { DEFAULT_REGION, DEFAULT_SIZE } from "./providers";
@@ -225,50 +225,62 @@ function server(c: Ctx) {
 ${nav(c, primary("Check and continue"))}`;
 }
 
+/** Railway: the buyer can install with no phone provider and connect it later in their dashboard. */
+const skipPhones = (c: Ctx) => (RAILWAY && !c.s.phones?.confirmed && !c.s.vapi?.confirmed ? `<div class="skip-phones">${mini(c, "phones-skip", "Skip for now — connect it later in your dashboard", "linkbtn", " data-skip-phones")}</div>` : "");
+/** After a skip: a gentle nudge to connect now (before the install), and the same reminder on the Done screen. */
+const phoneLaterNote = (c: Ctx) => notice("warn", `<b>Recommended: connect Telnyx or Vapi now so your voice receptionist can start.</b><br><b>Phone provider:</b> ${esc(PHONE_LATER.charAt(0).toLowerCase() + PHONE_LATER.slice(1))}. Until then your dashboard works, but receptionists can't be made.${c.s.phase === "idle" && c.view !== "phones" ? ` <a class="btn o" href="${base(c)}?step=phones" data-action="connect-phones">Go back and connect</a>` : ""}`);
+
 const phonesSummary = (c: Ctx) => {
+  if (phoneSkipped(c.s)) return esc(PHONE_LATER);
   const t = secretHint(c.b.id, "telnyx_key");
-  const bits = [c.s.phones?.confirmed || t ? `Telnyx ${esc(t || "")}`.trim() : ""];
-  if (c.s.vapi?.confirmed || c.s.phones?.provider === "vapi") bits.push(`Vapi ${esc(secretHint(c.b.id, "vapi_key") || "")} (backup option)`.trim());
-  if (c.s.twilio?.confirmed || c.s.phones?.twilioSid) bits.push("Twilio (backup option)");
+  const telnyx = c.s.phones?.confirmed ? `Telnyx ${esc(t || "")}`.trim() : "";
+  if (c.s.vapi?.confirmed && c.s.twilio?.confirmed && !telnyx) return `Vapi ${esc(secretHint(c.b.id, "vapi_key") || "")} + Twilio`.replace("  ", " ");
+  const bits = [telnyx || (t ? `Telnyx ${esc(t)}` : "")];
+  if (c.s.vapi?.confirmed || c.s.phones?.provider === "vapi") bits.push(`Vapi ${esc(secretHint(c.b.id, "vapi_key") || "")}`.trim());
+  if (c.s.twilio?.confirmed || c.s.phones?.twilioSid) bits.push("Twilio");
   return bits.filter(Boolean).join(" + ") || "Telnyx";
 };
 
+/** The second option on the Phones step: Vapi for voice, Twilio for numbers and texts. Its own form, checked like the backup steps. */
+function vapiTwilio(c: Ctx): string {
+  const on = !!c.s.vapi?.confirmed && !!c.s.twilio?.confirmed;
+  const fl = c.flash?.form || {};
+  return `<section class="phone-alt" data-option="vapi-twilio">
+  <h3 class="extras-head">Or use Vapi + Twilio</h3>
+  <p class="hint">Vapi runs the receptionists' voice and Twilio gives you Australian numbers and sends the texts. Both on your own accounts.</p>
+  ${on ? notice("ok", `Vapi + Twilio connected (${esc(secretHint(c.b.id, "vapi_key") || "Vapi")}, ${esc(c.s.twilio?.sid || "Twilio")}). Your receptionists run on Vapi. ${mini(c, "phones-vapi-remove", "Use Telnyx instead", "linkbtn")}`) : ""}
+  <form id="vapitwilio" method="post" action="${base(c)}/a/phones-vapi">${hidden(c)}
+  <div class="two"><div>${secretIn("vapiKey", "Private key", secretHint(c.b.id, "vapi_key"), "Vapi private API key")}</div>
+  <div><label class="f" for="vapiPublic">Vapi public key</label><input id="vapiPublic" name="vapiPublic" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" maxlength="300" placeholder="Public key (used by the browser test call)" value="${esc(fl.vapiPublic ?? "")}"></div></div>
+  <div class="two"><div><label class="f" for="twilioSid">Twilio Account SID</label><input id="twilioSid" name="twilioSid" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" maxlength="60" placeholder="AC..." value="${esc(fl.twilioSid ?? c.s.twilio?.sid ?? "")}"></div>
+  <div>${secretIn("twilioToken", "Auth Token", secretHint(c.b.id, "twilio_token"), "Twilio Auth Token")}</div></div>
+  ${showMeHow(["vapi-account", "twilio-account"])}
+  <p><button class="btn o" type="submit" form="vapitwilio" data-action="phones-vapi">Check and use Vapi + Twilio ${icon("right")}</button></p>
+  </form></section>`;
+}
+
 function phones(c: Ctx) {
   const saved = secretHint(c.b.id, "telnyx_key");
-  return `${head(c, "Connect your phone account", "Your clients' receptionists answer calls on your own Telnyx account. Buy Australian numbers inside the app, and texting after calls works.")}
+  return `${head(c, "Connect your phone account", "Your clients' receptionists answer calls on your own phone account. Telnyx is the recommended one: buy Australian numbers inside the app, and texting after calls works.")}
 <div class="body">${mainForm(c, "phones", `
   <h3>Telnyx <span class="tag">Recommended</span></h3>
   ${secretIn("key", "KEY...", saved, "Telnyx API key")}
   ${notice("warn", "A new Telnyx account is a trial: callers can't get through until it's upgraded and has credit.")}
+  ${RAILWAY ? `<p class="hint">Still waiting for Telnyx to approve your account? That can take a few hours to two days. Skip this for now: your agency installs and opens as normal, and you paste the key later in your dashboard under <b>Connections</b>.</p>` : ""}
   ${showMeHow(["telnyx-account", "telnyx-api-key"])}`)}
-  ${RAILWAY ? (c.s.vapi?.confirmed ? "" : `<p class="hint">No Telnyx account? ${mini(c, "phones-backup", "Use a backup option instead", "linkbtn")}</p>`) : `<details class="advanced"><summary>Other options (backup)</summary>${backupCards(c)}</details>`}</div>
-${nav(c, primary("Check and continue"))}`;
-}
-
-/** Vapi and Twilio: backup options, shown after everything else (the last optional screen, or under Phones on DigitalOcean). */
-function backupCards(c: Ctx): string {
-  const vapiOn = !!c.s.vapi?.confirmed || c.s.phones?.provider === "vapi";
-  const twOn = !!c.s.twilio?.confirmed || !!c.s.phones?.twilioSid;
-  const card = (key: "vapi" | "twilio", title: string, text: string, on: boolean) => `<div class="xcard${on ? " added" : ""}"><div class="xh">${icon("phone")}<b>${title}</b><span class="tag">Backup option</span></div><p>${text}</p>
-  <div class="xa">${on ? `<span class="st f">${icon("check")} Added</span><a class="btn o" href="${base(c)}?step=${key}">Change</a>${mini(c, `${key}-skip`, "Remove", "linkbtn")}`
-    : `<a class="btn o" href="${base(c)}?step=${key}">Add now</a>${mini(c, `${key}-skip`, "Skip", "linkbtn")}${c.s.skipped?.[key] ? `<span class="st w">Skipped</span>` : ""}`}</div></div>`;
-  return `<h3 class="extras-head">Other options (backup)</h3>
-<p class="hint">Telnyx is the recommended way and is what you set up on the Phones step. These two are backups, only if you'd rather not use Telnyx for voice.</p>
-<div class="xcards">
-${card("vapi", "Use Vapi instead of Telnyx for voice", "Run the receptionists on a Vapi account instead. Vapi only gives away US numbers, so for Australian numbers add Twilio too. With Vapi, a Telnyx key is optional.", vapiOn)}
-${card("twilio", "Connect Twilio numbers", "Buy Australian numbers on your own Twilio account, or use ones you already have, and send follow-up texts from them. Works with the Vapi backup option.", twOn)}
-</div>`;
+  ${vapiTwilio(c)}
+  ${phoneSkipped(c.s) ? phoneLaterNote(c) : skipPhones(c)}</div>
+${nav(c, c.s.vapi?.confirmed && c.s.twilio?.confirmed && !c.s.phones?.confirmed ? `<a class="btn p" href="${base(c)}?step=${firstOpen(c.b, c.s)}">Continue ${icon("right")}</a>` : primary("Check and continue"))}`;
 }
 
 function vapi(c: Ctx) {
   const vSaved = secretHint(c.b.id, "vapi_key");
-  return `${head(c, "Use Vapi instead of Telnyx", "A backup option. Your receptionists run on your own Vapi account instead of Telnyx. Telnyx stays the recommended way.")}
+  return `${head(c, "Vapi for voice", "Your receptionists run on your own Vapi account. Add Twilio too for Australian numbers and texts.")}
 <div class="body">${mainForm(c, "vapi", `
   ${secretIn("vapiKey", "Private key", vSaved, "Vapi private API key")}
   <label class="f" for="vapiPublic">Vapi public key (used by the browser test call)</label><input id="vapiPublic" name="vapiPublic" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" maxlength="300" placeholder="Public key" value="${val(c, "vapiPublic", "")}">
-  ${c.s.phones?.confirmed ? "" : `<label class="f" for="key">Telnyx API key (optional)</label><input id="key" name="key" type="password" autocomplete="off" autocapitalize="off" spellcheck="false" maxlength="300" placeholder="KEY... (only used for AI email replies)">`}
-  <p class="hint">With Vapi the Telnyx key is optional: it's only used for AI email replies.</p>
-  ${showMeHow(["vapi-account", "vapi-api-key"])}`)}</div>
+  ${showMeHow(["vapi-account", "twilio-account"])}`)}
+  ${phoneSkipped(c.s) ? "" : skipPhones(c)}</div>
 ${nav(c, `${mini(c, "vapi-skip", "Skip", "linkbtn")}${primary("Check and continue")}`)}`;
 }
 
@@ -394,8 +406,7 @@ ${card("email", "Your own email", "mail", "Invites and notices sent from your ad
 ${card("domain", "Your own web address", "globe", "Use app.yourbusiness.com instead of the Railway address. We add the records for you with Cloudflare, or show you each one.", "domain", "domain-skip")}
 ${card("calendars", "Calendar booking", "calendar", "Let receptionists book into Google or Outlook calendars. Needs your own web address.", "calendars", "cal-skip")}
 </div>
-${c.s.phones?.confirmed || c.s.vapi?.confirmed ? "" : notice("warn", `You haven't added Telnyx yet. Add Vapi below, or <a href="${base(c)}?step=phones">go back and add your Telnyx key</a>.`)}
-${backupCards(c)}
+${c.s.phones?.confirmed || c.s.vapi?.confirmed ? "" : phoneSkipped(c.s) ? phoneLaterNote(c) : `${notice("warn", `You haven't connected a phone account yet. <a href="${base(c)}?step=phones">Go back to Phones</a> and add your Telnyx key (or Vapi + Twilio), or skip it for now and connect it later in your dashboard.`)}${skipPhones(c)}`}
 ${mainForm(c, "extras-continue", "")}
 ${nav(c, primary(have.email || have.domain || have.calendars || have.vapi || have.twilio ? "Continue to install" : "Skip all and continue"))}`;
 }
@@ -479,6 +490,7 @@ function installRailway(c: Ctx) {
     ];
     return `${head(c, "Ready to install", `We'll set up ${P(c)} in your Railway account. You can close the page while it runs.`)}
 <div class="summary">${rows.map(([k, v]) => `<div><span>${k}</span><b>${v}</b></div>`).join("")}</div>
+${phoneSkipped(s) ? phoneLaterNote(c) : ""}
 ${mainForm(c, "install-start", "")}
 ${nav(c, primary("Install"))}`;
   }
@@ -579,9 +591,13 @@ function laterCards(c: Ctx, url: string): string {
     "Open your dashboard, then <b>Settings</b>, then <b>Email and calendars</b>, and paste the client ID and secret.",
     `The setup guide's <a href="/guide#accounts" target="_blank" rel="noopener">calendar how-tos</a> walk through each one.`,
   ]));
-  if (!have.vapi || !have.twilio) cards.push(late("phone", "Other phone options (backup)", `Telnyx is your main phone service. Vapi (instead of Telnyx for voice) and Twilio (numbers and texts) are backup options.`, [
-    "Open your dashboard, then <b>Connections</b>.",
-    "Open <b>Other options (backup)</b>.",
+  if (phoneSkipped(s)) cards.unshift(`<div class="xcard late" data-card="phone-later"><div class="xh">${icon("phone")}<b>Phone provider</b><span class="tag">Not connected yet</span></div><p>${esc(PHONE_LATER)}. Receptionists can be made as soon as it's connected.</p><details open><summary>How to connect it</summary><ol>${[
+    "Wait for Telnyx to approve your account, then add some credit.",
+    "In Telnyx open <b>API Keys</b> and create a key.",
+    "Open your dashboard, then <b>Connections</b>, press <b>Connect your key</b> and paste it. It's checked and used straight away: no restart.",
+  ].map((x) => `<li>${x}</li>`).join("")}</ol></details></div>`);
+  if (!phoneSkipped(s) && !have.vapi) cards.push(late("phone", "Other phone options", `Telnyx is your phone service. Vapi (for voice) with Twilio (numbers and texts) is the other option.`, [
+    "Open your dashboard, then <b>Connections</b>, then <b>Other options (backup)</b>.",
     "Press <b>Use Vapi</b> to switch voice to your Vapi account, or <b>Connect Twilio</b>, and paste the keys. Each is checked before it's saved.",
   ]));
   // Not a wizard step and nothing to tick: it is only a Railway variable, so it is always listed.
@@ -676,6 +692,7 @@ ${nav(c, `<a class="btn p" href="${base(c)}/open">Open your dashboard ${icon("ex
 ${pending ? `<p class="hint">Your temporary address. <b>${esc(hostOf(s))}</b> starts working by itself once the records below are in.</p>` : !own ? `<p class="hint">This is your agency's address from Railway. Bookmark it. You can add your own domain later.</p>` : temp ? `<p class="hint">Also at your Railway address: <a href="${esc(temp)}" target="_blank" rel="noopener noreferrer">${esc(temp.replace(/^https?:\/\//, ""))}</a></p>` : ""}
 <p class="hint"><b>First time in:</b> you'll see <b>Set up your agency</b>. Use <b>${esc(s.brand?.ownerEmail || "your owner email")}</b> and pick a password. Only that address can create the first account.</p></div>
 ${updateBanner(c)}
+${phoneSkipped(s) ? phoneLaterNote(c) : ""}
 ${pending && s.finishRecords?.length ? `<div class="recbox"><b>Records for ${esc(hostOf(s))}</b>${recordTable(s.finishRecords, true)}</div>` : ""}
 <div class="checks"><b>Before you go</b>
   <div>${icon("check")}<span>Delete your Railway token. <a href="https://railway.com/account/tokens" target="_blank" rel="noopener noreferrer">Open Railway</a></span></div>
@@ -713,7 +730,7 @@ function rail(c: Ctx) {
     const m = META[id];
     const isDone = stepDone(c.b, c.s, id) && id !== c.view && id !== "done";
     const can = canView(c.b, c.s, id) && id !== c.view && !(c.s.phase === "done" && id !== "done");
-    const by = isDone && helpedStep(c.s, id) ? "Done by your provider" : m.short;
+    const by = id === "phones" && phoneSkipped(c.s) ? PHONE_LATER : isDone && helpedStep(c.s, id) ? "Done by your provider" : m.short;
     const inner = `<b>${isDone ? icon("check") : i + 1}</b><span><span class="t">${m.title}</span><span class="s">${by}</span></span>`;
     return `<li class="${id === c.view ? "on" : isDone ? "done" : ""}">${can ? `<a href="/setup/${esc(c.code)}?step=${id}">${inner}</a>` : `<span>${inner}</span>`}</li>`;
   }).join("")}</ol></aside>`;

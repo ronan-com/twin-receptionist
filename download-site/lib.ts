@@ -131,6 +131,7 @@ export interface Buyer {
   /** When we last emailed them their invite (setup link or dashboard login) from the agency page, or null. */
   invited_at: string | null;
 }
+export const PLAIN_AGENCY_NAME = "Your agency";
 export type Style = "branded" | "neutral";
 export const asStyle = (v: unknown): Style => (v === "neutral" ? "neutral" : "branded");
 /** Takes our names out of text for a neutral agency (emails, prompts): PRODUCT_NAME and SELLER_NAME never show. */

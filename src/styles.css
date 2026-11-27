@@ -615,3 +615,11 @@
   [data-app-shell] .row-hover,
   [data-app-shell] .hue-tile { transition: none; }
 }
+
+/* Plain buyer installs start neutral. Saved workspace brand variables override these defaults. */
+html[data-neutral-dashboard] {
+  --indigo: #32343c; --indigo-deep: #1d1f25; --primary-ink: #32343c;
+  --ribbon-2: var(--indigo); --ribbon-3: var(--indigo);
+}
+html[data-neutral-dashboard] .auth-ribbon { display: none; }
+html[data-neutral-dashboard] .dashboard-journey { background: var(--card); }

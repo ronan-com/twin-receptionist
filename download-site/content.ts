@@ -75,6 +75,7 @@ export function markdown(src: string, headingShift = 1, copyCode = false): strin
 }
 
 function frontMatter(src: string): { meta: Record<string, string>; body: string } {
+  src = src.replace(/\r\n?/g, "\n");
   const m = src.match(/^---\n([\s\S]*?)\n---\n?/);
   if (!m) return { meta: {}, body: src };
   const meta: Record<string, string> = {};
@@ -140,7 +141,7 @@ export function welcomeEmail(): { subject: string; body: string } | null {
   for (const dir of contentDirs()) {
     const f = join(dir, "welcome-email.md");
     if (!existsSync(f)) continue;
-    const src = readFileSync(f, "utf8");
+    const src = readFileSync(f, "utf8").replace(/\r\n?/g, "\n");
     const m = src.match(/\*\*Subject:\*\*\s*(.+)\n([\s\S]*)$/);
     if (!m) return null;
     const body = m[2].replace(/\*\*([^*]+)\*\*/g, "$1").replace(/^\s+/, "").trimEnd() + "\n";

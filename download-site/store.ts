@@ -123,7 +123,7 @@ export type Phase = "idle" | "creating" | "create_failed" | "dns" | "starting" |
 
 export interface SetupData {
   step: StepId;
-  brand?: { productName: string; ownerEmail: string; ownPhoneAccount: boolean ; logo?: string; colour?: string };
+  brand?: { productName: string; ownerEmail: string; ownPhoneAccount: boolean ; deferred?: boolean; logo?: string; colour?: string };
   domain?: {
     mode: "cloudflare" | "godaddy" | "manual";
     zone?: string; // example.com

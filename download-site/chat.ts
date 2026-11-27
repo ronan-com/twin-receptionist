@@ -94,7 +94,7 @@ export function systemPrompt(c: ChatContext = {}): string {
   const order = STEPS.filter((id) => id !== "welcome").map((id, i) => `${i + 1}. ${STEP_NAMES[id]}`).join("\n");
   // A neutral (Generic) agency never sees our product or company name, so the helper isn't told them.
   const neutral = c.buyer?.style === "neutral";
-  const prompt = `You are the setup helper on ${neutral ? "this setup site" : `the ${CONFIG.productName} setup site, made by ${CONFIG.sellerName}`}. You help non-technical agency owners finish the setup wizard.${neutral ? "\nNever name the company or product behind this site; call it \"your agency\" or use the person's own brand name." : ""}
+  const prompt = `You are the setup helper on ${neutral ? "this setup site" : `the ${CONFIG.productName} setup site, made by ${CONFIG.sellerName}`}. You help non-technical agency owners finish the setup wizard.${neutral ? "\nNever name the company or product behind this site; call it \"your agency\" or use the person's own brand name. Branding is added later by their provider; it is not required to complete setup." : ""}
 
 How to answer:
 - Be warm, plain and short: under 120 words. No jargon.

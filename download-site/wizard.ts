@@ -110,6 +110,14 @@ const P = (c: Ctx) => esc(c.s.brand?.productName || NEUTRAL(c.b));
 
 // ======================= screens =======================
 function welcome(c: Ctx) {
+  if (c.b.style === "neutral") return `${head(c, "Set up your agency", "Connect your own accounts and install your plain dashboard. Branding can be added later.")}
+<div class="tiles">
+  <div class="tile indigo"><div class="ti">${icon("home")}</div><b>Your own business</b><span>Your hosting, accounts, clients and data.</span></div>
+  <div class="tile indigo"><div class="ti">${icon("clock")}</div><b>About ${RAILWAY ? "15" : "20"} minutes</b><span>Return to this private link whenever you need to continue.</span></div>
+  <div class="tile indigo"><div class="ti">${icon("key")}</div><b>Have these ready</b><span>${RAILWAY ? "Railway for hosting. Add Telnyx or Vapi for calls now or later." : "Your domain, DigitalOcean, phone provider and email accounts."}</span></div>
+</div>
+${mainForm(c, "start", "")}
+${nav(c, primary("Start"), { back: false })}`;
   return `${head(c, "Let's set up your AI receptionist agency", RAILWAY ? "By the end your agency is live under your brand, on your own Railway account. You only need two accounts: Railway and Telnyx." : "By the end your agency runs at app.your-domain, under your brand, on a server you own.")}
 <div class="tiles">
   <div class="tile indigo"><div class="ti">${icon("home")}</div><b>Yours to keep</b><span>Your brand, ${RAILWAY ? "hosting" : "server"}, accounts and clients. We have no login to them.</span></div>
@@ -122,10 +130,16 @@ ${nav(c, primary("Start"), { back: false })}`;
 
 function brand(c: Ctx) {
   const br = c.s.brand;
+  if (c.b.style === "neutral") return `${head(c, "Your owner account", "Start with a plain dashboard. Your provider can add your business name, logo and colours later.")}
+<div class="body">${mainForm(c, "brand", `
+  <label class="f" for="ownerEmail">Owner email</label>
+  <input id="ownerEmail" name="ownerEmail" type="email" maxlength="200" required autocomplete="email" value="${val(c, "ownerEmail", br?.ownerEmail || c.b.email)}">
+  <p class="hint">Use this email to create your owner account once installation finishes.</p>`)}</div>
+${nav(c, primary("Continue"))}`;
   return `${head(c, "Name your brand", "Your brand appears on every screen and email your clients see.")}
 <div class="body">${mainForm(c, "brand", `
   <label class="f" for="productName">Brand name</label>
-  <input id="productName" name="productName" maxlength="60" required value="${val(c, "productName", br?.productName || "")}" placeholder="e.g. ${c.b.style === "neutral" ? "Acme AI" : "Chloe"}">
+  <input id="productName" name="productName" maxlength="60" required value="${val(c, "productName", br?.productName || "")}" placeholder="e.g. Your business">
   <label class="f" for="ownerEmail">Owner email</label>
   <input id="ownerEmail" name="ownerEmail" type="email" maxlength="200" required autocomplete="email" value="${val(c, "ownerEmail", br?.ownerEmail || c.b.email)}">
   <p class="hint">You'll sign in with this as the owner of your agency.</p>
@@ -725,10 +739,12 @@ const isLive = (c: Ctx) =>
   (c.view === "email" && !!c.s.email?.resend?.domainId && c.s.email.resend.status !== "verified");
 
 /** The steps shown in the rail: optional ones only while you're on them (they hang off the extras step). */
+const stepMeta = (b: Buyer, id: StepId) => b.style === "neutral" && id === "brand"
+  ? { ...META.brand, title: "Owner", short: "Account email", icon: "key" } : META[id];
 const railSteps = (view: StepId) => STEPS.filter((id) => !isOptional(id) || id === view);
 function rail(c: Ctx) {
   return `<aside class="rail"><h2>Set up ${esc(c.s.brand?.productName || "your agency")}</h2><ol>${railSteps(c.view).map((id, i) => {
-    const m = META[id];
+    const m = stepMeta(c.b, id);
     const isDone = stepDone(c.b, c.s, id) && id !== c.view && id !== "done";
     const can = canView(c.b, c.s, id) && id !== c.view && !(c.s.phase === "done" && id !== "done");
     const by = id === "phones" && phoneSkipped(c.s) ? PHONE_LATER : isDone && helpedStep(c.s, id) ? "Done by your provider" : m.short;
@@ -797,7 +813,7 @@ function wizardHtml(b: Buyer, s: SetupData, code: string, sid: string, view: Ste
   // A one-time link (owner password reset): a big button, shown once and never stored.
   const flLink = flash?.link && /^https?:\/\/[^\s"'<>]+$/.test(flash.link)
     ? `<p class="resetlink"><a class="btn p big" href="${esc(flash.link)}" target="_blank" rel="noopener noreferrer" data-owner-reset-link>Set a new password ${icon("ext")}</a></p>` : "";
-  const title = `${META[view].title} · Set up ${s.brand?.productName || NEUTRAL(b)}`;
+  const title = `${stepMeta(b, view).title} · Set up ${s.brand?.productName || NEUTRAL(b)}`;
   return `<!doctype html>
 <html lang="en-AU">
 <head>
@@ -812,14 +828,14 @@ function wizardHtml(b: Buyer, s: SetupData, code: string, sid: string, view: Ste
 ${chatHead()}
 ${live ? `<noscript><meta http-equiv="refresh" content="8"></noscript>` : ""}
 </head>
-<body>
+<body${b.style === "neutral" ? ' data-neutral-onboarding' : ""}>
 <div class="ribbon" aria-hidden="true"></div>
-<header class="top"><a class="mark" href="/setup/${esc(code)}">${bars}<span>${esc(s.brand?.productName || "Your agency")}</span></a>
+<header class="top"><a class="mark" href="/setup/${esc(code)}">${b.style === "neutral" ? "" : bars}<span>${esc(s.brand?.productName || "Your agency")}</span></a>
 <nav><a href="/guide" target="_blank" rel="noopener">Full guide</a>${CONFIG.supportEmail ? `<a href="mailto:${esc(CONFIG.supportEmail)}">Help</a>` : ""}</nav></header>
 <div class="shell wiz" data-status="/setup/${esc(code)}/status" data-rev="${statusRev(c)}"${live ? ' data-live="1"' : ""}>
 ${rail(c)}
 <main>
-  <div class="phonebar"><div class="lab"><span>Step ${i + 1} of ${mainSteps.length}</span><b>${META[view].title}</b></div><progress class="bar" max="${mainSteps.length}" value="${i + 1}">${i + 1} of ${mainSteps.length}</progress></div>
+  <div class="phonebar"><div class="lab"><span>Step ${i + 1} of ${mainSteps.length}</span><b>${stepMeta(b, view).title}</b></div><progress class="bar" max="${mainSteps.length}" value="${i + 1}">${i + 1} of ${mainSteps.length}</progress></div>
   <section class="card step-${view}">${b.demo === 1 ? notice("info", "<b>Test run.</b> Every account here is pretend: press Continue on each step. Nothing real is connected.") : ""}${assistNote(c)}${lockNote}${(flLink ? fl + flLink + screenOf(c) : withFlash(screenOf(c), fl))}</section>
   ${personHelpHtml(b, s, code, hidden(c))}
   <p class="foot">${icon("shield")} Your keys are stored encrypted and deleted once your install is done.</p>
@@ -849,7 +865,7 @@ export function startShell(style: Style, title: string, inner: string): string {
 <link rel="stylesheet" href="/wizard.css">
 <script src="/wizard.js" defer></script>
 </head>
-<body>
+<body${neutral ? ' data-neutral-onboarding' : ""}>
 <div class="ribbon" aria-hidden="true"></div>
 <header class="top"><span class="mark">${neutral ? "" : bars}<span>${neutral ? "Your AI receptionist agency" : name}</span></span>
 <nav>${CONFIG.supportEmail ? `<a href="mailto:${esc(CONFIG.supportEmail)}">Help</a>` : ""}</nav></header>

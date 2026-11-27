@@ -12,7 +12,7 @@ import { INDUSTRIES } from "@/lib/app/constants";
 import { sessionQuery } from "@/lib/app/workspace";
 import { TIMEZONES } from "@/lib/shared";
 import { cn } from "@/lib/utils";
-import { OTHER_BRAND, PRODUCT } from "@/lib/app/product";
+import { NEUTRAL_DASHBOARD, OTHER_BRAND, PRODUCT } from "@/lib/app/product";
 
 type Kind = "business" | "agency";
 
@@ -155,7 +155,7 @@ function SignupPage() {
             <Input id="password" type="password" value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="new-password" placeholder="At least 10 characters" minLength={10} required />
           </div>
           {kind === "agency" ? (
-            <div className="grid gap-1.5">
+            <div className="grid gap-1.5" style={NEUTRAL_DASHBOARD ? { display: "none" } : undefined}>
               <Label htmlFor="agency">Agency name</Label>
               <Input id="agency" value={agencyName} onChange={(e) => setAgencyName(e.target.value)} autoComplete="organization" placeholder="e.g. Brightline Digital" required />
             </div>

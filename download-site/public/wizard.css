@@ -418,3 +418,14 @@ a, button, summary { -webkit-tap-highlight-color: transparent; }
 @media (prefers-reduced-motion: reduce) {
   .howpanel, details.how > summary::after { animation: none; transition: none; }
 }
+
+/* Shared onboarding belongs to no buyer's brand. Status colours retain their meaning. */
+[data-neutral-onboarding] {
+  --indigo: #32343c; --indigo-soft: #f0f0f3; --indigo-line: #c9cad1;
+  --ink: #191a22; --muted: #565966;
+}
+[data-neutral-onboarding] .ribbon { background: var(--line); height: 1px; }
+[data-neutral-onboarding] .btn.p:hover { background: #1d1f25; }
+[data-neutral-onboarding] .ico,
+[data-neutral-onboarding] .tile .ti { background: #f0f0f3; color: var(--ink); }
+[data-neutral-onboarding] .tile { border-color: var(--line); }

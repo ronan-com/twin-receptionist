@@ -6,7 +6,7 @@
 import { randomBytes } from "node:crypto";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { CONFIG, PACKAGES_DIR, RAILWAY, currentPackage, db, listPackages, now, slug, type Buyer } from "./lib";
+import { CONFIG, PACKAGES_DIR, PLAIN_AGENCY_NAME, RAILWAY, currentPackage, db, listPackages, now, slug, type Buyer } from "./lib";
 import {
   DEFAULT_REGION, DEFAULT_SIZE, ProviderError, cfCanEdit, cfEnsure, cfFindZone, cfRecords, cfZone, checkCloudflare,
   checkDigitalOcean, checkGoogle, checkMicrosoft, checkRailway, checkResend, checkSmtp, checkTelnyx, checkTwilio, checkVapi, doApi, lookup, normalizeDomain,
@@ -134,10 +134,13 @@ export const actions: Record<string, Action> = {
   // ---- Brand ----
   brand(b, f) {
     const g = guard(b, "brand"); if (g) return g;
-    const productName = str(f.productName, 60).replace(/[\r\n]/g, " ");
+    const requestedName = str(f.productName, 60).replace(/[\r\n]/g, " ");
+    const previous = getSetup(b.id).brand;
+    const deferred = !requestedName && (previous?.deferred ?? !previous);
+    const productName = requestedName || previous?.productName || PLAIN_AGENCY_NAME;
     const ownerEmail = str(f.ownerEmail, 200).toLowerCase();
     const keep = { productName: f.productName || "", ownerEmail: f.ownerEmail || "" };
-    if (!productName) return err("Give your brand a name.", keep);
+    if (!requestedName && !previous && b.style === "branded") return err("Give your brand a name.", keep);
     if (!isEmail(ownerEmail)) return err("Enter a real email address.", keep);
     // The logo arrives already shrunk by the page (wizard.js) as a PNG data URL. It travels to the
     // agency's own server as one setting, so it has to stay small.
@@ -150,7 +153,7 @@ export const actions: Record<string, Action> = {
     updateSetup(b.id, (s) => {
       if (!logo && f.removeLogo !== "1") logo = s.brand?.logo;
       const colour = /^#[0-9a-fA-F]{6}$/.test(f.colour || "") ? f.colour.toLowerCase() : s.brand?.colour;
-      s.brand = { productName, ownerEmail, ownPhoneAccount: false, logo, colour }; nextStep(b, s, "brand");
+      s.brand = { productName, ownerEmail, ownPhoneAccount: false, ...(deferred ? { deferred: true } : {}), logo, colour }; nextStep(b, s, "brand");
     });
     return null;
   },
@@ -848,6 +851,8 @@ async function tickZone(id: number) {
 
 /** The logo and colour from the Brand step. The app applies them once, when the owner first signs up. */
 function brandSettings(s: SetupData): Record<string, string> {
+  // A plain install carries no logo or brand colours. Later manual branding lives in its database.
+  if (s.brand?.deferred) return { NEUTRAL_DASHBOARD: "1" };
   const v: Record<string, string> = {};
   if (s.brand?.logo) v.BRAND_LOGO_PNG = s.brand.logo.slice(s.brand.logo.indexOf(",") + 1);
   if (s.brand?.colour) v.BRAND_COLOUR = s.brand.colour;
@@ -880,7 +885,8 @@ export function phoneSettings(id: number, s: SetupData): Record<string, string> 
  */
 function supportSettings(id: number): Record<string, string> {
   const { token, callToken } = newSyncToken(id);
-  return { SUPPORT_SYNC_URL: SYNC_URL(), SUPPORT_SYNC_TOKEN: token, SUPPORT_CALL_TOKEN: callToken, SUPPORT_SELLER_NAME: CONFIG.sellerName, APP_VERSION: currentPackage()?.version || "" };
+  const buyer = db().query("SELECT style FROM buyers WHERE id = ?").get(id) as { style: string } | null;
+  return { SUPPORT_SYNC_URL: SYNC_URL(), SUPPORT_SYNC_TOKEN: token, SUPPORT_CALL_TOKEN: callToken, SUPPORT_SELLER_NAME: buyer?.style === "neutral" ? "Support" : CONFIG.sellerName, APP_VERSION: currentPackage()?.version || "" };
 }
 
 export function buildSettings(id: number, s: SetupData): string {

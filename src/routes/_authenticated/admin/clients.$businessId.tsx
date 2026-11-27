@@ -2,7 +2,7 @@ import { useState } from "react";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { ArrowLeft, Eye, Pause, Pencil, Phone, Play, Plus, Share2, UserMinus, X } from "lucide-react";
+import { ArrowLeft, Eye, Pause, Pencil, Phone, Play, Plus, Share2, Trash2, UserMinus, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -12,6 +12,7 @@ import { PageHeader, Panel, MetricCard, MetricGrid, ErrorState, KeyValue, Notice
 import { DataTable, type Column } from "@/components/app/DataTable";
 import { AppointmentBadge, CallStatusBadge, DemoBadge, LeadStageBadge, OutcomeBadge, StatusBadge } from "@/components/app/StatusBadge";
 import { Field } from "@/components/app/forms";
+import { DeleteDialog, DeletedDialog, type DeletedReport } from "@/components/app/DeleteDialog";
 import { fmtDate, fmtDuration, fmtNumber, fmtPhone, fmtRelative, fmtSmartDate, humanize } from "@/lib/app/format";
 import { brandApi, companyApi, platformApi, requestNumberFor, resolveIncident, setBusinessStatus, type CompanyDetail, type CompanyReceptionist, type ConsoleCall } from "@/lib/api/console";
 import { describeHours, INDUSTRIES, industry as industryPreset, type IndustryKey } from "@/lib/shared";
@@ -43,6 +44,8 @@ function ClientDetailPage() {
   const agencyBrand = useQuery({ queryKey: ["console", "brand"], queryFn: brandApi.get, enabled: !platform });
   const [openCall, setOpenCall] = useState<string | null>(null);
   const [confirmPause, setConfirmPause] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [deleted, setDeleted] = useState<DeletedReport | null>(null);
   const [editing, setEditing] = useState(false);
   const [editName, setEditName] = useState("");
   const [editIndustry, setEditIndustry] = useState<IndustryKey>("other");
@@ -69,6 +72,15 @@ function ClientDetailPage() {
       await refresh();
     },
     onError: (e: Error) => toast.error(e.message),
+  });
+  const preview = useQuery({ queryKey: ["console", "company-delete", businessId], queryFn: () => companyApi.deletePreview(businessId), enabled: deleting, staleTime: 0, gcTime: 0 });
+  const remove = useMutation({
+    mutationFn: (confirm: string) => companyApi.remove(businessId, confirm),
+    onSuccess: (r) => {
+      setDeleting(false);
+      setDeleted({ name: r.name, numbers: r.numbers, warnings: r.warnings });
+    },
+    onError: (e: Error) => toast.error("Couldn't delete the client", { description: e.message }),
   });
   const rename = useMutation({
     mutationFn: () => companyApi.update(businessId, { name: editName.trim(), industry: editIndustry }),
@@ -193,6 +205,11 @@ function ClientDetailPage() {
                   }}
                 >
                   <Pencil className="mr-1.5 h-3.5 w-3.5" /> Edit
+                </Button>
+              ) : null}
+              {canManage && !ws.viewing ? (
+                <Button variant="outline" size="sm" className="h-8 text-[12.5px] text-destructive hover:text-destructive" onClick={() => setDeleting(true)} data-action="delete-client">
+                  <Trash2 className="mr-1.5 h-3.5 w-3.5" /> Delete client
                 </Button>
               ) : null}
               {canManage && d.receptionists.length && !co.agency_paused ? (
@@ -442,6 +459,46 @@ function ClientDetailPage() {
           )}
         </Panel>
       </div>
+
+      <DeleteDialog
+        open={deleting}
+        onOpenChange={setDeleting}
+        title={`Delete ${co.name}?`}
+        name={co.name}
+        nameLabel="client name"
+        confirmLabel="Delete client for good"
+        pending={remove.isPending}
+        onConfirm={(typed) => remove.mutate(typed)}
+      >
+        <p>This can't be undone. It permanently deletes this client and everything under it:</p>
+        <ul className="list-disc pl-4">
+          <li>
+            {preview.data ? preview.data.receptionists.length : "…"} receptionist{preview.data?.receptionists.length === 1 ? "" : "s"}, and their assistants on the phone provider
+          </li>
+          <li>
+            {preview.data ? fmtNumber(preview.data.calls) : "…"} call{preview.data?.calls === 1 ? "" : "s"}, {preview.data ? fmtNumber(preview.data.bookings) : "…"} booking/callback request{preview.data?.bookings === 1 ? "" : "s"},{" "}
+            {preview.data ? fmtNumber(preview.data.followUps) : "…"} follow-up message{preview.data?.followUps === 1 ? "" : "s"}, {preview.data ? fmtNumber(preview.data.websiteChats) : "…"} website chat{preview.data?.websiteChats === 1 ? "" : "s"} and{" "}
+            {preview.data ? fmtNumber(preview.data.knowledge) : "…"} knowledge item{preview.data?.knowledge === 1 ? "" : "s"}
+          </li>
+          <li>
+            {preview.data ? preview.data.logins : "…"} client login{preview.data?.logins === 1 ? "" : "s"} that only belong to this client (people who also use another client keep that one)
+          </li>
+        </ul>
+        {preview.data?.numbers.length ? (
+          <p className="rounded-md bg-canvas-2 p-2 text-ink">
+            Phone numbers on this client: <strong>{preview.data.numbers.map((n) => fmtPhone(n)).join(", ")}</strong>. They are <strong>not</strong> deleted. They stay on your phone account, so release them there if you don't want them.
+          </p>
+        ) : null}
+      </DeleteDialog>
+      <DeletedDialog
+        report={deleted}
+        onClose={() => {
+          setDeleted(null);
+          qc.removeQueries({ queryKey: key });
+          void refresh();
+          void navigate({ to: "/admin/clients" });
+        }}
+      />
 
       <AlertDialog open={confirmPause} onOpenChange={setConfirmPause}>
         <AlertDialogContent>

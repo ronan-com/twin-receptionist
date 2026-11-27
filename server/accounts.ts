@@ -3,7 +3,9 @@ import type { Account, OrgRole, TeamState } from "../src/lib/shared";
 import { clientAccessOf, consoleOf } from "./answered";
 import { assistantConfigured, canUseAssistant } from "./assistant";
 import { applyInstallBrand, resolveBrand } from "./brand";
+import { audit } from "./audit";
 import { iso, sql } from "./db";
+import { purgeOrphanUsers } from "./deleteUsers";
 import { importLegacyData } from "./legacy";
 import { mailerReady, sendAccountEmail } from "./mailer";
 import { ValidationError } from "./prompt";
@@ -463,17 +465,31 @@ export async function changeRole(ctx: Ctx, userId: string, input: any): Promise<
   await sql`update memberships set role = ${role} where org_id = ${orgId} and user_id = ${userId}`;
 }
 
-export async function removeMember(ctx: Ctx, userId: string): Promise<void> {
+/**
+ * Takes someone out of this team for good: their membership and their sign-ins here go, and so does their
+ * account if they belong to no other team. `input.confirm` must be their email (typed in the dialog).
+ */
+export async function removeMember(ctx: Ctx, userId: string, input: any = {}): Promise<{ userDeleted: boolean }> {
   const orgId = ctx.org!.id;
   const leaving = userId === ctx.user.id;
   if (!leaving) requireRole(ctx, "admin");
-  const [m] = await sql`select role from memberships where org_id = ${orgId} and user_id = ${userId}`;
+  const [m] = await sql`select m.role, u.email from memberships m join users u on u.id = m.user_id where m.org_id = ${orgId} and m.user_id = ${userId}`;
   if (!m) throw new ValidationError("They're not in this team.");
   if (m.role === "owner" && !leaving && ctx.role !== "owner") throw new AuthError("Only an owner can remove an owner.", 403);
   if (m.role === "owner" && (await ownerCount(orgId)) <= 1) {
     throw new ValidationError("A team needs at least one owner. Make someone else an owner first.");
   }
-  await sql`delete from memberships where org_id = ${orgId} and user_id = ${userId}`;
+  if (String(input?.confirm ?? "").trim() !== m.email) throw new ValidationError(`Type "${m.email}" exactly to confirm removing them.`);
+  let userDeleted = false;
+  await sql.begin(async (tx) => {
+    await tx`delete from memberships where org_id = ${orgId} and user_id = ${userId}`;
+    await tx`delete from client_access a using clients c where c.id = a.client_id and c.org_id = ${orgId} and a.user_id = ${userId}`;
+    // Anything they had open in this team is closed; sign-ins to other teams stay.
+    await tx`update sessions set org_id = null where org_id = ${orgId} and user_id = ${userId}`;
+    userDeleted = (await purgeOrphanUsers([userId], tx as any)).length > 0;
+  });
+  await audit(ctx, "member.removed", { email: m.email, userDeleted, summary: `${leaving ? `${m.email} left` : `Removed ${m.email} from`} the team${userDeleted ? " (account deleted)" : ""}` });
+  return { userDeleted };
 }
 
 // ---- Accepting an invite ----

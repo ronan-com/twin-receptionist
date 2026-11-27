@@ -317,7 +317,28 @@ export type CompanyDetail = {
 
 type People = { members: CompanyPerson[]; invitations: ConsoleInvite[] };
 
+/** What a delete will take (and what it will leave), for the confirm dialog. */
+export type DeletePreview = {
+  name: string;
+  receptionists: { id: string; name: string; assistantId: string; provider: string; numbers: string[] }[];
+  numbers: string[];
+  calls: number;
+  bookings: number;
+  followUps: number;
+  websiteChats: number;
+  knowledge: number;
+  logins: number;
+  clients?: number;
+  members?: number;
+  blocked?: string;
+};
+export type DeleteWarning = { receptionist: string; assistantId: string; provider: string; error: string };
+export type DeleteResult = DeletePreview & { ok: true; warnings: DeleteWarning[] };
+export type AccountRow = { id: string; email: string; name: string; platformAdmin: boolean; createdAt: string; orgs: { id: string; name: string; role: string }[]; blocked: string };
+
 export const companyApi = {
+  deletePreview: (id: string) => api.get<DeletePreview>(`/api/console/companies/${id}/delete-preview`),
+  remove: (id: string, confirm: string) => api.remove<DeleteResult>(`/api/console/companies/${id}`, { confirm }),
   list: async () => (await api.get<{ companies: CompanyRow[] }>("/api/console/companies")).companies,
   get: (id: string) => api.get<CompanyDetail>(`/api/console/companies/${id}`),
   create: async (input: { name: string; industry?: string; orgId?: string }) => (await api.post<{ id: string }>("/api/console/companies", input)).id,
@@ -386,6 +407,10 @@ export const getVoices = async () => (await api.get<{ voices: TwinVoice[] }>("/a
 // ---- The platform team's existing routes (/api/admin/*) ----
 
 export const platformApi = {
+  agencyDeletePreview: (id: string) => api.get<DeletePreview>(`/api/admin/agencies/${id}/delete-preview`),
+  deleteAgency: (id: string, confirm: string) => api.remove<DeleteResult & { agencies: Agency[] }>(`/api/admin/agencies/${id}`, { confirm }),
+  accounts: async () => (await api.get<{ accounts: AccountRow[] }>("/api/console/users")).accounts,
+  deleteAccount: (id: string, confirm: string) => api.remove<{ ok: true; email: string }>(`/api/console/users/${id}`, { confirm }),
   agencies: async () => (await api.get<{ agencies: Agency[] }>("/api/admin/agencies")).agencies,
   createAgency: (name: string, ownerEmail: string) => api.post<{ url: string; emailed: boolean }>("/api/admin/agencies", { name, ownerEmail }),
   inviteOwner: (id: string, email: string) => api.post<{ url: string; emailed: boolean }>(`/api/admin/agencies/${id}/invites`, { email }),
@@ -411,7 +436,8 @@ export const teamApi = {
   invite: (email: string, role: "admin" | "member") => api.post<{ url: string; emailed: boolean }>("/api/team/invites", { email, role }),
   revoke: (id: string) => api.del<TeamState>(`/api/team/invites/${id}`),
   changeRole: (userId: string, role: string) => api.put<TeamState>(`/api/team/members/${userId}`, { role }),
-  remove: (userId: string) => api.del<TeamState>(`/api/team/members/${userId}`),
+  remove: (userId: string, confirm: string) => api.remove<TeamState & { userDeleted: boolean }>(`/api/team/members/${userId}`, { confirm }),
+  deleteAccount: (confirm: string, password: string) => api.remove<{ ok: true }>("/api/account", { confirm, password }),
   resetLink: (userId: string) => api.post<{ url: string; emailed: boolean; email: string }>(`/api/team/members/${userId}/reset-link`, {}),
   renameOrg: (name: string) => api.put("/api/org", { name }),
   updateAccount: (input: { name?: string; currentPassword?: string; newPassword?: string }) => api.put("/api/account", input),

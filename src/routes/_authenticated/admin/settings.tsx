@@ -12,7 +12,8 @@ import { PageHeader, Panel, ErrorState, Notice, EmptyState } from "@/components/
 import { StatusBadge } from "@/components/app/StatusBadge";
 import { Field } from "@/components/app/forms";
 import { fmtDate } from "@/lib/app/format";
-import { brandApi, getInternalAdmins, grantPlatformAdmin, revokePlatformAdmin, teamApi } from "@/lib/api/console";
+import { brandApi, getInternalAdmins, grantPlatformAdmin, platformApi, revokePlatformAdmin, teamApi, type AccountRow } from "@/lib/api/console";
+import { DeleteDialog } from "@/components/app/DeleteDialog";
 import type { Brand } from "@/lib/shared";
 import { BrandEditor } from "./-brand";
 import { LinkBox, READ_ONLY_HINT, useConsole } from "./-shared";
@@ -21,7 +22,7 @@ import { EmailCalendarsSection } from "./-email-calendars";
 import { SupportSection } from "./-support";
 import { UpdatesSection } from "./-updates";
 
-const TABS = ["team", "branding", "account", "platform", "email", "support", "updates"] as const;
+const TABS = ["team", "branding", "account", "platform", "accounts", "email", "support", "updates"] as const;
 type Tab = (typeof TABS)[number];
 
 export const Route = createFileRoute("/_authenticated/admin/settings")({
@@ -49,6 +50,7 @@ function AdminSettingsPage() {
           <TabsTrigger value="branding">Branding</TabsTrigger>
           <TabsTrigger value="account">Account</TabsTrigger>
           {platform ? <TabsTrigger value="platform">Platform admins</TabsTrigger> : null}
+          {platform ? <TabsTrigger value="accounts">All accounts</TabsTrigger> : null}
           {serverSettings ? <TabsTrigger value="email">Email and calendars</TabsTrigger> : null}
           {supportTab ? <TabsTrigger value="support">Support</TabsTrigger> : null}
           {supportTab ? <TabsTrigger value="updates">Updates</TabsTrigger> : null}
@@ -65,6 +67,11 @@ function AdminSettingsPage() {
         {platform ? (
           <TabsContent value="platform" className="mt-4">
             <PlatformAdminsSection />
+          </TabsContent>
+        ) : null}
+        {platform ? (
+          <TabsContent value="accounts" className="mt-4">
+            <AllAccountsSection />
           </TabsContent>
         ) : null}
         {serverSettings ? (
@@ -120,7 +127,16 @@ function TeamSection() {
   });
   const revoke = useMutation({ mutationFn: teamApi.revoke, onSuccess: set, onError: (e: Error) => toast.error(e.message) });
   const change = useMutation({ mutationFn: ({ id, r }: { id: string; r: string }) => teamApi.changeRole(id, r), onSuccess: set, onError: (e: Error) => toast.error(e.message) });
-  const remove = useMutation({ mutationFn: teamApi.remove, onSuccess: set, onError: (e: Error) => toast.error(e.message) });
+  const [removing, setRemoving] = useState<{ id: string; email: string; name: string } | null>(null);
+  const remove = useMutation({
+    mutationFn: ({ id, confirm }: { id: string; confirm: string }) => teamApi.remove(id, confirm),
+    onSuccess: (r) => {
+      set({ members: r.members, invites: r.invites, emailsSent: r.emailsSent });
+      toast.success(`${removing?.email ?? "They"} removed`, { description: r.userDeleted ? "Their account was deleted too, since they weren't in any other team." : "They're still in another team, so their account stays." });
+      setRemoving(null);
+    },
+    onError: (e: Error) => toast.error("Couldn't remove them", { description: e.message }),
+  });
   const rename = useMutation({
     mutationFn: () => teamApi.renameOrg(orgName.trim()),
     onSuccess: async () => {
@@ -176,7 +192,7 @@ function TeamSection() {
                         <KeyRound className="mr-1 h-3.5 w-3.5" /> Copy reset link
                       </Button>
                     ) : null}
-                    <Button variant="ghost" size="sm" className="h-8 px-2 text-ink-muted" aria-label={`Remove ${m.email}`} onClick={() => remove.mutate(m.id)}>
+                    <Button variant="ghost" size="sm" className="h-8 px-2 text-ink-muted" aria-label={`Remove ${m.email}`} onClick={() => setRemoving({ id: m.id, email: m.email, name: m.name })} data-action="remove-member">
                       <Trash2 className="h-3.5 w-3.5" />
                     </Button>
                   </>
@@ -235,6 +251,19 @@ function TeamSection() {
             {reset ? <LinkBox url={reset.url} label="Reset link" /> : null}
           </DialogContent>
         </Dialog>
+        <DeleteDialog
+          open={!!removing}
+          onOpenChange={(o) => !o && setRemoving(null)}
+          title={`Remove ${removing?.name || removing?.email || ""} from ${ws.org?.name ?? "the team"}?`}
+          name={removing?.email ?? ""}
+          nameLabel="email"
+          confirmLabel="Remove for good"
+          pending={remove.isPending}
+          onConfirm={(typed) => removing && remove.mutate({ id: removing.id, confirm: typed })}
+        >
+          <p>They lose access to this team straight away and are signed out of it. If they aren't in any other team, their account is deleted too.</p>
+          <p>The clients and receptionists they worked on stay. Only the person goes.</p>
+        </DeleteDialog>
         {link ? (
           <div className="space-y-2 border-t border-hairline p-4" data-team-invite-link>
             <p className="text-[12.5px] text-ink-muted">{link.emailed ? `Invite emailed to ${link.email}. You can also send them this link:` : `Send ${link.email} this link (invite emails aren't set up on this server yet):`}</p>
@@ -316,6 +345,116 @@ function AccountSection() {
           </div>
         ) : null}
       </form>
+      {!ws.viewing && !ws.isPlatformAdmin ? <DeleteMyAccount email={ws.session?.user.email ?? ""} /> : null}
+    </Panel>
+  );
+}
+
+function DeleteMyAccount({ email }: { email: string }) {
+  const { ws } = useConsole();
+  const [open, setOpen] = useState(false);
+  const [password, setPassword] = useState("");
+  const remove = useMutation({
+    mutationFn: (confirm: string) => teamApi.deleteAccount(confirm, password),
+    onSuccess: () => {
+      toast.success("Your account was deleted");
+      window.location.assign("/login");
+    },
+    onError: (e: Error) => toast.error("Couldn't delete your account", { description: e.message }),
+  });
+  const owns = ws.session?.role === "owner";
+  return (
+    <div className="mt-6 max-w-lg border-t border-hairline pt-4" data-delete-account>
+      <h3 className="text-[13px] font-semibold text-ink">Delete my account</h3>
+      <p className="mt-1 text-[12.5px] leading-5 text-ink-muted">
+        Permanently deletes your login and removes you from every team. {owns ? "If you're the only owner of a team you have to make someone else an owner first, or delete the agency (the platform team can do that). " : ""}
+        What you set up for your agency stays with it.
+      </p>
+      <Button variant="outline" size="sm" className="mt-2 h-8 text-[12.5px] text-destructive hover:text-destructive" onClick={() => { setPassword(""); setOpen(true); }} data-action="delete-account">
+        <Trash2 className="mr-1.5 h-3.5 w-3.5" /> Delete my account
+      </Button>
+      <DeleteDialog
+        open={open}
+        onOpenChange={setOpen}
+        title="Delete your account?"
+        name={email}
+        nameLabel="email"
+        confirmLabel="Delete my account"
+        pending={remove.isPending}
+        onConfirm={(typed) => remove.mutate(typed)}
+        extraReady={password.length > 0}
+        extraFields={
+          <Field label="Your password" htmlFor="delete-password">
+            <Input id="delete-password" type="password" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} className="h-9" />
+          </Field>
+        }
+      >
+        <p>This permanently deletes the login for {email} and signs you out everywhere. It can't be undone.</p>
+        <p>If you're the only owner of a team, we'll stop you and explain what to do first.</p>
+      </DeleteDialog>
+    </div>
+  );
+}
+
+// ---- All accounts (platform only): delete test logins ----
+
+function AllAccountsSection() {
+  const qc = useQueryClient();
+  const q = useQuery({ queryKey: ["admin", "accounts"], queryFn: platformApi.accounts });
+  const [search, setSearch] = useState("");
+  const [target, setTarget] = useState<AccountRow | null>(null);
+  const remove = useMutation({
+    mutationFn: ({ id, confirm }: { id: string; confirm: string }) => platformApi.deleteAccount(id, confirm),
+    onSuccess: async (r) => {
+      toast.success(`${r.email} deleted`);
+      setTarget(null);
+      await qc.invalidateQueries({ queryKey: ["admin", "accounts"] });
+      await qc.invalidateQueries({ queryKey: ["admin"] });
+      await qc.invalidateQueries({ queryKey: ["console"] });
+    },
+    onError: (e: Error) => toast.error("Couldn't delete the account", { description: e.message }),
+  });
+  const s = search.trim().toLowerCase();
+  const rows = (q.data ?? []).filter((a) => !s || [a.email, a.name, ...a.orgs.map((o) => o.name)].some((v) => v.toLowerCase().includes(s)));
+  return (
+    <Panel title="All accounts" description="Every login on the platform. Deleting one removes the person from every team and signs them out. Platform admins, you, and the only owner of a team can't be deleted here." padded={false}>
+      <div className="border-b border-hairline px-3 py-2.5">
+        <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search by email, name or team" className="h-8 text-[12.5px] sm:max-w-xs" aria-label="Search accounts" />
+      </div>
+      {q.error ? <ErrorState message={(q.error as Error).message} onRetry={() => void q.refetch()} /> : null}
+      <ul className="divide-y divide-hairline" data-list="accounts">
+        {rows.map((a) => (
+          <li key={a.id} className="flex flex-col gap-2 px-4 py-2.5 text-[13px] sm:flex-row sm:items-center sm:justify-between" data-account={a.email}>
+            <div className="min-w-0">
+              <div className="truncate font-medium text-ink">{a.name || a.email}</div>
+              <div className="truncate text-[12px] text-ink-muted">{a.email} · since {fmtDate(a.createdAt)}</div>
+              <div className="truncate text-[12px] text-ink-muted">{a.orgs.length ? a.orgs.map((o) => `${o.name} (${o.role})`).join(", ") : "Not in any team"}</div>
+            </div>
+            {a.blocked ? (
+              <span className="max-w-xs text-[12px] text-ink-muted" title={a.blocked}>{a.blocked.length > 40 ? "Only owner of a team" : a.blocked}</span>
+            ) : (
+              <Button variant="outline" size="sm" className="h-8 shrink-0 text-[12.5px] text-destructive hover:text-destructive" onClick={() => setTarget(a)} data-action="delete-account-row">
+                <Trash2 className="mr-1.5 h-3.5 w-3.5" /> Delete
+              </Button>
+            )}
+          </li>
+        ))}
+        {!q.isPending && rows.length === 0 ? <li className="p-4 text-[12.5px] text-ink-muted">No accounts match.</li> : null}
+        {q.isPending ? <li className="p-4 text-[12.5px] text-ink-muted">Loading…</li> : null}
+      </ul>
+      <DeleteDialog
+        open={!!target}
+        onOpenChange={(o) => !o && setTarget(null)}
+        title={`Delete the account ${target?.email ?? ""}?`}
+        name={target?.email ?? ""}
+        nameLabel="email"
+        confirmLabel="Delete account for good"
+        pending={remove.isPending}
+        onConfirm={(typed) => target && remove.mutate({ id: target.id, confirm: typed })}
+      >
+        <p>This permanently deletes the login. {target?.orgs.length ? `They're removed from ${target.orgs.map((o) => o.name).join(", ")} and signed out everywhere.` : "They aren't in any team."} It can't be undone.</p>
+        <p>The teams and clients they were in are not deleted. To delete those, use Agencies or the client's own page.</p>
+      </DeleteDialog>
     </Panel>
   );
 }

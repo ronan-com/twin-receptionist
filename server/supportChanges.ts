@@ -30,6 +30,8 @@ const DENY: [RegExp, string][] = [
   [new RegExp(`^/api/(clients|manage)/${ID}/(email|connect-link|team|customers|customer-invites|calendar|calendar/test|calendar/signin|integrations)(/|$)`), "connections, mailboxes or sharing access"],
   [new RegExp(`^/api/clients/${ID}$`), "deleting a receptionist"],
   [/^\/api\/console\/platform-admins(\/|$)/, "platform admins"],
+  [/^\/api\/console\/users(\/|$)/, "people's accounts"],
+  [/^\/api\/console\/companies\/[^/]+$/, "deleting a client"],
   [/^\/api\/console\/(companies|businesses)\/[^/]+\/(members|invites)(\/|$)/, "sharing access"],
 ];
 const ALLOW: RegExp[] = [
@@ -59,7 +61,7 @@ export function supportMayChange(method: string, path: string): Decision {
   if (m === "POST" && p === "/api/logout") return { ok: true };
   for (const [re, why] of DENY) if (re.test(p)) {
     // the receptionist's own page (PUT) is the one thing matched by the delete rule
-    if (why === "deleting a receptionist" && m !== "DELETE") continue;
+    if ((why === "deleting a receptionist" || why === "deleting a client") && m !== "DELETE") continue;
     return { ok: false, why };
   }
   return ALLOW.some((re) => re.test(p)) ? { ok: true } : { ok: false, why: "that isn't something support can change" };

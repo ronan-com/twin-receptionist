@@ -229,18 +229,18 @@ describe("every step of the 1.0.21 flow, stored in the 1.0.21 format", () => {
   test("done: a finished agency (1.0.21 finish() shape, no secrets left) -> the live screen with its address and dashboard link; Update still works", async () => {
     const b = addBuyer("Mid done", "mid-d@example.com");
     storedLike(b.id, { step: "done", phase: "done", schema: 2, brand: { productName: "Ronana AI", ownerEmail: "ronan@example.com", ownPhoneAccount: false }, railway: { workspaceName: "W", confirmed: true },
-      phones: { confirmed: true, provider: "telnyx" }, skipped: {}, extrasDone: true, resultUrl: "https://app-production-1dd020dd.up.railway.app", tempUrl: "https://app-production-1dd020dd.up.railway.app",
-      attemptVersion: "1.0.21", installedAt: new Date().toISOString(), rw: { projectId: "proj-1", serviceDomain: "app-production-1dd020dd.up.railway.app" } });
+      phones: { confirmed: true, provider: "telnyx" }, skipped: {}, extrasDone: true, resultUrl: "https://app-production-abc12345.up.railway.app", tempUrl: "https://app-production-abc12345.up.railway.app",
+      attemptVersion: "1.0.21", installedAt: new Date().toISOString(), rw: { projectId: "proj-1", serviceDomain: "app-production-abc12345.up.railway.app" } });
     const br = await browser(b.code);
     const html = await br.page();
     expect(h1(html)).toBe("Your agency is live");
-    expect(html).toContain("app-production-1dd020dd.up.railway.app");
+    expect(html).toContain("app-production-abc12345.up.railway.app");
     expect(html).toContain("Open your dashboard");
     noError(html);
     // the steps stay closed: a finished agency is not sent back into the wizard
     expect(h1(await br.page("phones"))).toBe("Your agency is live");
     expect(store.getSetup(b.id).phase).toBe("done");
-    expect(store.getSetup(b.id).resultUrl).toBe("https://app-production-1dd020dd.up.railway.app");
+    expect(store.getSetup(b.id).resultUrl).toBe("https://app-production-abc12345.up.railway.app");
   });
 
   test("done, from a buyer who skipped Voice in 1.0.21: still live, still on the done screen (never sent back)", async () => {

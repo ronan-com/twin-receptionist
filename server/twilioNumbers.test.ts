@@ -20,19 +20,19 @@ const stub = (pages: any[]) => {
 
 describe("Twilio numbers", () => {
   test("a number already on the account is listed with its texting and voice abilities, and its owner", async () => {
-    stub([{ incoming_phone_numbers: [row("+12272204547", "PN1")], next_page_uri: null }]);
-    const list = await twilioNumbersFor(creds, new Map([["+12272204547", "Test Plumbing"]]));
-    expect(list).toEqual([{ id: "PN1", phoneNumber: "+12272204547", friendlyName: "+12272204547", type: expect.any(String), sms: true, voice: true, assignedTo: "Test Plumbing" }]);
+    stub([{ incoming_phone_numbers: [row("+12025550147", "PN1")], next_page_uri: null }]);
+    const list = await twilioNumbersFor(creds, new Map([["+12025550147", "Test Plumbing"]]));
+    expect(list).toEqual([{ id: "PN1", phoneNumber: "+12025550147", friendlyName: "+12025550147", type: expect.any(String), sms: true, voice: true, assignedTo: "Test Plumbing" }]);
     const free = await twilioNumbersFor(creds, new Map());
     expect(free[0].assignedTo).toBe("");
   });
 
   test("an account with more than one page of numbers is listed in full", async () => {
     const urls = stub([
-      { incoming_phone_numbers: [row("+12272204547", "PN1")], next_page_uri: "/2010-04-01/Accounts/AC/IncomingPhoneNumbers.json?PageSize=200&Page=1" },
-      { incoming_phone_numbers: [row("+12272204548", "PN2")], next_page_uri: null },
+      { incoming_phone_numbers: [row("+12025550147", "PN1")], next_page_uri: "/2010-04-01/Accounts/AC/IncomingPhoneNumbers.json?PageSize=200&Page=1" },
+      { incoming_phone_numbers: [row("+12025550148", "PN2")], next_page_uri: null },
     ]);
-    expect((await ownedTwilioNumbers(creds)).map((n) => n.phoneNumber)).toEqual(["+12272204547", "+12272204548"]);
+    expect((await ownedTwilioNumbers(creds)).map((n) => n.phoneNumber)).toEqual(["+12025550147", "+12025550148"]);
     expect(urls[0]).toContain("/IncomingPhoneNumbers.json?PageSize=200");
     expect(urls[1]).toBe("https://api.twilio.com/2010-04-01/Accounts/AC/IncomingPhoneNumbers.json?PageSize=200&Page=1");
   });

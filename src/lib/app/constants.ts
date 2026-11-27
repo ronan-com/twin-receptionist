@@ -85,9 +85,9 @@ export const ADMIN_NAV: NavItem[] = [
     featured: true,
     match: ["/admin/voices", "/admin/test-lab"],
     children: [
-      { to: "/admin/receptionists/voice", label: "AI Voice Agent", icon: Mic, hue: "indigo" },
-      { to: "/admin/receptionists/messages", label: "AI Message Agent", icon: MessageSquareText, hue: "cyan" },
-      { to: "/admin/receptionists/email", label: "AI Email Agent", icon: Mail, hue: "magenta" },
+      { to: "/admin/receptionists/voice", label: "Voice agent", icon: Mic, hue: "indigo" },
+      { to: "/admin/receptionists/messages", label: "Message agent", icon: MessageSquareText, hue: "cyan" },
+      { to: "/admin/receptionists/email", label: "Email agent", icon: Mail, hue: "magenta" },
     ],
   },
   { to: "/admin/clients", label: "Clients", icon: Building2, hue: "sky", match: ["/admin/agencies"] },
@@ -97,7 +97,7 @@ export const ADMIN_NAV: NavItem[] = [
   { to: "/admin/branding", label: "Brand", icon: Palette, hue: "magenta" },
   {
     to: "/admin/tutorials",
-    label: "Help",
+    label: "Settings",
     icon: LifeBuoy,
     hue: "slate",
     match: ["/admin/support-requests", "/admin/settings", "/admin/usage", "/admin/system", "/admin/audit"],
@@ -124,9 +124,9 @@ export const ADMIN_SECTIONS: AdminTab[][] = [
   ],
   [
     { to: "/admin/receptionists", label: "All", exact: true },
-    { to: "/admin/receptionists/voice", label: "AI Voice Agent" },
-    { to: "/admin/receptionists/messages", label: "AI Message Agent" },
-    { to: "/admin/receptionists/email", label: "AI Email Agent" },
+    { to: "/admin/receptionists/voice", label: "Voice agent" },
+    { to: "/admin/receptionists/messages", label: "Message agent" },
+    { to: "/admin/receptionists/email", label: "Email agent" },
     { to: "/admin/voices", label: "Voices" },
     { to: "/admin/test-lab", label: "Test", platformOnly: true },
   ],
@@ -137,7 +137,7 @@ export const ADMIN_SECTIONS: AdminTab[][] = [
   [
     { to: "/admin/tutorials", label: "Guides", agencyOnly: true },
     { to: "/admin/support-requests", label: "Support", agencyOnly: true },
-    { to: "/admin/settings", label: "Settings" },
+    { to: "/admin/settings", label: "General" },
     { to: "/admin/usage", label: "Usage" },
     { to: "/admin/system", label: "System" },
     { to: "/admin/audit", label: "Activity" },
@@ -153,7 +153,7 @@ export function isPlatformOnlyPath(pathname: string): boolean {
 
 export const adminNavFor = (variant: "platform" | "agency"): NavItem[] =>
   // The platform team's console has no guides or support inbox, so its Help opens on Settings.
-  ADMIN_NAV.map((n) => (n.label === "Help" && variant === "platform" ? { ...n, to: "/admin/settings" } : n));
+  ADMIN_NAV.map((n) => (n.label === "Settings" && variant === "platform" ? { ...n, to: "/admin/settings" } : n));
 
 /* ------------------------------------------------------------------ */
 /* Labels                                                              */

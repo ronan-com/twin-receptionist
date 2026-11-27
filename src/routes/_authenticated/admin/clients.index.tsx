@@ -37,7 +37,7 @@ function ClientsPage() {
   const [status, setStatus] = useState("all");
   const [agency, setAgency] = useState("all");
   const [showDemo, setShowDemo] = useState(true);
-  const [adding, setAdding] = useState(false);
+  const [adding, setAdding] = useState(() => typeof window !== "undefined" && new URLSearchParams(window.location.search).get("add") === "1");
   // No phone provider yet: a new client opens on its own page, not the receptionist wizard.
   const phoneNeeded = usePhoneKeyNeeded();
   const [name, setName] = useState("");

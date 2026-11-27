@@ -19,7 +19,7 @@ const templateList = (() => {
 export const PAGES = `Sidebar (agency console, paths are relative links you may use):
 - Overview /admin : calls, bookings and "Needs attention" across all clients, plus the Get started checklist (brand, first receptionist, test call, invite a client, connect a number). The ? menu in the top bar has Get started, Take the tour, Tutorials and Ask AI.
 - Clients /admin/clients : the businesses the agency looks after. A client's page (/admin/clients/<id>) is the hub: its receptionists and automations, Talk to this receptionist (browser test call), numbers, Customers with access (invite as Manager or Viewer), Send onboarding link, Branding for that client, recent calls, bookings and follow-ups, changes. Buttons: Add receptionist, Send onboarding link, Edit, Pause or Resume.
-- New receptionist /admin/clients/new : the setup wizard (see below).
+- New receptionist /admin/receptionists/new : the setup wizard (see below).
 - Calls /admin/calls : every call and text with outcome and transcript. Browser test calls show here too. Failed calls are highlighted.
 - AI Receptionists /admin/receptionists : every receptionist in one list; open one to change its greeting, hours, call handling, knowledge and automations.
 - Voices /admin/voices : the Australian voices on offer and which receptionist uses each.

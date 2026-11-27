@@ -18,9 +18,9 @@ import { useConsole } from "./-shared";
 
 export type Channel = "voice" | "messages" | "email";
 const META: Record<Channel, { title: string; blurb: string; icon: LucideIcon; hue: Hue; none: string }> = {
-  voice: { title: "AI Voice Agent", blurb: "Answers the phone.", icon: Mic, hue: "indigo", none: "No number" },
-  messages: { title: "AI Message Agent", blurb: "Replies to texts and website chat.", icon: MessageSquareText, hue: "cyan", none: "Off" },
-  email: { title: "AI Email Agent", blurb: "Reads and answers email.", icon: Mail, hue: "magenta", none: "Not connected" },
+  voice: { title: "Voice agent", blurb: "Answers the phone.", icon: Mic, hue: "indigo", none: "No number" },
+  messages: { title: "Message agent", blurb: "Replies to texts and website chat.", icon: MessageSquareText, hue: "cyan", none: "Off" },
+  email: { title: "Email agent", blurb: "Reads and answers email.", icon: Mail, hue: "magenta", none: "Not connected" },
 };
 
 type Row = { a: AdminAgentRow; on: boolean | null; detail: string };

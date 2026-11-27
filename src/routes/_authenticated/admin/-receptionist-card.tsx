@@ -21,6 +21,7 @@ import { ImportNumber } from "./-import-number";
 import { AttachedNumbers } from "./-own-numbers";
 import { TextsSwitch } from "./-texts-switch";
 import { TestCall } from "@/components/app/TestCall";
+import { TryEmail, TryMessages } from "@/components/app/editor/TryIt";
 import { TelegramSetup } from "@/components/app/telegram/TelegramSetup";
 import { WebsiteChatCard } from "@/components/app/webchat/WebsiteChatCard";
 
@@ -242,7 +243,8 @@ export function ReceptionistCard({
           </details>
         </div>
         <div className="min-w-0">
-          {!readOnly && !paused && !r.demo_assistant ? <TestCall assistantId={r.provider_agent_id} provider={r.provider} clientId={r.business_id} /> : null}
+          {/* Try it (voice): the test call and the voice preview live here. */}
+          <div data-try="voice">{!readOnly && !paused && !r.demo_assistant ? <TestCall assistantId={r.provider_agent_id} provider={r.provider} clientId={r.business_id} /> : null}</div>
           <div className="mb-1.5 mt-3 text-[12.5px] font-medium text-ink">Phone number</div>
           {showOwnNumbers ? <AttachedNumbers clientId={r.id} fallback={plainNumbers} onChanged={onChanged} /> : plainNumbers}
           {r.number_requests.length ? (
@@ -308,6 +310,7 @@ export function ReceptionistCard({
               <TextsSwitch clientId={r.id} canEdit={canManage && !readOnly} />
             </Panel>
           ) : null}
+          {!r.demo_assistant && !readOnly ? <TryMessages clientId={r.id} name={r.name} /> : null}
           <div data-website-chat={r.id}>
             <WebsiteChatCard clientId={r.id} businessName={who} />
           </div>
@@ -318,14 +321,14 @@ export function ReceptionistCard({
           </div>
         </div>
       ) : null}
-      {section === "email" ? <EmailPanel clientId={r.id} who={who} canEdit={canManage && !readOnly && !r.demo_assistant} /> : null}
+      {section === "email" ? <EmailPanel clientId={r.id} who={who} canEdit={canManage && !readOnly && !r.demo_assistant} canTry={!readOnly && !r.demo_assistant} /> : null}
       {section === "advanced" ? advancedBlock : null}
     </div>
   );
 }
 
 /** The AI Email Agent: the inbox the receptionist reads, and whether it drafts replies or sends them. */
-function EmailPanel({ clientId, who, canEdit }: { clientId: string; who: string; canEdit: boolean }) {
+function EmailPanel({ clientId, who, canEdit, canTry }: { clientId: string; who: string; canEdit: boolean; canTry: boolean }) {
   const qc = useQueryClient();
   const key = ["email", clientId];
   const q = useQuery({ queryKey: key, queryFn: () => getEmail(clientId), retry: false });
@@ -350,7 +353,8 @@ function EmailPanel({ clientId, who, canEdit }: { clientId: string; who: string;
   });
   const e = q.data;
   return (
-    <Panel title="Email" description={`${who}'s inbox. The receptionist reads new enquiries and drafts or sends the reply.`}>
+    <div className="space-y-4">
+    <Panel title="Email" description={`${who}'s inbox.`}>
       {q.isPending ? <p className="text-[12.5px] text-ink-muted">Loading…</p> : q.error ? <p className="text-[12.5px] text-ink-muted">Email isn't available here yet: {(q.error as Error).message}</p> : e?.connected ? (
         <div className="space-y-3">
           <div className="flex flex-wrap items-center gap-2">
@@ -388,5 +392,7 @@ function EmailPanel({ clientId, who, canEdit }: { clientId: string; who: string;
         </form>
       ) : <p className="text-[12.5px] text-ink-muted">No inbox connected.</p>}
     </Panel>
+    {canTry ? <TryEmail clientId={clientId} mode={e?.connected ? e.mode : null} connected={Boolean(e?.connected)} /> : null}
+    </div>
   );
 }

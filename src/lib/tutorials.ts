@@ -137,7 +137,7 @@ export const TUTORIALS: Tutorial[] = [
     summary: "See a client's dashboard as they do.",
     steps: [
       "Open **Clients** and choose the client.",
-      "Press **See what <client> sees**.",
+      "Press **View client dashboard**.",
       "Press **Exit view** to come back.",
     ],
     to: "/admin/clients",
@@ -212,8 +212,8 @@ export const TUTORIALS: Tutorial[] = [
     title: "Turn texts on or off",
     summary: "Let a receptionist answer texts.",
     steps: [
-      "Open **Clients** and choose the client.",
-      "Under the number, use the **Texts** switch.",
+      "Open the receptionist and its **Messages** tab.",
+      "Pick the **Text number** and use the **Texts** switch.",
       "If it says **Not connected**, press **Try again**.",
     ],
     to: "/admin/clients",

@@ -15,8 +15,8 @@ import type { VoiceProviderId } from "@/lib/shared";
 import { cn } from "@/lib/utils";
 
 // Twilio is an optional extra beside the voice engine: a second place phone numbers come from.
-// A Twilio number is answered by a Vapi receptionist (Vapi imports it) and sends that
-// receptionist's follow-up texts. Telnyx receptionists use Telnyx numbers.
+// Calls on a Twilio number are answered by a Vapi receptionist (Vapi imports it). Texts on one can be
+// answered by any receptionist (its Messages tab).
 
 export const TWILIO_CONSOLE = "https://console.twilio.com/";
 
@@ -106,8 +106,8 @@ export function TwilioCard({ engine, canManage, isOwner, readOnly }: { engine: V
             )}
             <p className="mt-1 max-w-[600px] text-[12px] text-ink-muted" data-twilio-engines>
               {engine === "vapi"
-                ? "Twilio numbers work with the Vapi voice engine, which your new receptionists use."
-                : "Twilio numbers work with the Vapi voice engine. Your new receptionists use Telnyx, so they keep Telnyx numbers; switch your voice engine to Vapi above to use Twilio numbers."}
+                ? "Calls and texts: your new receptionists (Vapi) can use Twilio numbers."
+                : "Texts: any receptionist can use a Twilio number (Messages tab). Calls on Twilio numbers need the Vapi voice engine."}
             </p>
           </div>
         </div>

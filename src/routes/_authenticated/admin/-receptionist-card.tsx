@@ -2,7 +2,7 @@ import { useState, type ReactNode } from "react";
 import { Link } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { ArrowRightLeft, Eye, Mail, Pause, Pencil, Phone, Play, RefreshCw } from "lucide-react";
+import { ArrowRightLeft, Mail, Pause, Pencil, Phone, Play, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -28,6 +28,9 @@ import { WebsiteChatCard } from "@/components/app/webchat/WebsiteChatCard";
 // AI Message Agent (texts, website chat, Telegram) and AI Email Agent (the inbox). Used by the
 // receptionist's own page (/admin/receptionists/<id>/...), not the client's page.
 
+/** Where each row of the status list is set up. */
+const AUTOMATION_TAB = { voice: "voice", sms: "messages", email: "email", booking: "booking", crm: "booking" } as const;
+
 export function ReceptionistCard({
   r,
   companyName,
@@ -36,8 +39,6 @@ export function ReceptionistCard({
   readOnly,
   canManage,
   onOpen,
-  onViewAs,
-  viewing,
   onChanged,
   section,
   advancedExtra,
@@ -49,8 +50,6 @@ export function ReceptionistCard({
   readOnly: boolean;
   canManage: boolean;
   onOpen?: () => void;
-  onViewAs: () => void;
-  viewing: boolean;
   onChanged: () => Promise<void>;
   /** Which channel's settings to show under the header. */
   section: "voice" | "messages" | "email" | "advanced";
@@ -131,11 +130,6 @@ export function ReceptionistCard({
 
   const advancedButtons = (
     <div className="flex flex-wrap gap-2" data-advanced-actions>
-      {!readOnly && (platform || canManage) ? (
-        <Button variant="outline" size="sm" className="h-8 text-[12.5px]" onClick={onViewAs} disabled={viewing} data-action="view-as-customer">
-          <Eye className="mr-1.5 h-3.5 w-3.5" /> See what {who} sees
-        </Button>
-      ) : null}
       {canManage && !readOnly && r.provider === "vapi" ? (
         <Button variant="outline" size="sm" className="h-8 text-[12.5px]" onClick={() => applyVoice.mutate()} disabled={applyVoice.isPending} data-action="apply-voice-settings" title="Push the faster voice setup (model, voice and turn-taking) to this receptionist">
           <RefreshCw className={`mr-1.5 h-3.5 w-3.5 ${applyVoice.isPending ? "animate-spin" : ""}`} /> Apply new voice settings
@@ -218,15 +212,18 @@ export function ReceptionistCard({
           <summary className="cursor-pointer text-[12.5px] font-medium text-ink">More</summary>
           <ul className="mt-2 divide-y divide-hairline rounded-[6px] border border-hairline" data-list="automations">
             {r.automations.map((a) => (
-              <li key={a.key} className="row-hover flex flex-col gap-1 px-3 py-2 text-[12.5px] sm:flex-row sm:items-center sm:justify-between" data-automation-row={a.key}>
-                <div className="flex min-w-0 items-center gap-2.5">
-                  <AutomationIcon automation={a.key} />
-                  <div className="min-w-0">
-                    <div className="font-medium text-ink">{a.label}</div>
-                    <div className="break-words text-[11.5px] text-ink-muted">{a.detail}</div>
-                  </div>
+              <li key={a.key} className="row-hover grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-2.5 gap-y-1.5 px-3 py-2 text-[12.5px] sm:grid-cols-[auto_minmax(0,1fr)_7.5rem_4.5rem]" data-automation-row={a.key}>
+                <AutomationIcon automation={a.key} />
+                <div className="min-w-0">
+                  <div className="font-medium text-ink">{a.label}</div>
+                  {a.detail ? <div className="break-words text-[11.5px] text-ink-muted">{a.detail}</div> : null}
                 </div>
-                <AutomationChips items={[{ ...a, label: a.status === "live" ? "On" : a.status === "attention" ? "Needs attention" : a.status === "paused" ? "Paused" : "Off" }]} />
+                <div className="justify-self-end sm:justify-self-start"><AutomationChips items={[{ ...a, label: a.state }]} /></div>
+                <Button asChild size="sm" variant="outline" className="col-start-2 h-7 justify-self-start text-[12px] sm:col-start-auto sm:justify-self-end">
+                  <Link to="/admin/receptionists/$receptionistId" params={{ receptionistId: r.id }} search={{ tab: AUTOMATION_TAB[a.key] }} data-action={`go-${a.key}`}>
+                    {a.state === "Not set up" ? "Set up" : "Open"}
+                  </Link>
+                </Button>
               </li>
             ))}
           </ul>

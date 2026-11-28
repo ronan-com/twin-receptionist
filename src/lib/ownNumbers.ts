@@ -11,6 +11,8 @@ export type OwnedNumber = {
   connectionId: string;
   /** What that connection is called in Telnyx, or "" when it isn't connected to anything. */
   connectionName: string;
+  /** It was left on an assistant that no longer exists, so it counts as unconnected. */
+  orphaned?: boolean;
 };
 
 export const TELNYX_ORDERS_URL = "https://portal.telnyx.com/#/numbers/number-orders";

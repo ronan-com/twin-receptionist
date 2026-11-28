@@ -110,7 +110,8 @@ import { platformSettingsRoutes } from "./platformSettingsApi";
 import { emailSettingsRoutes } from "./emailSettings";
 import type { BookingProvider, BookingState } from "../src/lib/shared";
 import { connectNumberForTexts, enableTexting, sendTestText, textingState } from "./texting";
-import { setTexts, splitNumbers, textsAfterBuy, textsStatus } from "./textsControl";
+import { chooseTextNumber, releaseTextNumber, repointTwilioTexts, setTexts, splitNumbers, textsAfterBuy, textsStatus } from "./textsControl";
+import { agencyNumbers, textChoicesFrom, type NumberAccess } from "./numberList";
 import { recordNumbers, startNumberSync } from "./numberSync";
 import { BOOKING_TOOL_DEFS } from "./booking";
 import { VapiError, asProvider, connectedEngines, installProvider, ownKeyInstall, providerOfClient, providerOfOrg } from "./voice/config";
@@ -179,6 +180,7 @@ async function syncAll(): Promise<void> {
     const orgId = await orgOfClient(c.id);
     await runAsOrg(orgId, () => syncAssistant(c)).catch((err) => console.error(`[booking ${c.id}] sync failed:`, err.message));
   }
+  await repointTwilioTexts();
 }
 
 async function bookingState(client: Business): Promise<BookingState> {
@@ -391,7 +393,10 @@ async function moveEngine(ctx: Ctx, orgId: string, client: Business, to: VoicePr
   const instructions = await instructionsFor(client, settings);
 
   const assistantId = demo ? client.assistantId : await target.createAssistant(settings, instructions, client.id);
-  const { voiceProvider: _old, numberSources: _src, ...rest } = client;
+  // The messaging profile goes with the old Telnyx assistant, unless it carries a picked Telnyx text number.
+  const keepsProfile = client.textNumber?.via === "telnyx";
+  const { voiceProvider: _old, numberSources: _src, textingProfileId: profileId, ...kept } = client;
+  const rest = { ...kept, ...(profileId && (keepsProfile || from === "vapi") ? { textingProfileId: profileId } : {}) };
   const moved: Business = { ...rest, assistantId, settings, instructions, phoneNumbers: [], ...(to === "vapi" ? { voiceProvider: "vapi" as const } : {}), updatedAt: new Date().toISOString() };
   if (!demo) {
     try {
@@ -400,7 +405,7 @@ async function moveEngine(ctx: Ctx, orgId: string, client: Business, to: VoicePr
       await target.syncAssistant(moved, instructions, allowed);
       await target.applyAutomations(moved);
     } catch (err) {
-      await target.deleteAssistant(moved).catch(() => {});
+      await target.deleteAssistant({ ...moved, textingProfileId: undefined }).catch(() => {});
       throw err;
     }
   }
@@ -415,7 +420,7 @@ async function moveEngine(ctx: Ctx, orgId: string, client: Business, to: VoicePr
       console.error(`[move ${client.id}] couldn't take numbers off the old assistant:`, (err as Error).message);
       return client.phoneNumbers ?? [];
     });
-    await old.deleteAssistant(client).catch((err) => console.error(`[move ${client.id}] couldn't delete the old assistant:`, (err as Error).message));
+    await old.deleteAssistant(keepsProfile ? { ...client, textingProfileId: undefined } : client).catch((err) => console.error(`[move ${client.id}] couldn't delete the old assistant:`, (err as Error).message));
   }
   await audit(ctx, "receptionist.move_engine", { from, to, voice: settings.voiceName, numbers: detached.join(", ") }, { clientId: client.id });
   return { client: moved, detached };
@@ -423,8 +428,15 @@ async function moveEngine(ctx: Ctx, orgId: string, client: Business, to: VoicePr
 
 /** The live and still-pending numbers of a receptionist, for the Texts switch. */
 async function engineNumbers(ctx: Ctx, client: Business) {
-  const { numbers, pending } = await numberState(ctx, client);
-  return splitNumbers({ numbers, pending });
+  try {
+    const { numbers, pending } = await numberState(ctx, client);
+    return splitNumbers({ numbers, pending });
+  } catch (err) {
+    // The voice engine can't be asked (say, its assistant is gone): texts go by the numbers saved here.
+    console.log(`[texting ${client.id}] using the saved numbers:`, (err as Error).message);
+    const pending = client.pendingNumbers ?? [];
+    return { active: (client.phoneNumbers ?? []).filter((n) => !pending.includes(n)), pending };
+  }
 }
 
 async function numberState(ctx: Ctx, client: Business): Promise<NumberState> {
@@ -462,6 +474,19 @@ async function twilioNumbers(ctx: Ctx, orgId: string) {
   return { numbers, regulatory: { approved: reg.approved, inReview: reg.inReview, consoleUrl: reg.consoleUrl }, test: isTestTwilio(creds) };
 }
 
+// Every number the agency has: receptionists' own, plus what its Telnyx and Twilio accounts hold (for who may see those).
+async function allNumbers(ctx: Ctx, orgId: string) {
+  const access: NumberAccess = { twilio: await canUseTwilio(ctx), telnyx: await canUseOwnNumbers(ctx), pretendTelnyx: await pretendAccount(orgId) };
+  return agencyNumbers(orgId, await listClients(orgId), access);
+}
+
+// The numbers this receptionist can answer texts on.
+async function textChoices(ctx: Ctx, orgId: string, client: Business) {
+  requireRole(ctx, "admin");
+  const { numbers, problems } = await allNumbers(ctx, orgId);
+  return { choices: textChoicesFrom(client, numbers), problems };
+}
+
 // Connects or releases a number the agency already owns, then refreshes the receptionist's
 // script and tools (the transfer and greeting lines mention its number).
 async function changeOwnNumber(ctx: Ctx, orgId: string, client: Business, action: "attach" | "detach", input: any) {
@@ -480,6 +505,12 @@ async function changeOwnNumber(ctx: Ctx, orgId: string, client: Business, action
   } else if (action === "attach") {
     const res = await attachNumber(await listClients(orgId), client, input);
     movedFrom = res.movedFrom;
+    // An old Telnyx receptionist still listing this number (its assistant is gone) lets it go.
+    for (const c of await listClients(orgId)) {
+      if (c.id !== client.id && providerOfClient(c) === "telnyx" && c.phoneNumbers?.includes(res.number.phoneNumber)) {
+        await saveClient({ ...c, phoneNumbers: c.phoneNumbers.filter((n) => n !== res.number.phoneNumber) });
+      }
+    }
     await audit(ctx, "number.attach", { number: res.number.phoneNumber, movedFrom }, { clientId: client.id });
   } else {
     const num = await detachNumber(client, input);
@@ -1158,6 +1189,9 @@ async function route(req: Request, server?: { requestIP(r: Request): { address: 
   // Numbers the agency already owns on its Telnyx account (not answering for any receptionist yet).
   if (path === "/api/numbers/owned" && method === "GET") return json({ numbers: await ownedNumbers(ctx, orgId) });
 
+  // Every number the agency has, with who answers its calls and texts (the Numbers page).
+  if (path === "/api/numbers/all" && method === "GET") return json(await allNumbers(ctx, orgId));
+
   // Twilio: the agency's connected account (optional). Its numbers, and numbers it can buy there.
   if (path === "/api/numbers/twilio" && method === "GET") return json(await twilioNumbers(ctx, orgId));
   if (path === "/api/numbers/twilio/available" && method === "GET") {
@@ -1197,7 +1231,7 @@ async function route(req: Request, server?: { requestIP(r: Request): { address: 
   }
 
   const match = path.match(
-    /^\/api\/clients\/([a-f0-9-]{36})(\/calls(?:\/([^/]+)\/messages)?|\/numbers|\/numbers\/(?:owned|attach|detach)|\/number-requests|\/email|\/email\/check|\/texting|\/texting\/numbers|\/texting\/test|\/simulator\/texts|\/simulator\/texts\/send|\/simulator\/email|\/booking|\/booking\/test|\/booking\/events\/[a-f0-9-]{36}|\/calendar|\/calendar\/signin\/(?:google|microsoft)|\/connect-link|\/engine|\/voice-settings)?$/,
+    /^\/api\/clients\/([a-f0-9-]{36})(\/calls(?:\/([^/]+)\/messages)?|\/numbers|\/numbers\/(?:owned|attach|detach)|\/number-requests|\/email|\/email\/check|\/texting|\/texting\/choices|\/texting\/number|\/texting\/numbers|\/texting\/test|\/simulator\/texts|\/simulator\/texts\/send|\/simulator\/email|\/booking|\/booking\/test|\/booking\/events\/[a-f0-9-]{36}|\/calendar|\/calendar\/signin\/(?:google|microsoft)|\/connect-link|\/engine|\/voice-settings)?$/,
   );
   if (match) {
     // Another organisation's receptionist looks exactly like one that doesn't exist.
@@ -1209,6 +1243,7 @@ async function route(req: Request, server?: { requestIP(r: Request): { address: 
       if (method === "PUT") return json({ client: noMcpSecret(await updateClient(client, await req.json())) });
       if (method === "DELETE") {
         requireRole(ctx, "admin");
+        await releaseTextNumber(client);
         if (!isDemo(client.assistantId)) await voiceFor(client).deleteAssistant(client);
         // Its mailbox, calendar, appointments and request log go with it (foreign keys cascade).
         await removeClient(client.id);
@@ -1240,6 +1275,18 @@ async function route(req: Request, server?: { requestIP(r: Request): { address: 
         if (providerOfClient(client) === "vapi") throw new ValidationError("Telnyx texting isn't used with Vapi. Follow-up texts go out from a Twilio number instead.");
         await enableTexting(client);
         return json(await textingState(client));
+      }
+    } else if (match[2] === "/texting/choices") {
+      if (method === "GET") return json(await textChoices(ctx, orgId, client));
+    } else if (match[2] === "/texting/number") {
+      // Picks the number this receptionist answers texts on (any voice engine). Calls are not touched.
+      if (method === "PUT") {
+        const input = await body(req);
+        const { choices } = await textChoices(ctx, orgId, client);
+        const nums = await engineNumbers(ctx, client);
+        const saved = await chooseTextNumber((await getClient(client.id)) ?? client, input, choices, nums);
+        await audit(ctx, "texts.number", { number: saved.textNumber?.number ?? "" }, { clientId: client.id });
+        return json(await textsStatus(saved, nums));
       }
     } else if (match[2] === "/texting/numbers") {
       if (providerOfClient(client) === "vapi") throw new ValidationError("Telnyx texting isn't used with Vapi. Follow-up texts go out from a Twilio number instead.");

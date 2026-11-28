@@ -109,6 +109,41 @@ beforeEach(() => {
   fakeTelnyx();
 });
 
+describe("a number left on an assistant that's gone (an old install)", () => {
+  const stale = { id: "1007", phone_number: "+61862896029", phone_number_type: "local", status: "active", connection_id: "app-gone", connection_name: "ai-assistant-0f0f0f0f-gone" };
+
+  test("it lists as unconnected, and connecting it needs no confirmation and raises no error", async () => {
+    numbers.push({ ...stale });
+    const errors: unknown[] = [];
+    const realError = console.error;
+    console.error = (...a: unknown[]) => void errors.push(a);
+    try {
+      // One of our own receptionists lost its assistant too, and a Vapi one never had a Telnyx app.
+      const lost = client("44444444-4444-4444-4444-444444444444", "assistant-lost", "Lost");
+      const vapi = { ...client("55555555-5555-5555-5555-555555555555", "vapi-assistant", "Vee"), voiceProvider: "vapi" as const };
+      const list = await run(() => ownedUnassigned([alpha, beta, lost, vapi]));
+      expect(list.find((n) => n.id === "1007")).toMatchObject({ connectionId: "", connectionName: "", orphaned: true });
+      expect(calls.some((c) => c.path.includes("vapi-assistant"))).toBe(false);
+      // A connection that isn't a deleted assistant's stays as it was.
+      expect(list.find((n) => n.id === "1003")).toMatchObject({ connectionName: "Old office phones" });
+      const done = await run(() => attachNumber([alpha, beta, lost], alpha, { numberId: "1007" }));
+      expect(done.movedFrom).toBe("");
+      expect(calls.find((c) => c.method === "PATCH")).toMatchObject({ path: "/phone_numbers/1007", body: { connection_id: "app-a" } });
+      expect(errors).toEqual([]);
+      await expect(run(() => attachNumber([alpha, lost], lost, { numberId: "1002" }))).rejects.toThrow("no longer exists on your Telnyx account");
+    } finally {
+      console.error = realError;
+    }
+  });
+
+  test("a number on another live assistant's app still asks before moving", async () => {
+    numbers.push({ ...stale, connection_id: "app-elsewhere", connection_name: "ai-assistant-b" });
+    ASSISTANTS["assistant-b"] = "app-b";
+    expect((await run(() => ownedUnassigned([alpha]))).find((n) => n.id === "1007")).toMatchObject({ connectionName: "ai-assistant-b" });
+    await expect(run(() => attachNumber([alpha], alpha, { numberId: "1007" }))).rejects.toThrow("Confirm to move it");
+  });
+});
+
 describe("numbers already on the account", () => {
   test("lists the ones none of our receptionists answers, with their connection", async () => {
     const list = await run(() => ownedUnassigned([alpha, beta, demo]));

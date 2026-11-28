@@ -132,8 +132,8 @@ export type FollowupStatusInputs = {
   engine?: "telnyx" | "vapi";
 };
 
-const SMS_NEEDED = { label: "Needs a phone number that can send texts", detail: "Texts are sent from the receptionist's own mobile number. Request a mobile number under Call handling." };
-const SMS_NEEDED_VAPI = { label: "Needs a Twilio number that can send texts", detail: "Texts are sent from a Twilio mobile number this receptionist answers. Connect Twilio under Connections, then add a Twilio mobile number under Call handling." };
+const SMS_NEEDED = { label: "Needs a phone number that can send texts", detail: "Choose a text number on the Messages tab." };
+const SMS_NEEDED_VAPI = { label: "Needs a Twilio number that can send texts", detail: "Connect Twilio under Connections, then choose a text number on the Messages tab." };
 const EMAIL_NEEDED = { label: "Needs email set up", detail: "This server has no email service yet. The platform admin sets it up under Settings, Email and calendars." };
 const QUIET = "Texts never go out between 8pm and 8am; they wait until morning.";
 

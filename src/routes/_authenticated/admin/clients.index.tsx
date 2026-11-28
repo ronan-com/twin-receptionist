@@ -17,7 +17,7 @@ import { fmtDate, fmtNumber, fmtRelative } from "@/lib/app/format";
 import { downloadCsv } from "@/lib/app/csv";
 import { companyApi, type CompanyRow } from "@/lib/api/console";
 import { INDUSTRIES, industry as industryPreset, type IndustryKey } from "@/lib/shared";
-import { AutomationChips, LinkBox, useConsole } from "./-shared";
+import { AutomationChips, LinkBox, useConsole, ViewDashboardButton } from "./-shared";
 import { cn } from "@/lib/utils";
 import { PRODUCT } from "@/lib/app/product";
 
@@ -140,6 +140,7 @@ function ClientsPage() {
     { key: "customers", header: "Customers", align: "right", hideBelow: "lg", cell: (b) => <span className="tabular-nums">{b.customers}{b.pending_invites ? ` (+${b.pending_invites})` : ""}</span> },
     { key: "calls", header: "Calls 30d", align: "right", hideBelow: "sm", cell: (b) => <span className="tabular-nums">{fmtNumber(b.calls_30d)}</span> },
     { key: "created", header: "Since", hideBelow: "xl", cell: (b) => <span className="whitespace-nowrap text-ink-muted">{fmtDate(b.created_at)}</span> },
+    { key: "view", header: "", align: "right", cell: (b) => <ViewDashboardButton orgId={b.org_id} receptionistId={b.receptionists[0]?.id} className="h-7 whitespace-nowrap text-[12px]" /> },
   ];
 
   return (

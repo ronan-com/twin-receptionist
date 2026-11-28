@@ -158,7 +158,7 @@ ${allHowTos().filter((h) => !KNOWN.has(h.id) && !h.placeholder).map((h) => ht(h.
 ${sec("wizard", "3. The setup page, step by step", `
 <ol class="glist steps-long">
   <li><b>Welcome.</b> Open the private link from your purchase email. Your progress is saved, so you can stop and come back.</li>
-  <li><b>Brand.</b> Type your brand name and owner email. You sign in with that email.</li>
+  <li><b>Your details.</b> Enter your name and email. You sign in with that email. Your setup provider configures branding separately.</li>
   <li><b>Hosting.</b> Paste your Railway token and press <b>Check and continue</b>.</li>
   <li><b>Voice.</b> Paste your Telnyx key and press <b>Check key</b>. Or use <b>Vapi</b> and paste both its keys. Telnyx's ID check slow? Use <b>Vapi</b> now and add Telnyx later in your dashboard, under <b>Connections</b>.</li>
   <li><b>AI.</b> Press <b>Open OpenRouter and create a key</b>, then paste the key.</li>

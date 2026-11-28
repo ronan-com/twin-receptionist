@@ -49,7 +49,7 @@ export function assistPanel(h: Helpers, sid: string, b: Buyer, s: SetupData): st
   <div class="two"><div>${text("productName", "Agency name", brand?.productName || s.prefill?.agencyName || "", "e.g. Acme AI", "required")}</div></div>
   <label class="f" for="logoFile">Logo (optional)</label><input id="logoFile" type="file" accept="image/png,image/jpeg,image/webp">
   <input type="hidden" id="logo" name="logo" value="${esc(brand?.logo || "")}"><input type="hidden" id="removeLogo" name="removeLogo" value="">
-  <p class="hint" id="logoNote">${brand?.logo ? "Logo added. Choose another file to replace it." : "A PNG or JPG works best. It's shrunk in your browser, like the buyer's."}</p>
+  <p class="hint" id="logoNote">${brand?.logo ? "Logo added. Choose another file to replace it." : "A PNG or JPG works best. It's shrunk in your browser."}</p>
   <p class="logoRow"><img id="logoPreview" alt="Logo" width="96"${brand?.logo ? ` src="${esc(brand.logo)}"` : " hidden"}> <button type="button" class="linkbtn" id="logoRemove"${brand?.logo ? "" : " hidden"}>Remove logo</button></p>
   <label class="f" for="colour">Brand colours <span class="hint">1 to 3, the first is the main one</span></label>
   <div class="colours">

@@ -165,7 +165,7 @@ describe("admin fills steps, the buyer's wizard sees them", () => {
 
   test("the buyer's wizard shows them done by their provider, with a change link, and says what's left", async () => {
     const brand = page(b, "brand");
-    expect(brand).toContain("Brand: set up by your provider");
+    expect(brand).toContain("Your details: set up by your provider");
     expect(brand).toContain("Acme AI");
     expect(brand).toContain('/a/assist-release"');
     expect(brand).not.toContain('name="productName"');
@@ -184,7 +184,7 @@ describe("admin fills steps, the buyer's wizard sees them", () => {
     expect(getSetup(b.id).step).toBe("phones");
     expect(await actions["assist-release"](b, { step: "brand" })).toBeNull();
     expect(page(b, "brand")).toContain('name="ownerEmail"');
-    expect(page(b, "brand")).toContain('name="productName"'); // the name is optional but its field is there
+    expect(page(b, "brand")).not.toContain('name="productName"'); // branding is provider-managed
     expect(getSetup(b.id).assist?.steps?.brand).toBeDefined(); // still ours until they save
     expect(await actions.brand(b, { ownerEmail: "owner@acme.test" })).toBeNull();
     const s = getSetup(b.id);

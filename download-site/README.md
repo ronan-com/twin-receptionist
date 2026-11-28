@@ -47,7 +47,7 @@ is no custom domain (the service domain is created before the app's variables fo
 | Step | What they do | What we check |
 |---|---|---|
 | Welcome | Read three tiles, press Start | |
-| Brand | Brand name, owner email (`FIRST_ADMIN_EMAIL`), optional logo (shrunk to a small PNG in the page) and colour | email format; logo is a real PNG under 30 KB |
+| Your details | Owner name and email; branding is managed separately by the provider | email format |
 | Hosting | Railway **account token** (Account Settings > Tokens, Workspace: *No workspace*) | `me { email workspaces }`, then plan: refuses Free / no card ("needs the Hobby plan") |
 | Phones | Telnyx key (becomes the app's `TELNYX_API_KEY`; every client runs on it) | `GET /v2/balance`; trial warning |
 | Extras | Three skippable cards, then Continue | Resend and calendars need a domain (see below) |

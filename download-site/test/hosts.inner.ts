@@ -167,7 +167,7 @@ describe("serving a buyer's wizard on their own domain", () => {
     const after = await (await onHost(OWN, "/?step=extras", { headers: { cookie } })).text();
     expect(after).toContain("Done for you: Brand, Hosting (Railway).");
     expect(after).toContain("Left for you: AI (OpenRouter).");
-    expect(await (await onHost(OWN, "/?step=brand", { headers: { cookie } })).text()).toContain("Brand: set up by your provider");
+    expect(await (await onHost(OWN, "/?step=brand", { headers: { cookie } })).text()).toContain("Your details: set up by your provider");
     // their own change link works on their domain
     const rel = await post("/a/assist-release", { v: "brand", step: "brand" });
     expect(rel.status).toBe(303);

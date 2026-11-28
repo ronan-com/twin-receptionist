@@ -29,7 +29,7 @@ import { asBusinessHours, asRecord, asStringArray, type BusinessHours } from "@/
 import { useWorkspace } from "@/lib/app/workspace";
 import { TIMEZONES } from "@/lib/shared";
 import { cn } from "@/lib/utils";
-import { PRODUCT } from "@/lib/app/product";
+import { NEUTRAL_DASHBOARD, PRODUCT } from "@/lib/app/product";
 
 // First-run onboarding (area S): a step-by-step set-up for a business manager whose
 // receptionist is still "pending" (clients.data.onboarding): a business that signed
@@ -42,7 +42,7 @@ export const Route = createFileRoute("/_authenticated/app/onboarding")({
   component: OnboardingPage,
 });
 
-const STEPS = [
+const ALL_STEPS = [
   { key: "business", title: "Your business", blurb: "Who you are and where, so your receptionist can say so." },
   { key: "hours", title: "Opening hours", blurb: "When you're open. Callers are told these times." },
   { key: "services", title: "Services and answers", blurb: "What callers can ask for, and answers to the questions they ask most." },
@@ -50,6 +50,7 @@ const STEPS = [
   { key: "branding", title: "Branding", blurb: "Your logo and colours on this dashboard. Optional." },
   { key: "extras", title: "Finishing touches", blurb: "Optional: invite your team, get a phone number, connect a calendar." },
 ] as const;
+const STEPS = ALL_STEPS.filter((step) => !NEUTRAL_DASHBOARD || step.key !== "branding");
 
 const INDUSTRY_OPTIONS = ["Dental", "Healthcare", "Trades", "Salon & beauty", "Real estate", "Automotive", "Professional services", "Childcare", "Other"];
 
@@ -176,7 +177,7 @@ function Wizard({ agent }: { agent: AgentRow }) {
         <p className="mt-1 text-[13px] text-ink-muted">A few minutes now and callers get the right answers from the first ring. Everything saves as you go.</p>
       </div>
 
-      <ol className="grid grid-cols-6 gap-1.5" aria-label="Steps">
+      <ol className={cn("grid gap-1.5", NEUTRAL_DASHBOARD ? "grid-cols-5" : "grid-cols-6")} aria-label="Steps">
         {STEPS.map((s, i) => (
           <li key={s.key} aria-current={i === step ? "step" : undefined}>
             <button

@@ -172,7 +172,7 @@ describe("every step of the 1.0.21 flow, stored in the 1.0.21 format", () => {
     const br = await browser(b.code);
     expect(h1(await br.page())).toBe("Set up your agency");
     expect((await br.post("start")).status).toBe(303);
-    expect(titleOf(await br.page())).toStartWith("Brand");
+    expect(titleOf(await br.page())).toStartWith("Your details");
   });
 
   test("brand: brand saved with no colour fields (they are new) -> the form shows what was stored; saving moves on", async () => {
@@ -180,8 +180,9 @@ describe("every step of the 1.0.21 flow, stored in the 1.0.21 format", () => {
     storedLike(b.id, { step: "brand", phase: "idle", schema: 2, brand: { productName: "Jesse", ownerEmail: "daniel@jesse.test", ownPhoneAccount: false } });
     const br = await browser(b.code);
     const html = await br.page();
-    expect(titleOf(html)).toStartWith("Brand");
-    expect(html).toContain('value="Jesse"');
+    expect(titleOf(html)).toStartWith("Your details");
+    expect(html).not.toContain('name="productName"');
+    expect(html).toContain("Jesse");
     expect(html).toContain("daniel@jesse.test");
     expect((await br.post("brand", { productName: "Jesse", ownerEmail: "daniel@jesse.test", colour: "#635bff" })).status).toBe(303);
     expect(titleOf(await br.page())).toStartWith("Hosting");
@@ -280,16 +281,16 @@ describe("the 1.0.23 stored format (neutral owner onboarding: brand.deferred, no
     expect(vars.OWNER_NAME).toBe("Newowner");
   });
 
-  test("a plain buyer can still go Back and give the agency a name, colours and look", async () => {
+  test("a plain buyer can go Back to edit account details, but branding stays provider-managed", async () => {
     const b = addBuyer("Plain names it", "plain-n@example.com");
     storedLike(b.id, { step: "railway", phase: "idle", schema: 2, brand: plain });
     const br = await browser(b.code);
     const page = await br.page("brand");
-    expect(page).toContain('name="productName"');
+    expect(page).not.toContain('name="productName"');
     expect((await br.post("brand", { v: "brand", ownerEmail: "newowner@acme.test", ownerName: "New Owner", productName: "Named AI", colour: "#0a8f5c", theme: "dark" })).status).toBe(303);
     const s = store.getSetup(b.id);
-    expect(s.brand).toMatchObject({ productName: "Named AI", ownerName: "New Owner", theme: "dark" });
-    expect(s.brand?.deferred).not.toBe(true);
+    expect(s.brand).toMatchObject({ productName: plain.productName, ownerName: "New Owner", deferred: true });
+    expect(s.brand?.deferred).toBe(true);
   });
 
   test("a plain buyer who is done (installed on 1.0.23) still sees the live screen", async () => {

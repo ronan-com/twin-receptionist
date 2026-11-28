@@ -1,3 +1,4 @@
+import { NEUTRAL_DASHBOARD } from "./product";
 import type { LucideIcon } from "lucide-react";
 import {
   Bot,
@@ -154,7 +155,7 @@ export function isPlatformOnlyPath(pathname: string): boolean {
 
 export const adminNavFor = (variant: "platform" | "agency"): NavItem[] =>
   // The platform team's console has no guides or support inbox, so its Help opens on Settings.
-  ADMIN_NAV.map((n) => (n.label === "Settings" && variant === "platform" ? { ...n, to: "/admin/settings" } : n));
+  ADMIN_NAV.filter((n) => !NEUTRAL_DASHBOARD || n.to !== "/admin/branding").map((n) => (n.label === "Settings" && variant === "platform" ? { ...n, to: "/admin/settings" } : n));
 
 /* ------------------------------------------------------------------ */
 /* Labels                                                              */

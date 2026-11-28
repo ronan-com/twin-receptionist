@@ -1,3 +1,4 @@
+import { NEUTRAL_DASHBOARD } from "./app/product";
 // The Tutorials page (/admin/tutorials) and the businesses' "How it works" page
 // (/app/how-it-works), as plain data. To add a video to a tutorial, fill in its
 // `video` with a YouTube, Loom, Vimeo or .mp4 link: the page shows a player for it,
@@ -507,7 +508,7 @@ export const TUTORIALS: Tutorial[] = [
 /** The tutorials for this agency: hides phone set-up that isn't theirs and pages their copy doesn't have. */
 export function tutorialsFor(phone: "own" | "platform" | "none" | undefined, singleAgency: boolean): Tutorial[] {
   const own = singleAgency || phone !== "platform";
-  return TUTORIALS.filter((t) => (t.phone === "own" ? own : t.phone === "managed" ? !own : true) && (!t.singleAgency || singleAgency));
+  return TUTORIALS.filter((t) => (!NEUTRAL_DASHBOARD || t.group !== "brand") && (t.phone === "own" ? own : t.phone === "managed" ? !own : true) && (!t.singleAgency || singleAgency));
 }
 
 /** For a business on /app/how-it-works. {agency} = whoever set them up. */

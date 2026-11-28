@@ -1,6 +1,7 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import { sql } from "./db";
 import { unseal } from "./secrets";
+import { telnyxProblem } from "./telnyxProblem";
 
 const BASE = "https://api.telnyx.com/v2";
 
@@ -44,8 +45,6 @@ export class TelnyxError extends Error {
   }
 }
 
-export const ACCOUNT_LEVEL_MSG = "Your Telnyx account needs verification or an upgrade for this. In Telnyx, open your profile, then Account Level.";
-
 export function hasKey(): boolean {
   return Boolean(process.env.TELNYX_API_KEY);
 }
@@ -80,9 +79,7 @@ export async function telnyx<T = any>(method: string, path: string, body?: unkno
   if (!res.ok) {
     const first = json?.errors?.[0];
     const detail = first?.detail || first?.title || text.slice(0, 200) || res.statusText;
-    // Telnyx's wording for an account that isn't verified or paid up enough says nothing about what to do.
-    if (/not permitted at this account level/i.test(detail)) throw new TelnyxError(res.status, ACCOUNT_LEVEL_MSG);
-    throw new TelnyxError(res.status, `The phone service said: ${detail}`);
+    throw new TelnyxError(res.status, telnyxProblem(detail));
   }
   return json as T;
 }

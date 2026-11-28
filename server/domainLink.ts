@@ -32,5 +32,5 @@ export async function domainLinkRoute(method: string, ctx: Ctx, single: boolean 
   if (ctx.viewing) throw new AuthError("You're viewing as someone else. Only the owner can change the web address.", 403);
   if (!single) throw new AuthError("Changing the web address here is only for agencies running their own copy.", 403);
   requireRole(ctx, "owner");
-  return new Response(JSON.stringify({ url: await domainFormUrl() }), { headers: { "Content-Type": "application/json" } });
+  return new Response(JSON.stringify({ url: await domainFormUrl() }), { headers: { "Content-Type": "application/json", "Cache-Control": "no-store", "Referrer-Policy": "no-referrer" } });
 }

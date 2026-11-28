@@ -19,7 +19,7 @@ const get = (url: string, token = "") => domainLinkApi(new Request(url, token ? 
 test("the link opens that buyer's domain form and nothing else", async () => {
   const b = addBuyer("Buyer", "b@example.com");
   saveSetup(b.id, { step: "done", phase: "done", schema: 3, rw: { projectId: "p" } } as any);
-  const token = newSyncToken(b.id);
+  const { token } = newSyncToken(b.id);
   const api = "https://setup.example.com/api/domain-link";
   expect((await get(api)).status).toBe(401);
   expect((await get(api, "st_" + "x".repeat(43))).status).toBe(401);

@@ -11,6 +11,7 @@ import { getTexts, type AdminAgentRow } from "@/lib/api/console";
 import { getEmail } from "@/lib/api/manage";
 import { fmtNumber } from "@/lib/app/format";
 import type { Hue } from "@/components/app/hues";
+import type { TextsStatus } from "@/lib/shared";
 import { useConsole } from "./-shared";
 
 // The three parts of the AI Receptionist package, one page each: every receptionist and whether
@@ -24,6 +25,8 @@ const META: Record<Channel, { title: string; blurb: string; icon: LucideIcon; hu
 };
 
 type Row = { a: AdminAgentRow; on: boolean | null; detail: string };
+
+const TEXTS_WORD: Record<TextsStatus["status"], string> = { on: "Texts on", off: "Texts off", waiting: "Waiting for approval", cant: "No working text number", failed: "Texts not connected" };
 
 export function ChannelPage({ channel }: { channel: Channel }) {
   const m = META[channel];
@@ -41,9 +44,10 @@ export function ChannelPage({ channel }: { channel: Channel }) {
   });
   const rows: Row[] = agents.map((a, i) => {
     if (channel === "voice") return { a, on: a.routing_status === "routed", detail: a.routing_status === "routed" ? (a.number_source ?? "Number on") : "No number yet" };
-    const d = extra[i]?.data as { on?: boolean; status?: string; connected?: boolean; address?: string } | undefined;
+    const d = extra[i]?.data as { status?: TextsStatus["status"]; warning?: string; connected?: boolean; address?: string } | undefined;
     if (!d) return { a, on: extra[i]?.isError ? false : null, detail: extra[i]?.isError ? m.none : "Checking…" };
-    if (channel === "messages") return { a, on: Boolean(d.on), detail: d.on ? "Texts on" : d.status === "waiting" ? "Waiting for approval" : "Texts off" };
+    // The same status as the receptionist's Messages tab: switched on isn't the same as working.
+    if (channel === "messages") return { a, on: d.status === "on" && !d.warning, detail: d.warning ? "Needs attention" : TEXTS_WORD[d.status ?? "off"] };
     return { a, on: Boolean(d.connected), detail: d.connected ? d.address ?? "Connected" : m.none };
   });
   const on = rows.filter((r) => r.on).length;

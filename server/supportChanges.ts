@@ -37,7 +37,7 @@ const DENY: [RegExp, string][] = [
 const ALLOW: RegExp[] = [
   /^\/api\/clients$/,
   new RegExp(`^/api/clients/${ID}$`), // PUT only (DELETE is refused above)
-  new RegExp(`^/api/clients/${ID}/(calls|numbers|number-requests|texting|texting/numbers|texting/test|simulator/texts|simulator/texts/send|simulator/email|booking|booking/test|booking/events/${ID})$`),
+  new RegExp(`^/api/clients/${ID}/(calls|numbers|number-requests|texting|texting/number|texting/numbers|texting/test|simulator/texts|simulator/texts/send|simulator/email|booking|booking/test|booking/events/${ID})$`),
   new RegExp(`^/api/clients/${ID}/numbers/(owned|attach|detach)$`),
   new RegExp(`^/api/clients/${ID}/calls/[^/]+/messages$`),
   new RegExp(`^/api/clients/${ID}/brand(/(logo|background))?$`),

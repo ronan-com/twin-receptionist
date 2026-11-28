@@ -1,6 +1,7 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import { sql } from "./db";
 import { unseal } from "./secrets";
+import { telnyxProblem } from "./telnyxProblem";
 
 const BASE = "https://api.telnyx.com/v2";
 
@@ -78,7 +79,7 @@ export async function telnyx<T = any>(method: string, path: string, body?: unkno
   if (!res.ok) {
     const first = json?.errors?.[0];
     const detail = first?.detail || first?.title || text.slice(0, 200) || res.statusText;
-    throw new TelnyxError(res.status, `The phone service said: ${detail}`);
+    throw new TelnyxError(res.status, telnyxProblem(detail));
   }
   return json as T;
 }

@@ -3,6 +3,7 @@ import { ValidationError } from "./prompt";
 import { TelnyxError, telnyx } from "./telnyx";
 import { smsHookUrl } from "./smsWebhook";
 import { getClient, saveClient } from "./store";
+import { providerOfClient } from "./voice/config";
 
 // Texting on Telnyx: Telnyx carries the texts, our server answers them. Each receptionist has a
 // Telnyx messaging profile of our own (no Telnyx AI assistant linked to it) whose webhook_url is
@@ -24,8 +25,12 @@ async function assistant(assistantId: string): Promise<any> {
 
 /** The profile Telnyx made when texting was linked to the assistant (receptionists from before our own texting). */
 async function legacyProfileFor(assistantId: string): Promise<string | null> {
-  const a = await assistant(assistantId);
-  if (!(a.enabled_features ?? []).includes("messaging")) return null;
+  // An assistant deleted on Telnyx's side has no texting to move.
+  const a = await assistant(assistantId).catch((err) => {
+    if (err instanceof TelnyxError && err.status === 404) return null;
+    throw err;
+  });
+  if (!(a?.enabled_features ?? []).includes("messaging")) return null;
   return a.messaging_settings?.default_messaging_profile_id ?? null;
 }
 
@@ -76,11 +81,12 @@ export async function removeTextingProfile(profileId: string, client: Pick<Busin
 /** The profile this receptionist's texts use: ours, else a legacy assistant-linked one. */
 export async function textingProfileId(client: Business): Promise<string | null> {
   if (client.textingProfileId) return client.textingProfileId;
-  if (client.assistantId.startsWith("demo-")) return null;
+  // Only a Telnyx assistant can have had texting of its own.
+  if (client.assistantId.startsWith("demo-") || providerOfClient(client) === "vapi") return null;
   return legacyProfileFor(client.assistantId);
 }
 
-async function numbersOnProfile(profileId: string): Promise<string[]> {
+export async function numbersOnProfile(profileId: string): Promise<string[]> {
   const res = await telnyx<{ data?: any[] }>("GET", `/messaging_profiles/${profileId}/phone_numbers?page[size]=20`);
   return (res.data ?? []).map((n) => n.phone_number).filter(Boolean);
 }
@@ -91,7 +97,7 @@ async function numbersOnProfile(profileId: string): Promise<string[]> {
  * Does nothing for one already on ours.
  */
 export async function migrateTexting(client: Business): Promise<void> {
-  if (client.textingProfileId || client.assistantId.startsWith("demo-")) return;
+  if (client.textingProfileId || client.assistantId.startsWith("demo-") || providerOfClient(client) === "vapi") return;
   const legacy = await legacyProfileFor(client.assistantId);
   if (!legacy) return;
   const numbers = await numbersOnProfile(legacy);
@@ -136,8 +142,15 @@ export async function connectNumberForTexts(client: Business, input: unknown): P
   if (!AU_NUMBER.test(phoneNumber) || !(client.phoneNumbers ?? []).includes(phoneNumber)) {
     throw new ValidationError("Choose one of this receptionist's numbers.");
   }
+  await putOnTextProfile(client, phoneNumber);
+  return textingState(client);
+}
+
+/** Puts one mobile (its own number or any other on the account) on the receptionist's messaging profile, making the profile if needed. */
+export async function putOnTextProfile(client: Business, phoneNumber: string): Promise<void> {
   await migrateTexting(client);
   const profileId = (await getClient(client.id))?.textingProfileId ?? client.textingProfileId ?? (await enableTexting(client));
+  client.textingProfileId = profileId;
   try {
     await telnyx("PATCH", `/messaging_phone_numbers/${encodeURIComponent(phoneNumber)}`, {
       messaging_profile_id: profileId,
@@ -150,7 +163,6 @@ export async function connectNumberForTexts(client: Business, input: unknown): P
     }
     throw err;
   }
-  return textingState(client);
 }
 
 // Sends a first text from the receptionist to someone's mobile, to test it or to

@@ -1,7 +1,6 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { toast } from "sonner";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowLeft, BookOpen, Building2, CalendarCheck, Mail, MessageSquareText, Mic, Plug, SlidersHorizontal } from "lucide-react";
 import { ErrorState, PageSkeleton, Panel } from "@/components/app/primitives";
 import { StatusBadge } from "@/components/app/StatusBadge";
@@ -10,12 +9,12 @@ import { ConnectApps } from "@/components/app/client/ConnectApps";
 import { IntegrationsPage } from "@/components/app/editor/IntegrationsEditor";
 import { KnowledgePage } from "@/components/app/editor/KnowledgeEditor";
 import { ReceptionistPage } from "@/components/app/editor/ReceptionistScript";
-import { companyApi, platformApi, getAdminAgents, type CompanyReceptionist } from "@/lib/api/console";
+import { companyApi, getAdminAgents } from "@/lib/api/console";
 import { nicheIcon } from "@/lib/app/niche-icons";
 import { useWorkspace } from "@/lib/app/workspace";
 import { cn } from "@/lib/utils";
 import { PRODUCT } from "@/lib/app/product";
-import { useConsole } from "./-shared";
+import { useConsole, ViewDashboardButton } from "./-shared";
 import { ReceptionistCard } from "./-receptionist-card";
 
 // One receptionist, edited without leaving the agency's console: AI Voice Agent, AI Message Agent,
@@ -88,12 +87,6 @@ function ReceptionistEditor() {
     await qc.invalidateQueries({ queryKey: ["phone-numbers"] });
     await qc.invalidateQueries({ queryKey: ["own-numbers"] });
   };
-  const viewAs = useMutation({
-    mutationFn: (r: CompanyReceptionist) => platformApi.viewAs(q.data!.company.org_id, r.id),
-    onSuccess: () => window.location.assign("/app"),
-    onError: (e: Error) => toast.error(e.message),
-  });
-
   if (agents.isPending || (companyId && q.isPending)) return <PageSkeleton metrics={0} rows={5} />;
   if (agents.error) return <ErrorState message={(agents.error as Error).message} onRetry={() => void agents.refetch()} />;
   if (!companyId) return <ErrorState message="That receptionist wasn't found." />;
@@ -114,8 +107,6 @@ function ReceptionistEditor() {
       platform={platform}
       readOnly={readOnly}
       canManage={canManage}
-      onViewAs={() => viewAs.mutate(r)}
-      viewing={viewAs.isPending}
       onChanged={refresh}
       section={section}
       advancedExtra={extra}
@@ -142,6 +133,7 @@ function ReceptionistEditor() {
             <Building2 className="h-3.5 w-3.5" /> For <span className="font-medium text-ink">{co.name}</span>
           </Link>
         </div>
+        <ViewDashboardButton orgId={co.org_id} receptionistId={r.id} />
       </div>
 
       <nav aria-label="Receptionist" data-section-tabs className="-mx-1 flex gap-1 overflow-x-auto border-b border-hairline px-1">

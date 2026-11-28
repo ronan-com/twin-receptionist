@@ -45,7 +45,8 @@ export async function availableNumbers(type: NumberType, country: NumberCountry 
       monthly: Number(cost.monthly_cost ?? 0),
       upfront: Number(cost.upfront_cost ?? 0),
       currency: cost.currency ?? "USD",
-      sms: features.includes("sms"),
+      // Only Australian mobiles text through our Telnyx path (US numbers need 10DLC registration first).
+      sms: features.includes("sms") && /^\+614\d{8}$/.test(n.phone_number),
     };
   });
 }

@@ -84,7 +84,7 @@ export function BuyNumber({ clientId, timezone, onBought }: { clientId: string; 
             </TabsList>
             <TabsContent value="twilio" className="mt-3">
               <Notice tone="info" title="Twilio numbers use the Vapi backup option">
-                This receptionist runs on Telnyx (recommended), so it answers Telnyx numbers only. To answer a Twilio number, use Move to Vapi on this receptionist, or make a new receptionist on Vapi (connect Vapi under{" "}
+                This receptionist runs on Telnyx (recommended), so it takes calls on Telnyx numbers only. For texts, pick any Twilio number on its Messages tab. To take calls on a Twilio number, use Move to Vapi on this receptionist, or make a new receptionist on Vapi (connect Vapi under{" "}
                 <Link to="/admin/connections" className="font-medium text-indigo hover:underline">
                   Connections
                 </Link>

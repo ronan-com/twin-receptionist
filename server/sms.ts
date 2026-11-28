@@ -1,4 +1,4 @@
-import type { Business } from "../src/lib/shared";
+import type { Business, TextCarrier } from "../src/lib/shared";
 import { sql } from "./db";
 import { requireTwilio, sendTwilioSms } from "./twilio";
 import { currentOrg } from "./telnyx";
@@ -6,10 +6,10 @@ import { sendTelnyxText } from "./texting";
 import { providerOfClient } from "./voice/config";
 
 // Where a receptionist's texts go out (the text bot's replies, text-back, reminders, missed-call, reviews).
-// A Telnyx receptionist texts through Telnyx's messaging API from its own mobile number (server/texting.ts).
-// A Vapi receptionist texts through Twilio's Messages API, from a Twilio number of the agency's that it
-// answers (server/twilio.ts). Everything that decides whether to text (quiet hours, once only) lives
-// with the callers and is the same for both; people who texted STOP are refused here, for both.
+// From a picked text number (Business.textNumber): through whoever carries that number, Twilio's Messages API
+// (server/twilio.ts) or Telnyx's (server/texting.ts). Otherwise a Telnyx receptionist texts through Telnyx
+// from its own mobile, a Vapi one through Twilio. Everything that decides whether to text (quiet hours, once
+// only) lives with the callers and is the same for both; people who texted STOP are refused here, for both.
 
 export class SmsOptedOut extends Error {
   constructor() {
@@ -33,12 +33,24 @@ export async function setOptOut(clientId: string, contact: string, out: boolean)
   else await sql`delete from sms_optouts where client_id = ${clientId} and contact = ${contactKey(contact)}`;
 }
 
+/** Who carries a text sent from this number. */
+export const carrierOf = (client: Business, from: string): TextCarrier =>
+  client.textNumber?.number === from ? client.textNumber.via : providerOfClient(client) === "vapi" ? "twilio" : "telnyx";
+
+// The last send that failed, per receptionist, for the Texts status (e.g. a country Twilio won't text yet).
+// Kept in memory: the next text that goes through clears it.
+const failures = new Map<string, string>();
+export const lastTextProblem = (clientId: string): string => failures.get(clientId) ?? "";
+
 /** Sends one text. `from` is the number smsNumberOf gave. `meta` is for the caller's own records. */
 export async function sendSms(client: Business, o: { from: string; to: string; text: string; meta?: Record<string, string> }): Promise<void> {
   if (await isOptedOut(client.id, o.to)) throw new SmsOptedOut();
-  if (providerOfClient(client) === "vapi") {
-    await sendTwilioSms(await requireTwilio(currentOrg()), o.from, o.to, o.text);
-    return;
+  try {
+    if (carrierOf(client, o.from) === "twilio") await sendTwilioSms(await requireTwilio(currentOrg()), o.from, o.to, o.text);
+    else await sendTelnyxText(o);
+    failures.delete(client.id);
+  } catch (err) {
+    failures.set(client.id, (err as Error).message.slice(0, 200));
+    throw err;
   }
-  await sendTelnyxText(o);
 }

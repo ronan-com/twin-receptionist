@@ -22,6 +22,7 @@ import { knowledgeImportRoutes } from "./knowledgeImport";
 import { UI_PRODUCT } from "../product";
 import { providerOfClient } from "../voice/config";
 import { toolAllowed } from "../voice/tools";
+import { textCapability } from "../numberCaps";
 
 // Area S (workspace, manage): receptionist settings, knowledge, call handling,
 // integrations, team and the business profile, for one business.
@@ -213,6 +214,8 @@ async function carrierStatuses(c: Business): Promise<Map<string, string>> {
 
 async function answeredNumbers(c: Business) {
   const carrier = await carrierStatuses(c);
+  const orgId = (await orgOfClient(c.id)) ?? "";
+  const canText = await textCapability([{ orgId, client: c }]);
   const [degraded] = await sql`select 1 from incidents where client_id = ${c.id} and kind = 'call_sync' and status = 'open' limit 1`;
   const agent = { id: c.id, name: c.settings.receptionistName || "Receptionist" };
   const rows: any[] = (c.phoneNumbers ?? []).map((e164) => ({
@@ -225,7 +228,7 @@ async function answeredNumbers(c: Business) {
     agent,
     status: numberIsLive(carrier.get(e164) ?? "") ? "active" : "pending",
     routing_mode: "ai_receptionist",
-    capabilities: { voice: true, sms: e164.startsWith("+614") },
+    capabilities: { voice: true, sms: canText(orgId, e164) },
     country: countryOfNumber(e164) ?? "AU",
     provider: providerOfClient(c),
     health: degraded ? "degraded" : "healthy",
@@ -251,7 +254,8 @@ async function answeredNumbers(c: Business) {
       agent,
       status: "pending",
       routing_mode: "ai_receptionist",
-      capabilities: { voice: true, sms: r.type === "mobile" },
+      // A requested Australian mobile will take texts; US numbers don't through our carrier yet.
+      capabilities: { voice: true, sms: r.type === "mobile" && countryForTimezone(c.settings.timezone) === "AU" },
       country: countryForTimezone(c.settings.timezone),
       provider: providerOfClient(c),
       health: "unknown",

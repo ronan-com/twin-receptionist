@@ -64,7 +64,7 @@ beforeEach(() => {
 const live = { active: [MOBILE], pending: [] as string[] };
 const twilioStub = (canText: string[]) => {
   const log: string[] = [];
-  return { log, tw: { canText: async (n: string[]) => n.filter((x) => canText.includes(x)), point: async (_c: string, n: string) => (log.push(`point ${n}`), true), release: async (_c: string, n: string) => void log.push(`release ${n}`) } };
+  return { log, tw: { check: async () => null, canText: async (n: string[]) => n.filter((x) => canText.includes(x)), point: async (_c: string, n: string) => (log.push(`point ${n}`), true), release: async (_c: string, n: string) => void log.push(`release ${n}`) } };
 };
 
 describe("sorting the engine's numbers", () => {

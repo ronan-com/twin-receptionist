@@ -9,6 +9,7 @@ import { isDemo } from "./sandbox";
 import { getClient, orgOfClient } from "./store";
 import { currentOrg, runAsOrg } from "./telnyx";
 import { isOptedOut, sendSms } from "./sms";
+import { notPickedElsewhere } from "./textOwners";
 import { twilioSmsNumber } from "./twilio";
 import { providerOfClient } from "./voice/config";
 import { voiceFor } from "./voice";
@@ -548,9 +549,7 @@ export function statusFor(client: Business, a: AutomationSettings, i: StatusInpu
     if (i.demo) return { state: "on", label: "On (demo)", detail: "Demo receptionists never send texts." };
     if (i.smsNumber === undefined) return { state: "error", label: "Couldn't check", detail: "The phone service didn't answer. Texts will go out once it does." };
     if (!i.smsNumber) {
-      return vapi
-        ? { state: "needs_setup", label: "Needs a Twilio mobile number", detail: UNMAPPED.textBack }
-        : { state: "needs_setup", label: "Needs a mobile number", detail: "Texts are sent from the receptionist's own mobile number. Request a mobile number under Call handling." };
+      return { state: "needs_setup", label: "Needs a text number", detail: vapi ? UNMAPPED.textBack : "Choose a text number on the Messages tab." };
     }
     return { state: "on", label: `On · from ${say(i.smsNumber)}`, detail: "Each caller gets at most one text every 12 hours." };
   })();
@@ -596,10 +595,14 @@ export async function smsNumberOf(client: Business): Promise<string | null | und
   // The owner switched Texts off: nothing goes out by text either.
   if (client.textsPref === "off") return null;
   try {
+    // A picked text number, whatever the voice engine.
+    const pick = client.textNumber;
+    if (pick?.via === "twilio") return await twilioSmsNumber(currentOrg(), [pick.number]);
+    if (pick) return (await textingState(client)).numbers.includes(pick.number) ? pick.number : null;
     // Vapi has no texting of its own: a Twilio number of the agency's that it answers sends them.
-    if (providerOfClient(client) === "vapi") return await twilioSmsNumber(currentOrg(), client.phoneNumbers ?? []);
+    if (providerOfClient(client) === "vapi") return await twilioSmsNumber(currentOrg(), await notPickedElsewhere(client.id, client.phoneNumbers ?? []));
     const t = await textingState(client);
-    return t.numbers.find((n) => /^\+614\d{8}$/.test(n)) ?? null;
+    return (await notPickedElsewhere(client.id, t.numbers)).find((n) => /^\+614\d{8}$/.test(n)) ?? null;
   } catch {
     return undefined;
   }
@@ -766,7 +769,7 @@ async function textBackOne(call: any): Promise<void> {
       and created_at > now() - interval '12 hours' and id <> ${id}`;
   if (recent) return void (await finish("skipped", "Texted in the last 12 hours"));
   const from = await smsNumberOf(client);
-  if (!from) return void (await finish("skipped", "No mobile number for texts"));
+  if (!from) return void (await finish("skipped", "No text number"));
   if (await isOptedOut(client.id, call.from_number)) return void (await finish("skipped", "Texted STOP"));
   try {
     await sendSms(client, { from, to: call.from_number, text: choice.text, meta: { twin_text_back: kind } });

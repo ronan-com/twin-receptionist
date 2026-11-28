@@ -1,6 +1,7 @@
 import { useState, type ReactNode } from "react";
-import { useQuery } from "@tanstack/react-query";
-import { CalendarCheck, Check, Copy, Mail, MessageSquareText, Mic, Webhook, type LucideIcon } from "lucide-react";
+import { useMutation, useQuery } from "@tanstack/react-query";
+import { toast } from "sonner";
+import { CalendarCheck, Check, Copy, Eye, Mail, MessageSquareText, Mic, Webhook, type LucideIcon } from "lucide-react";
 import type { Hue } from "@/components/app/hues";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
@@ -8,7 +9,7 @@ import { Input } from "@/components/ui/input";
 import { ErrorState, InitialsAvatar, KeyValue } from "@/components/app/primitives";
 import { CallStatusBadge, DemoBadge, OutcomeBadge, STATE_TONE, StatusBadge } from "@/components/app/StatusBadge";
 import { Skeleton } from "@/components/ui/skeleton";
-import { getConsoleCallDetail, type BizRef } from "@/lib/api/console";
+import { getConsoleCallDetail, platformApi, type BizRef } from "@/lib/api/console";
 import { fmtDateTime, fmtDuration, fmtPhone } from "@/lib/app/format";
 import { useWorkspace } from "@/lib/app/workspace";
 
@@ -164,6 +165,36 @@ export function AutomationIcon({ automation }: { automation: string }) {
     <span data-hue={look.hue} className="hue-icon flex h-7 w-7 shrink-0 items-center justify-center rounded-[7px]" aria-hidden>
       <look.icon className="h-3.5 w-3.5" />
     </span>
+  );
+}
+
+/** "View client dashboard": the agency sees what the client sees (a read-only view of one receptionist's business). */
+export function ViewDashboardButton({ orgId, receptionistId, size = "sm", className }: { orgId: string; receptionistId: string | undefined; size?: "sm" | "default"; className?: string }) {
+  const { platform, readOnly, canManage } = useConsole();
+  const view = useMutation({
+    mutationFn: () => platformApi.viewAs(orgId, receptionistId),
+    // A fresh page load: the session is now the client's view, so this console page's own
+    // requests (which would be refused) must not run again.
+    onSuccess: () => window.location.assign("/app"),
+    onError: (e: Error) => toast.error(e.message),
+  });
+  if (!receptionistId || readOnly || !(platform || canManage)) return null;
+  return (
+    <Button
+      type="button"
+      variant="outline"
+      size={size}
+      className={className ?? "h-8 whitespace-nowrap text-[12.5px]"}
+      disabled={view.isPending}
+      onClick={(e) => {
+        // Also used inside clickable table rows.
+        e.stopPropagation();
+        view.mutate();
+      }}
+      data-action="view-as-customer"
+    >
+      <Eye className="mr-1.5 h-3.5 w-3.5" /> View client dashboard
+    </Button>
   );
 }
 

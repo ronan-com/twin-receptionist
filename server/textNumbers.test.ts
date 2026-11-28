@@ -32,7 +32,7 @@ const { consoleRoutes } = await import("./routes/console");
 const SID = "AC" + "d".repeat(32);
 const TOKEN = "e".repeat(32);
 const US = "+12025550147";
-const US2 = "+12025550147";
+const US2 = "+12025550148";
 const AU_TW = "+61480011401";
 const AU_LAND_TW = "+61255501401";
 const MOBILE = "+61480011402";
@@ -415,8 +415,8 @@ describe("what a number can really do", () => {
       const detail = await get(`/api/console/companies/${company_id}`);
       return detail.receptionists.find((r: any) => r.id === c.id).automations.find((a: any) => a.key === "sms");
     };
-    expect(await smsRow(usVapi)).toMatchObject({ status: "live", state: "On", detail: "Replies to texts on (227) 220-4547" });
-    expect(await smsRow(telnyxOne)).toMatchObject({ status: "live", state: "On", detail: "Replies to texts on (202) 555-0147" });
+    expect(await smsRow(usVapi)).toMatchObject({ status: "live", state: "On", detail: "Replies to texts on (202) 555-0147" });
+    expect(await smsRow(telnyxOne)).toMatchObject({ status: "live", state: "On", detail: "Replies to texts on (202) 555-0148" });
     expect(await smsRow(bare)).toMatchObject({ status: "off", state: "Not set up", detail: "No text number yet." });
     // Twilio stops sending its texts here: the list says so, as the Messages tab does.
     find(US).sms_url = "";

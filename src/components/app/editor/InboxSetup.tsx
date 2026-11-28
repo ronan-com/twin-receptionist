@@ -175,6 +175,8 @@ export function InboxSetup({ businessId, canEdit, editor, onChanged }: { busines
       ) : null}
 
       {password ? (
+        <>
+        {mode === "send" ? <p className="rounded-lg bg-canvas-2 p-3 text-[12.5px] text-ink-muted">App-password sending needs SMTP access. Railway Hobby does not allow SMTP, so choose drafts or use an authorised Gmail sign-in with Gmail API enabled.</p> : null}
         <form
           className="grid gap-3"
           onSubmit={(ev) => {
@@ -225,6 +227,7 @@ export function InboxSetup({ businessId, canEdit, editor, onChanged }: { busines
             {connect.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Mail className="h-4 w-4" />} {connect.isPending ? "Connecting…" : "Connect"}
           </Button>
         </form>
+        </>
       ) : null}
     </div>
   );

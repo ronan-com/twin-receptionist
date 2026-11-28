@@ -11,6 +11,7 @@ import { seal, unseal } from "./secrets";
 import { accessToken, mailServers, type OAuthProvider, type SignInResult } from "./oauth";
 import { ValidationError } from "./prompt";
 import { chatCompletion } from "./llm";
+import { verifyGmailSend, sendGmail } from "./gmailSend";
 
 // The receptionist works inside the business's own mailbox: it reads new mail over
 // IMAP and either saves a suggested reply to their Drafts folder ("draft", the
@@ -167,6 +168,17 @@ function smtp(box: Pick<Mailbox, "smtpHost" | "smtpPort" | "username">, creds: C
   });
 }
 
+async function verifyOutgoing(box: Mailbox, creds: Creds): Promise<void> {
+  if (box.auth === "google" && "accessToken" in creds) await verifyGmailSend(creds.accessToken, box.address);
+  else await smtp(box, creds).verify();
+}
+
+function outgoingProblem(err: unknown): string {
+  const e = err as { code?: string; message?: string };
+  if (/ETIMEDOUT|ECONNREFUSED|timeout|connection refused/i.test((e.code || "") + " " + (e.message || ""))) return "The outgoing mail server could not be reached. Railway Hobby blocks SMTP; use drafts, an authorised Gmail sign-in with Gmail API enabled, or a hosting plan that supports SMTP.";
+  return (e.message || "Outgoing mail could not be checked.").slice(0, 300);
+}
+
 function open(box: Pick<Mailbox, "host" | "port" | "username">, creds: Creds): ImapFlow {
   return new ImapFlow({
     host: box.host,
@@ -255,7 +267,7 @@ export async function connectEmail(clientId: string, input: unknown, publicOnly 
       await smtp({ smtpHost, smtpPort, username }, { pass: password }).verify();
     } catch (err) {
       throw new ValidationError(
-        `Reading mail works, but sending from ${smtpHost} didn't: ${(err as Error).message}. Choose "Save as drafts" or check the outgoing server settings.`,
+        `Reading mail works, but sending from ${smtpHost} didn't: ${outgoingProblem(err)}. Choose "Save as drafts" or check the outgoing server settings.`,
       );
     }
   }
@@ -288,9 +300,7 @@ export async function connectEmail(clientId: string, input: unknown, publicOnly 
 export async function setEmailMode(
   clientId: string,
   input: unknown,
-  verify: (box: Mailbox, creds: Creds) => Promise<void> = async (box, creds) => {
-    await smtp(box, creds).verify();
-  },
+  verify: (box: Mailbox, creds: Creds) => Promise<void> = verifyOutgoing,
 ): Promise<EmailStatus> {
   const mode: EmailMode | null = (input as { mode?: unknown } | null)?.mode === "send" ? "send" : (input as { mode?: unknown } | null)?.mode === "draft" ? "draft" : null;
   if (!mode) throw new ValidationError("Choose drafts or send automatically.");
@@ -301,7 +311,7 @@ export async function setEmailMode(
       try {
         await verify(box, await credentialsFor(clientId, box));
       } catch (err) {
-        throw new ValidationError(`Sending from ${box.smtpHost} didn't work: ${(err as Error).message}. Keep replies as drafts, or check the outgoing server settings.`);
+        throw new ValidationError(`Sending from ${box.smtpHost} didn't work: ${outgoingProblem(err)}. Keep replies as drafts, or check the outgoing server settings.`);
       }
     }
     // Only the mode changes: the connect time stays, so mail already in the inbox is still never looked at.
@@ -345,6 +355,9 @@ export async function connectOAuth(clientId: string, result: SignInResult): Prom
     );
   } finally {
     await imap.logout().catch(() => {});
+  }
+  if (box.mode === "send") {
+    try { await verifyOutgoing(box, creds); } catch (err) { throw new ValidationError("Mailbox connected but automatic sending is unavailable: " + outgoingProblem(err) + " Choose drafts or fix the outgoing connection."); }
   }
   await saveBox(clientId, box);
   return emailStatus(clientId);
@@ -559,7 +572,8 @@ export async function checkEmail(client: Business): Promise<EmailStatus> {
             if (box.mode === "send" && !blocked && to) {
               try {
                 const raw = await buildDraft(client, box, mail, decision.body, true);
-                await smtp(box, creds).sendMail({ envelope: { from: box.address, to }, raw });
+                if (box.auth === "google" && "accessToken" in creds) await sendGmail(creds.accessToken, raw);
+                else await smtp(box, creds).sendMail({ envelope: { from: box.address, to }, raw });
                 sent = true;
                 box.sentLog.push({ to, at: new Date().toISOString() });
                 // Gmail files sent mail itself; other providers need a copy put in Sent.

@@ -18,7 +18,7 @@ import type { EmailProviderId, EmailSenderView, EmailSettings, RecentEmail } fro
 
 type Choice = "resend" | "gmail" | "microsoft" | "zoho" | "smtp";
 const CHOICES: { id: Choice; title: string; sub: string }[] = [
-  { id: "resend", title: "Resend", sub: "Recommended. Sends from your own domain." },
+  { id: "resend", title: "Resend", sub: "Recommended on Railway Hobby. Sends from your own domain." },
   { id: "gmail", title: "Gmail / Google Workspace", sub: "Your Google account, with an app password." },
   { id: "microsoft", title: "Microsoft 365 / Outlook", sub: "Your Microsoft work or Outlook account." },
   { id: "zoho", title: "Zoho Mail", sub: "Australia or worldwide." },
@@ -207,6 +207,7 @@ function SenderCard({ s, which }: { s: EmailSettings; which: SenderWhich }) {
               ))}
             </div>
 
+            {choice !== "resend" ? <Notice tone="info">These mail services require outbound SMTP. On Railway Hobby, choose Resend instead. SMTP requires Railway Pro or another host that supports SMTP.</Notice> : null}
             {choice === "resend" ? (
               <p className="text-[12.5px] leading-5 text-ink-muted">
                 In <a className="font-medium text-indigo hover:underline" href="https://resend.com/domains" target="_blank" rel="noreferrer noopener">Resend</a>, add and verify your domain, then make an API key (Sending access is enough) and paste it here. Send from an address on that domain.

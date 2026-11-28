@@ -14,9 +14,10 @@ import { currentOrg } from "./telnyx";
 //  - Numbers are searched, bought and listed with Twilio's AvailablePhoneNumbers and
 //    IncomingPhoneNumbers APIs. Australian numbers need an approved regulatory bundle and an
 //    address in Twilio first, so buying shows the same "waiting for approval" state as Telnyx.
-//  - A Twilio number is answered by a Vapi receptionist: Vapi imports it (POST /phone-number,
-//    server/voice/vapi.ts). A Telnyx receptionist can't answer one.
-//  - A Vapi receptionist's follow-up texts go out through Twilio's Messages API (server/sms.ts).
+//  - Calls on a Twilio number are answered by a Vapi receptionist: Vapi imports it (POST /phone-number,
+//    server/voice/vapi.ts). A Telnyx receptionist can't answer its calls.
+//  - Texts on any SMS-capable Twilio number can be answered by any receptionist (server/textsControl.ts):
+//    only the number's text webhook is set. Those texts go out through Twilio's Messages API (server/sms.ts).
 
 const API = "https://api.twilio.com/2010-04-01";
 const NUMBERS_API = "https://numbers.twilio.com/v2";
@@ -243,9 +244,8 @@ const toOwned = (n: any): Omit<TwilioNumber, "assignedTo"> => ({
   voice: Boolean(n.capabilities?.voice ?? n.capabilities?.Voice ?? true),
 });
 
-/** Every number on the Twilio account (up to 200). */
-export async function ownedTwilioNumbers(creds: TwilioCreds): Promise<Omit<TwilioNumber, "assignedTo">[]> {
-  if (isTestTwilio(creds)) return SAMPLE_TWILIO_OWNED;
+/** The account's numbers as Twilio reports them, webhooks included. Server only: sms_url holds our hook's secret. */
+async function twilioNumberRecords(creds: TwilioCreds): Promise<any[]> {
   const out: any[] = [];
   let next: string | null = "/IncomingPhoneNumbers.json?PageSize=200";
   // Twilio pages its answer: follow next_page_uri so an account with more than 200 numbers isn't cut short.
@@ -254,7 +254,13 @@ export async function ownedTwilioNumbers(creds: TwilioCreds): Promise<Omit<Twili
     out.push(...(res.incoming_phone_numbers ?? []));
     next = res.next_page_uri || null;
   }
-  return out.map(toOwned).filter((n) => n.phoneNumber);
+  return out;
+}
+
+/** Every number on the Twilio account (up to 200 a page, 5 pages). */
+export async function ownedTwilioNumbers(creds: TwilioCreds): Promise<Omit<TwilioNumber, "assignedTo">[]> {
+  if (isTestTwilio(creds)) return SAMPLE_TWILIO_OWNED;
+  return (await twilioNumberRecords(creds)).map(toOwned).filter((n) => n.phoneNumber);
 }
 
 /** The Twilio numbers none of the agency's receptionists answers, and the ones that do. */
@@ -342,15 +348,60 @@ export async function pointTextsAtUs(creds: TwilioCreds, clientId: string, phone
   }
 }
 
-/** Takes the text address off a number again (a number let go of a receptionist). Best effort. */
+/** Whether a number's text address is this receptionist's hook (on any public address). */
+const isOurHook = (url: unknown, clientId: string) => String(url ?? "").includes(`/hooks/sms/twilio/${clientId}/`);
+
+/**
+ * Takes the text address off a number again (a number let go of a receptionist). Only our own address for
+ * this receptionist is cleared, never one another receptionist (or another service) put there. Best effort.
+ */
 export async function releaseTexts(creds: TwilioCreds, clientId: string, phoneNumber: string): Promise<void> {
   if (isTestTwilio(creds)) return;
   try {
-    const n = (await ownedTwilioNumbers(creds)).find((x) => x.phoneNumber === phoneNumber);
-    if (n) await twilio(creds, "POST", `/IncomingPhoneNumbers/${n.id}.json`, { SmsUrl: "" , SmsMethod: "POST" });
+    const n = (await twilioNumberRecords(creds)).find((x) => x.phone_number === phoneNumber);
+    if (n && isOurHook(n.sms_url, clientId)) await twilio(creds, "POST", `/IncomingPhoneNumbers/${n.sid}.json`, { SmsUrl: "", SmsMethod: "POST" });
   } catch (err) {
     console.error(`[twilio ${clientId}] couldn't release texts for ${phoneNumber}:`, (err as Error).message);
   }
+}
+
+/** Why texts to this number wouldn't reach the receptionist, in plain words; null when they will. */
+export async function textHookProblem(creds: TwilioCreds, clientId: string, phoneNumber: string): Promise<{ detail: string; retry: boolean } | null> {
+  if (isTestTwilio(creds)) return null;
+  const url = smsHookUrl("twilio", clientId);
+  if (!url) return { detail: "This server has no public web address yet, so Twilio can't pass texts to it.", retry: true };
+  let n: any;
+  try {
+    n = (await twilioNumberRecords(creds)).find((x) => x.phone_number === phoneNumber);
+  } catch (err) {
+    return { detail: `Couldn't check with Twilio. ${(err as Error).message}`, retry: true };
+  }
+  if (!n) return { detail: `${phoneNumber} isn't on your Twilio account any more. Choose another number.`, retry: false };
+  if (!toOwned(n).sms) return { detail: `${phoneNumber} can't send or receive texts. Choose another number.`, retry: false };
+  if (n.sms_application_sid) return { detail: "A TwiML app in Twilio takes this number's texts. In Twilio, set its messaging to Webhook, then try again.", retry: true };
+  if (n.sms_url !== url) return { detail: "Twilio isn't sending this number's texts here. Try again.", retry: true };
+  return null;
+}
+
+/**
+ * After the public address changes (a new PUBLIC_URL, or the custom domain starting to answer): moves our
+ * text address on each wanted number to the new one. A number is only touched when it already points at that
+ * receptionist (or was picked for it and points nowhere). Voice settings are never sent.
+ */
+export async function moveTextHooks(creds: TwilioCreds, wanted: { clientId: string; number: string; picked: boolean }[]): Promise<number> {
+  if (isTestTwilio(creds) || !wanted.length) return 0;
+  const records = await twilioNumberRecords(creds);
+  let moved = 0;
+  for (const w of wanted) {
+    const n = records.find((x) => x.phone_number === w.number);
+    const url = smsHookUrl("twilio", w.clientId);
+    if (!n || !url || !toOwned(n).sms || n.sms_url === url) continue;
+    if (!isOurHook(n.sms_url, w.clientId) && !(w.picked && !n.sms_url)) continue;
+    await twilio(creds, "POST", `/IncomingPhoneNumbers/${n.sid}.json`, { SmsUrl: url, SmsMethod: "POST" })
+      .then(() => moved++)
+      .catch((err) => console.error(`[twilio ${w.clientId}] couldn't move the text address of ${w.number}:`, (err as Error).message));
+  }
+  return moved;
 }
 
 const smsCache = new Map<string, { number: string | null; at: number }>();

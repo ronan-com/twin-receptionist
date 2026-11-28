@@ -11,6 +11,7 @@ import { buyTwilioNumber, ownedTwilioNumbers, parseTwilioInput, pointTextsAtUs, 
 import type { Conversation, VoiceProvider } from "./provider";
 import { toolAllowed } from "./tools";
 import { BOOKING_TOOL_DEFS } from "../booking";
+import { twilioTextTargets } from "../textOwners";
 import { callRecord, eventsSecret, toVapiScript, vapiAssistantBody, vapiVoiceList, type VapiBuild } from "./vapiMap";
 
 const BASE = "https://api.vapi.ai";
@@ -110,6 +111,11 @@ const E164 = /^\+[1-9]\d{6,14}$/;
 /** How Vapi is told to sign in to the agency's Twilio account for an imported number. */
 const twilioImportAuth = (c: TwilioCreds) => (c.kind === "key" ? { twilioApiKey: c.user, twilioApiSecret: c.secret } : { twilioAuthToken: c.secret });
 
+/** A number just connected for calls takes its texts here too, unless Texts is off or another number is picked. */
+async function pointNewNumber(creds: TwilioCreds, client: Business, number: string): Promise<void> {
+  if ((await twilioTextTargets(client, [number])).includes(number)) await pointTextsAtUs(creds, client.id, number);
+}
+
 /**
  * Brings a number onto the receptionist. input.source is
  *  - "twilio": a number (E.164) on the agency's connected Twilio account, or with accountSid + authToken pasted in;
@@ -133,7 +139,7 @@ export async function attachNumber(client: Business, input: unknown): Promise<Nu
     const bought = await buyTwilioNumber(creds, b, name);
     try {
       const order = toOrder(await vapi("POST", "/phone-number", { provider: "twilio", number: bought.phoneNumber, twilioAccountSid: creds.accountSid, ...twilioImportAuth(creds), smsEnabled: false, assistantId, name }));
-      await pointTextsAtUs(creds, client.id, bought.phoneNumber);
+      await pointNewNumber(creds, client, bought.phoneNumber);
       return order;
     } catch (err) {
       if (err instanceof VapiError) {
@@ -153,7 +159,7 @@ export async function attachNumber(client: Business, input: unknown): Promise<Nu
       if (!owned.some((n) => n.phoneNumber === number)) throw new ValidationError("That number isn't on your connected Twilio account.");
       const order = toOrder(await vapi("POST", "/phone-number", { provider: "twilio", number, twilioAccountSid: creds.accountSid, ...twilioImportAuth(creds), smsEnabled: false, assistantId, name }));
       // Voice goes to Vapi; texts to our text chatbot (the same brain as the website chat).
-      await pointTextsAtUs(creds, client.id, number);
+      await pointNewNumber(creds, client, number);
       return order;
     }
     const pasted = parseTwilioInput(b);
@@ -192,7 +198,9 @@ export const vapiProvider: VoiceProvider = {
     await push(client, client.settings, client.instructions);
     // Numbers attached before the text chatbot existed get its address too (best effort).
     const creds = await twilioCredsFor(currentOrg()).catch(() => null);
-    if (creds) for (const n of client.phoneNumbers ?? []) await pointTextsAtUs(creds, client.id, n);
+    if (!creds) return;
+    const own = client.textNumber ? [client.textNumber.number] : (client.phoneNumbers ?? []);
+    for (const n of await twilioTextTargets(client, own)) await pointTextsAtUs(creds, client.id, n);
   },
 
   async deleteAssistant(client) {
@@ -266,7 +274,8 @@ export const vapiProvider: VoiceProvider = {
       }
       const gone = mine.map((n) => String(n.number ?? n.sipUri ?? "")).filter(Boolean);
       const creds = await twilioCredsFor(currentOrg()).catch(() => null);
-      if (creds) for (const n of mine.filter((m) => m.provider === "twilio")) await releaseTexts(creds, client.id, String(n.number));
+      // A number picked for this receptionist's texts keeps answering them, whatever happens to its calls.
+      if (creds) for (const n of mine.filter((m) => m.provider === "twilio" && String(m.number) !== client.textNumber?.number)) await releaseTexts(creds, client.id, String(n.number));
       return gone;
     },
   },

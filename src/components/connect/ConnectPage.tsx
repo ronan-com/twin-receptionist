@@ -250,10 +250,9 @@ export function ConnectPage({ token }: { token: string }) {
                 ) : null}
 
                 {provider === "microsoft" && !signInReady ? (
-                  <Card title="Outlook and Microsoft 365 aren't available yet">
+                  <Card title="Outlook isn't switched on yet">
                     <p className={muted}>
-                      Microsoft has switched off password sign-in for email apps, so these accounts need a "Sign in with Microsoft" option, which is on its way. Let your provider
-                      know you use Outlook and they'll be in touch.
+                      Outlook only lets apps in through "Sign in with Microsoft". Ask whoever sent you this link to switch it on, then open the link again.
                     </p>
                   </Card>
                 ) : null}
@@ -365,7 +364,7 @@ export function ConnectPage({ token }: { token: string }) {
                     </div>
                   </>
                 ) : (
-                  <p className={muted}>Calendar connection isn't available yet. Your provider will be in touch.</p>
+                  <p className={muted}>This calendar isn't switched on yet. Ask whoever sent you this link to switch it on, then open the link again.</p>
                 )}
               </Card>
             ) : null}

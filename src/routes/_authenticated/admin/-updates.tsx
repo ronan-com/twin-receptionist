@@ -1,3 +1,4 @@
+import { Link } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -54,7 +55,7 @@ export function UpdatesSection() {
       {readOnly ? <Notice tone="info">{READ_ONLY_HINT}</Notice> : !canChange ? <Notice tone="info">Only an owner or admin can change these.</Notice> : null}
       {role === "owner" && address.data?.url ? (
         <p className="text-[12.5px] text-ink-muted" data-web-address>
-          Your web address: <span className="font-medium text-ink">{address.data.url.replace(/^https?:\/\//, "").replace(/\/$/, "")}</span> · Change it from your setup link
+          Your web address: <span className="font-medium text-ink">{address.data.url.replace(/^https?:\/\//, "").replace(/\/$/, "")}</span> · <Link to="/admin/settings" search={{ tab: "domain" }} className="font-medium text-indigo hover:underline">Change domain</Link>
         </p>
       ) : null}
       <Panel title="Automatic updates" description={`You're on version ${u.version || "unknown"}${u.latest && u.latest !== u.version ? `; ${u.latest} is available` : ""}.`}>

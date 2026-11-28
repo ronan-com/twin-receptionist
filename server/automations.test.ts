@@ -140,7 +140,7 @@ describe("2. text-back", () => {
   });
   test("status says when a mobile number is needed", () => {
     const s = statusFor(client(), a, { demo: false, smsNumber: null, publicUrl: "", applied: true });
-    expect(s.textBack).toMatchObject({ state: "needs_setup", label: "Needs a mobile number" });
+    expect(s.textBack).toMatchObject({ state: "needs_setup", label: "Needs a text number" });
     const ok = statusFor(client(), a, { demo: false, smsNumber: "+61412000999", publicUrl: "", applied: true });
     expect(ok.textBack).toMatchObject({ state: "on", label: "On · from 0412000999" });
   });

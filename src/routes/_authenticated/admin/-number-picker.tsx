@@ -9,7 +9,7 @@ import { attachOwnedNumber, getOwnedNumbers, importNumberFor } from "@/lib/api/c
 import { twilioAccountQuery, twilioApi } from "@/lib/api/twilio";
 import { ImportNumber } from "./-import-number";
 import { fmtPhone } from "@/lib/app/format";
-import { NumberCaps, ownedCanText } from "./-number-caps";
+import { NumberCaps, telnyxCanText } from "./-number-caps";
 
 /**
  * Add a number to a receptionist: pick one the agency already has, or (when there's none to pick)
@@ -45,7 +45,7 @@ export function NumberPicker({ clientId, onChanged }: { clientId: string; onChan
         <SelectContent>
           {choices.map((n) => (
             <SelectItem key={n.id} value={n.id}>
-              <span className="flex items-center gap-2"><Phone className="h-3.5 w-3.5" /> {fmtPhone(n.phoneNumber)} <NumberCaps sms={ownedCanText(n.type)} /></span>
+              <span className="flex items-center gap-2"><Phone className="h-3.5 w-3.5" /> {fmtPhone(n.phoneNumber)} <NumberCaps sms={telnyxCanText(n.phoneNumber)} /></span>
             </SelectItem>
           ))}
         </SelectContent>

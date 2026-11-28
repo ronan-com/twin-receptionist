@@ -17,6 +17,9 @@ import { numberSourceLabel } from "../voice/engines";
 import { voiceFor } from "../voice";
 import { json, readBody, type RouteArgs } from "./http";
 import { manageDeps } from "./manage";
+import { textCapability } from "../numberCaps";
+import { textsSummary } from "../textsControl";
+import type { TextsStatus } from "../../src/lib/shared";
 
 // Area C (console): the /admin screens. Paths: /api/console/...
 //  - The platform admin (not viewing as anyone) sees every agency and business.
@@ -161,7 +164,11 @@ function agentRow(c: ClientRow) {
   };
 }
 
-function numberRows(c: ClientRow) {
+/** Which numbers in these rows can really text (server/numberCaps.ts). */
+type CanText = (orgId: string, number: string) => boolean;
+const canTextIn = (rows: ClientRow[]): Promise<CanText> => textCapability(rows.map((c) => ({ orgId: c.org_id, client: c.data })));
+
+function numberRows(c: ClientRow, canText: CanText) {
   return (c.data.phoneNumbers ?? []).map((e164) => ({
     id: e164,
     e164,
@@ -171,7 +178,7 @@ function numberRows(c: ClientRow) {
     agent: { id: c.id, name: c.data.settings?.receptionistName || "Receptionist" },
     status: "active",
     routing_mode: "ai_receptionist",
-    capabilities: { voice: true, sms: e164.startsWith("+614") },
+    capabilities: { voice: true, sms: canText(c.org_id, e164) },
     country: countryOfNumber(e164) ?? "AU",
     provider: providerOfClient(c.data),
     health: "healthy",
@@ -647,7 +654,7 @@ async function businessDetail(ctx: Ctx, id: string) {
   return {
     business: businessRow(c),
     agents: [agentRow(c)],
-    numbers: numberRows(c),
+    numbers: numberRows(c, await canTextIn([c])),
     number_requests: numberRequests.map((r: any) => ({
       id: r.id,
       type: r.kind,
@@ -691,7 +698,8 @@ async function businessDetail(ctx: Ctx, id: string) {
 async function numbers(ctx: Ctx) {
   const scope = scopeOf(ctx);
   const rows = await clientsInScope(scope);
-  return rows.flatMap(numberRows);
+  const canText = await canTextIn(rows);
+  return rows.flatMap((c) => numberRows(c, canText));
 }
 
 async function numberRequests(ctx: Ctx) {
@@ -931,7 +939,22 @@ export async function oneCompany(ctx: Ctx, id: string): Promise<CompanyRow> {
   return m;
 }
 
-type Automation = { key: "voice" | "sms" | "email" | "booking" | "crm"; label: string; status: "live" | "off" | "paused" | "attention"; detail: string };
+// state: the word on the row's chip ("Not set up" apart from switched "Off").
+type Automation = { key: "voice" | "sms" | "email" | "booking" | "crm"; label: string; status: "live" | "off" | "paused" | "attention"; state: string; detail: string };
+const STATE_WORD: Record<Automation["status"], string> = { live: "On", off: "Off", paused: "Paused", attention: "Needs attention" };
+const row = (a: Omit<Automation, "state">, setUp = true): Automation => ({ ...a, state: setUp ? STATE_WORD[a.status] : "Not set up" });
+
+/** The texting row, from the same status the Messages tab shows (server/textsControl.ts). */
+function textsRow(t: TextsStatus, paused: boolean): Automation {
+  const number = t.current ? formatNumber(t.current.number) : "";
+  const base = { key: "sms" as const, label: "SMS texting" };
+  if (t.status === "off") return row({ ...base, status: "off", detail: number });
+  // Switched on with no number that could take texts: nothing is set up yet.
+  if (t.status === "cant" && !number) return row({ ...base, status: "off", detail: t.detail }, false);
+  const problem = t.status === "on" ? (t.warning ?? "") : t.detail;
+  const status = paused ? "paused" : problem ? "attention" : "live";
+  return row({ ...base, status, detail: problem || (number ? `Replies to texts on ${number}` : t.detail) });
+}
 
 async function automationsFor(rows: ClientRow[]): Promise<Map<string, Automation[]>> {
   const ids = rows.map((c) => c.id);
@@ -939,11 +962,11 @@ async function automationsFor(rows: ClientRow[]): Promise<Map<string, Automation
   const cals = ids.length ? await sql`select client_id, provider, account, last_error from calendar_links where client_id = any(${pgArr(ids)}::uuid[])` : [];
   const box = new Map(boxes.map((b: any) => [b.client_id, b]));
   const cal = new Map(cals.map((l: any) => [l.client_id, l]));
+  const texts = new Map(await Promise.all(rows.map(async (c) => [c.id, await textsSummary(c.org_id, { ...c.data, id: c.id })] as const)));
   const out = new Map<string, Automation[]>();
   for (const c of rows) {
     const paused = statusOf(c) === "paused";
     const nums = c.data.phoneNumbers ?? [];
-    const mobile = nums.find((n) => n.startsWith("+614"));
     const b = c.data.booking;
     const m: any = box.get(c.id);
     const l: any = cal.get(c.id);
@@ -955,16 +978,16 @@ async function automationsFor(rows: ClientRow[]): Promise<Map<string, Automation
       host = "set";
     }
     out.set(c.id, [
-      { key: "voice", label: "Voice receptionist", status: paused ? "paused" : "live", detail: nums.length ? nums.map(formatNumber).join(", ") : "No number yet (test calls from the browser)" },
-      { key: "sms", label: "SMS texting", status: st(Boolean(mobile)), detail: mobile ? `Replies to texts on ${formatNumber(mobile)}` : "Needs a mobile number" },
-      { key: "email", label: "Email replies", status: st(Boolean(m), Boolean(m?.error)), detail: m ? `${m.address}${m.mode === "draft" ? " · drafts only" : ""}${m.error ? ` · ${m.error}` : ""}` : "Not connected" },
-      {
+      row({ key: "voice", label: "Voice receptionist", status: paused ? "paused" : "live", detail: nums.length ? nums.map(formatNumber).join(", ") : "No number yet (test calls from the browser)" }),
+      textsRow(texts.get(c.id)!, paused),
+      row({ key: "email", label: "Email replies", status: st(Boolean(m), Boolean(m?.error)), detail: m ? `${m.address}${m.mode === "draft" ? " · drafts only" : ""}${m.error ? ` · ${m.error}` : ""}` : "No inbox connected" }, Boolean(m)),
+      row({
         key: "booking",
         label: "Bookings and calendar",
         status: st(Boolean(b?.enabled), Boolean(l?.last_error)),
-        detail: b ? `${l ? `${l.provider === "google" ? "Google" : "Outlook"} calendar (${l.account})` : b.provider === "builtin" || !b.provider ? "Built-in calendar" : `${b.provider} calendar`}${b.enabled ? "" : " · switched off"}${l?.last_error ? ` · ${l.last_error}` : ""}` : "Takes messages only",
-      },
-      { key: "crm", label: "CRM webhook", status: st(Boolean(b?.leadWebhook)), detail: host ? `Leads sent to ${host}` : "Not set up" },
+        detail: b ? `${l ? `${l.provider === "google" ? "Google" : "Outlook"} calendar (${l.account})` : b.provider === "builtin" || !b.provider ? "Built-in calendar" : `${b.provider} calendar`}${l?.last_error ? ` · ${l.last_error}` : ""}` : "Takes messages only",
+      }, Boolean(b)),
+      row({ key: "crm", label: "CRM webhook", status: st(Boolean(b?.leadWebhook)), detail: host ? `Leads sent to ${host}` : "No webhook added" }, Boolean(b?.leadWebhook)),
     ]);
   }
   return out;
@@ -1056,6 +1079,7 @@ async function companyDetail(ctx: Ctx, id: string) {
   const ids = rows.map((c) => c.id);
   const byId = indexed(rows);
   const autos = await automationsFor(rows);
+  const canText = await canTextIn(rows);
   const none = ids.length === 0;
   const calls = none ? [] : await sql`select * from call_log where client_id = any(${pgArr(ids)}::uuid[]) and channel <> 'web' order by started_at desc limit 25`;
   const requests = none ? [] : await sql`select id, client_id, data, created_at from booking_requests where client_id = any(${pgArr(ids)}::uuid[]) order by id desc limit 25`;
@@ -1093,7 +1117,7 @@ async function companyDetail(ctx: Ctx, id: string) {
         business_name: s.businessName ?? "",
         paused_at: c.paused_at ? iso(c.paused_at) : null,
         onboarding_pending: onboardingPending(c.data),
-        numbers: numberRows(c),
+        numbers: numberRows(c, canText),
         automations: autos.get(c.id) ?? [],
         number_requests: numberRequests
           .filter((r: any) => r.client_id === c.id)

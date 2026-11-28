@@ -164,6 +164,8 @@ export type Business = {
   settings: Settings;
   instructions: string;
   booking?: BookingSetup;
+  // The private "see bookings in your own calendar" address (server/calendarFeed.ts): its token, sealed.
+  calendarFeed?: { secret: string; off?: boolean };
   // The private link the business uses to connect its own mailbox.
   connect?: { tokenHash: string; expiresAt: string; createdAt: string };
   // Numbers Telnyx reports as connected, refreshed whenever the phone number card loads.
@@ -177,6 +179,9 @@ export type Business = {
   textingProfileId?: string;
   // The owner's Texts switch. Missing: on for what's already set up; "on" once texting was set up with a number (or switched on); "off" stops texts both ways.
   textsPref?: "on" | "off";
+  // The one number picked for this receptionist's texts (server/textsControl.ts chooseTextNumber), whatever its
+  // voice engine. Missing: automatic, its own numbers that can text.
+  textNumber?: TextNumber;
   // The voice engine this receptionist's assistant lives on. Missing means Telnyx (every
   // receptionist made before Vapi was added). Set when it is made (the agency's choice, or the
   // wizard's Voice engine pick), and changed by "Move to Telnyx/Vapi".
@@ -331,7 +336,41 @@ export type NumberOrder = {
 export type TextingState = { enabled: boolean; numbers: string[]; waiting: string[]; cantText?: string[] };
 
 /** The Texts switch: on (answering), off, waiting (number still being approved), cant (no number that can text), failed (switched on but not connected: try again). */
-export type TextsStatus = TextingState & { on: boolean; status: "on" | "off" | "waiting" | "cant" | "failed"; detail: string };
+export type TextsStatus = TextingState & {
+  on: boolean;
+  status: "on" | "off" | "waiting" | "cant" | "failed";
+  detail: string;
+  /** The number texts go to (picked, or the one used automatically). */
+  current?: TextNumber | null;
+  /** The last text that didn't send, in the carrier's words. */
+  warning?: string;
+};
+
+/** Who carries the texts of a number. */
+export type TextCarrier = "telnyx" | "twilio";
+export type TextNumber = { number: string; via: TextCarrier };
+/** A number that can be picked for texts. usedBy: the other receptionist already answering texts on it ("" if free). */
+export type TextChoice = TextNumber & { usedBy: string };
+
+type NumberUser = { id: string; name: string } | null;
+/** One number the agency has, for the Numbers page. */
+export type AgencyNumber = {
+  number: string;
+  provider: "telnyx" | "twilio" | "vapi";
+  /** What it can do. */
+  calls: boolean;
+  sms: boolean;
+  /** The receptionist answering each. */
+  callsBy: NumberUser;
+  textsBy: NumberUser;
+  /** Still being approved by the carrier. */
+  pending: boolean;
+  /** An unassigned number on the agency's Telnyx account: its id there, and what else it's connected to. */
+  ownedId: string;
+  connectedTo: string;
+};
+
+export const US_TEXT_NOTE = "Texts to US phones need US carrier registration (10DLC). Other countries, including Australia, work if enabled in Twilio's messaging geo permissions.";
 
 // What the voice engine can do about phone numbers, so the screens say it honestly.
 // Telnyx: search, buy and attach. Vapi: it only sells free US numbers, so for an

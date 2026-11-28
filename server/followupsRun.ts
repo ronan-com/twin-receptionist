@@ -75,7 +75,7 @@ async function dispatch(client: Business, o: Out): Promise<string> {
       if (!o.to) return o.channel === "sms" ? "No mobile number" : "No email address";
       if (o.channel === "sms") {
         from = (await smsNumberOf(client)) ?? null;
-        if (!from) return "No mobile number for texts";
+        if (!from) return "No text number";
         if (await isOptedOut(client.id, o.to)) return "Texted STOP";
         // Last check, in case the server was down through the morning.
         if (isQuietHour(Date.now(), client.settings.timezone)) return "Quiet hours";
@@ -357,7 +357,7 @@ export async function sendTest(
   if (!to) throw new ValidationError("Enter your own Australian mobile number, like 0412 345 678.");
   if (isDemo(client.assistantId)) throw new ValidationError("Demo receptionists don't send texts. Try the email test, or use a connected receptionist.");
   const from = await smsNumberOf(client);
-  if (!from) throw new ValidationError("This receptionist needs a mobile number that can send texts first. Request one under Call handling.");
+  if (!from) throw new ValidationError("This receptionist needs a text number first. Choose one on the Messages tab.");
   await sendSms(client, { from, to, text: `[Test] ${msg.text}`, meta: { twin_followup: "test" } });
   return { sentTo: to };
 }

@@ -1,7 +1,7 @@
 import { backupsRoute, startBackups } from "./backup";
 import { countryForTimezone, defaultHours, typeOfNumber, type Business, type IndustryKey, type NumberState, type Settings, type Voice } from "../src/lib/shared";
 import { existsSync, readFileSync, statSync } from "node:fs";
-import { join, normalize } from "node:path";
+import { join, normalize, sep } from "node:path";
 import {
   AuthError,
   acceptInvite,
@@ -70,6 +70,7 @@ import { pipedreamConsoleRoutes } from "./routes/apps";
 import type { ClientAccess, RouteArgs } from "./routes/http";
 import { withinSeconds } from "./timeout";
 import { sourceDownloadRoute } from "./sourceDownload";
+import { domainLinkRoute } from "./domainLink";
 import { changeBrand, installLook, ownBrand, serveAsset, uploadAsset } from "./brand";
 import { accessibleClients, customerClientId, setFollowUpStage, customersFor, inviteCustomer, removeCustomer, revokeCustomerInvite } from "./customers";
 import { createRequest, declineRequest, listRequests, markDone, pendingCount, pendingRequest, requestsForClient, settleRequests } from "./numberRequests";
@@ -104,13 +105,15 @@ import {
 import { CalendarError, calendarLink, disconnectCalendar, providerOf, upcomingEvents } from "./calendars";
 import { mailerReady, startOutbox } from "./mailer";
 import { checkEmailAddress, checkWebhookUrl, webhookSecret } from "./notify";
-import { oauthAvailable } from "./oauth";
+import { calendarSignInAvailable } from "./oauth";
+import { serveFeed } from "./calendarFeed";
 import { refresh as loadPlatformSettings } from "./platformSettings";
 import { platformSettingsRoutes } from "./platformSettingsApi";
 import { emailSettingsRoutes } from "./emailSettings";
 import type { BookingProvider, BookingState } from "../src/lib/shared";
 import { connectNumberForTexts, enableTexting, sendTestText, textingState } from "./texting";
-import { setTexts, splitNumbers, textsAfterBuy, textsStatus } from "./textsControl";
+import { chooseTextNumber, releaseTextNumber, repointTwilioTexts, setTexts, splitNumbers, textsAfterBuy, textsStatus } from "./textsControl";
+import { agencyNumbers, textChoicesFrom, type NumberAccess } from "./numberList";
 import { recordNumbers, startNumberSync } from "./numberSync";
 import { BOOKING_TOOL_DEFS } from "./booking";
 import { VapiError, asProvider, connectedEngines, installProvider, ownKeyInstall, providerOfClient, providerOfOrg } from "./voice/config";
@@ -179,6 +182,7 @@ async function syncAll(): Promise<void> {
     const orgId = await orgOfClient(c.id);
     await runAsOrg(orgId, () => syncAssistant(c)).catch((err) => console.error(`[booking ${c.id}] sync failed:`, err.message));
   }
+  await repointTwilioTexts();
 }
 
 async function bookingState(client: Business): Promise<BookingState> {
@@ -188,7 +192,7 @@ async function bookingState(client: Business): Promise<BookingState> {
   return {
     setup: setup ? { ...visible, provider } : null,
     calendar: provider && provider !== "builtin" ? await calendarLink(client.id) : null,
-    signIn: oauthAvailable(),
+    signIn: await calendarSignInAvailable(),
     emailReady: mailerReady(),
     webhookSecret: setup?.leadWebhook ? webhookSecret(token) : "",
     publicUrl: publicUrl(),
@@ -203,26 +207,38 @@ const PROVIDERS: BookingProvider[] = ["builtin", "google", "microsoft"];
 
 const nearestMinutes = (n: number) => MINUTES.reduce((a, b) => (Math.abs(b - n) < Math.abs(a - n) ? b : a));
 
+// An explicit length wins; otherwise the profile's default appointment length (snapped to
+// the lengths the calendar offers), otherwise 30. Open times are the business's opening hours.
+function bookingDefaults(settings: Settings, minutes?: unknown) {
+  const fromProfile = settings.profile?.appointmentMinutes;
+  return {
+    provider: "builtin" as BookingProvider,
+    token: newToken(),
+    minutes: MINUTES.includes(Number(minutes)) ? Number(minutes) : fromProfile ? nearestMinutes(fromProfile) : 30,
+    enabled: true,
+    notifyEmail: "",
+    leadWebhook: "",
+    createdAt: new Date().toISOString(),
+  };
+}
+
 async function setUpBooking(client: Business, input: any) {
-  if (client.booking) throw new ValidationError("This receptionist already has a calendar. Remove it first to switch.");
   const provider: BookingProvider = PROVIDERS.includes(input?.provider) ? input.provider : "builtin";
-  if (provider !== "builtin" && !oauthAvailable()[provider]) {
-    throw new ValidationError(`${provider === "google" ? "Google" : "Outlook"} Calendar isn't set up on this server yet.`);
+  if (client.booking) {
+    // The built-in calendar is already there (it is on from the start): switch it on and take what was asked for.
+    if (provider === "builtin" && providerOf(client) === "builtin") return changeBooking(client, { ...input, enabled: true });
+    throw new ValidationError("This receptionist already has a calendar. Remove it first to switch.");
   }
-  // An explicit length wins; otherwise the profile's default appointment length (snapped to
-  // the lengths the calendar offers), otherwise 30.
-  const fromProfile = client.settings.profile?.appointmentMinutes;
-  const minutes = MINUTES.includes(Number(input?.minutes)) ? Number(input.minutes) : fromProfile ? nearestMinutes(fromProfile) : 30;
+  if (provider !== "builtin" && !(await calendarSignInAvailable())[provider]) {
+    throw new ValidationError(`${provider === "google" ? "Google" : "Outlook"} Calendar isn't switched on yet. Ask your account owner to switch this on.`);
+  }
   const next: Business = {
     ...client,
     booking: {
+      ...bookingDefaults(client.settings, input?.minutes),
       provider,
-      token: newToken(),
-      minutes,
-      enabled: true,
       notifyEmail: checkEmailAddress(input?.notifyEmail),
       leadWebhook: await checkWebhookUrl(input?.leadWebhook),
-      createdAt: new Date().toISOString(),
     },
   };
   await saveClient(next);
@@ -336,9 +352,9 @@ async function createClient(orgId: string, input: unknown, opts: { quick?: boole
   if (fakeProvider()) {
     const now = new Date().toISOString();
     const id = crypto.randomUUID();
-    const demo: Business = { id, assistantId: `demo-${id}`, settings, instructions, ...(provider.id === "vapi" ? { voiceProvider: "vapi" as const } : {}), createdAt: now, updatedAt: now };
+    const demo: Business = { id, assistantId: `demo-${id}`, settings, instructions, booking: bookingDefaults(settings), ...(provider.id === "vapi" ? { voiceProvider: "vapi" as const } : {}), createdAt: now, updatedAt: now };
     await insertClient(orgId, demo);
-    return demo;
+    return syncAssistant(demo);
   }
   const id = crypto.randomUUID();
   const assistantId = await provider.createAssistant(settings, instructions, id);
@@ -349,12 +365,18 @@ async function createClient(orgId: string, input: unknown, opts: { quick?: boole
     assistantId,
     settings,
     instructions,
+    // Bookings work from the start, into the built-in calendar: nothing to set up.
+    booking: bookingDefaults(settings),
     ...(provider.id === "vapi" ? { voiceProvider: "vapi" as const } : {}),
     createdAt: now,
     updatedAt: now,
   };
   await insertClient(orgId, client);
-  return client;
+  // The script and tools for booking. The receptionist exists either way; a failure here is put right by the next save or restart.
+  return runAsOrg(orgId, () => syncAssistant(client)).catch((err) => {
+    console.error(`[booking ${client.id}] couldn't add booking to the new receptionist:`, (err as Error).message);
+    return client;
+  });
 }
 
 async function updateClient(existing: Business, input: unknown): Promise<Business> {
@@ -391,7 +413,10 @@ async function moveEngine(ctx: Ctx, orgId: string, client: Business, to: VoicePr
   const instructions = await instructionsFor(client, settings);
 
   const assistantId = demo ? client.assistantId : await target.createAssistant(settings, instructions, client.id);
-  const { voiceProvider: _old, numberSources: _src, ...rest } = client;
+  // The messaging profile goes with the old Telnyx assistant, unless it carries a picked Telnyx text number.
+  const keepsProfile = client.textNumber?.via === "telnyx";
+  const { voiceProvider: _old, numberSources: _src, textingProfileId: profileId, ...kept } = client;
+  const rest = { ...kept, ...(profileId && (keepsProfile || from === "vapi") ? { textingProfileId: profileId } : {}) };
   const moved: Business = { ...rest, assistantId, settings, instructions, phoneNumbers: [], ...(to === "vapi" ? { voiceProvider: "vapi" as const } : {}), updatedAt: new Date().toISOString() };
   if (!demo) {
     try {
@@ -400,7 +425,7 @@ async function moveEngine(ctx: Ctx, orgId: string, client: Business, to: VoicePr
       await target.syncAssistant(moved, instructions, allowed);
       await target.applyAutomations(moved);
     } catch (err) {
-      await target.deleteAssistant(moved).catch(() => {});
+      await target.deleteAssistant({ ...moved, textingProfileId: undefined }).catch(() => {});
       throw err;
     }
   }
@@ -415,7 +440,7 @@ async function moveEngine(ctx: Ctx, orgId: string, client: Business, to: VoicePr
       console.error(`[move ${client.id}] couldn't take numbers off the old assistant:`, (err as Error).message);
       return client.phoneNumbers ?? [];
     });
-    await old.deleteAssistant(client).catch((err) => console.error(`[move ${client.id}] couldn't delete the old assistant:`, (err as Error).message));
+    await old.deleteAssistant(keepsProfile ? { ...client, textingProfileId: undefined } : client).catch((err) => console.error(`[move ${client.id}] couldn't delete the old assistant:`, (err as Error).message));
   }
   await audit(ctx, "receptionist.move_engine", { from, to, voice: settings.voiceName, numbers: detached.join(", ") }, { clientId: client.id });
   return { client: moved, detached };
@@ -423,8 +448,15 @@ async function moveEngine(ctx: Ctx, orgId: string, client: Business, to: VoicePr
 
 /** The live and still-pending numbers of a receptionist, for the Texts switch. */
 async function engineNumbers(ctx: Ctx, client: Business) {
-  const { numbers, pending } = await numberState(ctx, client);
-  return splitNumbers({ numbers, pending });
+  try {
+    const { numbers, pending } = await numberState(ctx, client);
+    return splitNumbers({ numbers, pending });
+  } catch (err) {
+    // The voice engine can't be asked (say, its assistant is gone): texts go by the numbers saved here.
+    console.log(`[texting ${client.id}] using the saved numbers:`, (err as Error).message);
+    const pending = client.pendingNumbers ?? [];
+    return { active: (client.phoneNumbers ?? []).filter((n) => !pending.includes(n)), pending };
+  }
 }
 
 async function numberState(ctx: Ctx, client: Business): Promise<NumberState> {
@@ -462,6 +494,19 @@ async function twilioNumbers(ctx: Ctx, orgId: string) {
   return { numbers, regulatory: { approved: reg.approved, inReview: reg.inReview, consoleUrl: reg.consoleUrl }, test: isTestTwilio(creds) };
 }
 
+// Every number the agency has: receptionists' own, plus what its Telnyx and Twilio accounts hold (for who may see those).
+async function allNumbers(ctx: Ctx, orgId: string) {
+  const access: NumberAccess = { twilio: await canUseTwilio(ctx), telnyx: await canUseOwnNumbers(ctx), pretendTelnyx: await pretendAccount(orgId) };
+  return agencyNumbers(orgId, await listClients(orgId), access);
+}
+
+// The numbers this receptionist can answer texts on.
+async function textChoices(ctx: Ctx, orgId: string, client: Business) {
+  requireRole(ctx, "admin");
+  const { numbers, problems } = await allNumbers(ctx, orgId);
+  return { choices: textChoicesFrom(client, numbers), problems };
+}
+
 // Connects or releases a number the agency already owns, then refreshes the receptionist's
 // script and tools (the transfer and greeting lines mention its number).
 async function changeOwnNumber(ctx: Ctx, orgId: string, client: Business, action: "attach" | "detach", input: any) {
@@ -480,6 +525,12 @@ async function changeOwnNumber(ctx: Ctx, orgId: string, client: Business, action
   } else if (action === "attach") {
     const res = await attachNumber(await listClients(orgId), client, input);
     movedFrom = res.movedFrom;
+    // An old Telnyx receptionist still listing this number (its assistant is gone) lets it go.
+    for (const c of await listClients(orgId)) {
+      if (c.id !== client.id && providerOfClient(c) === "telnyx" && c.phoneNumbers?.includes(res.number.phoneNumber)) {
+        await saveClient({ ...c, phoneNumbers: c.phoneNumbers.filter((n) => n !== res.number.phoneNumber) });
+      }
+    }
     await audit(ctx, "number.attach", { number: res.number.phoneNumber, movedFrom }, { clientId: client.id });
   } else {
     const num = await detachNumber(client, input);
@@ -529,7 +580,7 @@ function page(path: string): Response {
   }
   const wanted = normalize(join(DIST, path));
   // normalize() resolves any "../", so anything outside dist is refused here.
-  const inside = wanted.startsWith(DIST + "/") && existsSync(wanted) && statSync(wanted).isFile();
+  const inside = wanted.startsWith(DIST + sep) && existsSync(wanted) && statSync(wanted).isFile();
   const hashed = inside && path.startsWith("/assets/");
   const index = join(DIST, "index.html");
   const file = inside ? wanted : index;
@@ -614,6 +665,10 @@ async function route(req: Request, server?: { requestIP(r: Request): { address: 
   if (path.startsWith("/hooks/automations/")) return (await automationHooks(req, path)) ?? json({ error: "Not found" }, 404);
   // The website chat widget's public API (CORS-limited to the business's own websites).
   if (path.startsWith("/api/webchat/")) return (await webchatPublic(req, path, undefined, server)) ?? json({ error: "Not found" }, 404);
+
+  // A business's bookings in its own calendar app (server/calendarFeed.ts): the long token in the address is the key.
+  const feed = path.match(/^\/api\/calendar-feed\/([a-f0-9-]{36})\/([A-Za-z0-9_-]{32})\.ics$/);
+  if (feed && (method === "GET" || method === "HEAD")) return serveFeed(feed[1], feed[2]);
 
   // Logos and backgrounds: public by random id.
   const brandAsset = path.match(/^\/brand\/([a-f0-9-]{36})$/);
@@ -723,6 +778,8 @@ async function route(req: Request, server?: { requestIP(r: Request): { address: 
   if (path === "/api/updates/settings" || path === "/api/updates/check") return updatesRoute(req, method, path, ctx);
   // Settings, "Your source code": a link to the full source of the version this agency runs (server/sourceDownload.ts).
   if (path === "/api/source-download") return sourceDownloadRoute(method, ctx);
+  // Settings, "Web address": a short-lived way to the domain form on the owner's setup link (server/domainLink.ts).
+  if (path === "/api/domain-link") return domainLinkRoute(method, ctx);
   // Settings, "Backups": the daily backup, the off-site copy and how long transcripts are kept (server/backup.ts).
   if (path === "/api/backups" || path.startsWith("/api/backups/")) return backupsRoute(req, method, path, ctx);
 
@@ -1158,6 +1215,9 @@ async function route(req: Request, server?: { requestIP(r: Request): { address: 
   // Numbers the agency already owns on its Telnyx account (not answering for any receptionist yet).
   if (path === "/api/numbers/owned" && method === "GET") return json({ numbers: await ownedNumbers(ctx, orgId) });
 
+  // Every number the agency has, with who answers its calls and texts (the Numbers page).
+  if (path === "/api/numbers/all" && method === "GET") return json(await allNumbers(ctx, orgId));
+
   // Twilio: the agency's connected account (optional). Its numbers, and numbers it can buy there.
   if (path === "/api/numbers/twilio" && method === "GET") return json(await twilioNumbers(ctx, orgId));
   if (path === "/api/numbers/twilio/available" && method === "GET") {
@@ -1197,7 +1257,7 @@ async function route(req: Request, server?: { requestIP(r: Request): { address: 
   }
 
   const match = path.match(
-    /^\/api\/clients\/([a-f0-9-]{36})(\/calls(?:\/([^/]+)\/messages)?|\/numbers|\/numbers\/(?:owned|attach|detach)|\/number-requests|\/email|\/email\/check|\/texting|\/texting\/numbers|\/texting\/test|\/simulator\/texts|\/simulator\/texts\/send|\/simulator\/email|\/booking|\/booking\/test|\/booking\/events\/[a-f0-9-]{36}|\/calendar|\/calendar\/signin\/(?:google|microsoft)|\/connect-link|\/engine|\/voice-settings)?$/,
+    /^\/api\/clients\/([a-f0-9-]{36})(\/calls(?:\/([^/]+)\/messages)?|\/numbers|\/numbers\/(?:owned|attach|detach)|\/number-requests|\/email|\/email\/check|\/texting|\/texting\/choices|\/texting\/number|\/texting\/numbers|\/texting\/test|\/simulator\/texts|\/simulator\/texts\/send|\/simulator\/email|\/booking|\/booking\/test|\/booking\/events\/[a-f0-9-]{36}|\/calendar|\/calendar\/signin\/(?:google|microsoft)|\/connect-link|\/engine|\/voice-settings)?$/,
   );
   if (match) {
     // Another organisation's receptionist looks exactly like one that doesn't exist.
@@ -1209,6 +1269,7 @@ async function route(req: Request, server?: { requestIP(r: Request): { address: 
       if (method === "PUT") return json({ client: noMcpSecret(await updateClient(client, await req.json())) });
       if (method === "DELETE") {
         requireRole(ctx, "admin");
+        await releaseTextNumber(client);
         if (!isDemo(client.assistantId)) await voiceFor(client).deleteAssistant(client);
         // Its mailbox, calendar, appointments and request log go with it (foreign keys cascade).
         await removeClient(client.id);
@@ -1240,6 +1301,18 @@ async function route(req: Request, server?: { requestIP(r: Request): { address: 
         if (providerOfClient(client) === "vapi") throw new ValidationError("Telnyx texting isn't used with Vapi. Follow-up texts go out from a Twilio number instead.");
         await enableTexting(client);
         return json(await textingState(client));
+      }
+    } else if (match[2] === "/texting/choices") {
+      if (method === "GET") return json(await textChoices(ctx, orgId, client));
+    } else if (match[2] === "/texting/number") {
+      // Picks the number this receptionist answers texts on (any voice engine). Calls are not touched.
+      if (method === "PUT") {
+        const input = await body(req);
+        const { choices } = await textChoices(ctx, orgId, client);
+        const nums = await engineNumbers(ctx, client);
+        const saved = await chooseTextNumber((await getClient(client.id)) ?? client, input, choices, nums);
+        await audit(ctx, "texts.number", { number: saved.textNumber?.number ?? "" }, { clientId: client.id });
+        return json(await textsStatus(saved, nums));
       }
     } else if (match[2] === "/texting/numbers") {
       if (providerOfClient(client) === "vapi") throw new ValidationError("Telnyx texting isn't used with Vapi. Follow-up texts go out from a Twilio number instead.");

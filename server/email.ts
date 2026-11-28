@@ -11,6 +11,7 @@ import { seal, unseal } from "./secrets";
 import { accessToken, mailServers, type OAuthProvider, type SignInResult } from "./oauth";
 import { ValidationError } from "./prompt";
 import { chatCompletion } from "./llm";
+import { verifyGmailSend, sendGmail } from "./gmailSend";
 
 // The receptionist works inside the business's own mailbox: it reads new mail over
 // IMAP and either saves a suggested reply to their Drafts folder ("draft", the
@@ -167,6 +168,17 @@ function smtp(box: Pick<Mailbox, "smtpHost" | "smtpPort" | "username">, creds: C
   });
 }
 
+async function verifyOutgoing(box: Mailbox, creds: Creds): Promise<void> {
+  if (box.auth === "google" && "accessToken" in creds) await verifyGmailSend(creds.accessToken, box.address);
+  else await smtp(box, creds).verify();
+}
+
+function outgoingProblem(err: unknown): string {
+  const e = err as { code?: string; message?: string };
+  if (/ETIMEDOUT|ECONNREFUSED|timeout|connection refused/i.test((e.code || "") + " " + (e.message || ""))) return "The outgoing mail server could not be reached. Railway Hobby blocks SMTP; use drafts, an authorised Gmail sign-in with Gmail API enabled, or a hosting plan that supports SMTP.";
+  return (e.message || "Outgoing mail could not be checked.").slice(0, 300);
+}
+
 function open(box: Pick<Mailbox, "host" | "port" | "username">, creds: Creds): ImapFlow {
   return new ImapFlow({
     host: box.host,
@@ -178,10 +190,17 @@ function open(box: Pick<Mailbox, "host" | "port" | "username">, creds: Creds): I
   });
 }
 
-function loginProblem(err: unknown, host: string): string {
+// Why the mailbox wouldn't open, in words that say what to fix. signedIn: connected with Google/Microsoft, so no password.
+export function loginProblem(err: unknown, host: string, signedIn = false): string {
   const e = err as { authenticationFailed?: boolean; code?: string; responseText?: string; message?: string };
+  if (/imap[^.]{0,60}(disabled|not enabled|turned off|not allowed)|not enabled for imap/i.test(`${e.responseText ?? ""} ${e.message ?? ""}`)) {
+    return "IMAP is switched off for this mailbox. Turn IMAP on in the email account's settings (or ask whoever runs your email), then try again.";
+  }
   if (e.authenticationFailed) {
-    return "The email provider rejected that address and password. Gmail and Outlook need an app password here, not the normal login password.";
+    if (signedIn) return "The sign-in to this mailbox stopped working. Disconnect it and connect again.";
+    if (host === "imap.gmail.com") return "Wrong app password. Paste the 16-letter app password from Google, not your normal password (2-Step Verification must be on).";
+    if (host === "outlook.office365.com") return "Outlook doesn't let apps in with a password. Choose Outlook and use Sign in with Microsoft.";
+    return "Wrong email address or app password. Make a new app password in your email account and paste it here.";
   }
   if (e.code === "ENOTFOUND" || e.code === "ECONNREFUSED" || e.code === "ETIMEDOUT") {
     return `Couldn't reach the mail server ${host}. Check the server name under "Server settings".`;
@@ -248,7 +267,7 @@ export async function connectEmail(clientId: string, input: unknown, publicOnly 
       await smtp({ smtpHost, smtpPort, username }, { pass: password }).verify();
     } catch (err) {
       throw new ValidationError(
-        `Reading mail works, but sending from ${smtpHost} didn't: ${(err as Error).message}. Choose "Save as drafts" or check the outgoing server settings.`,
+        `Reading mail works, but sending from ${smtpHost} didn't: ${outgoingProblem(err)}. Choose "Save as drafts" or check the outgoing server settings.`,
       );
     }
   }
@@ -281,9 +300,7 @@ export async function connectEmail(clientId: string, input: unknown, publicOnly 
 export async function setEmailMode(
   clientId: string,
   input: unknown,
-  verify: (box: Mailbox, creds: Creds) => Promise<void> = async (box, creds) => {
-    await smtp(box, creds).verify();
-  },
+  verify: (box: Mailbox, creds: Creds) => Promise<void> = verifyOutgoing,
 ): Promise<EmailStatus> {
   const mode: EmailMode | null = (input as { mode?: unknown } | null)?.mode === "send" ? "send" : (input as { mode?: unknown } | null)?.mode === "draft" ? "draft" : null;
   if (!mode) throw new ValidationError("Choose drafts or send automatically.");
@@ -294,7 +311,7 @@ export async function setEmailMode(
       try {
         await verify(box, await credentialsFor(clientId, box));
       } catch (err) {
-        throw new ValidationError(`Sending from ${box.smtpHost} didn't work: ${(err as Error).message}. Keep replies as drafts, or check the outgoing server settings.`);
+        throw new ValidationError(`Sending from ${box.smtpHost} didn't work: ${outgoingProblem(err)}. Keep replies as drafts, or check the outgoing server settings.`);
       }
     }
     // Only the mode changes: the connect time stays, so mail already in the inbox is still never looked at.
@@ -338,6 +355,9 @@ export async function connectOAuth(clientId: string, result: SignInResult): Prom
     );
   } finally {
     await imap.logout().catch(() => {});
+  }
+  if (box.mode === "send") {
+    try { await verifyOutgoing(box, creds); } catch (err) { throw new ValidationError("Mailbox connected but automatic sending is unavailable: " + outgoingProblem(err) + " Choose drafts or fix the outgoing connection."); }
   }
   await saveBox(clientId, box);
   return emailStatus(clientId);
@@ -552,7 +572,8 @@ export async function checkEmail(client: Business): Promise<EmailStatus> {
             if (box.mode === "send" && !blocked && to) {
               try {
                 const raw = await buildDraft(client, box, mail, decision.body, true);
-                await smtp(box, creds).sendMail({ envelope: { from: box.address, to }, raw });
+                if (box.auth === "google" && "accessToken" in creds) await sendGmail(creds.accessToken, raw);
+                else await smtp(box, creds).sendMail({ envelope: { from: box.address, to }, raw });
                 sent = true;
                 box.sentLog.push({ to, at: new Date().toISOString() });
                 // Gmail files sent mail itself; other providers need a copy put in Sent.
@@ -586,7 +607,7 @@ export async function checkEmail(client: Business): Promise<EmailStatus> {
     box.handled = box.handled.slice(-500);
     box.lastError = "";
   } catch (err) {
-    box.lastError = loginProblem(err, box.host);
+    box.lastError = loginProblem(err, box.host, Boolean(box.auth && box.auth !== "password"));
   } finally {
     await imap.logout().catch(() => {});
     running.delete(client.id);

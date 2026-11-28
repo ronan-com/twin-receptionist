@@ -277,7 +277,7 @@ describe("texts through Twilio", () => {
   test("the screens say what a Vapi receptionist still needs to text", () => {
     const on = { ...defaultAutomations(), textBack: { ...defaultAutomations().textBack, enabled: true, afterCall: true } };
     const none = statusFor(vapiClient, on, { demo: false, smsNumber: null, publicUrl: "https://x", applied: true, engine: "vapi" });
-    expect(none.textBack).toMatchObject({ state: "needs_setup", label: "Needs a Twilio mobile number" });
+    expect(none.textBack).toMatchObject({ state: "needs_setup", label: "Needs a text number" });
     const ok = statusFor(vapiClient, on, { demo: false, smsNumber: "+61480011301", publicUrl: "https://x", applied: true, engine: "vapi" });
     expect(ok.textBack.state).toBe("on");
   });

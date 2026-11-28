@@ -4,9 +4,11 @@ import { answeredBusiness, industryKeyOf, industryLabelOf, membershipRole } from
 import { audit } from "../audit";
 import { changeBrand, isBrandLocked, ownBrand, resolveBrand, uploadAsset } from "../brand";
 import { readCustomerBilling } from "../customerBilling";
-import { availability, bookingLive } from "../booking";
+import { availability, bookingLive, publicUrl } from "../booking";
 import { CalendarError, calendarLink, providerOf } from "../calendars";
-import { dashboardSignInStart, withOutcome } from "../connect";
+import { backToBuiltinCalendar, dashboardMailSignInStart, dashboardSignInStart, withOutcome } from "../connect";
+import { calendarSignInAvailable, mailSignInAvailable, mailboxSignInAllowed } from "../oauth";
+import { feedPath, newFeed, stopFeed } from "../calendarFeed";
 import { iso, sql } from "../db";
 import { checkEmail, connectEmail, disconnectEmail, emailStatus, setEmailMode } from "../email";
 import { recordIncident } from "../incidents";
@@ -22,6 +24,7 @@ import { knowledgeImportRoutes } from "./knowledgeImport";
 import { UI_PRODUCT } from "../product";
 import { providerOfClient } from "../voice/config";
 import { toolAllowed } from "../voice/tools";
+import { textCapability } from "../numberCaps";
 
 // Area S (workspace, manage): receptionist settings, knowledge, call handling,
 // integrations, team and the business profile, for one business.
@@ -213,6 +216,8 @@ async function carrierStatuses(c: Business): Promise<Map<string, string>> {
 
 async function answeredNumbers(c: Business) {
   const carrier = await carrierStatuses(c);
+  const orgId = (await orgOfClient(c.id)) ?? "";
+  const canText = await textCapability([{ orgId, client: c }]);
   const [degraded] = await sql`select 1 from incidents where client_id = ${c.id} and kind = 'call_sync' and status = 'open' limit 1`;
   const agent = { id: c.id, name: c.settings.receptionistName || "Receptionist" };
   const rows: any[] = (c.phoneNumbers ?? []).map((e164) => ({
@@ -225,7 +230,7 @@ async function answeredNumbers(c: Business) {
     agent,
     status: numberIsLive(carrier.get(e164) ?? "") ? "active" : "pending",
     routing_mode: "ai_receptionist",
-    capabilities: { voice: true, sms: e164.startsWith("+614") },
+    capabilities: { voice: true, sms: canText(orgId, e164) },
     country: countryOfNumber(e164) ?? "AU",
     provider: providerOfClient(c),
     health: degraded ? "degraded" : "healthy",
@@ -251,7 +256,8 @@ async function answeredNumbers(c: Business) {
       agent,
       status: "pending",
       routing_mode: "ai_receptionist",
-      capabilities: { voice: true, sms: r.type === "mobile" },
+      // A requested Australian mobile will take texts; US numbers don't through our carrier yet.
+      capabilities: { voice: true, sms: r.type === "mobile" && countryForTimezone(c.settings.timezone) === "AU" },
       country: countryForTimezone(c.settings.timezone),
       provider: providerOfClient(c),
       health: "unknown",
@@ -786,12 +792,32 @@ export async function manageRoutes(args: ClientRouteArgs): Promise<Response | nu
     } else if (method === "DELETE") {
       if (!client.booking) throw new ValidationError("There's no calendar to remove.");
       const was = calendarIntegrationId(client);
-      next = await d.removeBooking(client);
-      await audit(ctx, `integration.${was}.removed`, { summary: "Calendar removed; the receptionist takes messages instead" }, where);
+      // Disconnecting Google/Outlook keeps bookings going (built-in calendar); removing the built-in one stops them.
+      const own = providerOf(client) === "builtin";
+      next = own ? await d.removeBooking(client) : await backToBuiltinCalendar(client);
+      await audit(ctx, `integration.${was}.removed`, { summary: own ? "Calendar removed; the receptionist takes messages instead" : "Calendar disconnected; bookings carry on in the built-in calendar" }, where);
     } else {
       return null;
     }
     return json({ integrations: await answeredIntegrations(next, access) }, method === "POST" ? 201 : 200);
+  }
+  // "See bookings in your own calendar" (server/calendarFeed.ts). Only for people who may change this receptionist:
+  // the address shows every booking to whoever has it. Never handed to someone viewing as the business.
+  if (rest === "/calendar/feed") {
+    if (!canWrite(access) || ctx.viewing) return method === "GET" ? json({ allowed: false, url: "" }) : forbidden();
+    let path: string;
+    if (method === "GET") path = await feedPath(client.id);
+    else if (method === "POST") path = await newFeed(client.id);
+    else if (method === "DELETE") {
+      await stopFeed(client.id);
+      path = "";
+    } else return null;
+    if (method !== "GET") await audit(ctx, "integration.calendar_feed.changed", { summary: path ? "New private calendar link made; the old one stopped working" : "Private calendar link switched off" }, where);
+    return json({ allowed: true, url: path ? `${publicUrl() || args.appUrl.replace(/\/$/, "")}${path}` : "" });
+  }
+  // Which "Connect" buttons will work right now (own Google/Microsoft keys saved, or the shared sign-in).
+  if (rest === "/sign-in" && method === "GET") {
+    return json({ calendar: await calendarSignInAvailable(), mail: await mailSignInAvailable(), mailAllowed: await mailboxSignInAllowed() });
   }
   if (rest === "/calendar/test" && method === "POST") {
     if (!client.booking) throw new ValidationError("Set up a calendar first.");
@@ -814,6 +840,18 @@ export async function manageRoutes(args: ClientRouteArgs): Promise<Response | nu
     if (!canWrite(access) || ctx.viewing) return redirect(withOutcome(back, `error=${encodeURIComponent("Your access to this business is view-only.")}`));
     try {
       return redirect(await dashboardSignInStart(signin[1] as "google" | "microsoft", clientOrgId, client, back));
+    } catch (err) {
+      return redirect(withOutcome(back, `error=${encodeURIComponent((err as Error).message)}`));
+    }
+  }
+  const mailSignin = rest.match(/^\/email\/signin\/(google|microsoft)$/);
+  if (mailSignin && method === "GET") {
+    // A link the browser follows, like the calendar one above.
+    const back = args.url.searchParams.get("return") === "editor" ? `/admin/receptionists/${client.id}?tab=email` : "/app/integrations";
+    const redirect = (to: string) => new Response(null, { status: 302, headers: { Location: to } });
+    if (!canWrite(access) || ctx.viewing) return redirect(withOutcome(back, `error=${encodeURIComponent("Your access to this business is view-only.")}`));
+    try {
+      return redirect(await dashboardMailSignInStart(mailSignin[1] as "google" | "microsoft", clientOrgId, client, args.url.searchParams.get("mode"), back));
     } catch (err) {
       return redirect(withOutcome(back, `error=${encodeURIComponent((err as Error).message)}`));
     }

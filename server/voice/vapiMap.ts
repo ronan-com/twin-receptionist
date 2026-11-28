@@ -212,7 +212,7 @@ export const UNMAPPED = {
   silenceLimit: "Vapi doesn't have a setting for ending a call after silence, so that limit isn't applied.",
   // (Checked Nov 2026: Vapi's voicemailDetection is an assistant-level setting for calls it places; there is no equivalent for a transfer it makes, so none is mapped.)
   voicemail: "Vapi can't detect voicemail on a transfer, so a transfer that reaches voicemail isn't pulled back.",
-  textBack: "Vapi has no texting of its own. Texts go out from a Twilio mobile number that this receptionist answers: connect Twilio under Connections, then add a Twilio mobile number under Call handling.",
+  textBack: "Texts go out from a Twilio number: connect Twilio under Connections, then choose a text number on the Messages tab.",
 };
 
 export function vapiAssistantBody(b: VapiBuild) {

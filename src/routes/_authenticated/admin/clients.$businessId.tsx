@@ -17,10 +17,10 @@ import { AppointmentBadge, CallStatusBadge, DemoBadge, LeadStageBadge, OutcomeBa
 import { Field } from "@/components/app/forms";
 import { DeleteDialog, DeletedDialog, type DeletedReport } from "@/components/app/DeleteDialog";
 import { fmtDate, fmtDuration, fmtNumber, fmtPhone, fmtRelative, fmtSmartDate, humanize } from "@/lib/app/format";
-import { applyVapiVoiceSettings, brandApi, companyApi, getVoiceEngines, moveReceptionistEngine, platformApi, requestNumberFor, resolveIncident, setBusinessStatus, type CompanyDetail, type CompanyReceptionist, type ConsoleCall } from "@/lib/api/console";
+import { applyVapiVoiceSettings, brandApi, companyApi, getVoiceEngines, moveReceptionistEngine, requestNumberFor, resolveIncident, setBusinessStatus, type CompanyDetail, type CompanyReceptionist, type ConsoleCall } from "@/lib/api/console";
 import { describeHours, INDUSTRIES, industry as industryPreset, type IndustryKey } from "@/lib/shared";
 import type { AppointmentStatus, LeadStage } from "@/lib/app/types";
-import { AutomationChips, AutomationIcon, CallSheet, LinkBox, READ_ONLY_HINT, useConsole } from "./-shared";
+import { AutomationChips, AutomationIcon, CallSheet, LinkBox, READ_ONLY_HINT, useConsole, ViewDashboardButton } from "./-shared";
 import { BrandEditor } from "./-brand";
 import { CustomerBilling } from "@/components/app/CustomerBilling";
 import { BuyNumber } from "./-buy-number";
@@ -125,13 +125,6 @@ function ClientDetailPage() {
     onError: (e: Error) => toast.error("Couldn't send the onboarding link", { description: e.message }),
   });
   const resolve = useMutation({ mutationFn: resolveIncident, onSuccess: refresh, onError: (e: Error) => toast.error(e.message) });
-  const viewAs = useMutation({
-    mutationFn: (r: CompanyReceptionist) => platformApi.viewAs(q.data!.company.org_id, r.id),
-    // A fresh page load: the session is now the client's view, so this console page's own
-    // requests (which would be refused) must not run again.
-    onSuccess: () => window.location.assign("/app"),
-    onError: (e: Error) => toast.error(e.message),
-  });
 
   if (q.isPending) return <PageSkeleton metrics={4} rows={6} />;
   if (q.error) return <ErrorState message={(q.error as Error).message} onRetry={() => void q.refetch()} />;
@@ -179,6 +172,7 @@ function ClientDetailPage() {
         actions={
           !readOnly ? (
             <>
+              <ViewDashboardButton orgId={co.org_id} receptionistId={d.receptionists[0]?.id} />
               <NeedsPhone className="h-8 text-[12.5px]" label={<><Plus className="mr-1.5 h-3.5 w-3.5" /> Add receptionist</>}>
               <Button asChild size="sm" className="h-8 text-[12.5px]">
                 <Link to="/admin/receptionists/new" search={{ company: co.id }} data-action="add-receptionist">
@@ -283,7 +277,9 @@ function ClientDetailPage() {
             <ul className="divide-y divide-hairline" data-list="client-receptionists">
               {d.receptionists.map((r) => {
                 const NicheIcon = nicheIcon(r.settings.industry).icon;
-                const texts = r.numbers.some((n) => n.capabilities.sms);
+                // Texts may come to a number that isn't one of its call numbers: the server's SMS line knows.
+                const sms = r.automations.find((a) => a.key === "sms")?.status;
+                const texts = sms === "attention" ? "texts need attention" : sms === "live" || sms === "paused" ? "texts on" : "chat";
                 return (
                   <li key={r.id} className="row-hover flex flex-col gap-2 px-4 py-3 sm:flex-row sm:items-center sm:justify-between" data-receptionist-row={r.id}>
                     <div className="flex min-w-0 items-center gap-3">
@@ -295,7 +291,7 @@ function ClientDetailPage() {
                         </div>
                         <div className="mt-1 flex flex-wrap gap-1.5 text-[11.5px]">
                           <Link to="/admin/receptionists/$receptionistId" params={{ receptionistId: r.id }} search={{ tab: "voice" }} className="inline-flex items-center gap-1 rounded-full bg-[var(--canvas-2)] px-2 py-0.5 text-ink-muted hover:text-ink"><Mic className="h-3 w-3" /> Voice · {r.numbers.length ? "number on" : "no number"}</Link>
-                          <Link to="/admin/receptionists/$receptionistId" params={{ receptionistId: r.id }} search={{ tab: "messages" }} className="inline-flex items-center gap-1 rounded-full bg-[var(--canvas-2)] px-2 py-0.5 text-ink-muted hover:text-ink"><MessageSquareText className="h-3 w-3" /> Messages · {texts ? "texts on" : "chat"}</Link>
+                          <Link to="/admin/receptionists/$receptionistId" params={{ receptionistId: r.id }} search={{ tab: "messages" }} className="inline-flex items-center gap-1 rounded-full bg-[var(--canvas-2)] px-2 py-0.5 text-ink-muted hover:text-ink"><MessageSquareText className="h-3 w-3" /> Messages · {texts}</Link>
                           <Link to="/admin/receptionists/$receptionistId" params={{ receptionistId: r.id }} search={{ tab: "email" }} className="inline-flex items-center gap-1 rounded-full bg-[var(--canvas-2)] px-2 py-0.5 text-ink-muted hover:text-ink"><Mail className="h-3 w-3" /> Email</Link>
                         </div>
                       </div>

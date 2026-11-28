@@ -1,6 +1,6 @@
 import type { ResolvedRange } from "../app/date-range";
 import type { AuditRow, CallListRow, CallOutcome, CallStatus } from "../app/types";
-import type { AdminNumberRequest, Agency, AvailableNumber, Brand, NumberCountry, NumberState, NumberType, Settings, TextsStatus, TeamState, TestLogin, Voice as TwinVoice } from "../shared";
+import type { AdminNumberRequest, Agency, AgencyNumber, TextChoice, AvailableNumber, Brand, NumberCountry, NumberState, NumberType, Settings, TextsStatus, TeamState, TestLogin, Voice as TwinVoice } from "../shared";
 import type { OwnedNumber } from "../ownNumbers";
 import { api, qs } from "./base";
 
@@ -282,7 +282,7 @@ export const getAdminBilling = async () => ({ plans: [] as never[], subscription
 
 export type AutomationKey = "voice" | "sms" | "email" | "booking" | "crm";
 export type AutomationStatus = "live" | "off" | "paused" | "attention";
-export type Automation = { key: AutomationKey; label: string; status: AutomationStatus; detail: string };
+export type Automation = { key: AutomationKey; label: string; status: AutomationStatus; /** The chip's word: On, Off, Not set up, Paused or Needs attention. */ state: string; detail: string };
 
 export type CompanyRef = { id: string; name: string; industry: string; org_id: string; org_name: string; is_demo: boolean; created_at: string };
 
@@ -407,6 +407,11 @@ export const detachOwnedNumber = (clientId: string, numberId: string) => api.pos
 /** The Texts switch for one receptionist: its status, and on/off (switching on again is the retry). */
 export const getTexts = (clientId: string) => api.get<TextsStatus>(`/api/clients/${clientId}/texting`);
 export const setTexts = (clientId: string, on: boolean) => api.put<TextsStatus>(`/api/clients/${clientId}/texting`, { on });
+/** The numbers this receptionist can answer texts on, and picking one (its calls aren't touched). */
+export const getTextChoices = (clientId: string) => api.get<{ choices: TextChoice[]; problems: string[] }>(`/api/clients/${clientId}/texting/choices`);
+export const setTextNumber = (clientId: string, number: string) => api.put<TextsStatus>(`/api/clients/${clientId}/texting/number`, { number });
+/** Every number the agency has, with who answers its calls and texts. */
+export const getAllNumbers = () => api.get<{ numbers: AgencyNumber[]; problems: string[] }>("/api/numbers/all");
 export const getNumberState = (clientId: string) => api.get<NumberState>(`/api/clients/${clientId}/numbers`);
 export const requestNumberFor = (id: string, type: "local" | "mobile", note: string) => api.post(`/api/console/businesses/${id}/number-requests`, { type, note });
 export const resolveIncident = (id: string) => api.post<AdminSystem>(`/api/console/incidents/${id}/resolve`);

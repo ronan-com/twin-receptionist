@@ -1413,6 +1413,8 @@ export function updateInfo(b: { demo: number }, s: SetupData): UpdateInfo | null
 export const updateVarHooks: ((buyerId: number, existing: Record<string, string>) => Record<string, string>)[] = [];
 // The health heartbeat settings (sync.ts): added to agencies installed before it existed. Never re-made when present (that would cut the app off).
 updateVarHooks.push((id, have) => ("SUPPORT_SYNC_TOKEN" in have ? {} : supportSettings(id)));
+// The shared Google / Microsoft sign-in (broker.ts): agencies installed before it was switched on get it with their next update.
+updateVarHooks.push((_id, have) => (brokerOn() && !("OAUTH_BROKER" in have) ? { OAUTH_BROKER: "1" } : {}));
 
 const UPDATE_TOKEN_MSG = "That token can't see your agency's project. Paste the token from the Railway account you installed with (workspace set to No workspace).";
 /** Where the app's volume is mounted (the backups go to <this>/backups). */

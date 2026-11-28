@@ -120,6 +120,13 @@ export function oauthAvailable(): Record<OAuthProvider, boolean> {
   return { google: has("google"), microsoft: has("microsoft") };
 }
 
+/** oauthAvailable() after looking up the saved keys and the shared sign-in (just after a start it would still answer "no"). */
+export async function calendarSignInAvailable(): Promise<Record<OAuthProvider, boolean>> {
+  await fresh();
+  await brokerStatus();
+  return oauthAvailable();
+}
+
 /** True when this provider signs in through the setup site's shared app (none of our own is set up). */
 export function usesSharedApp(provider: OAuthProvider, purpose: OAuthPurpose): boolean {
   return !hasOwn(provider) && brokerOffers(provider, purpose);
@@ -156,7 +163,7 @@ export async function startSignIn(
   const c = config(provider);
   const shared = usesSharedApp(provider, purpose);
   if (!shared && (!c.clientId || !c.clientSecret)) {
-    throw new ValidationError(`Sign in with ${provider === "google" ? "Google" : "Microsoft"} isn't set up yet.`);
+    throw new ValidationError(`Sign in with ${provider === "google" ? "Google" : "Microsoft"} isn't switched on yet. Ask your account owner to switch this on.`);
   }
   if (purpose === "mail" && !(await mailboxSignInAllowed())[provider]) {
     throw new ValidationError(
@@ -221,7 +228,7 @@ function emailFromIdToken(idToken: string | undefined): string {
 async function tokenRequest(provider: OAuthProvider, body: Record<string, string>): Promise<any> {
   await fresh();
   const c = config(provider);
-  if (!c.clientId || !c.clientSecret) throw new Error(`Sign in with ${provider === "google" ? "Google" : "Microsoft"} isn't set up on this server.`);
+  if (!c.clientId || !c.clientSecret) throw new Error(`Sign in with ${provider === "google" ? "Google" : "Microsoft"} has been switched off`);
   const res = await fetch(c.tokenUrl, {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },

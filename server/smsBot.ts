@@ -86,8 +86,9 @@ export async function handleText(clientId: string, msg: InboundText, deps: BotDe
   const found = await deps.find(clientId);
   if (!found) return "ignored";
   const { client, orgId } = found;
-  // Only texts to this receptionist's own numbers.
-  const mine = (client.phoneNumbers ?? []).some((n) => contactKey(n) === contactKey(msg.to));
+  // Only texts to the number picked for this receptionist's texts, or to its own numbers when none was picked.
+  const numbers = client.textNumber ? [client.textNumber.number] : (client.phoneNumbers ?? []);
+  const mine = numbers.some((n) => contactKey(n) === contactKey(msg.to));
   if (!mine || contactKey(msg.from).length < 6) return "ignored";
   if (!(await firstSight(msg.via, msg.id))) return "duplicate";
 
@@ -100,7 +101,7 @@ export async function handleText(clientId: string, msg: InboundText, deps: BotDe
     await setOptOut(client.id, msg.from, false);
     return "restarted";
   }
-  if (await isOptedOut(client.id, msg.from)) return "ignored";
+  if (client.textsPref === "off" || (await isOptedOut(client.id, msg.from))) return "ignored";
 
   const text = cleanVisitorText(msg.text, 100_000).slice(0, SMS_LIMITS.textChars);
   if (!text) return "ignored";

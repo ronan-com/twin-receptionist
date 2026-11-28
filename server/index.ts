@@ -1,7 +1,7 @@
 import { backupsRoute, startBackups } from "./backup";
 import { countryForTimezone, defaultHours, typeOfNumber, type Business, type IndustryKey, type NumberState, type Settings, type Voice } from "../src/lib/shared";
 import { existsSync, readFileSync, statSync } from "node:fs";
-import { join, normalize } from "node:path";
+import { join, normalize, sep } from "node:path";
 import {
   AuthError,
   acceptInvite,
@@ -580,7 +580,7 @@ function page(path: string): Response {
   }
   const wanted = normalize(join(DIST, path));
   // normalize() resolves any "../", so anything outside dist is refused here.
-  const inside = wanted.startsWith(DIST + "/") && existsSync(wanted) && statSync(wanted).isFile();
+  const inside = wanted.startsWith(DIST + sep) && existsSync(wanted) && statSync(wanted).isFile();
   const hashed = inside && path.startsWith("/assets/");
   const index = join(DIST, "index.html");
   const file = inside ? wanted : index;

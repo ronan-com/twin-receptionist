@@ -32,11 +32,12 @@ const TAB_META: Record<Tab, { label: string; icon: typeof Mic }> = {
 };
 
 export const Route = createFileRoute("/_authenticated/admin/receptionists/$receptionistId")({
-  validateSearch: (s: Record<string, unknown>): { tab?: Tab; script?: string; calendar?: string; error?: string } => ({
+  validateSearch: (s: Record<string, unknown>): { tab?: Tab; script?: string; calendar?: string; connected?: string; error?: string } => ({
     ...(TABS.includes(String(s.tab) as Tab) ? { tab: String(s.tab) as Tab } : {}),
     ...(typeof s.script === "string" ? { script: s.script } : {}),
-    // Back from Google/Microsoft calendar sign-in (the Booking tab shows the result).
+    // Back from Google/Microsoft sign-in (the Booking or Email tab shows the result).
     ...(s.calendar !== undefined ? { calendar: String(s.calendar) } : {}),
+    ...(s.connected !== undefined ? { connected: String(s.connected) } : {}),
     ...(typeof s.error === "string" && s.error ? { error: s.error.slice(0, 300) } : {}),
   }),
   head: () => ({ meta: [{ title: `Receptionist — ${PRODUCT} admin` }] }),

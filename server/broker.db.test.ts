@@ -67,7 +67,7 @@ describe("off by default", () => {
     await brokerStatus();
     expect(oauthAvailable()).toEqual({ google: false, microsoft: false });
     expect(usesSharedApp("google", "calendar")).toBe(false);
-    await expect(startSignIn("google", "calendar", { clientId: "c" })).rejects.toThrow("isn't set up yet");
+    await expect(startSignIn("google", "calendar", { clientId: "c" })).rejects.toThrow("isn't switched on yet");
     expect(hits).toHaveLength(0);
   });
   test("OAUTH_BROKER=1 but the setup site doesn't offer it (or is unreachable): still off", async () => {
@@ -110,7 +110,7 @@ describe("connecting through the shared app", () => {
     if (!ready) return;
     process.env.OAUTH_BROKER = "1";
     await brokerStatus();
-    await expect(startSignIn("microsoft", "calendar", { clientId: "c" })).rejects.toThrow("isn't set up yet");
+    await expect(startSignIn("microsoft", "calendar", { clientId: "c" })).rejects.toThrow("isn't switched on yet");
     site!.stop(true);
     await expect(startSignIn("google", "calendar", { clientId: "c" })).rejects.toThrow("isn't reachable");
     expect((await sql`select count(*)::int as n from oauth_states where data->>'via' = 'shared'`)[0].n).toBe(0);

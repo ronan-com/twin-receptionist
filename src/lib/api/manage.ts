@@ -126,17 +126,27 @@ export type CalendarState = {
 export const getCalendar = (businessId: string) => api.get<CalendarState>(`${base(businessId)}/calendar`);
 export const setUpCalendar = (businessId: string, body: { provider: "builtin" | "google" | "microsoft"; minutes: number; notifyEmail?: string }) =>
   api.post<{ integrations: Integration[] }>(`${base(businessId)}/calendar`, body);
-export const changeCalendar = (businessId: string, body: { minutes?: number; enabled?: boolean; notifyEmail?: string; leadWebhook?: string }) =>
+export const changeCalendar = (businessId: string, body: { minutes?: number; enabled?: boolean; notifyEmail?: string; leadWebhook?: string; requireApproval?: boolean }) =>
   api.put<{ integrations: Integration[] }>(`${base(businessId)}/calendar`, body);
 export const removeCalendar = (businessId: string) => api.del<{ integrations: Integration[] }>(`${base(businessId)}/calendar`);
 export const testCalendar = (businessId: string) => api.post<{ date: string; result: any }>(`${base(businessId)}/calendar/test`);
+/** Which "Connect" buttons work on this install, for calendars and mailboxes. mailAllowed: offered for mailboxes at all. */
+export type SignInState = { calendar: { google: boolean; microsoft: boolean }; mail: { google: boolean; microsoft: boolean }; mailAllowed: { google: boolean; microsoft: boolean } };
+export const getSignIn = (businessId: string) => api.get<SignInState>(`${base(businessId)}/sign-in`);
+/** "See bookings in your own calendar": the private feed address. url "" when switched off; allowed false for view-only. */
+export type CalendarFeed = { allowed: boolean; url: string };
+export const getCalendarFeed = (businessId: string) => api.get<CalendarFeed>(`${base(businessId)}/calendar/feed`);
+export const newCalendarFeed = (businessId: string) => api.post<CalendarFeed>(`${base(businessId)}/calendar/feed`);
+export const stopCalendarFeed = (businessId: string) => api.del<CalendarFeed>(`${base(businessId)}/calendar/feed`);
+/** A browser navigation, like the calendar one below: sign in to the mailbox with Google/Microsoft. */
+export const mailSignInUrl = (businessId: string, provider: "google" | "microsoft", mode: "draft" | "send", ret?: "editor") => `${base(businessId)}/email/signin/${provider}?mode=${mode}${ret ? `&return=${ret}` : ""}`;
 /** A browser navigation (302 to Google/Microsoft), not a fetch. */
 /** ret "editor": come back to the agency's receptionist editor (Booking tab) instead of the client dashboard. */
 export const calendarSignInUrl = (businessId: string, provider: "google" | "microsoft", ret?: "editor") => `${base(businessId)}/calendar/signin/${provider}${ret ? `?return=${ret}` : ""}`;
 
 export type EmailState = { connected: boolean; address: string; mode: "draft" | "send"; connectedAt: string; lastCheckedAt: string; lastError: string };
 export const getEmail = (businessId: string) => api.get<EmailState>(`${base(businessId)}/email`);
-export const connectEmail = (businessId: string, body: { address: string; password: string; mode: "draft" | "send" }) =>
+export const connectEmail = (businessId: string, body: { address: string; password: string; mode: "draft" | "send"; host?: string; port?: string; smtpHost?: string; smtpPort?: string }) =>
   api.put<EmailState>(`${base(businessId)}/email`, body);
 export const setEmailMode = (businessId: string, mode: "draft" | "send") => api.patch<EmailState>(`${base(businessId)}/email`, { mode });
 export const disconnectEmail = (businessId: string) => api.del<EmailState>(`${base(businessId)}/email`);

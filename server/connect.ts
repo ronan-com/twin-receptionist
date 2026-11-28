@@ -2,11 +2,11 @@ import { createHash } from "node:crypto";
 import type { Business, ConnectInfo } from "../src/lib/shared";
 import { publicUrl } from "./booking";
 import { connectEmail, connectOAuth, disconnectEmail, emailStatus } from "./email";
-import { calendarLink, connectCalendar, providerOf } from "./calendars";
-import { claimSignIn, finishSignIn, mailSignInAvailable, oauthAvailable, startSignIn, type OAuthProvider, type OAuthPurpose } from "./oauth";
+import { calendarLink, connectCalendar, disconnectCalendar, keepUpcomingBookings, providerOf } from "./calendars";
+import { calendarSignInAvailable, claimSignIn, finishSignIn, mailSignInAvailable, startSignIn, type OAuthProvider, type OAuthPurpose } from "./oauth";
 import type { EmailMode } from "../src/lib/shared";
 import { ValidationError } from "./prompt";
-import { clientByConnectHash, getOrgClient, saveClient } from "./store";
+import { clientByConnectHash, getClient, getOrgClient, saveClient } from "./store";
 
 // A private link the seller sends a client business so the owner can connect
 // their own mailbox without seeing the dashboard. Only a hash of the link's
@@ -65,7 +65,7 @@ async function info(client: Business): Promise<ConnectInfo> {
       connected: Boolean(link && link.provider === wanted),
       account: link?.account ?? "",
     },
-    signIn: oauthAvailable(),
+    signIn: await calendarSignInAvailable(),
     mailSignIn: await mailSignInAvailable(),
   };
 }
@@ -103,16 +103,33 @@ export const safeReturn = (returnTo?: string): string | undefined => (returnTo &
 /** Adds the outcome (?calendar=1, ?error=...) to a return path that may already have a query. */
 export const withOutcome = (where: string, query: string) => `${where}${where.includes("?") ? "&" : "?"}${query}`;
 
-// The same, started by a team member from the dashboard (calendar only: a
-// mailbox is the business's to connect).
+// A calendar can be connected over the built-in one (which stays in use until the sign-in works), or
+// signed in again. Going from Google straight to Outlook, or back, means disconnecting first.
+const canUseCalendar = (client: Business, provider: OAuthProvider) => Boolean(client.booking) && [provider, "builtin"].includes(providerOf(client));
+
+// The same, started by a team member from the dashboard.
 // returnTo: where to send the browser afterwards (the workspace's integrations page,
 // or the console); only paths under /app/ or /admin/ are kept.
 export async function dashboardSignInStart(provider: OAuthProvider, orgId: string, client: Business, returnTo?: string): Promise<string> {
-  if (!client.booking || providerOf(client) !== provider) {
-    throw new ValidationError(`Choose ${provider === "google" ? "Google Calendar" : "Outlook"} in the calendar card first.`);
-  }
+  if (!client.booking) throw new ValidationError("Turn on bookings first.");
+  if (!canUseCalendar(client, provider)) throw new ValidationError(`Disconnect ${providerOf(client) === "google" ? "Google Calendar" : "Outlook"} first.`);
   const back = safeReturn(returnTo);
   return startSignIn(provider, "calendar", { clientId: client.id, orgId, ...(back ? { returnTo: back } : {}) });
+}
+
+// The mailbox too, for a team member setting up a business's email from the dashboard.
+export async function dashboardMailSignInStart(provider: OAuthProvider, orgId: string, client: Business, mode: unknown, returnTo?: string): Promise<string> {
+  const back = safeReturn(returnTo);
+  return startSignIn(provider, "mail", { clientId: client.id, orgId, ...(back ? { returnTo: back } : {}) }, mode === "send" ? "send" : "draft");
+}
+
+/** Disconnects Google/Outlook: bookings carry on in the built-in calendar, upcoming ones included. */
+export async function backToBuiltinCalendar(client: Business): Promise<Business> {
+  const next: Business = { ...client, booking: { ...client.booking!, provider: "builtin" }, updatedAt: new Date().toISOString() };
+  await keepUpcomingBookings(client);
+  await disconnectCalendar(client.id);
+  await saveClient(next);
+  return next;
 }
 
 const back = (purpose: OAuthPurpose) => (purpose === "calendar" ? "calendar" : "connected");
@@ -134,10 +151,12 @@ export async function signInFinish(provider: OAuthProvider, params: URLSearchPar
       : await getOrgClient(pending.orgId ?? "", pending.clientId ?? "");
     if (!client) throw new ValidationError("That receptionist no longer exists.");
     if (result.purpose === "calendar") {
-      if (!client.booking || providerOf(client) !== provider) throw new ValidationError("This receptionist isn't set up to use that calendar any more.");
+      if (!canUseCalendar(client, provider)) throw new ValidationError("This receptionist isn't set up to use that calendar any more.");
       await connectCalendar(client.id, result);
+      // Only now, with the calendar answering, do bookings move to it.
+      const now = await getClient(client.id);
+      if (now?.booking && providerOf(now) !== provider) await saveClient({ ...now, booking: { ...now.booking, provider }, updatedAt: new Date().toISOString() });
     } else {
-      if (!pending.linkToken) throw new ValidationError("Mailboxes are connected from the business's connect link.");
       await connectOAuth(client.id, result);
     }
     return withOutcome(where, `${back(result.purpose)}=1`);

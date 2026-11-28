@@ -110,7 +110,7 @@ beforeEach(() => {
 });
 
 describe("a number left on an assistant that's gone (an old install)", () => {
-  const stale = { id: "1007", phone_number: "+61862896029", phone_number_type: "local", status: "active", connection_id: "app-gone", connection_name: "ai-assistant-0f0f0f0f-gone" };
+  const stale = { id: "1007", phone_number: "+61255500101", phone_number_type: "local", status: "active", connection_id: "app-gone", connection_name: "ai-assistant-0f0f0f0f-gone" };
 
   test("it lists as unconnected, and connecting it needs no confirmation and raises no error", async () => {
     numbers.push({ ...stale });

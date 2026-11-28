@@ -31,7 +31,7 @@ const { consoleRoutes } = await import("./routes/console");
 
 const SID = "AC" + "d".repeat(32);
 const TOKEN = "e".repeat(32);
-const US = "+12272204547";
+const US = "+12025550147";
 const US2 = "+12025550147";
 const AU_TW = "+61480011401";
 const AU_LAND_TW = "+61255501401";
@@ -212,7 +212,7 @@ describe("a Telnyx receptionist texting from a US Twilio number", () => {
 
   test("a number left on a deleted assistant shows as free, even if an old receptionist still lists it", async () => {
     if (!ready) return;
-    const STALE = "+61420170563";
+    const STALE = "+61491570156";
     await insertClient(orgId, mk("Old", { assistantId: "assistant-gone", phoneNumbers: [STALE] }));
     leftOver = [{ id: "1002", phone_number: STALE, phone_number_type: "mobile", status: "active", connection_id: "app-gone", connection_name: "ai-assistant-gone" }];
     const { numbers, problems } = await inOrg(async () => agencyNumbers(orgId, await listClients(orgId), access));

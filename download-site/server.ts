@@ -29,6 +29,7 @@ import { adminRoute } from "./admin-web";
 import { inactivePage, startRoute } from "./genericlink";
 import { ticketsApi } from "./tickets";
 import { brokerApi } from "./broker";
+import { domainLinkApi } from "./domainlink";
 import { MAX_SYNC_BODY, bearerOf, buyerBySyncToken, ownerResetLink, receive } from "./sync";
 import { checkedAppSource, bundleSignatureOk, latestRelease, packageOf, signBundleUrl, sourceDownload, sourceUrlFor } from "./releases";
 import { startAlerts } from "./alerts";
@@ -286,6 +287,9 @@ async function handle(req: Request, srv: Bun.Server<unknown>): Promise<Response>
 
   // ---- the shared Google / Microsoft sign-in for agencies (broker.ts). Answers 404 unless OAUTH_BROKER=1. ----
   if (path.startsWith("/api/broker/") || path.startsWith("/oauth/broker/")) { const r = await brokerApi(req, url, ip, allow); if (r) return respond(r.body, r.status, Object.fromEntries(r.headers)); }
+
+  // ---- "Change domain" from the agency's own dashboard (domainlink.ts): a short-lived way to its domain form ----
+  if (path === "/api/domain-link" || path === "/api/domain-link/open") { const r = await domainLinkApi(req, url, ip, allow); return respond(r.body, r.status, Object.fromEntries(r.headers)); }
 
   // ---- the buyer's app reporting its health: counts only, token auth, rate-limited ----
   if (path === "/api/sync") {

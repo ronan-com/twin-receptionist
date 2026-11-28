@@ -164,6 +164,8 @@ export type Business = {
   settings: Settings;
   instructions: string;
   booking?: BookingSetup;
+  // The private "see bookings in your own calendar" address (server/calendarFeed.ts): its token, sealed.
+  calendarFeed?: { secret: string; off?: boolean };
   // The private link the business uses to connect its own mailbox.
   connect?: { tokenHash: string; expiresAt: string; createdAt: string };
   // Numbers Telnyx reports as connected, refreshed whenever the phone number card loads.

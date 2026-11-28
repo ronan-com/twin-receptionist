@@ -28,7 +28,7 @@ export function BrandingSection() {
           {!readOnly && role === "owner" && !ws.viewing ? <Button type="submit" disabled={rename.isPending || !name.trim() || name.trim()===orgName}>Save name</Button> : null}
         </form>
         <p className="mt-4 text-sm font-medium">Dashboard domain</p><p className="text-sm text-ink-muted break-all">{typeof window !== "undefined" ? window.location.origin : ""}</p>
-        <p className="mt-2 text-sm text-ink-muted">Your setup provider can configure a custom domain during onboarding. For an installed agency, changing the address also requires your hosting and DNS settings.</p>
+        <p className="mt-2 text-sm text-ink-muted">The agency owner can change this under Settings, Web address.</p>
       </Panel>
       <Panel title="Your brand" description="Logo and colours for your dashboard and your clients' logins. A client can have its own on its page.">
         <BrandEditor

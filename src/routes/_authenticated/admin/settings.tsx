@@ -22,8 +22,9 @@ import { EmailSendingSection } from "./-email-sending";
 import { SupportSection } from "./-support";
 import { UpdatesSection } from "./-updates";
 import { BackupsSection } from "./-backups";
+import { WebAddressCard, useOwnsAddress } from "./-web-address";
 
-const TABS = ["team", "account", "platform", "accounts", "sending", "email", "support", "updates", "backups"] as const;
+const TABS = ["team", "account", "platform", "accounts", "sending", "email", "support", "updates", "backups", "domain"] as const;
 type Tab = (typeof TABS)[number];
 
 export const Route = createFileRoute("/_authenticated/admin/settings")({
@@ -44,6 +45,7 @@ function AdminSettingsPage() {
   const supportTab = Boolean(ws.session?.singleAgency) && !platform;
   // How account emails are sent: the platform admin, or (SINGLE_AGENCY) the agency's owners and admins.
   const sendingTab = platform || (Boolean(ws.session?.singleAgency) && canManage && (role === "owner" || role === "admin"));
+  const addressTab = useOwnsAddress() && !platform;
   const { tab = "team" } = Route.useSearch();
   const navigate = useNavigate();
   const setTab = (t: string) => void navigate({ to: "/admin/settings", search: t === "team" ? {} : { tab: t as Tab }, replace: true });
@@ -68,6 +70,7 @@ function AdminSettingsPage() {
           {platform ? <TabsTrigger value="accounts">All accounts</TabsTrigger> : null}
           {sendingTab ? <TabsTrigger value="sending">Email</TabsTrigger> : null}
           {serverSettings ? <TabsTrigger value="email">Email and calendars</TabsTrigger> : null}
+          {addressTab ? <TabsTrigger value="domain">Web address</TabsTrigger> : null}
           {supportTab ? <TabsTrigger value="support">Support</TabsTrigger> : null}
           {supportTab ? <TabsTrigger value="updates">Updates</TabsTrigger> : null}
           {supportTab ? <TabsTrigger value="backups">Backups</TabsTrigger> : null}
@@ -96,6 +99,11 @@ function AdminSettingsPage() {
         {serverSettings ? (
           <TabsContent value="email" className="mt-4">
             <EmailCalendarsSection />
+          </TabsContent>
+        ) : null}
+        {addressTab ? (
+          <TabsContent value="domain" className="mt-4">
+            <WebAddressCard />
           </TabsContent>
         ) : null}
         {supportTab ? (

@@ -70,6 +70,7 @@ import { pipedreamConsoleRoutes } from "./routes/apps";
 import type { ClientAccess, RouteArgs } from "./routes/http";
 import { withinSeconds } from "./timeout";
 import { sourceDownloadRoute } from "./sourceDownload";
+import { domainLinkRoute } from "./domainLink";
 import { changeBrand, installLook, ownBrand, serveAsset, uploadAsset } from "./brand";
 import { accessibleClients, customerClientId, setFollowUpStage, customersFor, inviteCustomer, removeCustomer, revokeCustomerInvite } from "./customers";
 import { createRequest, declineRequest, listRequests, markDone, pendingCount, pendingRequest, requestsForClient, settleRequests } from "./numberRequests";
@@ -104,7 +105,8 @@ import {
 import { CalendarError, calendarLink, disconnectCalendar, providerOf, upcomingEvents } from "./calendars";
 import { mailerReady, startOutbox } from "./mailer";
 import { checkEmailAddress, checkWebhookUrl, webhookSecret } from "./notify";
-import { oauthAvailable } from "./oauth";
+import { calendarSignInAvailable } from "./oauth";
+import { serveFeed } from "./calendarFeed";
 import { refresh as loadPlatformSettings } from "./platformSettings";
 import { platformSettingsRoutes } from "./platformSettingsApi";
 import { emailSettingsRoutes } from "./emailSettings";
@@ -190,7 +192,7 @@ async function bookingState(client: Business): Promise<BookingState> {
   return {
     setup: setup ? { ...visible, provider } : null,
     calendar: provider && provider !== "builtin" ? await calendarLink(client.id) : null,
-    signIn: oauthAvailable(),
+    signIn: await calendarSignInAvailable(),
     emailReady: mailerReady(),
     webhookSecret: setup?.leadWebhook ? webhookSecret(token) : "",
     publicUrl: publicUrl(),
@@ -205,26 +207,38 @@ const PROVIDERS: BookingProvider[] = ["builtin", "google", "microsoft"];
 
 const nearestMinutes = (n: number) => MINUTES.reduce((a, b) => (Math.abs(b - n) < Math.abs(a - n) ? b : a));
 
+// An explicit length wins; otherwise the profile's default appointment length (snapped to
+// the lengths the calendar offers), otherwise 30. Open times are the business's opening hours.
+function bookingDefaults(settings: Settings, minutes?: unknown) {
+  const fromProfile = settings.profile?.appointmentMinutes;
+  return {
+    provider: "builtin" as BookingProvider,
+    token: newToken(),
+    minutes: MINUTES.includes(Number(minutes)) ? Number(minutes) : fromProfile ? nearestMinutes(fromProfile) : 30,
+    enabled: true,
+    notifyEmail: "",
+    leadWebhook: "",
+    createdAt: new Date().toISOString(),
+  };
+}
+
 async function setUpBooking(client: Business, input: any) {
-  if (client.booking) throw new ValidationError("This receptionist already has a calendar. Remove it first to switch.");
   const provider: BookingProvider = PROVIDERS.includes(input?.provider) ? input.provider : "builtin";
-  if (provider !== "builtin" && !oauthAvailable()[provider]) {
-    throw new ValidationError(`${provider === "google" ? "Google" : "Outlook"} Calendar isn't set up on this server yet.`);
+  if (client.booking) {
+    // The built-in calendar is already there (it is on from the start): switch it on and take what was asked for.
+    if (provider === "builtin" && providerOf(client) === "builtin") return changeBooking(client, { ...input, enabled: true });
+    throw new ValidationError("This receptionist already has a calendar. Remove it first to switch.");
   }
-  // An explicit length wins; otherwise the profile's default appointment length (snapped to
-  // the lengths the calendar offers), otherwise 30.
-  const fromProfile = client.settings.profile?.appointmentMinutes;
-  const minutes = MINUTES.includes(Number(input?.minutes)) ? Number(input.minutes) : fromProfile ? nearestMinutes(fromProfile) : 30;
+  if (provider !== "builtin" && !(await calendarSignInAvailable())[provider]) {
+    throw new ValidationError(`${provider === "google" ? "Google" : "Outlook"} Calendar isn't switched on yet. Ask your account owner to switch this on.`);
+  }
   const next: Business = {
     ...client,
     booking: {
+      ...bookingDefaults(client.settings, input?.minutes),
       provider,
-      token: newToken(),
-      minutes,
-      enabled: true,
       notifyEmail: checkEmailAddress(input?.notifyEmail),
       leadWebhook: await checkWebhookUrl(input?.leadWebhook),
-      createdAt: new Date().toISOString(),
     },
   };
   await saveClient(next);
@@ -338,9 +352,9 @@ async function createClient(orgId: string, input: unknown, opts: { quick?: boole
   if (fakeProvider()) {
     const now = new Date().toISOString();
     const id = crypto.randomUUID();
-    const demo: Business = { id, assistantId: `demo-${id}`, settings, instructions, ...(provider.id === "vapi" ? { voiceProvider: "vapi" as const } : {}), createdAt: now, updatedAt: now };
+    const demo: Business = { id, assistantId: `demo-${id}`, settings, instructions, booking: bookingDefaults(settings), ...(provider.id === "vapi" ? { voiceProvider: "vapi" as const } : {}), createdAt: now, updatedAt: now };
     await insertClient(orgId, demo);
-    return demo;
+    return syncAssistant(demo);
   }
   const id = crypto.randomUUID();
   const assistantId = await provider.createAssistant(settings, instructions, id);
@@ -351,12 +365,18 @@ async function createClient(orgId: string, input: unknown, opts: { quick?: boole
     assistantId,
     settings,
     instructions,
+    // Bookings work from the start, into the built-in calendar: nothing to set up.
+    booking: bookingDefaults(settings),
     ...(provider.id === "vapi" ? { voiceProvider: "vapi" as const } : {}),
     createdAt: now,
     updatedAt: now,
   };
   await insertClient(orgId, client);
-  return client;
+  // The script and tools for booking. The receptionist exists either way; a failure here is put right by the next save or restart.
+  return runAsOrg(orgId, () => syncAssistant(client)).catch((err) => {
+    console.error(`[booking ${client.id}] couldn't add booking to the new receptionist:`, (err as Error).message);
+    return client;
+  });
 }
 
 async function updateClient(existing: Business, input: unknown): Promise<Business> {
@@ -646,6 +666,10 @@ async function route(req: Request, server?: { requestIP(r: Request): { address: 
   // The website chat widget's public API (CORS-limited to the business's own websites).
   if (path.startsWith("/api/webchat/")) return (await webchatPublic(req, path, undefined, server)) ?? json({ error: "Not found" }, 404);
 
+  // A business's bookings in its own calendar app (server/calendarFeed.ts): the long token in the address is the key.
+  const feed = path.match(/^\/api\/calendar-feed\/([a-f0-9-]{36})\/([A-Za-z0-9_-]{32})\.ics$/);
+  if (feed && (method === "GET" || method === "HEAD")) return serveFeed(feed[1], feed[2]);
+
   // Logos and backgrounds: public by random id.
   const brandAsset = path.match(/^\/brand\/([a-f0-9-]{36})$/);
   if (brandAsset && (method === "GET" || method === "HEAD")) return serveAsset(brandAsset[1]);
@@ -754,6 +778,8 @@ async function route(req: Request, server?: { requestIP(r: Request): { address: 
   if (path === "/api/updates/settings" || path === "/api/updates/check") return updatesRoute(req, method, path, ctx);
   // Settings, "Your source code": a link to the full source of the version this agency runs (server/sourceDownload.ts).
   if (path === "/api/source-download") return sourceDownloadRoute(method, ctx);
+  // Settings, "Web address": a short-lived way to the domain form on the owner's setup link (server/domainLink.ts).
+  if (path === "/api/domain-link") return domainLinkRoute(method, ctx);
   // Settings, "Backups": the daily backup, the off-site copy and how long transcripts are kept (server/backup.ts).
   if (path === "/api/backups" || path.startsWith("/api/backups/")) return backupsRoute(req, method, path, ctx);
 

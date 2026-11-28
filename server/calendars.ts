@@ -168,16 +168,25 @@ function linkedOrFail(client: Business, link: LinkRow | null): LinkRow {
   return link;
 }
 
+async function ownBusy(clientId: string, from: number, to: number): Promise<Busy[]> {
+  const rows = await sql`
+    select starts_at, ends_at from calendar_events
+    where client_id = ${clientId} and starts_at < ${new Date(to)} and ends_at > ${new Date(from)}`;
+  return rows.map((r: any) => ({ start: new Date(r.starts_at).getTime(), end: new Date(r.ends_at).getTime() }));
+}
+
+// Appointments made before Google/Outlook was connected stay in our own calendar: they still
+// block their time, and are moved or removed there.
+async function isOwnEvent(clientId: string, eventId: string): Promise<boolean> {
+  const [r] = await sql`select 1 from calendar_events where client_id = ${clientId} and id::text = ${eventId}`;
+  return Boolean(r);
+}
+
 export async function busyTimes(client: Business, from: number, to: number): Promise<Busy[]> {
-  if (providerOf(client) === "builtin") {
-    const rows = await sql`
-      select starts_at, ends_at from calendar_events
-      where client_id = ${client.id} and starts_at < ${new Date(to)} and ends_at > ${new Date(from)}`;
-    return rows.map((r: any) => ({ start: new Date(r.starts_at).getTime(), end: new Date(r.ends_at).getTime() }));
-  }
+  if (providerOf(client) === "builtin") return ownBusy(client.id, from, to);
   const busy = await linkedBusy(client.id, linkedOrFail(client, await linkFor(client.id)), from, to);
   await sql`update calendar_links set last_error = '' where client_id = ${client.id} and last_error <> ''`;
-  return busy.filter((b) => Number.isFinite(b.start) && Number.isFinite(b.end));
+  return [...busy.filter((b) => Number.isFinite(b.start) && Number.isFinite(b.end)), ...(await ownBusy(client.id, from, to))];
 }
 
 export async function createEvent(client: Business, ev: NewEvent): Promise<string> {
@@ -215,7 +224,7 @@ export async function findBuiltinEvent(clientId: string, start: number, title: s
 
 // Moves an appointment to a new time (Google/Outlook: patches the event; built-in: updates the row).
 export async function moveEvent(client: Business, eventId: string, start: number, end: number): Promise<void> {
-  if (providerOf(client) === "builtin") {
+  if (providerOf(client) === "builtin" || (await isOwnEvent(client.id, eventId))) {
     await sql`update calendar_events set starts_at = ${new Date(start)}, ends_at = ${new Date(end)} where client_id = ${client.id} and id = ${eventId}`;
     return;
   }
@@ -232,7 +241,7 @@ export async function moveEvent(client: Business, eventId: string, start: number
 
 // Removes an appointment. One that is already gone from Google/Outlook counts as removed.
 export async function removeEvent(client: Business, eventId: string): Promise<void> {
-  if (providerOf(client) === "builtin") return cancelEvent(client.id, eventId);
+  if (providerOf(client) === "builtin" || (await isOwnEvent(client.id, eventId))) return cancelEvent(client.id, eventId);
   const link = linkedOrFail(client, await linkFor(client.id));
   const url =
     link.provider === "google"
@@ -244,6 +253,28 @@ export async function removeEvent(client: Business, eventId: string): Promise<vo
     if (err instanceof CalendarError && (err.status === 404 || err.status === 410)) return;
     throw err;
   }
+}
+
+// Going back from Google/Outlook to the built-in calendar: upcoming bookings made over there are copied
+// into ours, so their times stay taken and callers can still move or cancel them.
+export async function keepUpcomingBookings(client: Business): Promise<number> {
+  const rows = await sql`
+    select data from booking_requests where client_id = ${client.id} and data->>'kind' = 'booking' and data->>'status' = 'booked'
+      and coalesce(data->>'apptStatus', '') <> 'cancelled' order by id desc limit 500`;
+  let kept = 0;
+  for (const r of rows as any[]) {
+    const b = r.data as { id: string; start: string; name?: string; phone?: string; service?: string; eventId?: string };
+    const start = Date.parse(b.start);
+    if (!(start > Date.now()) || (b.eventId && (await isOwnEvent(client.id, b.eventId)))) continue;
+    const id = crypto.randomUUID();
+    const end = start + (client.booking?.minutes ?? 30) * 60000;
+    await sql`
+      insert into calendar_events (id, client_id, starts_at, ends_at, title, details)
+      values (${id}, ${client.id}, ${new Date(start)}, ${new Date(end)}, ${`${b.service || "Appointment"} · ${b.name ?? ""}`}, ${`Name: ${b.name ?? ""}\nPhone: ${b.phone ?? ""}`})`;
+    await sql`update booking_requests set data = data || ${{ eventId: id } as any}::jsonb where client_id = ${client.id} and data->>'id' = ${b.id}`;
+    kept++;
+  }
+  return kept;
 }
 
 // ---- Reading the events on a linked calendar (for the dashboard's calendar view) ----

@@ -13,7 +13,7 @@ import { BrandingEditor } from "@/components/app/BrandingEditor";
 import { HoursEditor, VoicePicker } from "@/components/app/ReceptionistFields";
 import { TestPreviewDialog } from "@/components/app/SampleCall";
 import { markOnboardingSkipped } from "@/components/app/SetupPrompt";
-import { agentsQuery, knowledgeQuery } from "@/lib/app/queries";
+import { agentsQuery, integrationsQuery, knowledgeQuery } from "@/lib/app/queries";
 import {
   createKnowledge,
   deleteKnowledge,
@@ -359,7 +359,8 @@ function Extras({ businessId }: { businessId: string }) {
   const [invited, setInvited] = useState<string[]>([]);
   const [numberType, setNumberType] = useState<"local" | "mobile">("local");
   const [numberAsked, setNumberAsked] = useState(false);
-  const [calendar, setCalendar] = useState(false);
+  // New receptionists already book into the built-in calendar; older ones get the button.
+  const has = useQuery(integrationsQuery(businessId)).data?.some((i) => i.provider.endsWith("_calendar"));
 
   const invite = useMutation({
     mutationFn: () => inviteMember(businessId, { email: email.trim(), role }),
@@ -382,7 +383,6 @@ function Extras({ businessId }: { businessId: string }) {
   const cal = useMutation({
     mutationFn: () => setUpCalendar(businessId, { provider: "builtin", minutes: 30 }),
     onSuccess: () => {
-      setCalendar(true);
       void qc.invalidateQueries({ queryKey: ["integrations", businessId] });
       void qc.invalidateQueries({ queryKey: ["agents", businessId] });
     },
@@ -430,8 +430,8 @@ function Extras({ businessId }: { businessId: string }) {
 
       <div className="rounded-[6px] border border-hairline p-3" data-extra="calendar">
         <div className="mb-1 flex items-center gap-2 text-[13px] font-medium text-ink"><CalendarCheck className="h-4 w-4 text-indigo" /> Take bookings</div>
-        {calendar ? (
-          <p className="flex items-center gap-1.5 text-[12.5px] text-[#0e6245]"><Check className="h-3.5 w-3.5" /> Booking calendar on. Your receptionist books 30-minute appointments inside your hours.</p>
+        {has ? (
+          <p className="flex items-center gap-1.5 text-[12.5px] text-[#0e6245]"><Check className="h-3.5 w-3.5" /> Booking calendar on. Your receptionist books appointments inside your hours.</p>
         ) : (
           <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
             <p className="flex-1 text-[12px] text-ink-muted">

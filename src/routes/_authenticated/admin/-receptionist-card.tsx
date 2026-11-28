@@ -1,19 +1,19 @@
 import { useState, type ReactNode } from "react";
 import { Link } from "@tanstack/react-router";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { ArrowRightLeft, Mail, Pause, Pencil, Phone, Play, RefreshCw } from "lucide-react";
+import { ArrowRightLeft, Pause, Pencil, Phone, Play, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Panel, KeyValue } from "@/components/app/primitives";
 import { DemoBadge, StatusBadge } from "@/components/app/StatusBadge";
-import { Field } from "@/components/app/forms";
-import { cn } from "@/lib/utils";
-import { fmtDate, fmtPhone, fmtRelative, humanize } from "@/lib/app/format";
+import { fmtDate, fmtPhone, humanize } from "@/lib/app/format";
 import { applyVapiVoiceSettings, getVoiceEngines, moveReceptionistEngine, requestNumberFor, setBusinessStatus, type CompanyReceptionist } from "@/lib/api/console";
-import { connectEmail, disconnectEmail, getEmail, setEmailMode, type EmailState } from "@/lib/api/manage";
+import { getEmail } from "@/lib/api/manage";
+import { InboxSetup } from "@/components/app/editor/InboxSetup";
+import { useSignInOutcome } from "@/components/app/editor/SignInSetup";
 import { describeHours, industry as industryPreset, type IndustryKey } from "@/lib/shared";
 import { AutomationChips, AutomationIcon, useConsole } from "./-shared";
 import { NumberPicker, VapiNumberPicker } from "./-number-picker";
@@ -325,70 +325,15 @@ export function ReceptionistCard({
 
 /** The AI Email Agent: the inbox the receptionist reads, and whether it drafts replies or sends them. */
 function EmailPanel({ clientId, who, canEdit, canTry }: { clientId: string; who: string; canEdit: boolean; canTry: boolean }) {
-  const qc = useQueryClient();
-  const key = ["email", clientId];
-  const q = useQuery({ queryKey: key, queryFn: () => getEmail(clientId), retry: false });
-  const [address, setAddress] = useState("");
-  const [password, setPassword] = useState("");
-  const [mode, setMode] = useState<"draft" | "send">("draft");
-  const set = (e: EmailState) => qc.setQueryData(key, e);
-  const connect = useMutation({
-    mutationFn: () => connectEmail(clientId, { address: address.trim(), password, mode }),
-    onSuccess: (e) => { set(e); setPassword(""); toast.success("Inbox connected"); },
-    onError: (e: Error) => toast.error("Couldn't connect the inbox", { description: e.message }),
-  });
-  const change = useMutation({
-    mutationFn: (m: "draft" | "send") => setEmailMode(clientId, m),
-    onSuccess: (e) => { set(e); toast.success(e.mode === "send" ? "It now sends replies itself" : "It now drafts replies for you"); },
-    onError: (e: Error) => toast.error("Couldn't change that", { description: e.message }),
-  });
-  const off = useMutation({
-    mutationFn: () => disconnectEmail(clientId),
-    onSuccess: (e) => { set(e); toast.success("Inbox disconnected"); },
-    onError: (e: Error) => toast.error(e.message),
-  });
-  const e = q.data;
+  // Back from "Connect Gmail / Outlook".
+  useSignInOutcome();
+  const e = useQuery({ queryKey: ["email", clientId], queryFn: () => getEmail(clientId), retry: false }).data;
   return (
     <div className="space-y-4">
-    <Panel title="Email" description={`${who}'s inbox.`}>
-      {q.isPending ? <p className="text-[12.5px] text-ink-muted">Loading…</p> : q.error ? <p className="text-[12.5px] text-ink-muted">Email isn't available here yet: {(q.error as Error).message}</p> : e?.connected ? (
-        <div className="space-y-3">
-          <div className="flex flex-wrap items-center gap-2">
-            <span data-hue="magenta" className="hue-icon flex h-8 w-8 items-center justify-center rounded-[8px]"><Mail className="h-4 w-4" /></span>
-            <div className="min-w-0">
-              <div className="truncate text-[13.5px] font-medium text-ink">{e.address}</div>
-              <div className="text-[11.5px] text-ink-muted">{e.lastError ? `Problem: ${e.lastError}` : e.lastCheckedAt ? `Checked ${fmtRelative(e.lastCheckedAt)}` : "Connected"}</div>
-            </div>
-            <StatusBadge tone={e.lastError ? "danger" : "success"} dot>{e.lastError ? "Needs attention" : "Reading"}</StatusBadge>
-          </div>
-          <div className="grid gap-1.5">
-            <span className="text-[12.5px] font-medium text-ink">When an email comes in</span>
-            <div className="grid gap-2 sm:grid-cols-2" role="radiogroup">
-              {([["draft", "Draft a reply", "Saved in the inbox's drafts for a person to check and send."], ["send", "Send automatically", "Replies go out straight away."]] as const).map(([m, label, hint]) => (
-                <button key={m} type="button" role="radio" aria-checked={e.mode === m} disabled={!canEdit || change.isPending} onClick={() => e.mode !== m && change.mutate(m)} className={cn("rounded-[8px] border px-3 py-2 text-left disabled:opacity-60", e.mode === m ? "chip-on" : "border-hairline hover:bg-canvas-2")}>
-                  <span className="block text-[13px] font-medium text-ink">{label}</span>
-                  <span className="block text-[11.5px] text-ink-muted">{hint}</span>
-                </button>
-              ))}
-            </div>
-          </div>
-          {canEdit ? <Button size="sm" variant="ghost" className="h-7 text-[12px] text-destructive hover:text-destructive" onClick={() => off.mutate()} disabled={off.isPending}>Disconnect inbox</Button> : null}
-        </div>
-      ) : canEdit ? (
-        <form className="grid gap-3 sm:max-w-md" onSubmit={(ev) => { ev.preventDefault(); if (address.trim() && password) connect.mutate(); }}>
-          <p className="text-[12.5px] text-ink-muted">Not connected yet. Use an app password for the inbox (Gmail, Outlook and most mail hosts offer one).</p>
-          <Field label="Email address" htmlFor={`em-${clientId}`}><Input id={`em-${clientId}`} type="email" value={address} onChange={(ev) => setAddress(ev.target.value)} placeholder="hello@yourbusiness.com" /></Field>
-          <Field label="App password" htmlFor={`pw-${clientId}`}><Input id={`pw-${clientId}`} type="password" value={password} onChange={(ev) => setPassword(ev.target.value)} autoComplete="new-password" /></Field>
-          <div className="flex flex-wrap gap-2" role="radiogroup" aria-label="When an email comes in">
-            {([["draft", "Draft replies"], ["send", "Send automatically"]] as const).map(([m, label]) => (
-              <button key={m} type="button" role="radio" aria-checked={mode === m} onClick={() => setMode(m)} className={cn("rounded-full border px-3 py-1 text-[12.5px]", mode === m ? "chip-on font-medium text-ink" : "border-hairline text-ink-muted hover:bg-canvas-2")}>{label}</button>
-            ))}
-          </div>
-          <Button type="submit" size="sm" className="justify-self-start" disabled={connect.isPending || !address.trim() || !password}>{connect.isPending ? "Connecting…" : "Connect inbox"}</Button>
-        </form>
-      ) : <p className="text-[12.5px] text-ink-muted">No inbox connected.</p>}
-    </Panel>
-    {canTry ? <TryEmail clientId={clientId} mode={e?.connected ? e.mode : null} connected={Boolean(e?.connected)} /> : null}
+      <Panel title="Email" description={`${who} reads new emails and replies.`}>
+        <InboxSetup businessId={clientId} canEdit={canEdit} editor />
+      </Panel>
+      {canTry ? <TryEmail clientId={clientId} mode={e?.connected ? e.mode : null} connected={Boolean(e?.connected)} /> : null}
     </div>
   );
 }

@@ -312,7 +312,6 @@ try {
     await m.waitForSelector('[data-step="branding"]', { timeout: 15000 });
     await m.$eval('[data-action="next"]', (b) => b.click());
     await m.waitForSelector('[data-step="extras"]', { timeout: 15000 });
-    await clickText(m, '[data-extra="calendar"] button', "Use the built-in calendar");
     await waitText(m, "Booking calendar on");
     await clickText(m, '[data-extra="number"] button', "Request a number");
     await waitText(m, "Requested.");
@@ -463,10 +462,9 @@ try {
     await bz.waitForSelector('[data-provider="hubspot"]');
     const soon = await bz.$eval('[data-provider="hubspot"]', (e) => e.innerText);
     assert(soon.includes("Coming soon"), "HubSpot not marked coming soon");
-    await bz.$eval('[data-provider="builtin_calendar"] button', (b) => b.click());
-    await bz.waitForSelector("#cal-min");
-    await clickText(bz, '[role="dialog"] button', "Connect");
-    await bz.waitForFunction(() => !document.querySelector('[role="dialog"]'), { timeout: 15000 });
+    // On from the start: nothing to connect.
+    await bz.waitForSelector('[data-provider="builtin_calendar"] #cal-min');
+    await bz.waitForSelector('[data-card="calendar-feed"] [data-add="google"]', { timeout: 15000 });
     const i = await apiFetch(bz, "GET", `/api/manage/${bid}/integrations`);
     assert(i.body.integrations.some((x) => x.provider === "builtin_calendar" && x.status === "connected"), "calendar not connected");
     assert(instructionsOf(bid).toLowerCase().includes("book"), "instructions lack booking");
